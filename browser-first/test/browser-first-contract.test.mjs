@@ -215,8 +215,11 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(workspaceScript, /composerController\.bind\(\)/);
   assert.match(workspaceScript, /connectionLine\.innerHTML/);
   assert.match(workspaceScript, /readPageButton\?\.addEventListener\("click", \(\) => void browserPageActions\.readActivePage\(\)\)/);
-  assert.match(workspaceScript, /saveIntakeButton\?\.addEventListener\("click", \(\) => void browserPageActions\.saveCurrentPageToArchive\(\)\)/);
-  assert.match(workspaceScript, /saveSelectionButton\?\.addEventListener\("click", \(\) => void browserPageActions\.saveSelectionToArchive\(\)\)/);
+  assert.match(workspaceScript, /runReviewableCapture/);
+  assert.match(workspaceScript, /saveIntakeButton\?\.addEventListener\("click", \(\) => void runReviewableCapture\(\s*\(\) => browserPageActions\.saveCurrentPageToArchive\(\),/);
+  assert.match(workspaceScript, /saveSelectionButton\?\.addEventListener\("click", \(\) => void runReviewableCapture\(\s*\(\) => browserPageActions\.saveSelectionToArchive\(\),/);
+  assert.match(workspaceScript, /noticeContainer: composerNotice/);
+  assert.match(workspaceScript, /onOpenReviewQueue: openMemoryReviewQueue/);
   assert.match(workspaceScript, /contextToggleButton\?\.addEventListener\("click", \(\) => void browserPageActions\.summarizeSnapshot\(\)\)/);
   assert.match(workspace, /context-popover/);
   assert.match(workspaceScript, /contextMeter\?\.addEventListener\("click", toggleContextPopover\)/);

@@ -34,6 +34,7 @@ import { renderHermesDashboardWorkspace } from "./lib/main-workspace-hermes.js";
 import { renderLivingArchiveWorkspace } from "./lib/main-workspace-memory.js";
 import { renderOpenCodeWorkspace } from "./lib/main-workspace-opencode.js";
 import { readPersonalizationSettings } from "./lib/personalization-settings.js";
+import { runReviewableCapture } from "./lib/main-workspace-review-handoff.js";
 import { railSearchMatchesProject, railSearchMatchesSession } from "./lib/main-workspace-rail.js";
 import {
   parseDaoSlashCommand,
@@ -286,8 +287,14 @@ function updateConnectionLine(status = "Ready") {
 
 function setComposerNotice(message = "") {
   if (!composerNotice) return;
+  delete composerNotice.dataset.kind;
   composerNotice.textContent = message;
   composerNotice.hidden = !message;
+}
+
+function openMemoryReviewQueue() {
+  setActiveWorkspace("memory", { persist: true });
+  renderAll();
 }
 
 function updateContextMeter() {
@@ -847,10 +854,7 @@ function renderMessages() {
       container: transcript,
       bridgeRequest,
       onContinueArtifact: continueFromArtifact,
-      onOpenReviewQueue: () => {
-        setActiveWorkspace("memory", { persist: true });
-        renderAll();
-      }
+      onOpenReviewQueue: openMemoryReviewQueue
     });
     return;
   }
@@ -1380,8 +1384,14 @@ document.querySelectorAll(".rail-recents[data-project-id]").forEach((target) => 
 });
 
 readPageButton?.addEventListener("click", () => void browserPageActions.readActivePage());
-saveIntakeButton?.addEventListener("click", () => void browserPageActions.saveCurrentPageToArchive());
-saveSelectionButton?.addEventListener("click", () => void browserPageActions.saveSelectionToArchive());
+saveIntakeButton?.addEventListener("click", () => void runReviewableCapture(
+  () => browserPageActions.saveCurrentPageToArchive(),
+  { noticeContainer: composerNotice, onOpenReviewQueue: openMemoryReviewQueue }
+));
+saveSelectionButton?.addEventListener("click", () => void runReviewableCapture(
+  () => browserPageActions.saveSelectionToArchive(),
+  { noticeContainer: composerNotice, onOpenReviewQueue: openMemoryReviewQueue }
+));
 contextToggleButton?.addEventListener("click", () => void browserPageActions.summarizeSnapshot());
 contextMeter?.addEventListener("click", toggleContextPopover);
 workspaceButtons.forEach((button) => {

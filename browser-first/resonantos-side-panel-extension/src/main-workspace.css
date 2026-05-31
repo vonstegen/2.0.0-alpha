@@ -1167,6 +1167,39 @@ textarea {
   line-height: 1.35;
 }
 
+.composer-notice[data-kind="review-queue"] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.composer-notice[data-kind="review-queue"] span {
+  display: grid;
+  gap: 2px;
+}
+
+.composer-notice[data-kind="review-queue"] strong {
+  color: rgba(247, 255, 249, 0.94);
+  font-size: 0.78rem;
+}
+
+.composer-notice[data-kind="review-queue"] small {
+  color: rgba(175, 191, 181, 0.86);
+  font-size: 0.72rem;
+}
+
+.composer-notice[data-kind="review-queue"] button {
+  flex: 0 0 auto;
+  border: 1px solid rgba(36, 209, 143, 0.24);
+  border-radius: 999px;
+  background: rgba(36, 209, 143, 0.1);
+  color: rgba(247, 255, 249, 0.94);
+  font-size: 0.72rem;
+  font-weight: 950;
+  padding: 7px 10px;
+}
+
 .composer-notice[hidden] {
   display: none;
 }
