@@ -1,6 +1,8 @@
 // Intent citation: docs/architecture/ADR-015-delegation-fabric-addon-catalog-native-tools.md
 // Intent citation: docs/FEATURE_INVENTORY_2026-05-26.md
 
+import { capabilityReviewElement } from "./addon-capability-review.js";
+
 function addonTone(addon) {
   if (addon.available) return "success";
   return "warning";
@@ -27,7 +29,13 @@ function workspaceForAddon(addon) {
   return "";
 }
 
-function createAddonCard(addon, onOpenWorkspace) {
+function addonExecutionKey(addon) {
+  if (addon.id === "addon.hermes") return "hermes";
+  if (addon.id === "addon.opencode") return "opencode";
+  return "";
+}
+
+function createAddonCard(addon, actions = {}) {
   const card = document.createElement("article");
   card.className = "addon-card";
   card.dataset.tone = addonTone(addon);
@@ -47,19 +55,37 @@ function createAddonCard(addon, onOpenWorkspace) {
   const boundary = document.createElement("small");
   boundary.textContent = addonBoundary(addon);
 
-  const actions = document.createElement("div");
-  actions.className = "addon-card-actions";
+  const execution = document.createElement("div");
+  execution.className = "addon-execution-panel";
+  const executionKey = addonExecutionKey(addon);
+  if (executionKey) {
+    const enabled = Boolean(addon.execution?.localCliExecution);
+    const copy = document.createElement("small");
+    copy.textContent = enabled
+      ? "Local CLI execution enabled. The add-on still receives governed task packets and returns artifacts."
+      : "Local CLI execution disabled. Delegations stay packet-only or deterministic until explicitly enabled.";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.textContent = enabled ? "Disable local execution" : "Enable local execution";
+    toggle.addEventListener("click", () => actions.onToggleExecution?.(addon, !enabled));
+    execution.append(copy, toggle);
+  }
+
+  const cardActions = document.createElement("div");
+  cardActions.className = "addon-card-actions";
   const workspace = workspaceForAddon(addon);
   if (workspace) {
     const open = document.createElement("button");
     open.type = "button";
     open.textContent = `Open ${addon.name}`;
     open.disabled = !addon.available;
-    open.addEventListener("click", () => onOpenWorkspace?.(workspace, addon));
-    actions.append(open);
+    open.addEventListener("click", () => actions.onOpenWorkspace?.(workspace, addon));
+    cardActions.append(open);
   }
 
-  card.append(header, meta, boundary, actions);
+  card.append(header, meta, boundary, capabilityReviewElement(addon));
+  if (execution.childNodes.length) card.append(execution);
+  card.append(cardActions);
   return card;
 }
 
@@ -381,12 +407,29 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, onOpenProvider
     }
   };
 
-  void (async () => {
+  const loadAddons = async () => {
     try {
       const result = await bridgeRequest("/addons/status", { method: "GET" });
       const addons = Array.isArray(result.addons) ? result.addons : [];
       grid.replaceChildren();
-      addons.forEach((addon) => grid.append(createAddonCard(addon, onOpenWorkspace)));
+      addons.forEach((addon) => grid.append(createAddonCard(addon, {
+        onOpenWorkspace,
+        onToggleExecution: async (selected, enabled) => {
+          const addonKey = addonExecutionKey(selected);
+          if (!addonKey) return;
+          status.textContent = `${enabled ? "Enabling" : "Disabling"} ${selected.name} local execution...`;
+          status.dataset.tone = "";
+          await bridgeRequest("/addons/execution-settings", {
+            method: "POST",
+            capability: "addon-execution-settings-write",
+            body: {
+              addon: addonKey,
+              localCliExecution: enabled
+            }
+          });
+          await loadAddons();
+        }
+      })));
       status.textContent = addons.length
         ? `${addons.length} add-ons visible. Missing add-ons stay disabled until installed or configured.`
         : "No add-ons are visible to this browser-first host yet.";
@@ -395,7 +438,9 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, onOpenProvider
       status.textContent = `Add-on registry unavailable: ${error instanceof Error ? error.message : String(error)}`;
       status.dataset.tone = "error";
     }
-  })();
+  };
+
+  void loadAddons();
   void loadDelegations();
   void loadDrafts();
 

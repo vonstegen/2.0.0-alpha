@@ -1,5 +1,6 @@
 export function controlResultSummary(result = {}) {
   if (!result?.ok) {
+    if (result?.ambiguousTarget) return result?.error ?? "ambiguous browser target";
     if (result?.approvalRequired) return result?.error ?? "human approval required";
     return result?.error ?? "action failed";
   }
@@ -24,8 +25,13 @@ export function browserJobStepHistory(job = {}) {
       },
       result: {
         ok: step.state === "completed",
+        ambiguousTarget: Boolean(step.details?.ambiguousTarget),
         approvalRequired: step.state === "blocked" || step.state === "approval",
-        error: step.note || null
+        actionRetry: step.details?.actionRetry ?? null,
+        candidates: targetCandidatesFromResult({ candidates: step.details?.targetCandidates ?? [] }),
+        error: step.note || null,
+        verificationChanged: step.details?.verificationChanged ?? null,
+        verificationRetry: step.details?.verificationRetry ?? null
       },
       observation: {
         title: job.goal ?? null,
@@ -106,6 +112,178 @@ function verifyBrowserAction({ before = null, after = null, result = {}, step = 
   return { changed: true, uncertainty: null };
 }
 
+function completionEvidenceForDoneDecision({ decision = {}, history = [], results = [] } = {}) {
+  const normalizedHistory = Array.isArray(history) ? history : [];
+  const normalizedResults = Array.isArray(results) ? results : [];
+  const lastHistory = [...normalizedHistory].reverse().find((entry) => entry?.result) ?? null;
+  const lastResult = [...normalizedResults].reverse().find((entry) => entry?.result) ?? null;
+  const lastActionType = lastResult?.step?.type ?? lastHistory?.action?.type ?? "";
+
+  if (!lastHistory && !lastResult) {
+    return {
+      ok: true,
+      summary: decision.doneSummary ?? "No browser mutation was needed; the planner judged the current page state sufficient."
+    };
+  }
+  if (lastHistory?.result?.approvalRequired || lastHistory?.result?.ok === false || lastResult?.result?.ok === false) {
+    return {
+      ok: false,
+      nextHumanAction: "Review the blocker, approve only if appropriate, retarget the action, or delegate the issue.",
+      uncertainty: "The planner attempted to finish after a blocked or failed browser action."
+    };
+  }
+  if (lastHistory?.result?.verificationChanged === false) {
+    return {
+      ok: false,
+      nextHumanAction: "Reread the page, verify the requested outcome is visibly satisfied, or retarget the action before marking the task complete.",
+      uncertainty: "The previous browser action reported success but no visible page-state change, so completion is not proven."
+    };
+  }
+  if (lastHistory?.result?.verificationChanged === true) {
+    return {
+      ok: true,
+      summary: decision.doneSummary ?? "The latest browser action produced a verified visible page-state change."
+    };
+  }
+  if (["read", "forms", "list_tabs"].includes(lastActionType)) {
+    return {
+      ok: true,
+      summary: decision.doneSummary ?? "The task completed through read-only browser evidence."
+    };
+  }
+  return {
+    ok: true,
+    summary: decision.doneSummary ?? "The observed page state satisfies the goal."
+  };
+}
+
+function canRetryPageStateVerification(step = {}, result = {}, verification = {}) {
+  return Boolean(result?.ok) &&
+    verification?.changed === false &&
+    ["click", "type", "open", "search", "switch_tab"].includes(step?.type);
+}
+
+function visibleLabel(item = {}) {
+  return String(item.text || item.label || item.name || item.placeholder || item.ref || "").replace(/\s+/g, " ").trim();
+}
+
+function visibleRefLabel(item = {}) {
+  const label = visibleLabel(item);
+  const ref = item.ref ? `#${item.ref}` : "";
+  return [label, ref].filter(Boolean).join(" ");
+}
+
+function relevantVisibleItems(items = [], target = "") {
+  const needle = String(target ?? "").toLowerCase().trim();
+  const normalized = Array.isArray(items) ? items : [];
+  const visible = normalized
+    .map((item) => ({ item, label: visibleRefLabel(item) }))
+    .filter(({ label }) => label);
+  if (!needle) return visible.slice(0, 5);
+  const exact = visible.filter(({ label }) => label.toLowerCase().includes(needle) || needle.includes(label.toLowerCase()));
+  return (exact.length ? exact : visible).slice(0, 5);
+}
+
+function targetCandidateLabel(candidate = {}) {
+  return [
+    visibleRefLabel(candidate),
+    candidate.tagName ? `tag:${candidate.tagName}` : "",
+    candidate.fieldKind ? `kind:${candidate.fieldKind}` : "",
+    candidate.approvalRequired ? "approval-required" : ""
+  ].filter(Boolean).join(" · ");
+}
+
+function targetCandidatesFromResult(result = {}) {
+  return Array.isArray(result?.candidates)
+    ? result.candidates
+      .map((candidate) => ({
+        approvalRequired: Boolean(candidate.approvalRequired),
+        fieldKind: candidate.fieldKind ? String(candidate.fieldKind).slice(0, 80) : "",
+        label: visibleLabel(candidate).slice(0, 160),
+        ref: candidate.ref ? String(candidate.ref).slice(0, 80) : "",
+        tagName: candidate.tagName ? String(candidate.tagName).slice(0, 40) : ""
+      }))
+      .filter((candidate) => candidate.ref || candidate.label)
+      .slice(0, 8)
+    : [];
+}
+
+function exactVisibleClickCandidates(snapshot = null, text = "") {
+  const needle = String(text ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  if (!needle) return [];
+  return (Array.isArray(snapshot?.controls) ? snapshot.controls : [])
+    .map((item) => ({ item, label: visibleLabel(item) }))
+    .filter(({ item, label }) => item?.ref && label && label.toLowerCase() === needle);
+}
+
+function preciseRefRetryStep({ boundary, result = {}, snapshot = null, step = {}, verification = {} } = {}) {
+  if (boundary !== "safe" || !result?.ok || verification?.changed !== false || step?.type !== "click" || step?.ref) {
+    return null;
+  }
+  const candidates = exactVisibleClickCandidates(snapshot, step.text);
+  if (candidates.length !== 1) return null;
+  const ref = candidates[0].item.ref;
+  if (!ref) return null;
+  return {
+    ...step,
+    ref,
+    retryOf: browserActionSignature(step),
+    retryStrategy: "precise-ref-retry"
+  };
+}
+
+function recoveryOptionsForStep({ snapshot = null, step = {}, result = {}, verification = {} } = {}) {
+  const controls = Array.isArray(snapshot?.controls) ? snapshot.controls : [];
+  const fields = Array.isArray(snapshot?.fields) ? snapshot.fields : [];
+  const targetText = step?.text || step?.target || step?.field || step?.ref || "";
+  const options = [];
+  const resultCandidates = targetCandidatesFromResult(result);
+
+  if (result?.ambiguousTarget && resultCandidates.length) {
+    options.push(`Ambiguous target candidates: ${resultCandidates.map(targetCandidateLabel).join("; ")}.`);
+    options.push("Retry with one exact visible ref from the candidate list instead of repeating the label.");
+  }
+  if (verification?.changed === false) {
+    options.push("First verify whether the page already satisfies the goal; if not, wait for page state, scroll to reveal hidden controls, or choose a more precise visible ref before retrying.");
+  }
+  if (result?.ok === false) {
+    options.push("Reread the page and retarget from current visible controls instead of repeating the failed action blindly.");
+  }
+  if (step?.type === "click") {
+    const candidates = relevantVisibleItems(controls, targetText);
+    if (candidates.length) {
+      options.push(`Potential click targets now visible: ${candidates.map(({ label }) => label).join("; ")}.`);
+    } else {
+      options.push("No matching visible click target was found in the latest page snapshot; ask the human to expose the control or provide its exact label.");
+    }
+  }
+  if (step?.type === "type") {
+    const candidates = relevantVisibleItems(fields, step?.field || step?.ref || "");
+    if (candidates.length) {
+      options.push(`Potential editable fields now visible: ${candidates.map(({ label }) => label).join("; ")}.`);
+    } else {
+      options.push("No matching editable field was found in the latest page snapshot; ask the human to focus the field or provide its exact label.");
+    }
+  }
+  if (!options.length && (step?.type === "open" || step?.type === "search")) {
+    options.push("If navigation/search did not reveal the expected page, read the current page, check the URL/title, then search with a narrower query before acting.");
+  }
+
+  return [...new Set(options)].slice(0, 4);
+}
+
+function strategyDetails(decision = {}) {
+  return {
+    strategyPhase: decision.strategyPhase ?? null,
+    strategyRationale: decision.strategyRationale ?? null,
+    completionCheck: decision.completionCheck ?? null,
+    scenarioName: decision.scenarioName ?? null,
+    preferredProbes: Array.isArray(decision.preferredProbes) ? decision.preferredProbes : [],
+    successSignals: Array.isArray(decision.successSignals) ? decision.successSignals : [],
+    stopConditions: Array.isArray(decision.stopConditions) ? decision.stopConditions : []
+  };
+}
+
 function browserActionSignature(action = {}) {
   if (!action || typeof action !== "object") return "";
   return JSON.stringify({
@@ -173,6 +351,64 @@ export function createAgentControlRunner(deps) {
           setActivity("thinking", decision.thought, decision.action ? controlStepLabel(decision.action) : decision.status);
         }
         if (decision.status === "done") {
+          const completionEvidence = completionEvidenceForDoneDecision({ decision, history, results });
+          if (!completionEvidence.ok) {
+            const blockedStep = {
+              type: "verify_completion",
+              label: "Verify task completion"
+            };
+            const stepIndex = appendControlStep(blockedStep);
+            updateControlStep(stepIndex, "blocked", "completion not proven", {
+              phase: "blocked",
+              observation: {
+                title: snapshot?.title ?? null,
+                url: snapshot?.url ?? null
+              },
+              decision: decision.thought ?? null,
+              action: controlStepLabel(blockedStep),
+              result: "completion not proven",
+              safetyClass: "safe",
+              ...strategyDetails(decision),
+              confidence: "low",
+              uncertainty: completionEvidence.uncertainty,
+              nextHumanAction: completionEvidence.nextHumanAction,
+              recoveryOptions: [
+                "Do not mark the task complete until visible page evidence proves the requested outcome.",
+                "Reread the page, inspect the relevant controls or fields, then choose a safe next action or stop with a clear blocker."
+              ]
+            });
+            finishControlRun("blocked");
+            setStatus("Control blocked");
+            setActivity("failed", "Completion not proven", goal);
+            await addMessage(
+              "system",
+              [
+                "Agent Control Mode blocked before completion.",
+                `Goal: ${goal}`,
+                "",
+                completionEvidence.uncertainty,
+                completionEvidence.nextHumanAction
+              ].filter(Boolean).join("\n")
+            );
+            const reportResults = [
+              ...results,
+              {
+                step: blockedStep,
+                result: {
+                  error: "completion not proven",
+                  ok: false
+                }
+              }
+            ];
+            const archiveResult = await saveControlReportToArchive(reportResults, "blocked-completion-unverified");
+            if (archiveResult?.path) {
+              const artifacts = [...(getCurrentControlRun()?.artifacts ?? []), { type: "archive-intake", path: archiveResult.path }];
+              updateControlRunArtifacts(artifacts);
+              renderControlMonitor();
+              await updateBrowserJob(getCurrentControlRun()?.id, { artifacts });
+            }
+            return { ok: false, results, completionUnverified: true };
+          }
           const archiveResult = await saveControlReportToArchive(results, "completed");
           const artifact = archiveResult?.path ? { type: "archive-intake", path: archiveResult.path } : null;
           finishControlRun("completed", artifact);
@@ -182,7 +418,7 @@ export function createAgentControlRunner(deps) {
               "Agent Control Mode completed.",
               `Goal: ${goal}`,
               "",
-              decision.doneSummary ?? "The observed page state satisfies the goal.",
+              completionEvidence.summary,
               "",
               "Completed actions:",
               ...(results.length ? results.map(({ step }, index) => `${index + 1}. ${controlStepLabel(step)}`) : ["- No browser mutation was needed."])
@@ -213,6 +449,12 @@ export function createAgentControlRunner(deps) {
         const repeatedNoChange = repeatedNoChangeActionEvidence(history, step);
         if (repeatedNoChange) {
           const stepIndex = appendControlStep(step);
+          const blockedResult = {
+            approvalRequired: false,
+            error: repeatedNoChange.reason,
+            ok: false,
+            repeatNoChangePrevented: true
+          };
           updateControlStep(stepIndex, "blocked", "repeat no-change action prevented", {
             phase: "blocked",
             observation: {
@@ -223,16 +465,17 @@ export function createAgentControlRunner(deps) {
             action: controlStepLabel(step),
             result: "repeat no-change action prevented",
             safetyClass: approvalBoundaryForStep(step),
+            ...strategyDetails(decision),
             confidence: "low",
             uncertainty: repeatedNoChange.reason,
-            nextHumanAction: repeatedNoChange.nextHumanAction
+            nextHumanAction: repeatedNoChange.nextHumanAction,
+            recoveryOptions: recoveryOptionsForStep({
+              snapshot,
+              step,
+              result: blockedResult,
+              verification: { changed: false }
+            })
           });
-          const blockedResult = {
-            approvalRequired: false,
-            error: repeatedNoChange.reason,
-            ok: false,
-            repeatNoChangePrevented: true
-          };
           results.push({ step, result: blockedResult });
           history.push({
             action: step,
@@ -272,6 +515,7 @@ export function createAgentControlRunner(deps) {
           decision: decision.thought ?? null,
           action: controlStepLabel(step),
           safetyClass: approvalBoundaryForStep(step),
+          ...strategyDetails(decision),
           ...controlStepEvidence({
             boundary: approvalBoundaryForStep(step),
             decision
@@ -294,54 +538,111 @@ export function createAgentControlRunner(deps) {
           : null;
         const finalStep = consent ? { ...step, userApproved: true } : step;
         const finalResult = consent ? await executeControlStep(finalStep) : result;
-        const finalVerification = consent
+        let postActionSnapshot = verificationSnapshot;
+        let finalVerification = consent
           ? verifyBrowserAction({
-            after: await deps.observeControlPage().catch(() => verificationSnapshot),
+            after: (postActionSnapshot = await deps.observeControlPage().catch(() => verificationSnapshot)),
             before: verificationSnapshot ?? snapshot,
             result: finalResult,
             step: finalStep
           })
           : verification;
-        results.push({ step: finalStep, result: finalResult });
-        history.push({
-          action: finalStep,
-          result: {
-            ok: Boolean(finalResult?.ok),
-            approvalRequired: Boolean(finalResult?.approvalRequired),
-            error: finalResult?.error ?? null,
-            clickedText: finalResult?.clickedText ?? null,
-            typedText: finalResult?.typedText ?? null,
-            url: finalResult?.url ?? null,
-            query: finalResult?.query ?? null,
+        let verificationRetry = null;
+        if (canRetryPageStateVerification(finalStep, finalResult, finalVerification)) {
+          verificationRetry = "settle-reread";
+          await setPageControlOverlay(true, "Rechecking page state...", "verifying");
+          await sleep(650);
+          const settledSnapshot = await deps.observeControlPage().catch(() => null);
+          postActionSnapshot = settledSnapshot ?? postActionSnapshot;
+          const settledVerification = verifyBrowserAction({
+            after: postActionSnapshot,
+            before: snapshot,
+            result: finalResult,
+            step: finalStep
+          });
+          finalVerification = settledVerification.changed === true
+            ? settledVerification
+            : { ...finalVerification, retry: verificationRetry };
+        }
+        let executedStep = finalStep;
+        let executedResult = finalResult;
+        let actionRetry = null;
+        const retryStep = preciseRefRetryStep({
+          boundary,
+          result: finalResult,
+          snapshot: postActionSnapshot ?? getLastSnapshot() ?? snapshot,
+          step: finalStep,
+          verification: finalVerification
+        });
+        if (retryStep) {
+          actionRetry = retryStep.retryStrategy;
+          await setPageControlOverlay(true, "Retrying with precise visible target...", "clicking");
+          executedStep = retryStep;
+          executedResult = await executeControlStep(retryStep);
+          await setPageControlOverlay(true, "Verifying retry...", "verifying");
+          const retrySnapshot = await deps.observeControlPage().catch(() => postActionSnapshot);
+          postActionSnapshot = retrySnapshot ?? postActionSnapshot;
+          finalVerification = verifyBrowserAction({
+            after: postActionSnapshot,
+            before: snapshot,
+            result: executedResult,
+            step: retryStep
+          });
+        }
+        results.push({ step: executedStep, result: executedResult });
+          history.push({
+            action: executedStep,
+            result: {
+              ok: Boolean(executedResult?.ok),
+              actionRetry,
+              ambiguousTarget: Boolean(executedResult?.ambiguousTarget),
+              approvalRequired: Boolean(executedResult?.approvalRequired),
+              candidates: targetCandidatesFromResult(executedResult),
+              error: executedResult?.error ?? null,
+              clickedText: executedResult?.clickedText ?? null,
+            typedText: executedResult?.typedText ?? null,
+            url: executedResult?.url ?? null,
+            query: executedResult?.query ?? null,
             taskConsent: consent ? `${consent.siteKey}::${consent.taskClass}` : null,
-            verificationChanged: finalVerification.changed
+            verificationChanged: finalVerification.changed,
+            verificationRetry,
           },
           observation: {
-            title: verificationSnapshot?.title ?? getLastSnapshot()?.title ?? snapshot?.title ?? null,
-            url: verificationSnapshot?.url ?? getLastSnapshot()?.url ?? snapshot?.url ?? null
+            title: postActionSnapshot?.title ?? getLastSnapshot()?.title ?? snapshot?.title ?? null,
+            url: postActionSnapshot?.url ?? getLastSnapshot()?.url ?? snapshot?.url ?? null
           }
         });
-        if (!finalResult?.ok) {
-          const canRequestHumanApproval = finalResult?.approvalRequired && boundary === "public-submit";
+        if (!executedResult?.ok) {
+          const canRequestHumanApproval = executedResult?.approvalRequired && boundary === "public-submit";
           const status = canRequestHumanApproval ? "approval" : "blocked";
-          const reason = finalResult?.approvalRequired
+          const reason = executedResult?.approvalRequired
             ? "Stopped because this step requires human approval."
-            : `Stopped because this step failed: ${finalResult?.error ?? "unknown error"}`;
-          updateControlStep(stepIndex, finalResult?.approvalRequired ? "blocked" : "failed", controlResultSummary(finalResult), {
-            phase: finalResult?.approvalRequired ? "waiting-for-human" : "blocked",
+            : `Stopped because this step failed: ${executedResult?.error ?? "unknown error"}`;
+          updateControlStep(stepIndex, executedResult?.approvalRequired ? "blocked" : "failed", controlResultSummary(executedResult), {
+            phase: executedResult?.approvalRequired ? "waiting-for-human" : "blocked",
             observation: {
               title: getLastSnapshot()?.title ?? snapshot?.title ?? null,
               url: getLastSnapshot()?.url ?? snapshot?.url ?? null
             },
             decision: decision.thought ?? null,
-            action: controlStepLabel(finalStep),
-            result: controlResultSummary(finalResult),
+            action: controlStepLabel(executedStep),
+            actionRetry,
+            ambiguousTarget: Boolean(executedResult?.ambiguousTarget),
+            targetCandidates: targetCandidatesFromResult(executedResult),
+            result: controlResultSummary(executedResult),
             safetyClass: boundary,
+            ...strategyDetails(decision),
             ...controlStepEvidence({
               boundary,
               decision,
-              result: finalResult,
+              result: executedResult,
               status
+            }),
+            recoveryOptions: recoveryOptionsForStep({
+              snapshot: getLastSnapshot() ?? postActionSnapshot ?? snapshot,
+              step: executedStep,
+              result: executedResult,
+              verification: finalVerification
             })
           });
           finishControlRun(status);
@@ -352,7 +653,7 @@ export function createAgentControlRunner(deps) {
             setPendingApproval({
               step: { ...step },
               stepIndex,
-              reason: finalResult?.error ?? "This browser action requires human approval.",
+              reason: executedResult?.error ?? "This browser action requires human approval.",
               results,
               history
             });
@@ -365,24 +666,34 @@ export function createAgentControlRunner(deps) {
             renderControlMonitor();
             await updateBrowserJob(getCurrentControlRun()?.id, { artifacts });
           }
-          return { ok: false, results, approvalRequired: Boolean(finalResult?.approvalRequired) };
+          return { ok: false, results, approvalRequired: Boolean(executedResult?.approvalRequired) };
         }
-        updateControlStep(stepIndex, "completed", consent ? `trusted task consent · ${controlResultSummary(finalResult)}` : controlResultSummary(finalResult), {
+        updateControlStep(stepIndex, "completed", consent ? `trusted task consent · ${controlResultSummary(executedResult)}` : controlResultSummary(executedResult), {
           phase: "verified",
           observation: {
-            title: verificationSnapshot?.title ?? getLastSnapshot()?.title ?? snapshot?.title ?? null,
-            url: verificationSnapshot?.url ?? getLastSnapshot()?.url ?? snapshot?.url ?? null
+            title: postActionSnapshot?.title ?? getLastSnapshot()?.title ?? snapshot?.title ?? null,
+            url: postActionSnapshot?.url ?? getLastSnapshot()?.url ?? snapshot?.url ?? null
           },
           decision: decision.thought ?? null,
-          action: controlStepLabel(finalStep),
-          result: controlResultSummary(finalResult),
+          action: controlStepLabel(executedStep),
+          actionRetry,
+          result: controlResultSummary(executedResult),
           safetyClass: boundary,
+          ...strategyDetails(decision),
           ...controlStepEvidence({
             boundary,
             decision,
-            result: finalResult
+            result: executedResult
           }),
-          uncertainty: finalVerification.uncertainty ?? null
+          uncertainty: finalVerification.uncertainty ?? null,
+          verificationChanged: finalVerification.changed,
+          verificationRetry,
+          recoveryOptions: recoveryOptionsForStep({
+            snapshot: postActionSnapshot ?? getLastSnapshot() ?? snapshot,
+            step: executedStep,
+            result: executedResult,
+            verification: finalVerification
+          })
         });
         await sleep(350);
       }
@@ -467,6 +778,7 @@ export function createAgentControlRunner(deps) {
       phase: "acting",
       decision: "Human approved this action once.",
       action: controlStepLabel(step),
+      approvalDecision: "approved-once",
       safetyClass: approvalBoundaryForStep(step),
       confidence: "medium",
       uncertainty: "Human approval was required before this step could run."
@@ -482,6 +794,7 @@ export function createAgentControlRunner(deps) {
         },
         decision: "Human approved this action once, but the host still could not complete it safely.",
         action: controlStepLabel(step),
+        approvalDecision: "approved-once",
         result: controlResultSummary(result),
         safetyClass: approvalBoundaryForStep(step, result?.error),
         ...controlStepEvidence({
@@ -506,6 +819,7 @@ export function createAgentControlRunner(deps) {
       },
       decision: "Human approved this action once.",
       action: controlStepLabel(step),
+      approvalDecision: "approved-once",
       result: controlResultSummary(result),
       safetyClass: approvalBoundaryForStep(step, result?.error),
       confidence: "medium",
@@ -543,6 +857,7 @@ export function createAgentControlRunner(deps) {
       phase: "blocked",
       decision: "Human denied this browser action.",
       action: controlStepLabel(denied.step),
+      approvalDecision: "denied",
       result: "denied by human",
       safetyClass: approvalBoundaryForStep(denied.step, denied.reason),
       confidence: "high",
@@ -554,7 +869,16 @@ export function createAgentControlRunner(deps) {
     setStatus("Denied");
     setActivity("failed", "Approval denied", controlStepLabel(denied.step));
     await addMessage("system", `Denied browser action: ${controlStepLabel(denied.step)}. The task remains stopped.`);
-    await saveControlReportToArchive(denied.results, "denied");
+    await saveControlReportToArchive([
+      ...(Array.isArray(denied.results) ? denied.results : []),
+      {
+        step: denied.step,
+        result: {
+          error: "denied by human",
+          ok: false
+        }
+      }
+    ], "denied");
   }
 
   return {

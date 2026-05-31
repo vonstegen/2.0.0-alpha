@@ -7,8 +7,11 @@ import { fileURLToPath } from "node:url";
 import { summarizeBrowserLaunchLog } from "../browser-first/host/browser-launch-diagnostics.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const logPath = process.argv[2]
-  ? path.resolve(process.argv[2])
+const args = process.argv.slice(2);
+const strict = args.includes("--strict");
+const logArg = args.find((arg) => arg !== "--strict");
+const logPath = logArg
+  ? path.resolve(logArg)
   : path.join(repoRoot, "logs", "browser-first-installed-app.log");
 
 const logContent = await readFile(logPath, "utf8").catch((error) => {
@@ -22,8 +25,12 @@ const logContent = await readFile(logPath, "utf8").catch((error) => {
 });
 
 if (logContent) {
-  console.log(JSON.stringify({
+  const summary = {
     logPath,
     ...summarizeBrowserLaunchLog(logContent),
-  }, null, 2));
+  };
+  console.log(JSON.stringify(summary, null, 2));
+  if (strict && summary.status !== "ready") {
+    process.exitCode = 2;
+  }
 }

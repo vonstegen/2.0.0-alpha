@@ -19,6 +19,10 @@
 #include <unistd.h>
 #endif
 
+#if defined(__APPLE__)
+extern "C" void resonant_browser_native_install_appkit_menu();
+#endif
+
 #include "include/cef_app.h"
 #include "include/cef_browser.h"
 #include "include/cef_client.h"
@@ -255,16 +259,73 @@ class ContextMenuSmokeClickTask final : public CefTask {
   DISALLOW_COPY_AND_ASSIGN(ContextMenuSmokeClickTask);
 };
 
-bool IsPrimaryBrowserShortcut(const CefKeyEvent& event) {
+bool HasPrimaryBrowserShortcutModifier(const CefKeyEvent& event) {
   if (event.type != KEYEVENT_RAWKEYDOWN) {
     return false;
   }
   const bool primary_modifier =
       (event.modifiers & EVENTFLAG_COMMAND_DOWN) != 0 ||
       (event.modifiers & EVENTFLAG_CONTROL_DOWN) != 0;
-  return primary_modifier &&
-         (event.modifiers & EVENTFLAG_ALT_DOWN) == 0 &&
-         (event.modifiers & EVENTFLAG_SHIFT_DOWN) == 0;
+  return primary_modifier && (event.modifiers & EVENTFLAG_ALT_DOWN) == 0;
+}
+
+std::string BrowserCommandForPrimaryShortcut(int key_code, bool shift_down) {
+  if (shift_down) {
+    switch (key_code) {
+      case 'T':
+      case 't':
+        return "reopen_closed_tab";
+      case 'N':
+      case 'n':
+        return "new_incognito_window";
+      case 'W':
+      case 'w':
+        return "close_window";
+      case 'G':
+      case 'g':
+        return "find_previous";
+      case '[':
+        return "previous_tab";
+      case ']':
+        return "next_tab";
+      default:
+        return "";
+    }
+  }
+
+  switch (key_code) {
+    case 'T':
+    case 't':
+      return "new_tab";
+    case 'W':
+    case 'w':
+      return "close_tab";
+    case 'Q':
+    case 'q':
+      return "quit";
+    case 'L':
+    case 'l':
+      return "focus_address_bar";
+    case 'R':
+    case 'r':
+      return "reload";
+    case '[':
+      return "back";
+    case ']':
+      return "forward";
+    case 'F':
+    case 'f':
+      return "find";
+    case '0':
+      return "zoom_reset";
+    case '+':
+    case '=':
+      return "zoom_in";
+    case '-':
+      return "zoom_out";
+    default:
+      return "";
+  }
 }
 
 class ResonantBrowserClient final : public CefClient,
@@ -303,27 +364,16 @@ class ResonantBrowserClient final : public CefClient,
                      bool* is_keyboard_shortcut) override {
     CEF_REQUIRE_UI_THREAD();
     (void)os_event;
-    if (!IsPrimaryBrowserShortcut(event)) {
+    if (!HasPrimaryBrowserShortcutModifier(event)) {
       return false;
     }
 
-    const int key_code = event.windows_key_code;
     active_browser_ = browser;
-    if (key_code == 'T' || key_code == 't') {
+    const bool shift_down = (event.modifiers & EVENTFLAG_SHIFT_DOWN) != 0;
+    const std::string command = BrowserCommandForPrimaryShortcut(event.windows_key_code, shift_down);
+    if (!command.empty()) {
       MarkKeyboardShortcut(is_keyboard_shortcut);
-      OpenNewBrowserSurface();
-      return true;
-    }
-    if (key_code == 'W' || key_code == 'w') {
-      MarkKeyboardShortcut(is_keyboard_shortcut);
-      if (browser) {
-        browser->GetHost()->CloseBrowser(false);
-      }
-      return true;
-    }
-    if (key_code == 'Q' || key_code == 'q') {
-      MarkKeyboardShortcut(is_keyboard_shortcut);
-      CloseAllBrowserSurfaces();
+      ExecuteNativeMenuCommand(command);
       return true;
     }
     return false;
@@ -482,6 +532,14 @@ class ResonantBrowserClient final : public CefClient,
           std::cout << "{\"event\":\"browser.native.menu_command.invoke\","
                     << "\"command\":\"" << JsonEscape(menu_command_) << "\"}" << std::endl;
           ExecuteNativeMenuCommand(menu_command_);
+          if (menu_command_ == "focus_address_bar") {
+            quit_requested_ = true;
+            std::cout << "{\"event\":\"browser.native.menu_command.result\","
+                      << "\"command\":\"" << JsonEscape(menu_command_) << "\","
+                      << "\"url\":\"" << JsonEscape(loaded_url) << "\"}" << std::endl;
+            std::cout.flush();
+            std::exit(0);
+          }
           return;
         }
         if (!quit_requested_) {
@@ -786,6 +844,10 @@ class ResonantBrowserClient final : public CefClient,
       if (browser) {
         browser->GetHost()->CloseBrowser(false);
       }
+      return;
+    }
+    if (command == "quit") {
+      CloseAllBrowserSurfaces();
       return;
     }
     if (!browser) {
@@ -1311,6 +1373,14 @@ int resonant_browser_native_cef_main(int argc, char* argv[]) {
     return 1;
   }
   std::cout << "{\"event\":\"browser.native.cef_initialize_ok\"}" << std::endl;
+
+#if defined(__APPLE__)
+  // Intent citation: docs/architecture/ADR-037-browser-first-chromium-resonantos.md
+  // CEF Chrome Runtime can touch AppKit menu state during initialization.
+  // Reassert the native browser menu after CefInitialize so the installed app
+  // exposes standard browser menus instead of only the application menu.
+  resonant_browser_native_install_appkit_menu();
+#endif
 
   resonantos::PrintProbeContract();
 

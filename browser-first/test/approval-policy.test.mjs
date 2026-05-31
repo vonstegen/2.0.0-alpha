@@ -59,5 +59,23 @@ test("approval policy sanitizes planner plans and next-action decisions", () => 
   assert.deepEqual(sanitizePlannerPlan({ needsApproval: true, approvalReason: "Wallet action" }).steps, []);
   assert.equal(sanitizeNextActionDecision({ status: "done", thought: "finished" }).doneSummary, "finished");
   assert.equal(sanitizeNextActionDecision({ status: "blocked", thought: "unsafe" }).approvalReason, "unsafe");
-  assert.equal(sanitizeNextActionDecision({ status: "continue", action: { type: "scroll", direction: "sideways" } }).action.direction, "down");
+  const decision = sanitizeNextActionDecision({
+    status: "continue",
+    action: { type: "scroll", direction: "sideways" },
+    strategyPhase: "Read first",
+    strategyRationale: "Use page-work runbook",
+    completionCheck: "Visible page proves progress",
+    scenarioName: "Generic page control",
+    preferredProbes: ["Read page title", ""],
+    successSignals: ["URL matches goal"],
+    stopConditions: ["Wallet action required"]
+  });
+  assert.equal(decision.action.direction, "down");
+  assert.equal(decision.strategyPhase, "Read first");
+  assert.equal(decision.strategyRationale, "Use page-work runbook");
+  assert.equal(decision.completionCheck, "Visible page proves progress");
+  assert.equal(decision.scenarioName, "Generic page control");
+  assert.deepEqual(decision.preferredProbes, ["Read page title"]);
+  assert.deepEqual(decision.successSignals, ["URL matches goal"]);
+  assert.deepEqual(decision.stopConditions, ["Wallet action required"]);
 });

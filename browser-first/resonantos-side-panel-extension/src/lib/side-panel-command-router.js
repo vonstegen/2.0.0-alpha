@@ -20,10 +20,12 @@ export function createSidePanelCommandRouter(handlers) {
       const name = slash[1].toLowerCase();
       const body = (slash[2] ?? "").trim();
       if (name === "goal") return handlers.runGoalCommand(body);
+      if (name === "hermes" && /^(?:status|health|runtime)?$/i.test(body)) return handlers.runHermesStatusCommand();
       if (name === "hermes") return handlers.runDelegateCommand(`hermes ${body}`);
       if (name === "email") return handlers.runDraftAddonCommand("email", body);
       if (name === "calendar") return handlers.runDraftAddonCommand("calendar", body);
       if (name === "delegate") return handlers.runDelegateCommand(body);
+      if (name === "delegations" || name === "handoffs") return handlers.runDelegationsCommand(body);
       if (name === "status") return handlers.runStatusCommand();
       if (name === "site") return handlers.runSitePermissionCommand(body);
       if (name === "memory") return handlers.runMemorySearchCommand(body);

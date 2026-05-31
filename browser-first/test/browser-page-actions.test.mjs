@@ -261,25 +261,36 @@ test("browser page actions prepare DAO workflow guidance without wallet automati
     lastSnapshot: {
       title: "DAO Vote",
       url: "https://dao.example/vote",
-      text: "Vote on proposal 12.",
+      text: "Vote on proposal 12. Quorum threshold is 4%. Treasury transfer is 10 SOL. Deadline closes Friday.",
       controls: [
         { ref: "r1", text: "Connect Wallet", tagName: "button" },
         { ref: "r2", text: "Vote For", tagName: "button" },
-        { ref: "r3", text: "Open details", tagName: "button" }
+        { ref: "r3", text: "Open details", tagName: "button" },
+        { ref: "r4", text: "Execute Proposal", tagName: "button" },
+        { ref: "r5", text: "Abstain", tagName: "button" }
       ],
-      fields: [{ ref: "f1", label: "Delegate vote reason", kind: "document-edit" }]
+      fields: [
+        { ref: "f1", label: "Delegate vote reason", kind: "document-edit" },
+        { ref: "f2", label: "Treasury recipient", kind: "text" }
+      ]
     }
   });
 
   const result = await harness.actions.prepareDaoWorkflowGuidance("review proposal 12");
 
   assert.equal(result.ok, true);
-  assert.equal(result.controls, 2);
+  assert.equal(result.controls, 4);
+  assert.equal(result.fields, 2);
   const message = harness.events.find((event) => event[0] === "message" && /DAO workflow helper/.test(event[2]))?.[2] ?? "";
   assert.match(message, /Goal: review proposal 12/);
   assert.match(message, /Connect Wallet · ref r1/);
   assert.match(message, /Vote For · ref r2/);
+  assert.match(message, /Execute Proposal · ref r4/);
+  assert.match(message, /Abstain · ref r5/);
+  assert.match(message, /Treasury recipient · ref f2/);
   assert.match(message, /\/wallet status/);
+  assert.match(message, /Risk checklist:/);
+  assert.match(message, /proposal id\/title, voting choice, quorum\/threshold, treasury or token amounts/);
   assert.match(message, /Human completes wallet connect, signature, vote, transaction, or public submission manually/);
   assert.match(message, /will not click wallet connect, sign, vote, submit, transfer, or transaction confirmation/);
 });
@@ -289,13 +300,18 @@ test("browser page actions save wallet and DAO audit evidence to reviewed intake
     lastSnapshot: {
       title: "DAO Vote",
       url: "https://dao.example/vote",
-      text: "Vote on proposal 12.",
+      text: "Vote on proposal 12. Quorum threshold is 4%. Treasury transfer is 10 SOL. Deadline closes Friday.",
       controls: [
         { ref: "r1", text: "Connect Wallet", tagName: "button" },
         { ref: "r2", text: "Vote For", tagName: "button" },
-        { ref: "r3", text: "Open details", tagName: "button" }
+        { ref: "r3", text: "Open details", tagName: "button" },
+        { ref: "r4", text: "Queue Transaction", tagName: "button" },
+        { ref: "r5", text: "Against", tagName: "button" }
       ],
-      fields: [{ ref: "f1", label: "Delegate vote reason", kind: "document-edit" }]
+      fields: [
+        { ref: "f1", label: "Delegate vote reason", kind: "document-edit" },
+        { ref: "f2", label: "Treasury recipient", kind: "text" }
+      ]
     },
     bridgeRequest: async (route) => route === "/archive/intake"
       ? { path: "INTAKE/browser/wallet-dao-audit.md", bytes: 120 }
@@ -323,8 +339,8 @@ test("browser page actions save wallet and DAO audit evidence to reviewed intake
   assert.equal(result.ok, true);
   assert.equal(result.path, "INTAKE/browser/wallet-dao-audit.md");
   assert.equal(result.reviewRequestPath, "REVIEW/requests/wallet-dao-audit.md");
-  assert.equal(result.controls, 2);
-  assert.equal(result.fields, 1);
+  assert.equal(result.controls, 4);
+  assert.equal(result.fields, 2);
   const bridgeCall = harness.events.find((event) => event[0] === "bridge" && event[1] === "/archive/intake");
   assert.equal(bridgeCall[2].body.origin, "browser-wallet-dao-audit");
   assert.equal(bridgeCall[2].body.url, "https://dao.example/vote");
@@ -334,6 +350,13 @@ test("browser page actions save wallet and DAO audit evidence to reviewed intake
   assert.match(bridgeCall[2].body.content, /Phantom Solana: available, not connected/);
   assert.match(bridgeCall[2].body.content, /Connect Wallet · ref r1/);
   assert.match(bridgeCall[2].body.content, /Vote For · ref r2/);
+  assert.match(bridgeCall[2].body.content, /Queue Transaction · ref r4/);
+  assert.match(bridgeCall[2].body.content, /Against · ref r5/);
+  assert.match(bridgeCall[2].body.content, /Treasury recipient · ref f2/);
+  assert.match(bridgeCall[2].body.content, /## DAO Risk Checklist/);
+  assert.match(bridgeCall[2].body.content, /quorum: Quorum threshold is 4%/);
+  assert.match(bridgeCall[2].body.content, /treasury: Treasury transfer is 10 SOL/);
+  assert.match(bridgeCall[2].body.content, /deadline: Deadline closes Friday/);
   assert.match(bridgeCall[2].body.content, /ResonantOS did not request wallet connection/);
   assert.doesNotMatch(bridgeCall[2].body.content, /connect\(|signMessage|signTransaction|signAndSendTransaction/i);
   const reviewCall = harness.events.find((event) => event[0] === "bridge" && event[1] === "/archive/review/request");
@@ -355,6 +378,7 @@ test("browser page actions summarize current page into reviewed archive intake",
     bridgeRequest: async (route, options) => {
       if (route === "/augmentor/chat") {
         assert.equal(options.body.model, "MiniMax-M2.7");
+        assert.equal(options.body.surface, "archive-intake");
         assert.match(options.body.pageContext, /Summary Page/);
         return { reply: "## Summary\nThe page explains browser-first memory.", model: "MiniMax-M2.7" };
       }

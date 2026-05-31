@@ -52,13 +52,21 @@ const latestPhantomExtensionDir = existsSync(phantomExtensionRoot)
       )
   : "";
 
+function nativeBridgeLiveSkipReason(testName) {
+  if (process.env.CODEX_SANDBOX) {
+    return `${testName} requires an unsandboxed macOS desktop session; Codex sandbox blocks Chromium profile sockets and helper process IPC.`;
+  }
+  if (process.platform !== "darwin" || !existsSync(bridgeDylib) || !existsSync(cefFramework) || !existsSync(helper)) {
+    return "macOS native bridge, CEF framework, and helper app are required for embedded smoke.";
+  }
+  return false;
+}
+
 test(
   "native CEF bridge embeds into a real macOS NSView and loads a page",
   {
     skip:
-      process.platform !== "darwin" || !existsSync(bridgeDylib) || !existsSync(cefFramework) || !existsSync(helper)
-        ? "macOS native bridge, CEF framework, and helper app are required for embedded smoke."
-        : false,
+      nativeBridgeLiveSkipReason("CEF embedded page smoke"),
   },
   async () => {
     const harnessSource = path.join(tmpdir(), "resonant_browser_embed_harness.mm");
@@ -151,9 +159,7 @@ test(
   "native CEF bridge sends click, type, and scroll to the same embedded session",
   {
     skip:
-      process.platform !== "darwin" || !existsSync(bridgeDylib) || !existsSync(cefFramework) || !existsSync(helper)
-        ? "macOS native bridge, CEF framework, and helper app are required for same-session input smoke."
-        : false,
+      nativeBridgeLiveSkipReason("CEF same-session input smoke"),
   },
   async () => {
     const harnessSource = path.join(tmpdir(), "resonant_browser_input_harness.mm");
@@ -293,13 +299,10 @@ test(
   "native CEF bridge loads Phantom into the embedded product session",
   {
     skip:
-      process.platform !== "darwin" ||
-      !existsSync(bridgeDylib) ||
-      !existsSync(cefFramework) ||
-      !existsSync(helper) ||
-      !existsSync(path.join(latestPhantomExtensionDir, "manifest.json"))
+      nativeBridgeLiveSkipReason("CEF Phantom embedded smoke") ||
+      (!existsSync(path.join(latestPhantomExtensionDir, "manifest.json"))
         ? "macOS native bridge, CEF framework, helper app, and local Phantom extension are required."
-        : false,
+        : false),
   },
   async () => {
     const harnessSource = path.join(tmpdir(), "resonant_browser_phantom_embed_harness.mm");

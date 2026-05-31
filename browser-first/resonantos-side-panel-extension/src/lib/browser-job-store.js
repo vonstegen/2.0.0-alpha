@@ -17,6 +17,24 @@ const VALID_PREFLIGHT_DECISION_MODES = [
 function normalizeStepDetails(details) {
   if (!details || typeof details !== "object") return {};
   const confidence = String(details.confidence ?? "").toLowerCase();
+  const normalizeList = (value, max = 5) => Array.isArray(value)
+    ? value.map((entry) => String(entry ?? "").slice(0, 220)).filter(Boolean).slice(0, max)
+    : [];
+  const recoveryOptions = Array.isArray(details.recoveryOptions)
+    ? details.recoveryOptions.map((option) => String(option ?? "").slice(0, 220)).filter(Boolean).slice(0, 4)
+    : [];
+  const targetCandidates = Array.isArray(details.targetCandidates)
+    ? details.targetCandidates
+      .map((candidate) => ({
+        approvalRequired: Boolean(candidate?.approvalRequired),
+        fieldKind: candidate?.fieldKind ? String(candidate.fieldKind).slice(0, 80) : "",
+        label: candidate?.label ? String(candidate.label).slice(0, 160) : "",
+        ref: candidate?.ref ? String(candidate.ref).slice(0, 80) : "",
+        tagName: candidate?.tagName ? String(candidate.tagName).slice(0, 40) : ""
+      }))
+      .filter((candidate) => candidate.ref || candidate.label)
+      .slice(0, 8)
+    : [];
   return {
     phase: details.phase ? String(details.phase).slice(0, 80) : null,
     observation: details.observation && typeof details.observation === "object"
@@ -27,11 +45,25 @@ function normalizeStepDetails(details) {
       : null,
     decision: details.decision ? String(details.decision).slice(0, 500) : null,
     action: details.action ? String(details.action).slice(0, 120) : null,
+    approvalDecision: details.approvalDecision ? String(details.approvalDecision).slice(0, 80) : null,
     result: details.result ? String(details.result).slice(0, 500) : null,
     safetyClass: details.safetyClass ? String(details.safetyClass).slice(0, 80) : null,
+    strategyPhase: details.strategyPhase ? String(details.strategyPhase).slice(0, 300) : null,
+    strategyRationale: details.strategyRationale ? String(details.strategyRationale).slice(0, 500) : null,
+    completionCheck: details.completionCheck ? String(details.completionCheck).slice(0, 500) : null,
+    scenarioName: details.scenarioName ? String(details.scenarioName).slice(0, 160) : null,
+    preferredProbes: normalizeList(details.preferredProbes),
+    successSignals: normalizeList(details.successSignals),
+    stopConditions: normalizeList(details.stopConditions),
     confidence: ["high", "medium", "low"].includes(confidence) ? confidence : null,
     uncertainty: details.uncertainty ? String(details.uncertainty).slice(0, 500) : null,
-    nextHumanAction: details.nextHumanAction ? String(details.nextHumanAction).slice(0, 500) : null
+    ambiguousTarget: Boolean(details.ambiguousTarget),
+    targetCandidates,
+    verificationChanged: typeof details.verificationChanged === "boolean" ? details.verificationChanged : null,
+    verificationRetry: details.verificationRetry ? String(details.verificationRetry).slice(0, 80) : null,
+    actionRetry: details.actionRetry ? String(details.actionRetry).slice(0, 80) : null,
+    nextHumanAction: details.nextHumanAction ? String(details.nextHumanAction).slice(0, 500) : null,
+    recoveryOptions
   };
 }
 
@@ -337,9 +369,10 @@ export function createBrowserJobStore({
       : true;
     compact();
     const storedActiveJobId = String(stored?.[storageKeys.activeBrowserJob] ?? "");
-    activeJobId = jobs.some((job) => job.id === storedActiveJobId)
-      ? storedActiveJobId
-      : jobs.find((job) => isActiveBrowserJobStatus(job.status))?.id ?? null;
+    const storedActiveJob = jobs.find((job) => job.id === storedActiveJobId) ?? null;
+    activeJobId = storedActiveJob && isActiveBrowserJobStatus(storedActiveJob.status)
+      ? storedActiveJob.id
+      : firstActiveJobId() ?? storedActiveJob?.id ?? null;
     return snapshot();
   }
 
@@ -365,6 +398,10 @@ export function createBrowserJobStore({
 
   function getSchedulerState(options = {}) {
     return browserJobSchedulerState(jobs, options);
+  }
+
+  function firstActiveJobId({ excludingJobId = "" } = {}) {
+    return jobs.find((job) => job.id !== excludingJobId && isActiveBrowserJobStatus(job.status))?.id ?? null;
   }
 
   function getStaleJobs(options = {}) {
@@ -439,10 +476,15 @@ export function createBrowserJobStore({
     let updated = null;
     jobs = jobs.map((job) => {
       if (job.id !== jobId) return job;
-      const status = patch.status ?? job.status;
+      const requestedStatus = patch.status ?? job.status;
+      const preserveHumanStop = ["cancelled", "paused"].includes(job.status) &&
+        !["cancelled", "paused"].includes(requestedStatus) &&
+        !patch.allowHumanStopOverride;
+      const status = preserveHumanStop ? job.status : requestedStatus;
       updated = normalizeBrowserJob({
         ...job,
         ...patch,
+        status,
         pageLock: normalizedPatchLock !== undefined
           ? normalizedPatchLock
           : isLockHoldingBrowserJobStatus(status) ? job.pageLock : null,
@@ -451,6 +493,9 @@ export function createBrowserJobStore({
       }, { now });
       return updated;
     });
+    if (updated && activeJobId === jobId && isTerminalBrowserJobStatus(updated.status)) {
+      activeJobId = firstActiveJobId({ excludingJobId: jobId }) ?? activeJobId;
+    }
     await persist();
     return updated;
   }

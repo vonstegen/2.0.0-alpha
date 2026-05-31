@@ -38,6 +38,15 @@ function createHarness(overrides = {}) {
       resultArtifactPath: "BrowserFirst/DelegationArtifacts/hermes/hermes-delegation-a-result.md",
       status: "completed"
     },
+    "/hermes/status": {
+      available: true,
+      command: "~/bin/hermes",
+      dashboard: { running: false, url: "http://127.0.0.1:9119" },
+      executionEnabled: false,
+      mode: "local-hermes-cli-disabled",
+      taskCounts: { queued: 1 },
+      boundary: "Hermes is host-mediated."
+    },
     "/opencode/delegation/start": {
       id: "opencode-delegation-a",
       resultArtifactPath: "BrowserFirst/DelegationArtifacts/opencode/opencode-delegation-a-result.md",
@@ -88,6 +97,7 @@ function createHarness(overrides = {}) {
       return { ok: true, state: { detected: true } };
     },
     finishControlRun: (status) => calls.push(["finish", status]),
+    focusBrowserJob: overrides.focusBrowserJob ?? null,
     getCurrentControlRun: () => overrides.currentControlRun ?? { status: "running" },
     permissionForUrl: async () => "ask-before-action",
     renderJobMonitor: () => calls.push(["renderJobs"]),
@@ -188,6 +198,9 @@ test("app command handlers create governed natural delegations", async () => {
     bridgeResponses: {
       "/addons/delegate": { id: "hermes-a", target: "hermes", path: "/tmp/hermes-task.md" },
       "/hermes/delegation/start": {
+        artifact: {
+          finalSummary: "Hermes identified the settings architecture risk and wrote a reviewable result."
+        },
         id: "hermes-a",
         resultArtifactPath: "BrowserFirst/DelegationArtifacts/hermes/hermes-a-result.md",
         status: "completed"
@@ -211,6 +224,7 @@ test("app command handlers create governed natural delegations", async () => {
   assert.ok(harness.calls.some((call) => call[0] === "message" && /governed task packet/.test(call[2])));
   assert.ok(harness.calls.some((call) => call[0] === "bridge" && call[1] === "/hermes/delegation/start"));
   assert.ok(harness.calls.some((call) => call[0] === "message" && /Hermes execution completed/.test(call[2])));
+  assert.ok(harness.calls.some((call) => call[0] === "message" && /Result: Hermes identified the settings architecture risk/.test(call[2])));
 });
 
 test("app command handlers ask for target when natural delegation is underspecified", async () => {
@@ -249,6 +263,51 @@ test("app command handlers create goals and delegations", async () => {
   assert.ok(harness.calls.some((call) => call[0] === "bridge" && call[1] === "/addons/delegate" && call[2].target === "hermes"));
   assert.ok(harness.calls.some((call) => call[0] === "bridge" && call[1] === "/opencode/delegation/start"));
   assert.ok(harness.calls.some((call) => call[0] === "message" && /Goal workspace recorded/.test(call[2])));
+});
+
+test("app command handlers reject vague delegation before creating packets", async () => {
+  const harness = createHarness();
+
+  await harness.handlers.runDelegateCommand("hermes");
+  await harness.handlers.runDelegateCommand("opencode fix");
+
+  assert.equal(harness.calls.some((call) => call[0] === "bridge" && call[1] === "/addons/delegate"), false);
+  assert.ok(harness.calls.some((call) => call[0] === "message" && /Give Hermes a concrete mission/.test(call[2])));
+  assert.ok(harness.calls.some((call) => call[0] === "message" && /Give OpenCode a concrete mission/.test(call[2])));
+});
+
+test("app command handlers report Hermes runtime status", async () => {
+  const harness = createHarness();
+
+  await harness.handlers.runHermesStatusCommand();
+
+  assert.ok(harness.calls.some((call) => call[0] === "bridge" && call[1] === "/hermes/status"));
+  assert.ok(harness.calls.some((call) => call[0] === "message" && /Hermes runtime status/.test(call[2])));
+  assert.ok(harness.calls.some((call) => call[0] === "message" && /Execution: disabled/.test(call[2])));
+});
+
+test("app command handlers report recent delegated work", async () => {
+  const harness = createHarness({
+    bridgeResponses: {
+      "/addons/delegate/list": {
+        delegations: [{
+          mission: "review provider routing",
+          path: "BrowserFirst/Delegations/hermes/hermes-a.md",
+          resultArtifactPath: "BrowserFirst/DelegationArtifacts/hermes/hermes-a-result.md",
+          resultExcerpt: "Hermes reviewed the routing packet.",
+          status: "completed",
+          target: "hermes",
+          updatedAt: "2026-05-31T10:00:00.000Z"
+        }]
+      }
+    }
+  });
+
+  await harness.handlers.runDelegationsCommand("hermes");
+
+  assert.ok(harness.calls.some((call) => call[0] === "bridge" && call[1] === "/addons/delegate/list" && call[2].target === "hermes"));
+  assert.ok(harness.calls.some((call) => call[0] === "message" && /Recent delegated work/.test(call[2])));
+  assert.ok(harness.calls.some((call) => call[0] === "message" && /Hermes reviewed the routing packet/.test(call[2])));
 });
 
 test("app command handlers create draft-only communication packets", async () => {
@@ -328,7 +387,9 @@ test("app command handlers save browser activity searches to archive intake", as
 });
 
 test("app command handlers manage browser jobs", async () => {
+  const focused = [];
   const harness = createHarness({
+    focusBrowserJob: async (id) => focused.push(id),
     jobs: [
       { id: "job-a", goal: "Find slot", status: "running", updatedAt: "2026-05-26T09:00:00.000Z", steps: [{ type: "read", label: "Read page", state: "completed", updatedAt: "2026-05-26T09:00:00.000Z" }] },
       { id: "job-b", goal: "Research DAO", status: "paused", steps: [{ type: "read", label: "Read DAO", state: "completed" }] }
@@ -345,15 +406,66 @@ test("app command handlers manage browser jobs", async () => {
   assert.ok(harness.calls.some((call) => call[0] === "message" && /Browser jobs/.test(call[2])));
   assert.ok(harness.calls.some((call) => call[0] === "message" && /Scheduler:/.test(call[2])));
   assert.ok(harness.calls.some((call) => call[0] === "message" && /attention job-a: Running job has no recent recorded progress/.test(call[2])));
-  assert.ok(harness.calls.some((call) => call[0] === "activate" && call[1] === "job-b"));
+  assert.deepEqual(focused, ["job-b", "job-a"]);
   assert.ok(harness.calls.some((call) => call[0] === "message" && /Focused browser job job-b/.test(call[2])));
   assert.ok(harness.calls.some((call) => call[0] === "finish" && call[1] === "paused"));
   assert.ok(harness.calls.some((call) => call[0] === "updateJob" && call[2].status === "paused"));
-  assert.ok(harness.calls.some((call) => call[0] === "activate" && call[1] === "job-a"));
+  assert.equal(harness.calls.some((call) => call[0] === "activate" && call[1] === "job-a"), false);
   assert.ok(harness.calls.some((call) => call[0] === "restart" && call[1] === "job-a" && call[3] === 1));
   assert.ok(harness.calls.some((call) => call[0] === "saveReport" && call[1] === "job-a"));
   assert.ok(harness.calls.some((call) => call[0] === "message" && /Saved browser job report/.test(call[2])));
   assert.ok(harness.calls.some((call) => call[0] === "updateJob" && call[2].status === "cancelled"));
+});
+
+test("app command handlers resume and continue through the job focus boundary", async () => {
+  const calls = [];
+  const harness = createHarness({
+    focusBrowserJob: async (id) => calls.push(["focus", id]),
+    jobs: [
+      { id: "job-paused", goal: "Resume focused tab", status: "paused", steps: [{ type: "read", state: "completed" }] },
+      { id: "job-done", goal: "Continue focused tab", status: "completed", steps: [{ type: "read", state: "completed" }] }
+    ]
+  });
+
+  await harness.handlers.resumeBrowserJob("job-paused");
+  await harness.handlers.continueBrowserJob("job-done");
+
+  assert.deepEqual(calls, [
+    ["focus", "job-paused"],
+    ["focus", "job-done"]
+  ]);
+  assert.deepEqual(
+    harness.calls.filter((call) => call[0] === "restart").map((call) => call[1]),
+    ["job-paused", "job-done"]
+  );
+  assert.equal(harness.calls.some((call) => call[0] === "activate" && ["job-paused", "job-done"].includes(call[1])), false);
+});
+
+test("app command handlers do not restart jobs when focus boundary fails", async () => {
+  const harness = createHarness({
+    focusBrowserJob: async (id) => {
+      throw new Error(`locked tab missing for ${id}`);
+    },
+    jobs: [
+      { id: "job-paused", goal: "Resume missing tab", status: "paused", steps: [{ type: "read", state: "completed" }] },
+      { id: "job-done", goal: "Continue missing tab", status: "completed", steps: [{ type: "read", state: "completed" }] }
+    ]
+  });
+
+  await harness.handlers.runJobsCommand("focus job-paused");
+  await harness.handlers.resumeBrowserJob("job-paused");
+  await harness.handlers.continueBrowserJob("job-done");
+
+  assert.equal(harness.calls.some((call) => call[0] === "restart"), false);
+  assert.equal(harness.calls.some((call) => call[0] === "updateJob" && call[2].status === "queued"), false);
+  const failureMessages = harness.calls
+    .filter((call) => call[0] === "message")
+    .map((call) => call[2])
+    .join("\n");
+  assert.match(failureMessages, /Cannot focus browser job job-paused/);
+  assert.match(failureMessages, /locked tab missing for job-paused/);
+  assert.match(failureMessages, /Cannot focus browser job job-done/);
+  assert.match(failureMessages, /I will not resume or approve this job until its controlled tab can be recovered/);
 });
 
 test("app command handlers can start runnable queued browser jobs through the scheduler", async () => {

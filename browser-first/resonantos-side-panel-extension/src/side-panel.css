@@ -450,6 +450,7 @@ textarea:disabled {
 
 .job-list .job-preflight,
 .job-list .job-focused,
+.job-list .job-ownership,
 .job-list .job-page-lock,
 .job-list .job-progress,
 .job-list .job-stale-guidance {
@@ -457,6 +458,7 @@ textarea:disabled {
 }
 
 .job-list .job-focused,
+.job-list .job-ownership,
 .job-list .job-page-lock,
 .job-list .job-progress {
   font-weight: 900;
@@ -509,6 +511,18 @@ textarea:disabled {
   font-weight: 900;
   padding: 4px 6px;
   text-transform: uppercase;
+}
+
+.delegation-guidance {
+  border: 1px solid rgba(255, 213, 92, 0.22);
+  border-radius: 12px;
+  background: rgba(255, 213, 92, 0.07);
+  color: rgba(255, 240, 188, 0.88);
+  font: 800 0.68rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin: 10px 0 0;
+  overflow-wrap: anywhere;
+  padding: 10px;
+  white-space: pre-wrap;
 }
 
 .job-step-replay {
@@ -776,6 +790,105 @@ textarea:disabled {
   line-height: 1.35;
 }
 
+.control-strategy-card {
+  display: grid;
+  gap: 8px;
+  margin: 0 10px 9px;
+  border: 1px solid rgba(36, 209, 143, 0.18);
+  border-radius: 13px;
+  background:
+    linear-gradient(135deg, rgba(36, 209, 143, 0.1), rgba(36, 209, 143, 0.025)),
+    rgba(5, 8, 7, 0.5);
+  padding: 9px 10px;
+}
+
+.control-strategy-card[hidden] {
+  display: none;
+}
+
+.control-strategy-card > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.control-strategy-card small {
+  color: rgba(36, 209, 143, 0.76);
+  font-size: 0.55rem;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.control-strategy-card strong {
+  color: rgba(247, 255, 249, 0.9);
+  font-size: 0.7rem;
+}
+
+.control-strategy-card span,
+.control-strategy-card li {
+  color: rgba(207, 219, 210, 0.68);
+  font-size: 0.58rem;
+  line-height: 1.35;
+}
+
+.control-strategy-card ul {
+  display: grid;
+  gap: 3px;
+  margin: 4px 0 0;
+  padding-left: 15px;
+}
+
+.control-boundary-card {
+  display: grid;
+  gap: 6px;
+  margin: 0 10px 9px;
+  border: 1px solid rgba(255, 206, 132, 0.18);
+  border-radius: 13px;
+  background:
+    linear-gradient(135deg, rgba(255, 206, 132, 0.08), rgba(36, 209, 143, 0.025)),
+    rgba(5, 8, 7, 0.46);
+  padding: 9px 10px;
+}
+
+.control-boundary-card > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.control-boundary-card small {
+  color: rgba(255, 206, 132, 0.76);
+  font-size: 0.55rem;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.control-boundary-card strong {
+  color: rgba(247, 255, 249, 0.9);
+  font-size: 0.7rem;
+}
+
+.control-boundary-card p {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.control-boundary-card span {
+  color: rgba(255, 206, 132, 0.76);
+  font-size: 0.54rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.control-boundary-card b {
+  color: rgba(207, 219, 210, 0.68);
+  font-size: 0.58rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
 .control-step-list {
   display: grid;
   gap: 6px;
@@ -974,6 +1087,56 @@ textarea:disabled {
   background: #ff7a5c;
   border-color: transparent;
   color: #170806;
+}
+
+.job-approval-card {
+  border: 1px solid rgba(255, 154, 138, 0.22);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 122, 92, 0.13), rgba(13, 38, 28, 0.48)),
+    rgba(20, 12, 10, 0.52);
+  margin: 8px 0 4px;
+  padding: 9px 10px;
+}
+
+.job-approval-card strong {
+  color: #ffd3cc;
+  display: block;
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+}
+
+.job-approval-card p,
+.job-approval-card small {
+  color: rgba(255, 231, 227, 0.76);
+  display: block;
+  font-size: 0.58rem;
+  line-height: 1.35;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.job-approval-card dl {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 3px 7px;
+  margin: 7px 0 0;
+}
+
+.job-approval-card dt {
+  color: rgba(255, 168, 150, 0.76);
+  font-size: 0.52rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.job-approval-card dd {
+  color: rgba(238, 247, 240, 0.76);
+  font-size: 0.56rem;
+  font-weight: 750;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 @keyframes activity-pulse {

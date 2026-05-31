@@ -30,8 +30,34 @@ export function createControlReportingService({
   };
 
   const stepEvidenceLines = (step) => [
+    step?.details?.strategyPhase ? `     - strategy phase: ${step.details.strategyPhase}` : "",
+    step?.details?.strategyRationale ? `     - strategy rationale: ${step.details.strategyRationale}` : "",
+    step?.details?.completionCheck ? `     - completion check: ${step.details.completionCheck}` : "",
+    step?.details?.approvalDecision ? `     - approval decision: ${step.details.approvalDecision}` : "",
+    step?.details?.scenarioName ? `     - scenario: ${step.details.scenarioName}` : "",
+    ...(Array.isArray(step?.details?.successSignals)
+      ? step.details.successSignals.filter(Boolean).slice(0, 5).map((signal, index) => `     - success signal ${index + 1}: ${signal}`)
+      : []),
+    ...(Array.isArray(step?.details?.stopConditions)
+      ? step.details.stopConditions.filter(Boolean).slice(0, 5).map((condition, index) => `     - stop boundary ${index + 1}: ${condition}`)
+      : []),
+    ...(Array.isArray(step?.details?.preferredProbes)
+      ? step.details.preferredProbes.filter(Boolean).slice(0, 5).map((probe, index) => `     - preferred probe ${index + 1}: ${probe}`)
+      : []),
     step?.details?.uncertainty ? `     - uncertainty: ${step.details.uncertainty}` : "",
-    step?.details?.nextHumanAction ? `     - next human action: ${step.details.nextHumanAction}` : ""
+    step?.details?.ambiguousTarget ? "     - ambiguous target: yes" : "",
+    ...(Array.isArray(step?.details?.targetCandidates)
+      ? step.details.targetCandidates.filter((candidate) => candidate?.ref || candidate?.label).slice(0, 8).map((candidate, index) => {
+        const label = [candidate.label, candidate.ref ? `#${candidate.ref}` : "", candidate.fieldKind ? `kind:${candidate.fieldKind}` : "", candidate.approvalRequired ? "approval-required" : ""].filter(Boolean).join(" · ");
+        return `     - target candidate ${index + 1}: ${label}`;
+      })
+      : []),
+    step?.details?.verificationRetry ? `     - verification retry: ${step.details.verificationRetry}` : "",
+    step?.details?.actionRetry ? `     - action retry: ${step.details.actionRetry}` : "",
+    step?.details?.nextHumanAction ? `     - next human action: ${step.details.nextHumanAction}` : "",
+    ...(Array.isArray(step?.details?.recoveryOptions)
+      ? step.details.recoveryOptions.filter(Boolean).slice(0, 4).map((option, index) => `     - recovery ${index + 1}: ${option}`)
+      : [])
   ].filter(Boolean);
 
   const pageLockLines = (pageLock) => pageLock

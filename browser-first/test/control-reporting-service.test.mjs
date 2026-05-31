@@ -61,8 +61,8 @@ test("control reporting service builds browser control reports with boundaries",
   const harness = createHarness();
 
   const report = harness.service.buildControlReport([
-    { step: { type: "click", text: "Continue", timing: { durationMs: 500 }, details: { confidence: "medium" } }, result: { ok: true } },
-    { step: { type: "click", text: "Submit", details: { confidence: "low", uncertainty: "Public submit boundary.", nextHumanAction: "Review the form, then approve once or deny." } }, result: { ok: false, approvalRequired: true, error: "approval needed" } }
+    { step: { type: "click", text: "Continue", timing: { durationMs: 500 }, details: { approvalDecision: "approved-once", confidence: "medium", verificationRetry: "settle-reread", actionRetry: "precise-ref-retry" } }, result: { ok: true } },
+    { step: { type: "click", text: "Submit", details: { strategyPhase: "Stop before public submission.", strategyRationale: "Use booking runbook.", completionCheck: "Visible page proves the booking is ready.", scenarioName: "Booking discovery", preferredProbes: ["Read available slots"], successSignals: ["Visible available slot"], stopConditions: ["Public submit required"], confidence: "low", uncertainty: "Public submit boundary.", ambiguousTarget: true, targetCandidates: [{ ref: "r1", label: "Submit", tagName: "button", approvalRequired: true }], nextHumanAction: "Review the form, then approve once or deny.", recoveryOptions: ["Review visible form fields before approval."] } }, result: { ok: false, approvalRequired: true, error: "approval needed" } }
   ], "approval-required");
 
   assert.match(report, /# Browser Agent Control Report/);
@@ -75,9 +75,22 @@ test("control reporting service builds browser control reports with boundaries",
   assert.match(report, /phase: approval/);
   assert.match(report, /summary: Awaiting approval · 1\/2 complete · 2\/2 resolved · 1 blocked · 50%/);
   assert.match(report, /Click "Continue" — ok · 500 ms · confidence: medium/);
+  assert.match(report, /approval decision: approved-once/);
+  assert.match(report, /verification retry: settle-reread/);
+  assert.match(report, /action retry: precise-ref-retry/);
   assert.match(report, /Click "Submit" — approval-required · confidence: low — approval needed/);
+  assert.match(report, /strategy phase: Stop before public submission/);
+  assert.match(report, /strategy rationale: Use booking runbook/);
+  assert.match(report, /completion check: Visible page proves the booking is ready/);
+  assert.match(report, /scenario: Booking discovery/);
+  assert.match(report, /success signal 1: Visible available slot/);
+  assert.match(report, /stop boundary 1: Public submit required/);
+  assert.match(report, /preferred probe 1: Read available slots/);
   assert.match(report, /uncertainty: Public submit boundary/);
+  assert.match(report, /ambiguous target: yes/);
+  assert.match(report, /target candidate 1: Submit · #r1 · approval-required/);
   assert.match(report, /next human action: Review the form, then approve once or deny/);
+  assert.match(report, /recovery 1: Review visible form fields before approval/);
   assert.match(report, /Wallet, credential, public-submit, payment, and destructive actions/);
 });
 

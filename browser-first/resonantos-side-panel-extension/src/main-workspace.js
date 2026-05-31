@@ -19,9 +19,18 @@ import {
   supportsThinkingDepth,
   updateContextMeterElement
 } from "./lib/composer-runtime.js";
+import { delegationTargetLabel, startDelegationLifecycle } from "./lib/delegation-lifecycle.js";
+import { buildDelegationStatusMessage } from "./lib/delegation-status.js";
+import { buildHermesRuntimeStatusMessage } from "./lib/addon-runtime-status.js";
 import { applyAppearancePreferences } from "./lib/settings/appearance-section.js";
 import { renderAddOnsWorkspace } from "./lib/main-workspace-addons.js";
 import { renderArtifactsWorkspace } from "./lib/main-workspace-artifacts.js";
+import { createMainWorkspaceBrowserJobController } from "./lib/main-workspace-browser-job-controller.js";
+import {
+  mainBrowserJobSnapshot,
+  renderMainBrowserJobStatus
+} from "./lib/main-workspace-browser-jobs.js";
+import { renderHermesDashboardWorkspace } from "./lib/main-workspace-hermes.js";
 import { renderLivingArchiveWorkspace } from "./lib/main-workspace-memory.js";
 import { renderOpenCodeWorkspace } from "./lib/main-workspace-opencode.js";
 import { readPersonalizationSettings } from "./lib/personalization-settings.js";
@@ -66,6 +75,7 @@ const STORAGE_KEYS = {
 const transcript = document.querySelector("#transcript");
 const workspaceButtons = [...document.querySelectorAll("[data-workspace]")];
 const newChatButton = document.querySelector("#new-chat");
+const mainBrowserJobs = document.querySelector("#main-browser-jobs");
 const railNewChatButton = document.querySelector("#rail-new-chat");
 const railSearchToggle = document.querySelector("#rail-search-toggle");
 const railSearchBox = document.querySelector("#rail-search-box");
@@ -202,6 +212,30 @@ const browserPageActions = createBrowserPageActions({
   siteKeyForUrl: sitePermissionStore.siteKeyForUrl,
   sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms))
 });
+
+const mainBrowserJobController = createMainWorkspaceBrowserJobController({
+  addSystemMessage: (content) => addMessage("system", content),
+  afterChange: () => renderMainBrowserJobStatusFromStorage(),
+  openSidebar: () => openSidebar(),
+  storage: chrome.storage?.local,
+  storageKeys: STORAGE_KEYS
+});
+
+async function renderMainBrowserJobStatusFromStorage() {
+  if (activeWorkspace !== "answer") {
+    if (mainBrowserJobs) mainBrowserJobs.hidden = true;
+    return mainBrowserJobSnapshot();
+  }
+  const snapshot = await mainBrowserJobController.readJobs();
+  return renderMainBrowserJobStatus({
+    ...snapshot,
+    container: mainBrowserJobs,
+    maxConcurrent: 2,
+    onCancelFocused: mainBrowserJobController.cancelJob,
+    onFocusJob: mainBrowserJobController.focusJob,
+    onOpenMonitor: mainBrowserJobController.openMonitor
+  });
+}
 
 async function suppressSidebarChatForMainWorkspace() {
   await chrome.runtime.sendMessage({
@@ -959,6 +993,7 @@ function renderAll() {
   renderMessages();
   renderAttachments();
   renderRailNavigation();
+  void renderMainBrowserJobStatusFromStorage();
   updateContextMeter();
   updateConnectionLine();
 }
@@ -1002,99 +1037,7 @@ function renderStatusWorkspace({ eyebrow, title, body, addonId }) {
 }
 
 function renderHermesWorkspace() {
-  const section = document.createElement("section");
-  section.className = "hermes-dashboard-workspace";
-  section.setAttribute("aria-label", "Hermes dashboard workspace");
-  const status = document.createElement("div");
-  status.className = "dashboard-status";
-  status.textContent = "Checking Hermes status...";
-  const frameCard = document.createElement("section");
-  frameCard.className = "dashboard-frame-card";
-  const iframe = document.createElement("iframe");
-  iframe.title = "Hermes dashboard";
-  iframe.hidden = true;
-  const placeholder = document.createElement("div");
-  placeholder.className = "dashboard-placeholder";
-  const placeholderTitle = document.createElement("strong");
-  placeholderTitle.textContent = "Hermes dashboard is not running";
-  const placeholderBody = document.createElement("p");
-  placeholderBody.textContent = "Start the local Hermes dashboard to load it here. Delegation remains available from Augmentor chat with /hermes.";
-  const actions = document.createElement("div");
-  actions.className = "module-action-row";
-  const start = document.createElement("button");
-  start.type = "button";
-  start.textContent = "Start Dashboard";
-  const stop = document.createElement("button");
-  stop.type = "button";
-  stop.textContent = "Stop";
-  const refresh = document.createElement("button");
-  refresh.type = "button";
-  refresh.textContent = "Refresh";
-  actions.append(start, stop, refresh);
-  placeholder.append(placeholderTitle, placeholderBody, actions);
-  frameCard.append(iframe, placeholder);
-  section.append(status, frameCard);
-  transcript.append(section);
-
-  const setDashboardState = (dashboard) => {
-    const running = Boolean(dashboard?.running);
-    iframe.hidden = !running;
-    placeholder.hidden = running;
-    if (running) {
-      iframe.src = dashboard.url;
-    }
-    status.textContent = running
-      ? ""
-      : `${dashboard?.rawStatus || "Hermes dashboard stopped"} · ${dashboard?.detail || "Start it to embed the workspace."}`;
-  };
-  const loadStatus = async () => {
-    const [addon, dashboard] = await Promise.all([
-      statusForAddon("addon.hermes"),
-      bridgeRequest("/hermes/dashboard/status", { method: "POST", body: { port: 9119 } })
-    ]);
-    setDashboardState(dashboard);
-    if (!addon?.available) {
-      status.textContent = `${status.textContent}\nHermes add-on files are not available in this build.`;
-    }
-  };
-  const startDashboard = async () => {
-    start.disabled = true;
-    status.textContent = "Starting Hermes dashboard...";
-    try {
-      setDashboardState(await bridgeRequest("/hermes/dashboard/start", {
-        method: "POST",
-        body: { host: "127.0.0.1", port: 9119, includeTui: true }
-      }));
-    } catch (error) {
-      status.textContent = `Hermes dashboard failed to start: ${error instanceof Error ? error.message : String(error)}`;
-    } finally {
-      start.disabled = false;
-    }
-  };
-  start.addEventListener("click", async () => {
-    await startDashboard();
-  });
-  stop.addEventListener("click", async () => {
-    stop.disabled = true;
-    status.textContent = "Stopping Hermes dashboard...";
-    try {
-      setDashboardState(await bridgeRequest("/hermes/dashboard/stop", { method: "POST", body: { port: 9119 } }));
-    } catch (error) {
-      status.textContent = `Hermes dashboard failed to stop: ${error instanceof Error ? error.message : String(error)}`;
-    } finally {
-      stop.disabled = false;
-    }
-  });
-  refresh.addEventListener("click", () => void loadStatus().catch((error) => {
-    status.textContent = `Hermes status unavailable: ${error instanceof Error ? error.message : String(error)}`;
-  }));
-  void loadStatus().catch((error) => {
-    status.textContent = `Hermes status unavailable: ${error instanceof Error ? error.message : String(error)}`;
-  }).then(() => {
-    if (iframe.hidden) {
-      void startDashboard();
-    }
-  });
+  renderHermesDashboardWorkspace({ container: transcript, bridgeRequest, statusForAddon });
 }
 
 async function addMessage(role, content, options = {}) {
@@ -1175,16 +1118,11 @@ async function runChatTurn(prompt) {
       signal: activeChatAbortController.signal,
       body: {
         model: modelSelect.value,
+        surface: "main-workspace",
         workload: "augmentor-chat",
         thinkingDepth: thinkingDepthSelect.value,
         systemPrompt: personalizationSettings?.augmentor?.systemPrompt ?? "",
-        messages: [
-          {
-            role: "system",
-            content: "Answer as Augmentor inside the full ResonantOS main workspace. If browser control is needed, say that the task is being handed to Agent Control Mode."
-          },
-          ...providerMessagesFromHistory(chatSessionStore.getMessages())
-        ]
+        messages: providerMessagesFromHistory(chatSessionStore.getMessages())
       }
     });
     await addMessage("assistant", assistantTextFromResponse(response) || "No response was returned.", {
@@ -1205,6 +1143,12 @@ async function runChatTurn(prompt) {
 
 async function runHermesDelegation(prompt) {
   const mission = parseHermesSlashCommand(prompt);
+  if (/^(?:status|health|runtime)$/i.test(mission)) {
+    updateConnectionLine("Checking Hermes");
+    await addMessage("system", await buildHermesRuntimeStatusMessage({ bridgeRequest }));
+    updateConnectionLine("Ready");
+    return;
+  }
   if (!mission) {
     setActiveWorkspace("hermes", { persist: true });
     renderAll();
@@ -1226,49 +1170,8 @@ async function runHermesDelegation(prompt) {
 }
 
 async function startDelegationIfPossible(result) {
-  if (!["hermes", "opencode"].includes(result?.target) || !result?.path) return "";
-  const label = delegationTargetLabel(result.target);
-  try {
-    const started = await bridgeRequest(`/${result.target}/delegation/start`, {
-      method: "POST",
-      body: { path: result.path }
-    });
-    if (started.status === "completed") {
-      return [
-        "",
-        `${label} execution completed and returned a reviewable artifact.`,
-        started.resultArtifactPath ? `Artifact: ${started.resultArtifactPath}` : ""
-      ].filter(Boolean).join("\n");
-    }
-    if (started.status === "blocked") {
-      return [
-        "",
-        `${label} packet was created, but execution is blocked.`,
-        started.blockedReason || `${label} is not available from the current host configuration.`,
-        `Next action: configure ${label} or open Add-ons > ${label} to retry when the runtime is available.`
-      ].filter(Boolean).join("\n");
-    }
-    return [
-      "",
-      `${label} execution status: ${started.status || "queued"}.`,
-      `Open Add-ons > ${label} to inspect the task lifecycle and returned artifacts.`
-    ].join("\n");
-  } catch (error) {
-    return [
-      "",
-      `${label} packet was created, but the execution handoff failed.`,
-      error instanceof Error ? error.message : String(error),
-      `Next action: open Add-ons > ${label} to inspect or retry the task.`
-    ].join("\n");
-  }
+  return startDelegationLifecycle(result, { bridgeRequest });
 }
-
-const delegationTargetLabel = (target) => {
-  if (target === "opencode") return "OpenCode";
-  if (target === "hermes") return "Hermes";
-  if (target === "engineer") return "Resonant Engineer";
-  return target;
-};
 
 async function runNaturalDelegation(intent) {
   if (!intent || intent.missingTarget) {
@@ -1297,6 +1200,13 @@ async function runNaturalDelegation(intent) {
       lifecycle
     ].join("\n")
   );
+  updateConnectionLine("Ready");
+}
+
+async function runDelegationsCommand(filter = "") {
+  updateConnectionLine("Checking delegations");
+  const message = await buildDelegationStatusMessage({ bridgeRequest, filter, limit: 6 });
+  await addMessage("system", message);
   updateConnectionLine("Ready");
 }
 
@@ -1387,6 +1297,8 @@ commandForm.addEventListener("submit", async (event) => {
       await runHermesDelegation(prompt);
     } else if (promptPlan.action === "delegate") {
       await runNaturalDelegation(promptPlan.intent);
+    } else if (promptPlan.action === "delegations") {
+      await runDelegationsCommand(promptPlan.filter);
     } else if (promptPlan.action === "wallet") {
       const command = promptPlan.command;
       if (command?.action === "audit") {
@@ -1515,6 +1427,12 @@ sendButton.addEventListener("click", (event) => {
   if (!busy) return;
   event.preventDefault();
   activeChatAbortController?.abort();
+});
+chrome.storage?.onChanged?.addListener?.((changes, areaName) => {
+  if (areaName !== "local") return;
+  if (changes[STORAGE_KEYS.browserJobs] || changes[STORAGE_KEYS.activeBrowserJob]) {
+    void renderMainBrowserJobStatusFromStorage();
+  }
 });
 
 await hydrateProviderModelOptions({

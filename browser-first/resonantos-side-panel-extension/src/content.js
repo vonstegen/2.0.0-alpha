@@ -23,7 +23,8 @@ const ensureControlRef = (element) => {
 const elementByControlRef = (ref) => {
   const normalized = String(ref ?? "").trim();
   if (!normalized) return null;
-  return document.querySelector(`[${controlRefAttribute}="${CSS.escape(normalized)}"]`);
+  const escaped = globalThis.CSS?.escape?.(normalized) ?? normalized.replace(/["\\]/g, "\\$&");
+  return document.querySelector(`[${controlRefAttribute}="${escaped}"]`);
 };
 
 const pageSnapshot = () => ({
@@ -64,6 +65,7 @@ const pageSnapshot = () => ({
       approvalRequired: isSubmitLikeElement(element)
     })),
   fields: Array.from(document.querySelectorAll("input, textarea, select, [contenteditable='true']"))
+    .filter((element) => !isResonantosInternalElement(element))
     .slice(0, 80)
     .map((element) => describeEditable(element)),
   walletProviders: {
@@ -287,10 +289,12 @@ const describeForms = () => ({
       action: form.action || "",
       method: form.method || "get",
       fields: Array.from(form.querySelectorAll("input, textarea, select, [contenteditable='true']"))
+        .filter((field) => !isResonantosInternalElement(field))
         .slice(0, 40)
         .map((field) => describeEditable(field))
     })),
   looseFields: Array.from(document.querySelectorAll("input, textarea, select, [contenteditable='true']"))
+    .filter((field) => !isResonantosInternalElement(field))
     .filter((field) => !field.closest("form"))
     .slice(0, 40)
     .map((field) => describeEditable(field))
@@ -298,9 +302,56 @@ const describeForms = () => ({
 
 const visibleText = (element) => (element.innerText || element.textContent || element.getAttribute("aria-label") || element.value || "").trim();
 
+const isResonantosInternalElement = (element) => Boolean(element?.closest?.([
+  `#${inlineAssistantId}`,
+  `#${inlineButtonId}`,
+  `#${controlOverlayId}`,
+  `#${controlToastId}`,
+  `.${controlBubbleClass}`
+].join(", ")));
+
 const candidateClickElements = () => [
   ...document.querySelectorAll("button, a, [role='button'], input[type='button'], input[type='submit'], summary, [onclick]")
-];
+].filter((element) => !isResonantosInternalElement(element));
+
+const uniqueElements = (elements) => Array.from(new Set(elements.filter(Boolean)));
+
+const normalizedTargetText = (value) => String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+
+const clickableCandidateDetails = (elements) => uniqueElements(elements)
+  .slice(0, 8)
+  .map((element) => ({
+    ref: ensureControlRef(element),
+    text: visibleText(element).slice(0, 160),
+    tagName: element.tagName.toLowerCase(),
+    role: element.getAttribute("role") || "",
+    ariaLabel: element.getAttribute("aria-label") || "",
+    approvalRequired: isSubmitLikeElement(element)
+  }));
+
+const editableCandidateDetails = (elements) => uniqueElements(elements)
+  .slice(0, 8)
+  .map((element) => {
+    const fieldSafety = classifyEditableField(element);
+    return {
+      ref: ensureControlRef(element),
+      tagName: element.tagName.toLowerCase(),
+      type: element.getAttribute("type") || "",
+      name: element.getAttribute("name") || "",
+      id: element.id || "",
+      role: element.getAttribute("role") || "",
+      label: element.getAttribute("aria-label") || element.getAttribute("placeholder") || element.getAttribute("title") || relatedLabelText(element) || "",
+      fieldKind: fieldSafety.kind,
+      hasValue: Boolean(editableRawValue(element))
+    };
+  });
+
+const ambiguousTargetResponse = (kind, target, candidates) => ({
+  ok: false,
+  ambiguousTarget: true,
+  error: `${kind} target "${target}" matched ${candidates.length} visible candidates. Retry with one exact ref from the candidates list.`,
+  candidates
+});
 
 const isSubmitLikeElement = (element) => {
   const type = String(element.getAttribute("type") || "").toLowerCase();
@@ -371,7 +422,19 @@ const clickVisibleText = (targetText, { userApproved = false } = {}) => {
   if (!needle) {
     return { ok: false, error: "No click target text was provided." };
   }
-  const element = candidateClickElements().find((candidate) => visibleText(candidate).toLowerCase().includes(needle));
+  const candidates = uniqueElements(candidateClickElements())
+    .filter((candidate) => normalizedTargetText(visibleText(candidate)).includes(needle));
+  const exactMatches = candidates.filter((candidate) => normalizedTargetText(visibleText(candidate)) === needle);
+  if (exactMatches.length > 1) {
+    return ambiguousTargetResponse("Click", targetText, clickableCandidateDetails(exactMatches));
+  }
+  if (exactMatches.length === 1) {
+    return clickElement(exactMatches[0], { userApproved, fallbackText: targetText });
+  }
+  if (candidates.length > 1) {
+    return ambiguousTargetResponse("Click", targetText, clickableCandidateDetails(candidates));
+  }
+  const element = candidates[0] ?? null;
   if (!element) {
     return { ok: false, error: `No visible clickable element matched "${targetText}".` };
   }
@@ -382,6 +445,9 @@ const clickControlRef = (ref, { userApproved = false } = {}) => {
   const element = elementByControlRef(ref);
   if (!element) {
     return { ok: false, error: `No clickable element matched ref "${ref}".` };
+  }
+  if (!candidateClickElements().includes(element)) {
+    return { ok: false, error: `Control ref "${ref}" is not a clickable element.` };
   }
   return clickElement(element, { userApproved, fallbackText: ref });
 };
@@ -402,7 +468,7 @@ const editableCandidates = () => [
     "input[type='password']",
     "[contenteditable='true']"
   ].join(", "))
-].filter(Boolean);
+].filter((element) => element && !isResonantosInternalElement(element));
 
 const isEditable = (element) =>
   ((element instanceof HTMLInputElement && !["button", "checkbox", "file", "hidden", "image", "radio", "range", "reset", "submit"].includes(element.type)) ||
@@ -418,6 +484,7 @@ const editableLabel = (element) => [
   element.getAttribute("autocomplete"),
   element.getAttribute("name"),
   element.id,
+  relatedLabelText(element),
   element.textContent
 ].filter(Boolean).join(" ").toLowerCase();
 
@@ -520,17 +587,41 @@ const describeEditable = (element) => {
   };
 };
 
-const findEditableTarget = (field, ref = "") => {
+const resolveEditableTarget = (field, ref = "") => {
   const refTarget = elementByControlRef(ref);
   if (refTarget && isEditable(refTarget)) {
-    return refTarget;
+    return { ok: true, element: refTarget };
   }
-  const candidates = editableCandidates().filter(isEditable);
+  if (String(ref ?? "").trim()) {
+    return { ok: false, error: `No editable field matched ref "${ref}".` };
+  }
+  const candidates = uniqueElements(editableCandidates()).filter(isEditable);
   const needle = String(field ?? "").trim().toLowerCase();
   if (!needle) {
-    return candidates[0] ?? null;
+    const active = isEditable(document.activeElement) ? document.activeElement : null;
+    if (active) return { ok: true, element: active };
+    const searchCandidates = candidates.filter((element) => classifyEditableField(element).kind === "search-query");
+    if (searchCandidates.length === 1) return { ok: true, element: searchCandidates[0] };
+    if (searchCandidates.length > 1) {
+      return ambiguousTargetResponse("Typing", "search field", editableCandidateDetails(searchCandidates));
+    }
+    if (candidates.length === 1) return { ok: true, element: candidates[0] };
+    if (candidates.length > 1) {
+      return ambiguousTargetResponse("Typing", "editable field", editableCandidateDetails(candidates));
+    }
+    return { ok: false, error: "No editable field was found on this page." };
   }
-  return candidates.find((element) => editableLabel(element).includes(needle)) ?? null;
+  const matches = candidates.filter((element) => editableLabel(element).includes(needle));
+  const exactMatches = matches.filter((element) => normalizedTargetText(editableLabel(element)) === needle);
+  if (exactMatches.length > 1) {
+    return ambiguousTargetResponse("Typing", field, editableCandidateDetails(exactMatches));
+  }
+  if (exactMatches.length === 1) return { ok: true, element: exactMatches[0] };
+  if (matches.length > 1) {
+    return ambiguousTargetResponse("Typing", field, editableCandidateDetails(matches));
+  }
+  if (matches.length === 1) return { ok: true, element: matches[0] };
+  return { ok: false, error: `No editable field matched "${field}".` };
 };
 
 const isSearchLikeEditable = (element) => {
@@ -554,10 +645,11 @@ const typeIntoPage = ({ text, field = "", ref = "", submit = false, userApproved
   if (!value) {
     return { ok: false, error: "No text was provided for typing." };
   }
-  const element = findEditableTarget(field, ref);
-  if (!element) {
-    return { ok: false, error: "No editable field was found on this page." };
+  const target = resolveEditableTarget(field, ref);
+  if (!target.ok) {
+    return target;
   }
+  const element = target.element;
   const fieldSafety = classifyEditableField(element);
   if (!fieldSafety.safeToType) {
     pulseControlOverlay({ state: "blocked", label: fieldSafety.reason, phase: "blocked", target: element });

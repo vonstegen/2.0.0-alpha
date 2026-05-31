@@ -135,7 +135,20 @@ export function sanitizeNextActionDecision(decision) {
     status,
     action: null,
     approvalReason: decision.approvalReason ? String(decision.approvalReason).trim().slice(0, 700) : null,
-    doneSummary: decision.doneSummary ? String(decision.doneSummary).trim().slice(0, 700) : null
+    doneSummary: decision.doneSummary ? String(decision.doneSummary).trim().slice(0, 700) : null,
+    strategyPhase: decision.strategyPhase ? String(decision.strategyPhase).trim().slice(0, 300) : null,
+    strategyRationale: decision.strategyRationale ? String(decision.strategyRationale).trim().slice(0, 500) : null,
+    completionCheck: decision.completionCheck ? String(decision.completionCheck).trim().slice(0, 500) : null,
+    scenarioName: decision.scenarioName ? String(decision.scenarioName).trim().slice(0, 160) : null,
+    preferredProbes: Array.isArray(decision.preferredProbes)
+      ? decision.preferredProbes.map((probe) => String(probe ?? "").trim().slice(0, 220)).filter(Boolean).slice(0, 5)
+      : [],
+    successSignals: Array.isArray(decision.successSignals)
+      ? decision.successSignals.map((signal) => String(signal ?? "").trim().slice(0, 220)).filter(Boolean).slice(0, 5)
+      : [],
+    stopConditions: Array.isArray(decision.stopConditions)
+      ? decision.stopConditions.map((condition) => String(condition ?? "").trim().slice(0, 220)).filter(Boolean).slice(0, 5)
+      : []
   };
   if (status === "done") {
     return { ...base, doneSummary: base.doneSummary || base.thought || "The browser task is complete." };

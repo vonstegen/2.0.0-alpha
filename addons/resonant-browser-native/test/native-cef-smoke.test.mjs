@@ -36,6 +36,18 @@ function parseJsonEvents(stdout) {
     .map((line) => JSON.parse(line));
 }
 
+async function execHostAllowingFinalEvent(args, options, finalEventName) {
+  try {
+    return await execFileAsync(hostBinary, args, options);
+  } catch (error) {
+    const stdout = String(error.stdout ?? "");
+    if (parseJsonEvents(stdout).some((event) => event.event === finalEventName)) {
+      return { stdout, stderr: String(error.stderr ?? "") };
+    }
+    throw error;
+  }
+}
+
 function listen(server) {
   return new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -62,9 +74,19 @@ function latestPhantomExtensionDir() {
   return versions.length ? path.join(phantomExtensionRoot, versions[0]) : null;
 }
 
+function nativeCefLiveSkipReason(testName) {
+  if (process.env.CODEX_SANDBOX) {
+    return `${testName} requires an unsandboxed macOS desktop session; Codex sandbox blocks Chromium profile sockets and localhost listeners.`;
+  }
+  if (!existsSync(hostBinary)) {
+    return "Build the native host before running the CEF smoke test.";
+  }
+  return false;
+}
+
 test(
   "native CEF Chrome Runtime host initializes and loads a real page",
-  { skip: !existsSync(hostBinary) && "Build the native host before running the CEF smoke test." },
+  { skip: nativeCefLiveSkipReason("CEF page smoke") },
   async () => {
     const profile = smokeProfileArgs("cef-page-smoke");
     try {
@@ -92,15 +114,15 @@ test(
 
 test(
   "native CEF Chrome Runtime host records extension entrypoint readiness",
-  { skip: !existsSync(hostBinary) && "Build the native host before running the CEF extension smoke test." },
+  { skip: nativeCefLiveSkipReason("CEF extension smoke") },
   async () => {
     const profile = smokeProfileArgs("cef-extension-entrypoint-smoke");
     try {
-      const { stdout } = await execFileAsync(hostBinary, ["--resonantos-extension-entrypoint-smoke", ...profile.args], {
+      const { stdout } = await execHostAllowingFinalEvent(["--resonantos-extension-entrypoint-smoke", ...profile.args], {
         cwd: addonRoot,
         timeout: 30000,
         maxBuffer: 1024 * 1024 * 2,
-      });
+      }, "browser.native.extension_entrypoints");
 
       const events = parseJsonEvents(stdout);
       assert.ok(
@@ -128,7 +150,7 @@ test(
 
 test(
   "native CEF Chrome Runtime host saves downloads through ResonantOS download policy",
-  { skip: !existsSync(hostBinary) && "Build the native host before running the CEF download smoke test." },
+  { skip: nativeCefLiveSkipReason("CEF download smoke") },
   async () => {
     const body = "resonantos download smoke\n";
     const server = createServer((request, response) => {
@@ -193,7 +215,7 @@ test(
 
 test(
   "native CEF Chrome Runtime host denies privileged page permissions by default",
-  { skip: !existsSync(hostBinary) && "Build the native host before running the CEF permission smoke test." },
+  { skip: nativeCefLiveSkipReason("CEF permission smoke") },
   async () => {
     const server = createServer((request, response) => {
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
@@ -243,7 +265,7 @@ test(
 
 test(
   "native CEF Chrome Runtime host exposes real page context menus",
-  { skip: !existsSync(hostBinary) && "Build the native host before running the CEF context-menu smoke test." },
+  { skip: nativeCefLiveSkipReason("CEF context-menu smoke") },
   async () => {
     const server = createServer((request, response) => {
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
@@ -300,14 +322,19 @@ test(
 
 test(
   "native CEF Chrome Runtime host executes standard browser menu commands",
-  { skip: !existsSync(hostBinary) && "Build the native host before running the CEF menu-command smoke test." },
+  { skip: nativeCefLiveSkipReason("CEF menu-command smoke") },
   async () => {
     const commands = [
+      ["focus_address_bar", "https://example.com"],
+      ["reload", "https://example.com"],
       ["show_history", "chrome://history"],
       ["show_downloads", "chrome://downloads"],
       ["show_bookmarks", "chrome://bookmarks"],
       ["manage_extensions", "chrome://extensions"],
       ["password_manager", "chrome://password-manager"],
+      ["show_settings", "chrome://settings"],
+      ["default_profile", "chrome://settings/manageProfile"],
+      ["help", "https://resonantos.com"],
     ];
 
     for (const [command, expectedUrlPrefix] of commands) {
@@ -350,7 +377,7 @@ test(
 
 test(
   "native CEF Chrome Runtime host executes a local unpacked extension",
-  { skip: !existsSync(hostBinary) && "Build the native host before running the CEF local extension smoke test." },
+  { skip: nativeCefLiveSkipReason("CEF local extension smoke") },
   async () => {
     const extensionRoot = path.join(tmpdir(), `resonant-browser-extension-smoke-${Date.now()}`);
     const profile = smokeProfileArgs("cef-local-extension-smoke");
@@ -379,8 +406,7 @@ test(
       `document.title = "resonant-extension-loaded";`,
     );
 
-    const { stdout } = await execFileAsync(
-      hostBinary,
+    const { stdout } = await execHostAllowingFinalEvent(
       [
         "--resonantos-local-extension-smoke",
         `--resonantos-extension-dir=${extensionRoot}`,
@@ -392,6 +418,7 @@ test(
         timeout: 30000,
         maxBuffer: 1024 * 1024 * 2,
       },
+      "browser.native.local_extension_execution",
     );
 
     const events = parseJsonEvents(stdout);
@@ -411,9 +438,10 @@ test(
   "native CEF Chrome Runtime host loads Phantom and injects the Solana provider",
   {
     skip:
-      !existsSync(hostBinary) || !latestPhantomExtensionDir()
+      nativeCefLiveSkipReason("CEF Phantom extension smoke") ||
+      (!latestPhantomExtensionDir()
         ? "Build the native host and install Phantom in Chrome before running the Phantom CEF smoke test."
-        : false,
+        : false),
   },
   async () => {
     const extensionRoot = latestPhantomExtensionDir();

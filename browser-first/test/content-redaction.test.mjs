@@ -34,6 +34,7 @@ async function loadContentScript(html) {
       },
     },
   };
+  dom.window.HTMLElement.prototype.scrollIntoView = function scrollIntoView() {};
   dom.window.eval(await readFile(contentScriptPath, "utf8"));
   assert.equal(typeof listener, "function");
   return { dom, listener };
@@ -69,4 +70,95 @@ test("content page snapshots redact sensitive and ambiguous editable values", as
   assert.match(serialized, /\[redacted:document-edit\]/);
   assert.match(serialized, /resonantos browser/);
   assert.ok(response.snapshot.fields.every((field) => typeof field.fieldKind === "string"));
+});
+
+test("content click actions reject repeated text unless a control ref is supplied", async () => {
+  const { listener } = await loadContentScript(`
+    <!doctype html>
+    <button id="primary">Add</button>
+    <button id="secondary">Add</button>
+  `);
+  let snapshot = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "read_page",
+  }, {}, (payload) => {
+    snapshot = payload.snapshot;
+  });
+
+  let response = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "click_text",
+    text: "Add",
+  }, {}, (payload) => {
+    response = payload;
+  });
+
+  assert.equal(response?.ok, false);
+  assert.equal(response.ambiguousTarget, true);
+  assert.match(response.error, /matched 2 visible candidates/i);
+  assert.deepEqual(Array.from(response.candidates, (candidate) => candidate.text), ["Add", "Add"]);
+  assert.ok(response.candidates.every((candidate) => /^r\d+$/.test(candidate.ref)));
+  assert.equal(snapshot.controls.length, 2);
+});
+
+test("content typing actions reject ambiguous fields and preserve existing values", async () => {
+  const { dom, listener } = await loadContentScript(`
+    <!doctype html>
+    <label for="first-search">Search</label>
+    <input id="first-search" type="search" value="">
+    <label for="second-search">Search</label>
+    <input id="second-search" type="search" value="">
+  `);
+
+  let response = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "type_text",
+    field: "Search",
+    text: "resonantos",
+  }, {}, (payload) => {
+    response = payload;
+  });
+
+  assert.equal(response?.ok, false);
+  assert.equal(response.ambiguousTarget, true);
+  assert.match(response.error, /matched 2 visible candidates/i);
+  assert.deepEqual(Array.from(response.candidates, (candidate) => candidate.label), ["search", "search"]);
+  assert.equal(dom.window.document.querySelector("#first-search").value, "");
+  assert.equal(dom.window.document.querySelector("#second-search").value, "");
+});
+
+test("content typing actions use exact editable refs when repeated labels exist", async () => {
+  const { dom, listener } = await loadContentScript(`
+    <!doctype html>
+    <label for="first-search">Search</label>
+    <input id="first-search" type="search" value="">
+    <label for="second-search">Search</label>
+    <input id="second-search" type="search" value="">
+  `);
+  let snapshot = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "read_page",
+  }, {}, (payload) => {
+    snapshot = payload.snapshot;
+  });
+  const secondRef = snapshot.fields.find((field) => field.id === "second-search").ref;
+
+  let response = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "type_text",
+    ref: secondRef,
+    text: "resonantos",
+  }, {}, (payload) => {
+    response = payload;
+  });
+
+  assert.equal(response?.ok, true);
+  assert.equal(response.ref, secondRef);
+  assert.equal(dom.window.document.querySelector("#first-search").value, "");
+  assert.equal(dom.window.document.querySelector("#second-search").value, "resonantos");
 });

@@ -1,4 +1,7 @@
 import { isTerminalBrowserJobStatus, staleBrowserJobEvidence } from "./browser-job-store.js";
+import { delegationTargetLabel, startDelegationLifecycle } from "./delegation-lifecycle.js";
+import { buildDelegationStatusMessage } from "./delegation-status.js";
+import { buildHermesRuntimeStatusMessage } from "./addon-runtime-status.js";
 
 export const parseCommandSections = (body) => String(body ?? "").split("|").map((part) => part.trim()).filter(Boolean);
 
@@ -116,13 +119,6 @@ const delegationTargets = [
   { id: "engineer", pattern: /\b(?:resonant\s+engineer|engineer\s+agent|engineer|setup\s+agent|r-eg|reg)\b/i }
 ];
 
-function delegationTargetLabel(target) {
-  if (target === "opencode") return "OpenCode";
-  if (target === "hermes") return "Hermes";
-  if (target === "engineer") return "Resonant Engineer";
-  return target;
-}
-
 function stripDelegationCommandLanguage(text, target) {
   const targetPattern = target === "opencode"
     ? "(?:opencode|open\\s+code)"
@@ -169,6 +165,7 @@ export function createAppCommandHandlers({
   chrome,
   detectWalletState,
   finishControlRun,
+  focusBrowserJob,
   getCurrentControlRun,
   permissionForUrl,
   renderJobMonitor,
@@ -198,49 +195,7 @@ export function createAppCommandHandlers({
   }
 
   async function startDelegationIfPossible(result) {
-    if (!["hermes", "opencode"].includes(result?.target) || !result?.path) return "";
-    const label = delegationTargetLabel(result.target);
-    let started;
-    try {
-      started = await bridgeRequest(`/${result.target}/delegation/start`, {
-        method: "POST",
-        body: { path: result.path }
-      });
-    } catch (error) {
-      return [
-        "",
-        `${label} packet was created, but the execution handoff failed.`,
-        error instanceof Error ? error.message : String(error),
-        `Next action: open Add-ons > ${label} to inspect or retry the task.`
-      ].join("\n");
-    }
-    if (!started || typeof started !== "object") {
-      return [
-        "",
-        `${label} packet was created, but execution did not return a status.`,
-        `Next action: open Add-ons > ${label} to inspect the task lifecycle or retry when the runtime reports health.`
-      ].join("\n");
-    }
-    if (started.status === "completed") {
-      return [
-        "",
-        `${label} execution completed and returned a reviewable artifact.`,
-        started.resultArtifactPath ? `Artifact: ${started.resultArtifactPath}` : ""
-      ].filter(Boolean).join("\n");
-    }
-    if (started.status === "blocked") {
-      return [
-        "",
-        `${label} packet was created, but execution is blocked.`,
-        started.blockedReason || `${label} is not available from the current host configuration.`,
-        `Next action: configure ${label} or open Add-ons > ${label} to retry when the runtime is available.`
-      ].filter(Boolean).join("\n");
-    }
-    return [
-      "",
-      `${label} execution status: ${started.status || "queued"}.`,
-      `Open Add-ons > ${label} to inspect the task lifecycle and returned artifacts.`
-    ].join("\n");
+    return startDelegationLifecycle(result, { bridgeRequest });
   }
 
   async function runDelegateCommand(body) {
@@ -251,6 +206,10 @@ export function createAppCommandHandlers({
     }
     const target = match[1].toLowerCase().replace(/\s+/g, "");
     const mission = match[2].trim();
+    if (mission.length < 8) {
+      await addMessage("system", `Give ${delegationTargetLabel(target)} a concrete mission before I create the delegation packet.`);
+      return;
+    }
     setActivity("tool-running", `Creating ${target} delegation`, mission);
     const result = await bridgeRequest("/addons/delegate", {
       method: "POST",
@@ -258,6 +217,18 @@ export function createAppCommandHandlers({
     });
     const lifecycle = await startDelegationIfPossible(result);
     await addMessage("system", `Delegation queued for ${delegationTargetLabel(result.target)}: ${result.id}\n${result.path}${lifecycle}`);
+  }
+
+  async function runDelegationsCommand(body = "") {
+    setActivity("retrieving", "Checking delegated work", body || "recent Hermes/OpenCode/Engineer packets");
+    const message = await buildDelegationStatusMessage({ bridgeRequest, filter: body, limit: 6 });
+    await addMessage("system", message);
+  }
+
+  async function runHermesStatusCommand() {
+    setActivity("retrieving", "Checking Hermes runtime", "CLI, execution grant, dashboard, and delegation task counts");
+    const message = await buildHermesRuntimeStatusMessage({ bridgeRequest });
+    await addMessage("system", message);
   }
 
   async function runNaturalDelegationCommand(intent) {
@@ -511,7 +482,8 @@ export function createAppCommandHandlers({
         await addMessage("system", `No browser job matches "${focusMatch[1]}".`);
         return;
       }
-      await browserJobStore.activateJob?.(job.id);
+      const focused = await focusBrowserJobOrReport(job);
+      if (!focused) return;
       renderJobMonitor();
       await addMessage("system", `Focused browser job ${job.id}: ${job.goal}`);
       return;
@@ -541,6 +513,29 @@ export function createAppCommandHandlers({
     );
   }
 
+  async function focusBrowserJobOrReport(job) {
+    try {
+      if (typeof focusBrowserJob === "function") {
+        await focusBrowserJob(job.id);
+      } else {
+        await browserJobStore.activateJob?.(job.id);
+      }
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await addMessage(
+        "system",
+        [
+          `Cannot focus browser job ${job.id}: ${job.goal}`,
+          message,
+          "I will not resume or approve this job until its controlled tab can be recovered. Open the target page again, then retry or create a new browser job."
+        ].join("\n")
+      );
+      renderJobMonitor();
+      return false;
+    }
+  }
+
   async function pauseBrowserJob(body = "") {
     const job = browserJobStore.findJob(body);
     if (!job) {
@@ -564,8 +559,9 @@ export function createAppCommandHandlers({
       await addMessage("system", `Browser job ${job.id} is ${job.status}; only paused, queued, or failed jobs can resume.`);
       return;
     }
-    await browserJobStore.activateJob?.(job.id);
-    await updateBrowserJob(job.id, { status: "queued" });
+    const focused = await focusBrowserJobOrReport(job);
+    if (!focused) return;
+    await updateBrowserJob(job.id, { allowHumanStopOverride: true, status: "queued" });
     await addMessage(
       "system",
       [
@@ -593,6 +589,8 @@ export function createAppCommandHandlers({
       await addMessage("system", `Browser job ${job.id} can be continued manually with /control ${job.goal}`);
       return;
     }
+    const focused = await focusBrowserJobOrReport(job);
+    if (!focused) return;
     await addMessage(
       "system",
       [
@@ -648,6 +646,8 @@ export function createAppCommandHandlers({
     reportBrowserJob,
     runCapabilitiesCommand,
     runDelegateCommand,
+    runDelegationsCommand,
+    runHermesStatusCommand,
     runGoalCommand,
     runHistorySearchCommand,
     runJobsCommand,

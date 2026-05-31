@@ -12,8 +12,10 @@ test("add-ons workspace renders registry status and governed open actions", asyn
   const providerHandoffs = [];
   const calls = [];
   let draftStatus = "draft-only";
+  let hermesExecution = false;
   let hermesStatus = "queued";
   let hermesResultArtifactPath = "";
+  let openCodeExecution = false;
   let openCodeStatus = "queued";
   let openCodeResultArtifactPath = "";
   const bridgeRequest = async (route, options = {}) => {
@@ -21,12 +23,72 @@ test("add-ons workspace renders registry status and governed open actions", asyn
     if (route === "/addons/status") {
       return {
         addons: [
-          { id: "addon.hermes", name: "Hermes", available: true, mode: "delegation-addon", trust: "add-on agent" },
-          { id: "addon.opencode", name: "OpenCode", available: false, mode: "coding-addon", trust: "add-on agent" },
-          { id: "addon.living-archive", name: "Living Archive", available: true, mode: "memory-system", trust: "host-mediated memory provider" },
-          { id: "addon.email", name: "Email", available: true, mode: "draft-only-communication-addon", trust: "host-mediated draft provider" },
-          { id: "addon.calendar", name: "Calendar", available: true, mode: "draft-only-scheduling-addon", trust: "host-mediated draft provider" }
+          {
+            id: "addon.hermes",
+            name: "Hermes",
+            available: true,
+            mode: "delegation-addon",
+            trust: "add-on agent",
+            requestedCapabilities: ["agent-delegation", "network", "notifications"],
+            grantedCapabilities: ["agent-delegation"],
+            deniedCapabilities: ["network"],
+            execution: { localCliExecution: hermesExecution }
+          },
+          {
+            id: "addon.opencode",
+            name: "OpenCode",
+            available: false,
+            mode: "coding-addon",
+            trust: "add-on agent",
+            requestedCapabilities: ["agent-delegation", "filesystem-scoped", "shell", "providers"],
+            grantedCapabilities: ["agent-delegation"],
+            deniedCapabilities: openCodeExecution ? [] : ["shell"],
+            execution: { localCliExecution: openCodeExecution }
+          },
+          {
+            id: "addon.living-archive",
+            name: "Living Archive",
+            available: true,
+            mode: "memory-system",
+            trust: "host-mediated memory provider",
+            requestedCapabilities: ["archive-read", "archive-intake-write", "archive-knowledge-write"],
+            grantedCapabilities: ["archive-read", "archive-intake-write"],
+            deniedCapabilities: ["archive-knowledge-write"]
+          },
+          {
+            id: "addon.email",
+            name: "Email",
+            available: true,
+            mode: "draft-only-communication-addon",
+            trust: "host-mediated draft provider",
+            requestedCapabilities: ["communication-draft", "provider-handoff", "external-send"],
+            grantedCapabilities: ["communication-draft", "provider-handoff"],
+            deniedCapabilities: ["external-send"]
+          },
+          {
+            id: "addon.calendar",
+            name: "Calendar",
+            available: true,
+            mode: "draft-only-scheduling-addon",
+            trust: "host-mediated draft provider",
+            requestedCapabilities: ["calendar-draft", "provider-handoff", "external-schedule"],
+            grantedCapabilities: ["calendar-draft", "provider-handoff"],
+            deniedCapabilities: ["external-schedule"]
+          }
         ]
+      };
+    }
+    if (route === "/addons/execution-settings") {
+      assert.equal(options.capability, "addon-execution-settings-write");
+      if (options.body.addon === "hermes") {
+        hermesExecution = Boolean(options.body.localCliExecution);
+      }
+      if (options.body.addon === "opencode") {
+        openCodeExecution = Boolean(options.body.localCliExecution);
+      }
+      return {
+        addon: options.body.addon,
+        status: options.body.localCliExecution ? "enabled" : "disabled"
       };
     }
     if (route === "/addons/draft/list") {
@@ -172,6 +234,11 @@ test("add-ons workspace renders registry status and governed open actions", asyn
   assert.match(container.textContent, /not trusted core agents/i);
   assert.match(container.textContent, /Direct trusted wiki writes remain blocked/);
   assert.match(container.textContent, /Sending and scheduling remain human-approval gated/);
+  assert.match(container.textContent, /Grantedagent-delegation/);
+  assert.match(container.textContent, /Needs reviewnotifications/);
+  assert.match(container.textContent, /Deniednetwork/);
+  assert.match(container.textContent, /archive-knowledge-write/);
+  assert.match(container.textContent, /Local CLI execution disabled/);
   assert.match(container.textContent, /Draft approval/);
   assert.match(container.textContent, /Delegation packets/);
   assert.match(container.textContent, /Agent handoffs/);
@@ -191,6 +258,19 @@ test("add-ons workspace renders registry status and governed open actions", asyn
   buttons.find((button) => /Hermes/.test(button.textContent)).click();
   buttons.find((button) => /Living Archive/.test(button.textContent)).click();
   assert.deepEqual(opened, ["hermes", "memory"]);
+
+  const enableHermes = [...container.querySelectorAll(".addon-execution-panel button")]
+    .find((button) => /Enable local execution/.test(button.textContent));
+  assert.equal(enableHermes.disabled, false);
+  enableHermes.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(calls.some((call) =>
+    call[0] === "/addons/execution-settings" &&
+    call[1].addon === "hermes" &&
+    call[1].localCliExecution === true
+  ));
+  assert.match(container.textContent, /Local CLI execution enabled/);
+  assert.match(container.textContent, /Disable local execution/);
 
   const startHermes = [...container.querySelectorAll(".addon-delegation-card button")]
     .find((button) => /Start Hermes/.test(button.textContent));

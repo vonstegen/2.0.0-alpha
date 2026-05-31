@@ -7,7 +7,7 @@ import { createBrowserJobStore } from "../resonantos-side-panel-extension/src/li
 function createHarness(initialJobs = [], options = {}) {
   const writes = [];
   const storageState = {
-    activeBrowserJob: "",
+    activeBrowserJob: options.activeBrowserJob ?? "",
     browserJobs: initialJobs,
     jobMonitorCollapsed: true
   };
@@ -58,6 +58,63 @@ test("browser job scheduler starts multiple non-conflicting queued jobs", async 
   assert.equal(harness.store.findJob("job-b").status, "completed");
 });
 
+test("browser job scheduler does not steal focus when starting background queued jobs", async () => {
+  let releaseQueued;
+  const gate = new Promise((resolve) => {
+    releaseQueued = resolve;
+  });
+  const harness = createHarness([
+    { id: "job-focused", goal: "Focused task", status: "running", pageLock: { tabId: 1, siteKey: "focused.example" } },
+    { id: "job-background", goal: "Background task", status: "queued", pageLock: { tabId: 2, siteKey: "background.example" } }
+  ], { activeBrowserJob: "job-focused", maxConcurrent: 2 });
+  harness.scheduler = createBrowserJobScheduler({
+    browserJobStore: harness.store,
+    maxConcurrent: 2,
+    onJobStarted: async (job) => harness.events.push(["started", job.id]),
+    runJob: async (job) => {
+      harness.events.push(["run", job.id]);
+      await gate;
+      return { ok: true };
+    }
+  });
+  await harness.store.hydrate();
+
+  const result = await harness.scheduler.tick();
+
+  assert.deepEqual(result.startedJobs.map((job) => job.id), ["job-background"]);
+  assert.equal(harness.store.getActiveJobId(), "job-focused");
+
+  releaseQueued();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
+test("browser job scheduler focuses first queued job only when no active focus exists", async () => {
+  let releaseQueued;
+  const gate = new Promise((resolve) => {
+    releaseQueued = resolve;
+  });
+  const harness = createHarness([
+    { id: "job-a", goal: "A", status: "queued", pageLock: { tabId: 1, siteKey: "a.example" } },
+    { id: "job-b", goal: "B", status: "queued", pageLock: { tabId: 2, siteKey: "b.example" } }
+  ], { maxConcurrent: 2 });
+  harness.scheduler = createBrowserJobScheduler({
+    browserJobStore: harness.store,
+    maxConcurrent: 2,
+    runJob: async () => {
+      await gate;
+      return { ok: true };
+    }
+  });
+  await harness.store.hydrate();
+
+  await harness.scheduler.tick();
+
+  assert.equal(harness.store.getActiveJobId(), "job-a");
+
+  releaseQueued();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
 test("browser job scheduler leaves lock-conflicting queued jobs untouched", async () => {
   const harness = createHarness([
     { id: "running-a", goal: "Use DAO", status: "running", pageLock: { tabId: 1, siteKey: "dao.example", url: "https://dao.example/" } },
@@ -102,6 +159,32 @@ test("browser job scheduler marks failed executions without cancelling other job
   assert.equal(harness.store.findJob("job-b").status, "completed");
   assert.ok(harness.events.some((event) => event[0] === "failed" && event[1] === "job-a"));
   assert.ok(harness.events.some((event) => event[0] === "finished" && event[1] === "job-b"));
+});
+
+test("browser job scheduler does not convert blocked control results into completed jobs", async () => {
+  const harness = createHarness([
+    { id: "job-a", goal: "A", status: "queued", pageLock: { tabId: 1, siteKey: "a.example" } },
+    { id: "job-b", goal: "B", status: "queued", pageLock: { tabId: 2, siteKey: "b.example" } }
+  ], { maxConcurrent: 2 });
+  harness.scheduler = createBrowserJobScheduler({
+    browserJobStore: harness.store,
+    maxConcurrent: 2,
+    onJobFinished: async (jobId, result) => harness.events.push(["finished", jobId, result]),
+    runJob: async (job) => {
+      harness.events.push(["run", job.id]);
+      return job.id === "job-a"
+        ? { ok: false, approvalRequired: false, status: "blocked" }
+        : { ok: true };
+    }
+  });
+  await harness.store.hydrate();
+
+  await harness.scheduler.tick();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(harness.store.findJob("job-a").status, "blocked");
+  assert.equal(harness.store.findJob("job-b").status, "completed");
+  assert.ok(harness.events.some((event) => event[0] === "finished" && event[1] === "job-a" && event[2]?.status === "blocked"));
 });
 
 test("browser job scheduler auto-drains queued jobs when capacity opens", async () => {

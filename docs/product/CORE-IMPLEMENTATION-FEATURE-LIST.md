@@ -66,6 +66,7 @@ Current status:
 - Main and side-panel composer parity is partially implemented.
 - Natural language delegation routing is implemented for Hermes, OpenCode, and Resonant Engineer so Augmentor does not incorrectly deny delegated work when the target is clear.
 - Delegation routing has been hardened so “spawn,” “dispatch,” and “agent control layer” phrasing is intercepted before provider chat, and the provider prompt tells Augmentor that governed delegation is a ResonantOS capability.
+- Hermes status routing is implemented so `/hermes` and `/hermes status` report CLI detection, execution grant state, dashboard state, task counts, and the next action instead of creating vague empty task packets.
 - Needs deterministic end-to-end UI verification after each composer change.
 
 ### 3. Agent Control Mode
@@ -93,8 +94,21 @@ Current status:
 - Agent Control progress summaries now distinguish successful completion from terminal resolution, so blocked/failed steps are visible without pretending the task fully completed.
 - Agent Control now performs post-action page-state verification for successful browser mutation/navigation steps and records uncertainty when no visible state change is detected.
 - Agent Control now prevents repeated identical actions after a no-visible-change verification result, so it stops with guidance instead of looping on the same click/type/navigation.
+- Agent Control now records page-specific recovery options for failed, no-change, and repeat-blocked actions. These options list visible candidate controls/fields where possible and are preserved in the monitor, durable browser job state, and saved reports.
+- Agent Control now uses a deterministic task-class runbook for planning and next-action requests, including phases, safety stops, visible evidence, and completion checks. Strategy phase/rationale/completion-check evidence is preserved in the monitor, durable browser job state, and saved reports.
+- Task-class runbooks now resolve into real-site scenarios: shopping comparison/discovery, booking discovery, news/web research synthesis, DAO/wallet review, safe form editing, and generic page control. Each scenario defines preferred probes, success signals, and stop conditions before the model chooses a browser action.
+- The Agent Control monitor now shows a strategy card with the active scenario, phase, success signals, stop boundaries, and preferred probes so the human can see the runbook Augmentor is following while it operates.
 - Cancelled runs now surface as stopped, preserve the interrupted step, and sync that trace back to the browser job record.
 - Durable browser jobs now flag stale running/approval work when no progress has been recorded for the threshold window; `/jobs` and the monitor show last-activity timing plus recommended human action without silently changing job state.
+- Durable browser jobs support multiple simultaneous queued/running/approval jobs with explicit tab/site locks, scheduler capacity state, per-job pause/cancel/focus/continue/report controls, and public-submit approval controls where applicable.
+- The durable browser job scheduler preserves blocked/approval/failed control-loop outcomes and does not mark them completed when a runner returns a non-success result.
+- The full-screen main workspace now shows an Agent Control status strip for active browser jobs with focused job status, target, scheduler counts, progress, Open Monitor, Focus, and Stop controls. This keeps long-running browser work visible even when the side-panel monitor is closed.
+- Main workspace browser-job actions now use a dedicated controller for Open Monitor, Focus, and Stop, with deterministic coverage for sidebar handoff prompts, active-job focus, cancellation, page-lock release, and terminal-job protection.
+- Background browser-job approval is tied to page focus: Focus and approval actions activate the job's locked readable tab before replaying a pending action, preventing accidental approval against the wrong visible page.
+- Live browser-host validation proves one tab can remain parked at a human approval boundary while a non-conflicting job on another tab completes.
+- Approval-state browser jobs show page-specific review evidence: pending action, reason, observed page title, URL, locked tab/site target, and a reminder to inspect the visible page before approval.
+- Wallet/DAO helpers are read-only by design: wallet status detection, DAO workflow guidance, and wallet/DAO audit artifacts identify visible governance controls and fields while stopping before wallet connect, signing, voting, transfers, transaction confirmation, or public submission.
+- DAO deterministic and live fixtures cover common governance patterns such as connect wallet, vote for/against/abstain, execute/queue transaction, treasury recipient, quorum, deadline, and treasury-transfer evidence.
 - Blocked browser-control delegations now carry a bounded context packet for the receiving add-on agent, including source run id, controlled target, progress, blocker reason, recent trace, and authority boundaries.
 - The Add-ons workspace now exposes recent governed delegation packets for Hermes, OpenCode, and Resonant Engineer, including source and context-packet evidence.
 - Needs stronger action trace, long-run resilience, and broader deterministic fixture tests.
@@ -225,8 +239,11 @@ Current baseline commands:
 
 ```bash
 node --test browser-first/test/*.test.mjs
+npm run test:browser-first
+npm run test:browser-first-live
 npm run build
 npm run browser-first:install
+npm run browser-first:verify-installed
 ```
 
 Rust/Tauri checks apply only when the legacy Tauri app is changed.
@@ -236,8 +253,8 @@ Rust/Tauri checks apply only when the legacy Tauri app is changed.
 1. Stabilize current core after the recent UI/settings/memory work.
 2. Complete Settings information architecture and Provider Profiles UX.
 3. Strengthen main workspace chat/session/project persistence.
-4. Improve Agent Control Mode trace, status, stop controls, and deterministic fixtures.
+4. Improve Agent Control Mode trace, status, stop controls, and deterministic fixtures. Current baseline includes multi-tab scheduler live coverage, approval evidence cards, and DAO/wallet fixture coverage; next work should focus on deeper real-site runbooks and accessibility/keyboard coverage.
 5. Expand Living Archive core wiki health/lint/versioning tests.
-6. Validate real local CLI execution enablement UX for Hermes and OpenCode. Both add-ons now have governed packet lifecycle routes, deterministic start/read-result coverage, and explicit opt-in before real local CLI execution.
+6. Validate real local CLI execution enablement UX for Hermes and OpenCode. Both add-ons now have governed packet lifecycle routes, deterministic start/read-result coverage, explicit opt-in before real local CLI execution, and fake-runtime enabled-CLI adapter tests that validate the production handoff without relying on live user runtimes.
 7. Improve add-on capability review UI without implementing processor-specific add-ons.
 8. Run full deterministic verification and push only after green checks.

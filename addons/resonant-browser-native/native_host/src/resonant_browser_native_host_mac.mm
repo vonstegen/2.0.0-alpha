@@ -11,12 +11,41 @@
 #include "include/wrapper/cef_helpers.h"
 #include "include/wrapper/cef_library_loader.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <string>
 
 int resonant_browser_native_cef_main(int argc, char* argv[]);
 extern "C" void resonant_browser_native_execute_menu_command(const char* command);
+
+namespace {
+
+std::string ResonantNativeLogPath(int argc, char* argv[]) {
+  const std::string prefix = "--resonantos-log-path=";
+  for (int index = 1; index < argc; ++index) {
+    const std::string arg = argv[index] ? argv[index] : "";
+    if (arg.rfind(prefix, 0) == 0) {
+      return arg.substr(prefix.size());
+    }
+  }
+  return "";
+}
+
+void ResonantRedirectStdoutToLog(int argc, char* argv[]) {
+  const std::string log_path = ResonantNativeLogPath(argc, argv);
+  if (log_path.empty()) {
+    return;
+  }
+  if (freopen(log_path.c_str(), "a", stdout)) {
+    setvbuf(stdout, nullptr, _IOLBF, 0);
+  }
+  if (freopen(log_path.c_str(), "a", stderr)) {
+    setvbuf(stderr, nullptr, _IOLBF, 0);
+  }
+}
+
+}  // namespace
 
 @interface ResonantBrowserApplication : NSApplication <CefAppProtocol> {
  @private
@@ -213,7 +242,7 @@ static void ResonantAddTopLevelMenu(NSMenu* mainMenu, NSString* title, NSMenu* s
   [mainMenu addItem:item];
 }
 
-static void ResonantInstallMainMenu() {
+static void ResonantInstallMainMenu(const char* phase) {
   // Intent citation: docs/architecture/ADR-037-browser-first-chromium-resonantos.md
   // Browser-first ResonantOS is a real desktop browser application. The
   // macOS menu bar is native AppKit chrome, not extension HTML, so the host
@@ -333,9 +362,19 @@ static void ResonantInstallMainMenu() {
 
   [NSApp setMainMenu:mainMenu];
   std::cout << "{\"event\":\"browser.native.appkit_menu.installed\","
+            << "\"phase\":\"" << (phase == nullptr ? "unknown" : phase) << "\","
             << "\"menus\":[\"ResonantOS Browser\",\"File\",\"Edit\",\"View\",\"Assistant\","
                "\"History\",\"Bookmarks\",\"Profiles\",\"Tab\",\"Window\",\"Help\"]}"
             << std::endl;
+}
+
+extern "C" void resonant_browser_native_install_appkit_menu() {
+  @autoreleasepool {
+    if (![NSApp isKindOfClass:[ResonantBrowserApplication class]]) {
+      return;
+    }
+    ResonantInstallMainMenu("post-cef");
+  }
 }
 
 static bool ResonantShouldDisableAppKitMenu(int argc, char* argv[]) {
@@ -355,6 +394,7 @@ static bool ResonantShouldDisableAppKitMenu(int argc, char* argv[]) {
 }
 
 int main(int argc, char* argv[]) {
+  ResonantRedirectStdoutToLog(argc, argv);
   CefScopedLibraryLoader library_loader;
   if (!library_loader.LoadInMain()) {
     return 1;
@@ -370,7 +410,7 @@ int main(int argc, char* argv[]) {
 
     [ResonantBrowserApplication sharedApplication];
     CHECK([NSApp isKindOfClass:[ResonantBrowserApplication class]]);
-    ResonantInstallMainMenu();
+    ResonantInstallMainMenu("pre-cef");
     return resonant_browser_native_cef_main(argc, argv);
   }
 }

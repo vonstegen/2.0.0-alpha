@@ -85,6 +85,8 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   const sidePanel = await readText(path.join(extensionRoot, "src", "side-panel.js"));
   const commandRouter = await readText(path.join(extensionRoot, "src", "lib", "side-panel-command-router.js"));
   const appCommandHandlers = await readText(path.join(extensionRoot, "src", "lib", "app-command-handlers.js"));
+  const delegationLifecycle = await readText(path.join(extensionRoot, "src", "lib", "delegation-lifecycle.js"));
+  const hermesWorkspace = await readText(path.join(extensionRoot, "src", "lib", "main-workspace-hermes.js"));
   const workspaceSettings = await readText(path.join(extensionRoot, "src", "lib", "main-workspace-settings.js"));
   const workspaceRail = await readText(path.join(extensionRoot, "src", "lib", "main-workspace-rail.js"));
   const diagnosticsSettings = await readText(path.join(extensionRoot, "src", "lib", "settings", "diagnostics-section.js"));
@@ -123,6 +125,7 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(workspace, /save-selection/);
   assert.match(workspace, /context-toggle/);
   assert.match(workspace, /context-meter/);
+  assert.match(workspace, /main-browser-jobs/);
   assert.match(workspace, /dictate-button/);
   assert.match(workspace, /title="Read current browser page"/);
   assert.match(workspace, /title="Summarize current browser context"/);
@@ -138,6 +141,8 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.doesNotMatch(workspace, /id="open-sidebar"/);
   assert.match(workspace, /main-workspace\.js/);
   assert.match(workspaceScript, /createChatSessionStore/);
+  assert.match(workspaceScript, /surface:\s*"main-workspace"/);
+  assert.doesNotMatch(workspaceScript, /role:\s*"system"[\s\S]{0,220}full ResonantOS main workspace/);
   assert.match(workspaceScript, /renderRailNavigation/);
   assert.match(workspaceScript, /starterPromptsHidden/);
   assert.match(workspaceScript, /augmentorStarterPromptsHidden/);
@@ -179,6 +184,12 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(workspaceScript, /createDictationController/);
   assert.match(workspaceScript, /activeChatAbortController/);
   assert.match(workspaceScript, /createBrowserPageActions/);
+  assert.match(workspaceScript, /createMainWorkspaceBrowserJobController/);
+  assert.match(workspaceScript, /renderMainBrowserJobStatus/);
+  assert.match(workspaceScript, /renderMainBrowserJobStatusFromStorage/);
+  assert.match(workspaceScript, /mainBrowserJobController\.openMonitor/);
+  assert.match(workspaceScript, /mainBrowserJobController\.cancelJob/);
+  assert.match(workspaceScript, /chrome\.storage\?\.onChanged/);
   assert.match(workspaceScript, /fileLooksTextLike/);
   assert.match(workspaceScript, /removeAttachment/);
   assert.match(workspaceScript, /renderArtifactsWorkspace/);
@@ -239,10 +250,11 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(diagnosticsSettings, /diagnostics-report-export/);
   assert.match(workspaceScript, /document\.body\.dataset\.workspace/);
   assert.match(workspaceScript, /\/addons\/status/);
-  assert.match(workspaceScript, /\/hermes\/dashboard\/status/);
-  assert.match(workspaceScript, /\/hermes\/dashboard\/start/);
-  assert.match(workspaceScript, /\/hermes\/dashboard\/stop/);
-  assert.match(workspaceScript, /\/\$\{result\.target\}\/delegation\/start/);
+  assert.match(hermesWorkspace, /\/hermes\/dashboard\/status/);
+  assert.match(hermesWorkspace, /\/hermes\/dashboard\/start/);
+  assert.match(hermesWorkspace, /\/hermes\/dashboard\/stop/);
+  assert.match(workspaceScript, /startDelegationLifecycle/);
+  assert.match(delegationLifecycle, /\/\$\{result\.target\}\/delegation\/start/);
   assert.match(workspaceScript, /\/addons\/delegate/);
   assert.match(commandRouter, /name === "email"/);
   assert.match(commandRouter, /name === "calendar"/);
@@ -272,7 +284,10 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(workspaceScript, /Search AI memory/);
   assert.match(workspaceScript, /Send to Hermes/);
   assert.match(workspaceScript, /commandInput\.value = button\.dataset\.prompt/);
-  assert.match(workspaceScript, /iframe\.src = dashboard\.url/);
+  assert.match(workspaceScript, /renderHermesDashboardWorkspace/);
+  assert.match(hermesWorkspace, /iframe\.src = dashboard\.url/);
+  assert.match(hermesWorkspace, /\/hermes\/status/);
+  assert.match(hermesWorkspace, /CLI detected/);
   assert.match(workspaceScript, /augmentorMainWorkspace/);
   assert.match(workspaceScript, /hydrateActiveWorkspace/);
   assert.match(workspaceScript, /createSidePanelRenderers/);
@@ -319,6 +334,7 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(launcher, /defaultMainWorkspaceUrl/);
   assert.match(launcher, /clearResonantNewTabOverride/);
   assert.match(launcher, /chrome_url_overrides/);
+  assert.match(launcher, /--resonantos-log-path=\$\{browserLaunchLogPath\(\)\}/);
   assert.match(launcher, /\/hermes\/dashboard\/status/);
   assert.match(launcher, /\/hermes\/dashboard\/start/);
   assert.match(launcher, /\/hermes\/dashboard\/stop/);
@@ -648,6 +664,8 @@ test("browser layer exposes Augmentor chat as the side-panel surface without ste
   assert.match(background, /\/augmentor\/inline/);
   assert.match(script, /browserJobStore\.getMonitorCollapsed/);
   assert.match(script, /browserJobStore\.getSchedulerState/);
+  assert.match(script, /activateBrowserJobPage/);
+  assert.match(script, /await activateJobTab\(focusedJob\)/);
   assert.match(script, /createBrowserJobScheduler/);
   assert.match(script, /tickBrowserJobScheduler/);
   assert.match(script, /Starting queued browser job/);
@@ -767,6 +785,9 @@ test("browser layer exposes Augmentor chat as the side-panel surface without ste
   assert.match(script, /createBrowserJobScheduler/);
   assert.match(script, /runScheduledBrowserJob/);
   assert.match(script, /withBrowserActionLock/);
+  assert.match(script, /localLastSnapshot/);
+  assert.match(script, /onSnapshot/);
+  assert.match(script, /lastSnapshot = null/);
   assert.match(script, /status: "queued"/);
   assert.match(script, /browserJobScheduler\.tick/);
   assert.match(script, /renderControlMonitor/);
@@ -930,6 +951,7 @@ test("browser layer can read active tab context without raw privileged access", 
 test("browser-first host is a runnable app path, not documentation-only scaffolding", async () => {
   const packageJson = await readJson(path.join(repoRoot, "package.json"));
   const launcher = await readText(path.join(browserFirstRoot, "host", "run-browser-first.mjs"));
+  const augmentorChatContract = await readText(path.join(browserFirstRoot, "host", "augmentor-chat-contract.mjs"));
   const bridgeServer = await readText(path.join(browserFirstRoot, "host", "bridge-server.mjs"));
   const installer = await readText(path.join(repoRoot, "scripts", "install-browser-first-app.mjs"));
   const nativeBuilder = await readText(path.join(repoRoot, "scripts", "build-native-browser.mjs"));
@@ -948,16 +970,66 @@ test("browser-first host is a runnable app path, not documentation-only scaffold
 
   assert.match(packageJson.scripts["browser-first:dev"], /run-browser-first\.mjs/);
   assert.match(packageJson.scripts["browser-first:install"], /install-browser-first-app\.mjs/);
+  assert.match(packageJson.scripts["browser-first:verify-desktop"], /verify-browser-first-desktop\.mjs/);
+  assert.match(packageJson.scripts["browser-first:audit-desktop"], /audit-browser-first-desktop-report\.mjs/);
+  assert.match(packageJson.scripts["browser-first:prove-desktop"], /prove-browser-first-desktop\.mjs/);
   assert.match(nativeBuilder, /adHocSignAppBundle/);
   assert.match(nativeBuilder, /PkgInfo/);
   assert.match(nativeBuilder, /codesign/);
   assert.match(nativeBuilder, /--deep/);
   assert.match(installer, /codesign/);
   assert.match(installer, /PkgInfo/);
-  assert.match(installer, /fork\(\)/);
-  assert.match(installer, /setsid\(\)/);
+  assert.match(installer, /os\.homedir\(\)/);
+  assert.match(installer, /RESONANTOS_BROWSER_INSTALL_ROOT/);
+  assert.match(installer, /MACOSX_DEPLOYMENT_TARGET/);
+  assert.match(installer, /-mmacosx-version-min=/);
+  assert.doesNotMatch(installer, /fork\(\)/);
+  assert.doesNotMatch(installer, /setsid\(\)/);
+  assert.match(installer, /execlp\("node", "node"/);
   assert.match(installer, /run-browser-first\.mjs/);
   assert.match(installer, /ResonantOS Browser\.app/);
+  assert.match(installer, /com\.apple\.quarantine/);
+  assert.match(installer, /com\.apple\.provenance/);
+  assert.match(installer, /lsregister/);
+  const installedVerifier = await readText(path.join(repoRoot, "scripts", "verify-browser-first-app.mjs"));
+  const desktopVerifier = await readText(path.join(repoRoot, "scripts", "verify-browser-first-desktop.mjs"));
+  assert.match(desktopVerifier, /browser-first:verify-installed/);
+  assert.match(desktopVerifier, /browser-native:verify-live/);
+  assert.match(desktopVerifier, /browser-first-desktop-verification\.json/);
+  assert.match(desktopVerifier, /RESONANTOS_DESKTOP_VERIFICATION/);
+  const desktopAudit = await readText(path.join(repoRoot, "scripts", "audit-browser-first-desktop-report.mjs"));
+  assert.match(desktopAudit, /auditBrowserFirstDesktopReport/);
+  assert.match(desktopAudit, /Phantom provider injection/);
+  assert.match(desktopAudit, /same-session click\/type\/scroll/);
+  const desktopProof = await readText(path.join(repoRoot, "scripts", "prove-browser-first-desktop.mjs"));
+  assert.match(desktopProof, /browser-first:verify-desktop/);
+  assert.match(desktopProof, /browser-first:audit-desktop/);
+  assert.match(desktopProof, /RESONANTOS_DESKTOP_PROOF/);
+  assert.match(installedVerifier, /inspectInstalledAppBundle/);
+  assert.match(installedVerifier, /ResonantOSBrowserLauncher/);
+  assert.match(installedVerifier, /bundleExecutableDeclared/);
+  assert.match(installedVerifier, /launcherSourcePath/);
+  assert.match(installedVerifier, /launcherRepoRootMatches/);
+  assert.match(installedVerifier, /launcherScriptMatches/);
+  assert.match(installedVerifier, /launcherLogPathMatches/);
+  assert.match(installedVerifier, /launcherUsesExec/);
+  assert.match(installedVerifier, /launcherForksAndExits/);
+  assert.match(installedVerifier, /codesign/);
+  assert.match(installedVerifier, /plutil/);
+  assert.match(installedVerifier, /com\.apple\.quarantine/);
+  assert.match(installedVerifier, /installedApp/);
+  assert.match(installedVerifier, /requireNativeLive/);
+  assert.match(installedVerifier, /runNativeLiveVerifier/);
+  assert.match(installedVerifier, /verify-browser-native-live\.mjs/);
+  assert.match(installedVerifier, /strict native Chromium live verification did not pass/);
+  assert.match(installedVerifier, /launchServicesBlocked/);
+  assert.match(installedVerifier, /normal macOS Terminal or Finder/);
+  const nativeLiveVerifier = await readText(path.join(repoRoot, "scripts", "verify-browser-native-live.mjs"));
+  assert.match(nativeLiveVerifier, /summarizeNativeLiveTap/);
+  assert.match(nativeLiveVerifier, /#\\s\*SKIP\\b/);
+  assert.match(nativeLiveVerifier, /native-live-verification-requires-unsandboxed-desktop/);
+  assert.match(nativeLiveVerifier, /Native Chromium live verification is incomplete/);
+  assert.match(nativeLiveVerifier, /native CEF page load/);
   assert.match(launcher, /--resonantos-browser-first/);
   assert.match(launcher, /hostAppBundle/);
   assert.match(launcher, /launchThroughMacAppBundle/);
@@ -1010,9 +1082,11 @@ test("browser-first host is a runnable app path, not documentation-only scaffold
   assert.match(launcher, /executeControlPlan/);
   assert.match(launcher, /strict JSON only/);
   assert.match(launcher, /observed refs/);
-  assert.match(launcher, /The web page remains in the main browser viewport/);
-  assert.match(launcher, /host-mediated browser tools/);
-  assert.match(launcher, /click visible page text/);
+  assert.match(launcher, /buildAugmentorChatRequestMessages/);
+  assert.match(augmentorChatContract, /The web page remains in the main browser viewport/);
+  assert.match(augmentorChatContract, /host-mediated browser tools/);
+  assert.match(augmentorChatContract, /click visible page text/);
+  assert.match(augmentorChatContract, /never claim delegation is outside Augmentor's ResonantOS capabilities/);
   assert.match(launcher, /\/memory\/status/);
   assert.match(launcher, /\/memory\/search/);
   assert.match(launcher, /\/archive\/intake/);
@@ -1029,12 +1103,28 @@ test("browser-first host is a runnable app path, not documentation-only scaffold
   assert.match(nativeHost, /CefKeyboardHandler/);
   assert.match(nativeHost, /EVENTFLAG_COMMAND_DOWN/);
   assert.match(nativeHost, /EVENTFLAG_CONTROL_DOWN/);
-  assert.match(nativeHost, /IsPrimaryBrowserShortcut/);
-  assert.match(nativeHost, /key_code == 'T'/);
+  assert.match(nativeHost, /HasPrimaryBrowserShortcutModifier/);
+  assert.match(nativeHost, /BrowserCommandForPrimaryShortcut/);
+  assert.match(nativeHost, /return "new_tab"/);
+  assert.match(nativeHost, /return "close_tab"/);
+  assert.match(nativeHost, /return "quit"/);
+  assert.match(nativeHost, /return "new_incognito_window"/);
+  assert.match(nativeHost, /return "close_window"/);
+  assert.match(nativeHost, /return "reopen_closed_tab"/);
+  assert.match(nativeHost, /return "previous_tab"/);
+  assert.match(nativeHost, /return "next_tab"/);
+  assert.match(nativeHost, /return "find_previous"/);
+  assert.match(nativeHost, /return "focus_address_bar"/);
+  assert.match(nativeHost, /return "reload"/);
+  assert.match(nativeHost, /return "back"/);
+  assert.match(nativeHost, /return "forward"/);
+  assert.match(nativeHost, /return "find"/);
+  assert.match(nativeHost, /return "zoom_reset"/);
+  assert.match(nativeHost, /return "zoom_in"/);
+  assert.match(nativeHost, /return "zoom_out"/);
+  assert.match(nativeHost, /ExecuteNativeMenuCommand\(command\)/);
   assert.match(nativeHost, /OpenNewBrowserSurface/);
-  assert.match(nativeHost, /key_code == 'W'/);
   assert.match(nativeHost, /CloseBrowser\(false\)/);
-  assert.match(nativeHost, /key_code == 'Q'/);
   assert.match(nativeHost, /CloseAllBrowserSurfaces/);
   assert.match(nativeHost, /kChromeNewTabFooterUrl/);
   assert.match(nativeHost, /chrome:\/\/newtab-footer/);
@@ -1100,12 +1190,17 @@ test("browser-first host is a runnable app path, not documentation-only scaffold
   assert.match(nativeHost, /resonantos-download-smoke/);
   assert.match(nativeHost, /resonantos-permission-smoke/);
   assert.match(nativeHostMac, /ResonantInstallMainMenu/);
+  assert.match(nativeHostMac, /resonant_browser_native_install_appkit_menu/);
   assert.match(nativeHostMac, /setMainMenu/);
   assert.match(nativeHostMac, /resonant_browser_native_execute_menu_command/);
+  assert.match(nativeHost, /CefInitialize/);
+  assert.match(nativeHost, /resonant_browser_native_install_appkit_menu\(\)/);
   assert.match(nativeHostMac, /ResonantShouldDisableAppKitMenu/);
   assert.match(nativeHostMac, /RESONANTOS_NATIVE_DISABLE_APPKIT_MENU/);
   assert.match(nativeHostMac, /-smoke/);
   assert.match(nativeHostMac, /browser\.native\.appkit_menu\.installed/);
+  assert.match(nativeHostMac, /pre-cef/);
+  assert.match(nativeHostMac, /post-cef/);
   assert.match(nativeHostMac, /browser\.native\.appkit_menu\.disabled/);
   assert.match(nativeHostMac, /ResonantOS Browser/);
   assert.match(nativeHostMac, /File/);
@@ -1145,8 +1240,61 @@ test("browser-first host is a runnable app path, not documentation-only scaffold
   assert.match(nativeHostMac, /resonantSettings:/);
   assert.match(nativeHostMac, /resonantNextTab:/);
   assert.match(nativeHostMac, /resonantHelp:/);
+  assert.match(nativeHostMac, /ResonantRedirectStdoutToLog/);
+  assert.match(nativeHostMac, /--resonantos-log-path=/);
   assert.match(nativeHostInfoPlist, /NSMicrophoneUsageDescription/);
   assert.match(nativeHelperInfoPlist, /NSMicrophoneUsageDescription/);
+});
+
+test("native AppKit browser menus expose only implemented CEF command routes", async () => {
+  const nativeHost = await readText(
+    path.join(repoRoot, "addons", "resonant-browser-native", "native_host", "src", "resonant_browser_native_host.cc"),
+  );
+  const nativeHostMac = await readText(
+    path.join(repoRoot, "addons", "resonant-browser-native", "native_host", "src", "resonant_browser_native_host_mac.mm"),
+  );
+
+  const menuCommands = [...nativeHostMac.matchAll(/resonant_browser_native_execute_menu_command\("([^"]+)"\)/g)]
+    .map((match) => match[1])
+    .sort();
+  assert.ok(menuCommands.length > 20, "The native menu should expose real browser command coverage.");
+
+  for (const command of menuCommands) {
+    assert.match(
+      nativeHost,
+      new RegExp(`command == "${command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`),
+      `Native menu command ${command} must be handled by the CEF host.`,
+    );
+  }
+
+  const chromeCommandIds = [
+    "IDC_NEW_TAB",
+    "IDC_NEW_WINDOW",
+    "IDC_CLOSE_TAB",
+    "IDC_OPEN_FILE",
+    "IDC_FOCUS_LOCATION",
+    "IDC_SAVE_PAGE",
+    "IDC_FIND",
+    "IDC_FIND_NEXT",
+    "IDC_FIND_PREVIOUS",
+    "IDC_VIEW_SOURCE",
+    "IDC_DEV_TOOLS",
+    "IDC_MANAGE_EXTENSIONS",
+    "IDC_OPTIONS",
+    "IDC_SHOW_HISTORY",
+    "IDC_SHOW_DOWNLOADS",
+    "IDC_BOOKMARK_THIS_TAB",
+    "IDC_SHOW_BOOKMARK_MANAGER",
+    "IDC_MANAGE_CHROME_PROFILES",
+    "IDC_VIEW_PASSWORDS",
+    "IDC_SELECT_NEXT_TAB",
+    "IDC_SELECT_PREVIOUS_TAB",
+    "IDC_RESTORE_TAB",
+    "IDC_PRINT",
+  ];
+  for (const commandId of chromeCommandIds) {
+    assert.match(nativeHost, new RegExp(commandId), `CEF host must route ${commandId}.`);
+  }
 });
 
 test("browser-first bridge rejects unauthenticated localhost requests", (t) => {
@@ -1192,6 +1340,23 @@ test("browser-first bridge executes enabled Hermes CLI adapter through host boun
   assert.equal(payload.statusAfter, "completed");
   assert.match(payload.artifactPath, /BrowserFirst\/DelegationArtifacts\/hermes/);
   assert.match(payload.summary, /Hermes CLI adapter completed/);
+});
+
+test("browser-first bridge executes enabled OpenCode CLI adapter through host boundary", (t) => {
+  const payload = runBridgeSelfTest(t, [
+    "--opencode-cli-execution-self-test=true",
+    "--bridge-token=test-token",
+    "--addon-execution-settings-token=execution-token",
+    "--bridge-port=0",
+  ]);
+  if (!payload) return;
+
+  assert.equal(payload.ok, true);
+  assert.equal(payload.adapter, "opencode-cli");
+  assert.equal(payload.opencodeMode, "local-opencode-cli");
+  assert.equal(payload.statusAfter, "completed");
+  assert.match(payload.artifactPath, /BrowserFirst\/DelegationArtifacts\/opencode/);
+  assert.match(payload.summary, /OpenCode CLI adapter completed/);
 });
 
 test("browser-first bridge completes deterministic OpenCode delegation lifecycle", (t) => {

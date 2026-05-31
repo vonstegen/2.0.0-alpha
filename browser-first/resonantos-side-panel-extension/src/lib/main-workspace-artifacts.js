@@ -15,6 +15,26 @@ const kindLabel = (kind) => ({
   intake: "Intake"
 }[kind] ?? "Artifact");
 
+export function artifactCategory(artifact = {}) {
+  const kind = String(artifact.kind ?? "").toLowerCase();
+  const insights = normalizedArtifactInsights(artifact);
+  if (insights.evidenceType === "Wallet / DAO Audit" || /wallet\s*\/\s*dao\s+audit/i.test(String(artifact.title ?? ""))) return "wallet-dao";
+  if (kind === "browser-control-report") return "agent-control";
+  if (kind === "browser-job-report") return "browser-job";
+  if (kind === "browser-intake" || insights.pageUrl) return "browser-intake";
+  return "intake";
+}
+
+function artifactCategoryLabel(category) {
+  return {
+    "agent-control": "Agent Control",
+    "browser-intake": "Browser Intake",
+    "browser-job": "Browser Jobs",
+    intake: "Other Intake",
+    "wallet-dao": "Wallet / DAO"
+  }[category] ?? "Artifacts";
+}
+
 export function artifactInsightsFromMarkdown(content) {
   const value = String(content ?? "");
   const lineValue = (label) => {
@@ -34,8 +54,10 @@ export function artifactInsightsFromMarkdown(content) {
   const targetReason = lineValue("targetReason");
   const status = lineValue("status");
   return {
+    capturedAt: lineValue("capturedAt"),
     evidenceType: isWalletDaoAudit ? "Wallet / DAO Audit" : "",
     nextHumanAction,
+    pageTitle: lineValue("pageTitle"),
     pageUrl: lineValue("pageUrl"),
     percentComplete,
     phase,
@@ -80,6 +102,11 @@ function artifactRow(artifact, onOpen) {
       ? `Next: ${insights.nextHumanAction}`
       : `Progress: ${insights.summary}`;
     row.append(insight);
+  } else if (insights.pageTitle || insights.pageUrl) {
+    const source = document.createElement("small");
+    source.className = "artifact-row-progress";
+    source.textContent = `Source: ${[insights.pageTitle, insights.pageUrl].filter(Boolean).join(" · ")}`;
+    row.append(source);
   }
   row.addEventListener("click", () => onOpen(artifact));
   return row;
@@ -117,10 +144,12 @@ function previewArticle(artifact, actions) {
     ["Status", insights.status],
     ["Evidence", insights.evidenceType],
     ["Wallet", insights.walletSummary],
+    ["Source", [insights.pageTitle, insights.pageUrl].filter(Boolean).join(" · ")],
+    ["Captured", insights.capturedAt],
     ["Progress", insights.summary],
     ["Phase", insights.phase],
     ["Complete", insights.percentComplete ? `${insights.percentComplete}%` : ""],
-    ["Target", [insights.targetSite || insights.pageUrl, insights.targetReason].filter(Boolean).join(" · ")],
+    ["Target", [insights.targetSite, insights.targetReason].filter(Boolean).join(" · ")],
     ["Next human action", insights.nextHumanAction]
   ].filter(([, value]) => Boolean(value));
   const insightPanel = document.createElement("section");
@@ -184,9 +213,14 @@ export function renderArtifactsWorkspace({ container, bridgeRequest, onContinueA
   preview.className = "artifact-preview-shell";
   const status = document.createElement("p");
   status.className = "artifact-status";
+  const filters = document.createElement("nav");
+  filters.className = "artifact-filters";
+  filters.setAttribute("aria-label", "Artifact filters");
   layout.append(list, preview);
-  section.append(header, status, layout);
+  section.append(header, status, filters, layout);
   container.append(section);
+  let currentFilter = "all";
+  let currentEntries = [];
 
   const openArtifact = async (artifact) => {
     preview.replaceChildren();
@@ -246,17 +280,54 @@ export function renderArtifactsWorkspace({ container, bridgeRequest, onContinueA
         body: { limit: 60 }
       });
       const entries = Array.isArray(result.entries) ? result.entries : [];
+      currentEntries = entries;
       if (!entries.length) {
+        filters.replaceChildren();
         setStatus(status, "No browser reports or intake artifacts found yet.", "warning");
         return;
       }
-      list.append(...entries.map((entry) => {
-        const item = document.createElement("li");
-        item.append(artifactRow(entry, openArtifact));
-        return item;
+      const renderEntries = async () => {
+        list.replaceChildren();
+        const visibleEntries = currentFilter === "all"
+          ? currentEntries
+          : currentEntries.filter((entry) => artifactCategory(entry) === currentFilter);
+        if (!visibleEntries.length) {
+          setStatus(status, `No ${artifactCategoryLabel(currentFilter).toLowerCase()} artifacts in this intake view.`, "warning");
+          return;
+        }
+        list.append(...visibleEntries.map((entry) => {
+          const item = document.createElement("li");
+          item.append(artifactRow(entry, openArtifact));
+          return item;
+        }));
+        await openArtifact(visibleEntries[0]);
+        setStatus(
+          status,
+          `${visibleEntries.length}/${currentEntries.length} artifact(s) shown from ${result.root}. Previewing ${visibleEntries[0].path}.`,
+          "success"
+        );
+      };
+      const categories = ["all", ...new Set(entries.map(artifactCategory))];
+      if (!categories.includes(currentFilter)) currentFilter = "all";
+      filters.replaceChildren(...categories.map((category) => {
+        const count = category === "all"
+          ? entries.length
+          : entries.filter((entry) => artifactCategory(entry) === category).length;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = `${category === "all" ? "All" : artifactCategoryLabel(category)} ${count}`;
+        button.dataset.filter = category;
+        button.setAttribute("aria-pressed", category === currentFilter ? "true" : "false");
+        button.addEventListener("click", () => {
+          currentFilter = category;
+          [...filters.querySelectorAll("button")].forEach((candidate) => {
+            candidate.setAttribute("aria-pressed", candidate.dataset.filter === currentFilter ? "true" : "false");
+          });
+          void renderEntries();
+        });
+        return button;
       }));
-      setStatus(status, `${entries.length} artifact(s) available from ${result.root}.`, "success");
-      await openArtifact(entries[0]);
+      await renderEntries();
     } catch (error) {
       setStatus(status, error instanceof Error ? error.message : String(error), "error");
     } finally {

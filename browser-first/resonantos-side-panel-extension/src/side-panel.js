@@ -3,6 +3,7 @@ import { controlStepLabel } from "./lib/agent-control-planner.js";
 import { createAgentControlRunner } from "./lib/agent-control-runner.js";
 import { createAppCommandHandlers } from "./lib/app-command-handlers.js";
 import { normalizeBrowserUrl, normalizeSearchQuery, parseQuotedText } from "./lib/browser-command-parser.js";
+import { activateBrowserJobPage } from "./lib/browser-job-activation.js";
 import { createBrowserJobScheduler } from "./lib/browser-job-scheduler.js";
 import { createBrowserJobStore } from "./lib/browser-job-store.js";
 import { createBrowserPageActions } from "./lib/browser-page-actions.js";
@@ -391,6 +392,7 @@ const createBrowserJob = async ({ existingJob = null, goal, planner = "observe-a
   if (existingJob?.id) {
     await browserJobStore.activateJob(existingJob.id);
     const updated = await browserJobStore.updateJob(existingJob.id, {
+      allowHumanStopOverride: true,
       status,
       planner,
       summary,
@@ -421,6 +423,9 @@ const updateBrowserJob = async (jobId, patch) => {
 
 const focusBrowserJobRun = async (jobId) => {
   const focusedJob = await browserJobStore.activateJob(jobId);
+  if (focusedJob) {
+    await activateJobTab(focusedJob);
+  }
   currentControlRun = focusedJob ? {
     artifacts: Array.isArray(focusedJob.artifacts) ? focusedJob.artifacts : [],
     completedAt: focusedJob.completedAt ?? null,
@@ -838,25 +843,26 @@ const activateJobTab = async (job) => {
   if (["paused", "cancelled"].includes(latestJob?.status)) {
     throw new Error(`Browser job ${job.id} is ${latestJob.status}; scheduler stopped browser actions.`);
   }
-  const tabId = job?.pageLock?.tabId;
-  if (Number.isInteger(tabId)) {
-    const tab = await chrome.tabs.get(tabId).catch(() => null);
-    if (!isReadableBrowserTab(tab)) {
-      throw new Error(`Browser job ${job.id} target tab is no longer readable.`);
+  return activateBrowserJobPage({
+    activeTab,
+    chromeApi: chrome,
+    isReadableBrowserTab,
+    job,
+    setControlledTabId: (tabId) => {
+      controlledTabId = tabId;
     }
-    controlledTabId = tab.id;
-    await chrome.tabs.update(tab.id, { active: true }).catch(() => undefined);
-    return tab;
-  }
-  return activeTab();
+  });
 };
 
-const observeQueuedJobPage = async (job) => withBrowserActionLock(async () => {
+const observeQueuedJobPage = async (job, { onSnapshot = null } = {}) => withBrowserActionLock(async () => {
   await activateJobTab(job);
   setActivity("reading", "Observing job page", job.goal);
   const response = await readActivePage({ announce: false }).catch(() => null);
   const snapshot = response?.snapshot ?? lastSnapshot;
   const tabs = await chrome.tabs.query({}).catch(() => []);
+  if (snapshot && typeof onSnapshot === "function") {
+    onSnapshot(snapshot);
+  }
   return snapshot ? {
     ...snapshot,
     tabs: tabs.filter(isReadableBrowserTab).slice(0, 30).map((tab) => ({
@@ -869,12 +875,15 @@ const observeQueuedJobPage = async (job) => withBrowserActionLock(async () => {
   } : null;
 });
 
-const executeQueuedJobStep = async (job, step) => withBrowserActionLock(async () => {
+const executeQueuedJobStep = async (job, step, { beforeExecute = null } = {}) => withBrowserActionLock(async () => {
   const latestJob = browserJobStore.findJob(job?.id);
   if (["paused", "cancelled"].includes(latestJob?.status)) {
     throw new Error(`Browser job ${job.id} is ${latestJob.status}; scheduler stopped browser actions.`);
   }
   await activateJobTab(job);
+  if (typeof beforeExecute === "function") {
+    beforeExecute();
+  }
   return executeControlStep(step);
 });
 
@@ -893,6 +902,7 @@ const runScheduledBrowserJob = async (job) => {
     pageLock: job.pageLock,
     steps: Array.isArray(job.steps) ? job.steps : []
   };
+  let localLastSnapshot = null;
   let localApproval = null;
   const syncFocusedLocalRun = () => {
     if (browserJobStore.getActiveJobId() === job.id) {
@@ -903,7 +913,16 @@ const runScheduledBrowserJob = async (job) => {
     renderJobMonitor();
   };
   const persistLocalRun = async (patch = {}) => {
-    localRun = { ...localRun, ...patch };
+    const persisted = browserJobStore.findJob(job.id);
+    const requestedStatus = patch.status ?? localRun.status ?? "running";
+    const preservedHumanStopStatus = ["cancelled", "paused"].includes(persisted?.status) && !["cancelled", "paused"].includes(requestedStatus)
+      ? persisted.status
+      : "";
+    localRun = {
+      ...localRun,
+      ...patch,
+      status: preservedHumanStopStatus || requestedStatus
+    };
     await updateBrowserJob(job.id, {
       artifacts: localRun.artifacts,
       planner: localRun.planner,
@@ -928,7 +947,12 @@ const runScheduledBrowserJob = async (job) => {
     approvalBoundaryForStep,
     controlStepLabel,
     createBrowserJob: async () => job,
-    executeControlStep: (step) => executeQueuedJobStep(job, step),
+    executeControlStep: (step) => executeQueuedJobStep(job, step, {
+      beforeExecute: () => {
+        controlledTabId = job.pageLock?.tabId ?? controlledTabId;
+        lastSnapshot = null;
+      }
+    }),
     finishControlRun: (status, artifact = null) => {
       localRun = {
         ...localRun,
@@ -947,8 +971,12 @@ const runScheduledBrowserJob = async (job) => {
     },
     getActiveJobId: () => job.id,
     getCurrentControlRun: () => localRun,
-    getLastSnapshot: () => lastSnapshot,
-    observeControlPage: () => observeQueuedJobPage(job),
+    getLastSnapshot: () => localLastSnapshot,
+    observeControlPage: () => observeQueuedJobPage(job, {
+      onSnapshot: (snapshot) => {
+        localLastSnapshot = snapshot;
+      }
+    }),
     renderControlMonitor: syncFocusedLocalRun,
     requestNextControlAction: (request) => requestNextControlAction({
       ...request,
@@ -1421,6 +1449,7 @@ const {
   runCapabilitiesCommand,
   runDelegateCommand,
   runGoalCommand,
+  runHermesStatusCommand,
   runHistorySearchCommand,
   runJobsCommand,
   runMemorySearchCommand,
@@ -1436,6 +1465,7 @@ const {
   chrome,
   detectWalletState,
   finishControlRun,
+  focusBrowserJob: focusBrowserJobRun,
   getCurrentControlRun: () => currentControlRun,
   permissionForUrl,
   renderJobMonitor,
@@ -1503,6 +1533,7 @@ const commandRouter = createSidePanelCommandRouter({
   runControlCommand,
   runDelegateCommand,
   runGoalCommand,
+  runHermesStatusCommand,
   runHistorySearchCommand,
   runJobsCommand: showBrowserJobsCommand,
   runMemorySearchCommand,

@@ -1446,6 +1446,7 @@ test("settings workspace defaults to overview health and routes sections from su
         status: "ready",
         launchMode: "mac-app-bundle",
         appkitMenu: "installed",
+        bridge: { status: "started" },
         phantomLoaded: true
       };
     }
@@ -1812,6 +1813,7 @@ test("settings diagnostics section summarizes host status and exports redacted r
         status: "ready",
         launchMode: "mac-app-bundle",
         appkitMenu: "installed",
+        bridge: { status: "started" },
         phantomLoaded: true
       };
     }
@@ -1833,7 +1835,7 @@ test("settings diagnostics section summarizes host status and exports redacted r
     assert.match(container.textContent, /1\/2/);
     assert.match(container.textContent, /3 pages/);
     assert.match(container.textContent, /Chromium/);
-    assert.match(container.textContent, /launch=mac-app-bundle · menu=installed · Phantom=loaded/);
+    assert.match(container.textContent, /launch=mac-app-bundle · menu=installed · bridge=started · Phantom=loaded/);
     assert.match(container.textContent, /Diagnostics loaded from host-mediated status endpoints/);
 
     container.querySelector(".settings-primary-action").click();

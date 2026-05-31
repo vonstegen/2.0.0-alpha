@@ -31,6 +31,7 @@ export function createChatTurnController({
   clearAttachments,
   getLastSnapshot,
   getModel,
+  getSurface = () => "side-panel",
   getSystemPrompt = () => "",
   getThinkingDepth,
   maxHistoryMessages = DEFAULT_MAX_HISTORY_MESSAGES,
@@ -47,6 +48,7 @@ export function createChatTurnController({
       signal,
       body: {
         model: getModel(),
+        surface: getSurface(),
         workload: "augmentor-chat",
         thinkingDepth: getThinkingDepth(),
         systemPrompt: getSystemPrompt(),

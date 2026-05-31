@@ -18,7 +18,7 @@ These are the features currently implemented in the browser-first version.
 
 - ResonantOS now has a browser-first product path documented by `ADR-037-browser-first-chromium-resonantos`.
 - The product path is a Chromium-family browser app with ResonantOS living inside browser chrome.
-- The current app installs locally as `/Applications/ResonantOS Browser.app`.
+- The current app installs locally as `~/Applications/ResonantOS Browser.app`.
 - The installed app is replaced by `npm run browser-first:install` after updates.
 - The native Browser host uses the CEF-based `ResonantBrowserNativeHost` path.
 - The browser host loads the ResonantOS side-panel extension by default.
@@ -67,6 +67,8 @@ These are the features currently implemented in the browser-first version.
 - `/wallet status` checks read-only Phantom provider presence and connection state on the active page without requesting connection, signing, seed/private keys, credentials, or transaction submission.
 - `/dao <goal>` prepares a read-only DAO workflow plan from the active page and stops before wallet connect, signing, voting, transfer, transaction confirmation, or public submission.
 - `/wallet audit` and `/dao audit <goal>` save wallet/DAO browser evidence to raw Living Archive intake and queue review while preserving the same human-only wallet/signing/transaction boundary.
+- DAO guidance and audit artifacts include a risk checklist covering domain, proposal identity, voting choice, quorum/threshold, treasury/token amounts, and transaction destination before any human-controlled wallet action.
+- DAO fixture coverage now validates common governance controls and fields, including connect wallet, vote for/against/abstain, execute/queue transaction, treasury recipient, quorum, deadline, and treasury-transfer evidence.
 
 ### Email And Calendar Add-ons
 
@@ -115,9 +117,16 @@ These are the features currently implemented in the browser-first version.
 - The control monitor persists job state through browser storage.
 - Agent Control reports can be saved into Living Archive intake through the bridge path.
 - Agent Control now classifies editable fields before typing: search/query submits and non-sensitive document/generic edits are allowed, while credential, login, payment, wallet, personal-contact, and non-search submit automation is blocked before any value is written.
+- Agent Control now rejects ambiguous repeated click labels or editable field labels at the content-script boundary and returns bounded candidate refs, so Augmentor must retarget precisely instead of clicking or typing into the first matching control.
+- Ambiguous target candidates persist into runner history, durable job state, recovery options, and saved reports so the next planner turn or human review can choose an exact visible ref without rediscovering the candidate list.
+- Resumed durable browser jobs restore ambiguous target flags and candidate refs into planner history, preserving retargeting context after reload or continuation.
+- Active monitor detail rows and expanded durable browser job rows show ambiguous-target candidate refs, so the user can see the exact retargeting options without opening the saved report artifact.
+- Page snapshots and form detection exclude ResonantOS overlay/inline UI controls so Augmentor reads and targets the actual webpage, not its own control chrome.
 - The Augmentor sidebar can save the current browser page or selected page text directly into Living Archive intake and immediately create a governed review request; these captures remain raw intake artifacts and still require review, verification, and promotion before becoming trusted AI Memory.
 - The main workspace exposes matching icon affordances for page read, page save, selection save, and browser status/context summary, and runs those non-control operations directly from the main workspace chat surface.
 - The Artifacts workspace extracts status, target, aggregate progress, and next-human-action summaries from browser-control/job reports so the user can understand saved evidence without opening raw markdown first.
+- The Artifacts workspace groups saved evidence with counts for Agent Control, Browser Jobs, Browser Intake, Wallet/DAO audits, and other intake, so browser-collected memory does not become one undifferentiated pile.
+- The Artifacts workspace extracts browser-source provenance from intake markdown, including page title, page URL, and capture timestamp when present.
 - The Augmentor sidebar can summarize the current browser page into a source-grounded Living Archive intake artifact through the selected provider, with a deterministic source-excerpt fallback when the provider is unavailable.
 - The Augmentor sidebar can capture a multi-tab browser research trail into one Living Archive intake artifact, preserving per-page visible text, links, tab provenance, skipped-tab reasons, and a governed review request.
 - Trusted wiki promotion now maintains `AI_MEMORY/wiki/index.md` as a deduplicated content catalog by upserting the promoted page entry instead of blindly appending stale duplicates; `log.md` remains the append-only chronological record.
@@ -227,7 +236,13 @@ These are the features currently implemented in the browser-first version.
 - `/jobs` reports scheduler state so the human can see whether queued work is runnable, locked by another browser job, or waiting for execution capacity.
 - Expanded job monitor rows show per-job scheduler state for queued jobs, including the blocking job id when a page lock prevents execution.
 - The execution scheduler starts queued non-conflicting jobs, auto-drains capacity-waiting jobs after completions, preserves paused/cancelled jobs when a runner notices stop state, and prevents hard human-only boundaries from leaving approval jobs that hold locks.
+- Scheduled browser jobs keep job-local page snapshots and clear shared page context before executing their steps, reducing context leakage between parallel jobs while browser mutations remain serialized through the host action lock.
+- Scheduled background browser jobs no longer steal the currently focused browser job; if the stored active id points to a completed job while active work remains, the durable job store and main workspace shift attention to a live queued/running/approval/paused job while preserving explicit manual focus on completed jobs for review/reporting.
+- `/jobs focus <job>` uses the same focus boundary as monitor controls, so focusing a background job activates its locked readable tab instead of only changing the stored active job id.
 - Expanded job monitor rows show aggregate progress and the latest recommended next human action when blocked/failed job evidence contains blocker guidance.
+- Expanded approval-state job rows show the pending action, reason, observed page title, URL, locked tab/site target, and a reminder to review the visible page before approving.
+- Expanded job rows expose Focus, Pause, Cancel, Continue, Report, and persisted public-submit Approve/Deny controls where applicable.
+- Live browser-host validation proves a background tab job can complete while another tab remains parked at a public-submit approval boundary.
 
 ### Agent Control Visual Feedback
 
@@ -243,10 +258,32 @@ These are the features currently implemented in the browser-first version.
 - Agent Control runs now expose aggregate progress semantics: phase, percent complete, queued count, blocked count, failed count, and a compact progress track in the monitor.
 - Saved Agent Control reports and Browser Job reports include aggregate progress evidence so replay artifacts show the task phase and completion state without reconstructing it from raw steps.
 - Agent Control now rereads the page after successful click/type/open/search/tab-switch actions and records page-state verification evidence, including uncertainty when no visible page change is detected.
+- Agent Control now performs one bounded settle-reread before recording no visible page change, preventing slow page updates from becoming false no-op blockers without repeating click/type actions.
+- Agent Control can perform one precise-ref retry after a safe click produces no visible page change, but only when the current page exposes exactly one matching visible control ref and the action remains inside the safe boundary.
+- Agent Control monitor details and saved reports now expose settle-reread and precise-ref retry evidence, so recovery behavior remains visible instead of becoming hidden automation.
+- Durable Browser Job rows now surface the latest retry/recheck evidence after the live control monitor closes.
+- The main workspace Agent Control strip now shows focused-job retry/recheck evidence when present.
+- Agent Control now blocks completion when the latest browser mutation has no verified visible page-state change, adding a completion-verification blocker and saving it into the report artifact.
+- Resumed Agent Control jobs now preserve stored verificationChanged, settle-reread, and precise-ref retry evidence in planner history.
 - Agent Control now blocks repeated identical actions after no visible page-state change, preventing same-action loops and recording next-human-action guidance.
+- Agent Control now records page-specific recovery options for failed, no-change, and repeat-blocked actions. These options are derived from the current page snapshot and list concrete visible controls/fields where possible.
+- Recovery options are visible in the monitor detail rows, preserved in durable browser job state, and written into saved control/job reports.
+- Agent Control planning and next-action requests now carry a deterministic task-class runbook with phases, safety stops, visible evidence, and completion checks.
+- Strategy phase, strategy rationale, and completion-check evidence are preserved in monitor detail rows, durable browser job state, and saved control/job reports.
+- Agent Control task classes now resolve into real-site scenario runbooks: shopping comparison/discovery, booking discovery, news/web research synthesis, DAO/wallet review, safe form editing, and generic page control.
+- Each scenario runbook carries preferred probes, success signals, and stop conditions so Augmentor has concrete strategy before selecting a browser action.
+- The active Agent Control monitor now renders a compact strategy card with the current scenario, phase, preferred probes, success signals, and stop boundaries.
+- The active Agent Control monitor now renders a current-authority card describing visible browser context Augmentor can read, safe actions it may perform, and human-only boundaries such as wallet signing, payment, login, credentials, and public submission.
+- Approved-once and denied browser actions now persist explicit approval-decision evidence in monitor details, durable browser job state, and saved reports.
+- The durable browser job scheduler preserves blocked/approval/failed control-loop results instead of converting non-success browser jobs into completed jobs.
+- The main full-screen workspace now renders a compact Agent Control status strip for active/queued/approval browser jobs, including focused job status, page target, scheduler counts, progress, and controls to open the full monitor, focus, or stop the job.
+- The main workspace Agent Control status strip uses a dedicated browser-job controller for Open Monitor, Focus, and Stop so storage mutation, page-lock release, sidebar handoff prompts, and system trace messages are covered outside the UI renderer.
+- Background browser-job Focus and approval actions activate the job's locked readable tab before review/replay, so approval decisions remain page-specific instead of following the currently active tab by accident.
+- The browser-job monitor labels visible-page ownership and background approval state, including the locked tab that will be activated before approve or deny.
 - Durable Browser Jobs now detect stale running/approval jobs passively and surface last-activity timing plus next human action in `/jobs` and the monitor, without auto-killing, auto-resuming, or changing the persisted status.
 - Blocked Agent Control tasks delegated to the Resonant Engineer now include a bounded context packet with source run id, browser target, aggregate progress, blocker reason, recent trace, and explicit safety boundary.
 - The Add-ons workspace now lists recent Hermes/OpenCode/Engineer delegation packets and shows whether each handoff includes a bounded context packet.
+- The Add-ons workspace now shows granted, pending, and denied capability chips for each visible add-on, and Hermes/OpenCode local-execution toggles route through scoped host execution settings instead of raw command access.
 - Completed, blocked, approval, and denied control runs now show compact summary cards before the replayable action list.
 - The overlay starts once when the agent begins operating the page.
 - The overlay remains active across the whole control session.
@@ -292,12 +329,14 @@ These are the features currently implemented in the browser-first version.
 
 ### Deterministic Validation Already Passing
 
-- `npm run test:browser-first`: passed.
-- `npm run test:browser-first-live`: passed.
+- Latest local checkpoint on 2026-05-31: `npm run test:browser-first` passed with 310 tests.
+- Latest local checkpoint on 2026-05-31: `npm run build` passed.
+- Latest unrestricted local checkpoint on 2026-05-31: `npm run test:browser-first-live` passed and covered Agent Control plus multi-tab browser jobs.
+- Restricted sandbox checkpoint on 2026-05-31: `npm run test:browser-first-live` exits cleanly with an explicit skip when localhost binding is denied by the sandbox.
+- Restricted sandbox installed-app checkpoint on 2026-05-31: `npm run browser-first:verify-installed` falls back from sandboxed LaunchServices `kLSNoExecutableErr` false negatives to the validated launcher executable, then reports the real local bridge `EPERM` boundary instead of a misleading missing-executable claim.
 - `npm run test:browser-native`: passed in the prior full chain for the current branch.
 - `npm test -- --run`: passed in the prior full chain for the current branch.
-- `npm run build`: passed.
-- `npm run browser-first:install`: passed and installed `/Applications/ResonantOS Browser.app`.
+- `npm run browser-first:install`: passed and installed `~/Applications/ResonantOS Browser.app`.
 - `git diff --check`: passed.
 
 Known validation note: Vite still reports the existing large chunk warning in the desktop build. This warning is not caused by the browser-first Agent Control changes.
@@ -309,7 +348,7 @@ These are the next capability areas planned for the browser-first app.
 ### Agent Control Quality
 
 - Refine the control monitor with richer aggregate progress semantics and clearer multi-step task phases. Initial aggregate phase/progress evidence is now implemented; next work is to propagate the same clarity into non-control workspace blockers.
-- Add visible blockers with recommended next human action in more workspace surfaces beyond Agent Control. Initial job-monitor and Artifacts workspace blocker guidance is implemented; next work is to extend this to delegation workspaces.
+- Add visible blockers with recommended next human action in more workspace surfaces beyond Agent Control. Initial job-monitor, Artifacts workspace, Hermes workspace, OpenCode workspace, and delegation lifecycle guidance are implemented; next work is to expand the same pattern into future add-on workspaces.
 - Add better progress semantics for multi-step tasks. Initial monitor/report progress semantics are implemented; next work is richer phase-specific copy and recovery actions.
 - Add per-job approval-card routing for background jobs; the true scheduler exists, but safe approval review still needs a focused background-job UX instead of one global approval card.
 - Improve replayable run reports with richer aggregate progress and confidence evidence. Initial aggregate progress and confidence evidence is now present in saved reports.
@@ -325,7 +364,7 @@ These are the next capability areas planned for the browser-first app.
 - Add more robust tab-aware workflows.
 - Add multi-tab tasks with explicit safe tab switching.
 - Improve controlled-tab visibility across more workspace surfaces beyond the Agent Control monitor and saved reports.
-- Add action retries when an action does not change the page state.
+- Deepen action recovery after no visible page change. A bounded settle-reread and one safe precise-ref click retry now exist; future work should add other alternative-action retries only when they can stay behind the same approval and safety gates.
 - Add page-specific task adapters only when they can stay behind the same safety boundaries.
 
 ### Consent And Permission UX
@@ -347,15 +386,16 @@ Current browser-first implementation note:
 ### Memory And Archive Integration In Browser-First
 
 - Connect browser-first Agent Control reports more deeply to Living Archive intake.
-- Improve saved page/context artifacts with richer metadata and user-facing artifact previews. Browser-control/job report artifacts now show derived action summaries; next work is richer grouping/filtering for non-report intake.
-- Improve browser-collected source provenance with better previews, filtering, and artifact grouping.
+- Improve saved page/context artifacts with richer metadata and user-facing artifact previews. Browser-control/job report artifacts now show derived action summaries, and the Artifacts workspace now filters report/intake categories with visible counts.
+- Improve browser-collected source provenance beyond current page title, URL, and capture-time previews with deeper source-type-specific artifact summaries.
 - Keep direct trusted wiki writes blocked; browser artifacts must enter intake/review.
 
 ### Add-on Integration In Browser-First
 
-- Expand the browser-first Add-ons workspace from visibility/status into install, enable, disable, and permission review flows.
+- Expand the browser-first Add-ons workspace from current visibility/status, capability review, and Hermes/OpenCode local-execution toggles into future install/uninstall/update flows.
 - Expose Hermes and OpenCode as controlled add-on targets from both the browser-first main workspace and side panel.
 - Route delegation through approved add-on manifests, not raw command execution.
+- Hermes/OpenCode blocked delegation states now show a structured reason, next action, and trust boundary so the user can recover the runtime without mistaking add-on agents for trusted core agents.
 - Add task handoff artifacts from browser-first Agent Control into delegation workspaces.
 - Keep add-ons untrusted by default.
 - Email and Calendar now have manual provider handoff connectors; future account-level connectors still need explicit grants and stronger audit/approval flows.
@@ -618,8 +658,10 @@ These features exist in the desktop vNext codebase and remain important. Some wi
 
 - Browser-first is now the product direction, but not all desktop vNext modules have been ported into it.
 - Living Archive is complete for desktop V1 architecture, but browser-first memory UX is not complete.
-- Add-on registry exists in desktop vNext; browser-first add-on management is not yet fully surfaced.
-- Hermes and OpenCode delegation now have browser-first production lifecycle foundations: governed task packets, host-mediated start/status/artifact/cancel routes, deterministic execution coverage, Add-ons workspace result reading, and explicit opt-in before real local CLI execution. OpenCode execution is additionally scoped to the ResonantOS repository boundary for browser-first V1.
+- Browser-first add-on management now surfaces capability review plus Hermes/OpenCode local-execution toggles; future work still needs install, uninstall, update, and marketplace/registry flows.
+- Hermes and OpenCode delegation now have browser-first production lifecycle foundations: governed task packets, host-mediated start/status/artifact/cancel routes, deterministic execution coverage, Add-ons workspace result reading, and explicit opt-in before real local CLI execution. Both enabled-CLI adapter paths are tested with fake executables so the production handoff, parser, and artifact contracts are validated without relying on a live user runtime. OpenCode execution is scoped to the ResonantOS repository boundary for browser-first V1.
+- Augmentor chat can now report recent delegated work through `/delegations` or `/handoffs`, including target, status, result excerpt, artifact link, and packet path, so Hermes/OpenCode work is visible without manually opening the Add-ons workspace.
+- Hermes runtime status is now available from chat with `/hermes` or `/hermes status`. The add-on contract is treated as bundled in browser-first ResonantOS, while the local Hermes CLI runtime is reported separately as detected/not detected and execution enabled/disabled.
 - Wallet actions intentionally stop at human approval boundaries; automated signing is not a goal.
 - Browser-first provider credentials depend on the local bridge and provider secrets path.
 - Browser-first validation is strong locally on this Mac, but cross-platform browser-first packaging needs its own CI path.

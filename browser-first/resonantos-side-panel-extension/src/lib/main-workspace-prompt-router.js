@@ -20,6 +20,11 @@ export const parseOpenCodeSlashCommand = (value) => {
   return match ? (match[1] ?? "").trim() : null;
 };
 
+export const parseDelegationsSlashCommand = (value) => {
+  const match = /^\/\s*(?:delegations|handoffs)(?:\s+([\s\S]*))?$/i.exec(String(value ?? "").trim());
+  return match ? (match[1] ?? "").trim() : null;
+};
+
 export const parseDraftSlashCommand = (value) => {
   const match = /^\/\s*(email|calendar)(?:\s+([\s\S]*))?$/i.exec(String(value ?? "").trim());
   return match ? { target: match[1].toLowerCase(), body: (match[2] ?? "").trim() } : null;
@@ -54,6 +59,8 @@ export function planMainWorkspacePrompt(value) {
   if (openCodeMission !== null) return { action: "opencode", mission: openCodeMission };
   const hermesMission = parseHermesSlashCommand(prompt);
   if (hermesMission !== null) return { action: "hermes", mission: hermesMission };
+  const delegationFilter = parseDelegationsSlashCommand(prompt);
+  if (delegationFilter !== null) return { action: "delegations", filter: delegationFilter };
   const naturalDelegation = parseNaturalDelegationIntent(prompt);
   if (naturalDelegation) return { action: "delegate", intent: naturalDelegation };
   const walletCommand = parseWalletSlashCommand(prompt);

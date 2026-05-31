@@ -60,7 +60,18 @@ test("control planning service requests and sanitizes full plans through the bri
 
   assert.equal(plan.source, "remote");
   assert.equal(plan.steps.length, 1);
-  assert.deepEqual(harness.calls[0], [
+  assert.equal(harness.calls[0][0], "bridge");
+  assert.equal(harness.calls[0][1], "/augmentor/control-plan");
+  assert.equal(harness.calls[0][2].goal, "open example");
+  assert.equal(harness.calls[0][2].model, "MiniMax-M2.7");
+  assert.equal(harness.calls[0][2].thinkingDepth, "high");
+  assert.deepEqual(harness.calls[0][2].pageSnapshot, { title: "Page" });
+  assert.equal(harness.calls[0][2].runbook.taskClass, "page-work");
+  assert.equal(harness.calls[0][2].runbook.scenarioId, "generic-page-control");
+  assert.match(harness.calls[0][2].runbook.strategy, /generic page control scenario runbook/);
+  assert.ok(harness.calls[0][2].runbook.successSignals.some((signal) => /current URL/.test(signal)));
+  assert.ok(harness.calls[0][2].runbook.stopConditions.some((condition) => /target control/.test(condition)));
+  assert.notDeepEqual(harness.calls[0], [
     "bridge",
     "/augmentor/control-plan",
     {
@@ -70,6 +81,7 @@ test("control planning service requests and sanitizes full plans through the bri
       pageSnapshot: { title: "Page" }
     }
   ]);
+  assert.equal(harness.calls[0][2].runbook.taskClass, "page-work");
 });
 
 test("control planning service supports test planner overrides behind sanitizer", async () => {
@@ -98,7 +110,14 @@ test("control planning service requests next actions and falls back deterministi
   });
   assert.equal(decision.status, "continue");
   assert.equal(decision.action.type, "open");
+  assert.match(decision.strategyPhase, /Read the active page|Open or search|Search or open|Read the page/);
+  assert.match(decision.strategyRationale, /runbook/);
+  assert.equal(decision.scenarioName, "generic page control");
+  assert.ok(decision.successSignals.some((signal) => /current URL/.test(signal)));
+  assert.ok(decision.stopConditions.some((condition) => /target control/.test(condition)));
+  assert.ok(decision.preferredProbes.some((probe) => /visible page/.test(probe)));
   assert.equal(planned.calls[0][1], "/augmentor/next-action");
+  assert.equal(planned.calls[0][2].runbook.taskClass, "page-work");
 
   const fallback = createHarness({ bridgeError: "provider down" });
   const fallbackDecision = await fallback.service.requestNextControlAction({
@@ -109,6 +128,8 @@ test("control planning service requests next actions and falls back deterministi
   assert.equal(fallbackDecision.source, "deterministic-fallback");
   assert.equal(fallbackDecision.status, "continue");
   assert.equal(fallbackDecision.action.type, "open");
+  assert.match(fallbackDecision.completionCheck, /visible page state proves/);
+  assert.equal(fallbackDecision.scenarioName, "generic page control");
 });
 
 test("control planning service converts unsafe next-action override failures into blocked decisions", async () => {
@@ -128,6 +149,8 @@ test("control planning service converts unsafe next-action override failures int
 
   assert.equal(decision.status, "blocked");
   assert.match(decision.approvalReason, /restricted action/);
+  assert.equal(decision.scenarioName, "DAO / wallet review");
+  assert.match(decision.strategyRationale, /DAO \/ wallet review scenario runbook/);
   assert.equal(harness.calls.length, 0);
 });
 

@@ -13,9 +13,13 @@ function browserLaunchStatus(result) {
   }
   const value = result.value ?? {};
   if (value.status === "ready") {
-    return { value: "Ready", detail: "native Chromium host, menu, workspace, and extensions verified", tone: "success" };
+    return { value: "Ready", detail: "native Chromium host, bridge, menu, workspace, and extensions verified", tone: "success" };
   }
-  return { value: "Check", detail: value.error || "latest launch log is incomplete or missing a required browser signal", tone: "warning" };
+  return {
+    value: "Check",
+    detail: value.issues?.[0] || value.error || "latest launch log is incomplete or missing a required browser signal",
+    tone: "warning"
+  };
 }
 
 function diagnosticsRow({ label, value, detail = "" }) {
@@ -142,7 +146,13 @@ export function renderDiagnosticsSection(container, { bridgeRequest }) {
         label: "Chromium host",
         value: browserLaunch?.status ?? "Unavailable",
         detail: browserLaunchResult.status === "fulfilled"
-          ? `launch=${browserLaunch.launchMode ?? "unknown"} · menu=${browserLaunch.appkitMenu ?? "unknown"} · Phantom=${browserLaunch.phantomLoaded ? "loaded" : "not verified"}`
+          ? [
+              `launch=${browserLaunch.launchMode ?? "unknown"}`,
+              `menu=${browserLaunch.appkitMenu ?? "unknown"}`,
+              `bridge=${browserLaunch.bridge?.status ?? "unknown"}`,
+              `Phantom=${browserLaunch.phantomLoaded ? "loaded" : "not verified"}`,
+              browserLaunch.issues?.[0] ? `issue=${browserLaunch.issues[0]}` : ""
+            ].filter(Boolean).join(" · ")
           : safeErrorMessage(browserLaunchResult.reason)
       })
     );

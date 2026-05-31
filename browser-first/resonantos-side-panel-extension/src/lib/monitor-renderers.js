@@ -139,6 +139,51 @@ function jobNextHumanAction(job) {
   return step?.details?.nextHumanAction ?? "";
 }
 
+function jobRecoveryEvidence(job) {
+  const steps = Array.isArray(job?.steps) ? job.steps : [];
+  const step = [...steps].reverse()
+    .find((candidate) => candidate?.details?.verificationRetry || candidate?.details?.actionRetry);
+  const details = step?.details ?? {};
+  const evidence = [
+    details.verificationRetry ? `verification retry: ${details.verificationRetry}` : "",
+    details.actionRetry ? `action retry: ${details.actionRetry}` : ""
+  ].filter(Boolean);
+  return evidence.join(" · ");
+}
+
+function targetCandidateText(candidate = {}) {
+  return [
+    candidate.label || candidate.text || candidate.name || candidate.ref || "",
+    candidate.ref ? `#${candidate.ref}` : "",
+    candidate.fieldKind ? `kind:${candidate.fieldKind}` : "",
+    candidate.approvalRequired ? "approval-required" : ""
+  ].filter(Boolean).join(" · ");
+}
+
+function jobAmbiguityEvidence(job) {
+  const steps = Array.isArray(job?.steps) ? job.steps : [];
+  const step = [...steps].reverse()
+    .find((candidate) => candidate?.details?.ambiguousTarget || candidate?.details?.targetCandidates?.length);
+  const candidates = Array.isArray(step?.details?.targetCandidates) ? step.details.targetCandidates : [];
+  if (!step || !candidates.length) return "";
+  return candidates.slice(0, 4).map(targetCandidateText).filter(Boolean).join("; ");
+}
+
+function pendingApprovalEvidence(job) {
+  const approval = job?.pendingApproval;
+  if (!approval) return null;
+  const history = Array.isArray(approval.history) ? approval.history : [];
+  const lastObservation = [...history].reverse().find((entry) => entry?.observation)?.observation ?? null;
+  const stepLabel = approval.step ? String(approval.step.label ?? approval.step.text ?? approval.step.type ?? "pending action") : "pending action";
+  return {
+    action: stepLabel.slice(0, 180),
+    reason: String(approval.reason ?? "This browser action requires human approval.").slice(0, 500),
+    title: String(lastObservation?.title ?? "").slice(0, 180),
+    url: String(lastObservation?.url ?? job?.pageLock?.url ?? "").slice(0, 240),
+    target: pageLockLabel(job?.pageLock).replace(/^Target: /, "")
+  };
+}
+
 function pageLockLabel(pageLock) {
   if (!pageLock) return "";
   return [
@@ -187,17 +232,72 @@ export function controlRunSummary(run) {
 
 function stepDetailRows(step) {
   const details = step?.details ?? {};
+  const listValue = (value) => Array.isArray(value)
+    ? value.filter(Boolean).map((item, index) => `${index + 1}. ${item}`).join(" ")
+    : "";
+  const recoveryOptions = Array.isArray(details.recoveryOptions)
+    ? details.recoveryOptions.filter(Boolean).map((option, index) => `${index + 1}. ${option}`).join(" ")
+    : "";
+  const targetCandidates = Array.isArray(details.targetCandidates)
+    ? details.targetCandidates.filter(Boolean).map((candidate, index) => `${index + 1}. ${targetCandidateText(candidate)}`).join(" ")
+    : "";
   return [
     ["Timing", formatDurationMs(step?.timing?.durationMs)],
     ["Observation", details.observation?.title || details.observation?.url || ""],
     ["Decision", details.decision || ""],
     ["Action", details.action || ""],
+    ["Approval decision", details.approvalDecision || ""],
     ["Result", details.result || step?.note || ""],
     ["Safety", details.safetyClass || ""],
+    ["Strategy phase", details.strategyPhase || ""],
+    ["Strategy rationale", details.strategyRationale || ""],
+    ["Completion check", details.completionCheck || ""],
+    ["Scenario", details.scenarioName || ""],
+    ["Preferred probes", listValue(details.preferredProbes)],
+    ["Success signals", listValue(details.successSignals)],
+    ["Stop boundaries", listValue(details.stopConditions)],
     ["Confidence", details.confidence || ""],
     ["Uncertainty", details.uncertainty || ""],
-    ["Next human action", details.nextHumanAction || ""]
+    ["Ambiguous target", details.ambiguousTarget ? "yes" : ""],
+    ["Target candidates", targetCandidates],
+    ["Verification retry", details.verificationRetry || ""],
+    ["Action retry", details.actionRetry || ""],
+    ["Next human action", details.nextHumanAction || ""],
+    ["Recovery options", recoveryOptions]
   ].filter(([, value]) => Boolean(value));
+}
+
+function latestStrategyDetails(run) {
+  const steps = Array.isArray(run?.steps) ? run.steps : [];
+  return [...steps].reverse()
+    .map((step) => step?.details ?? {})
+    .find((details) => details.scenarioName || details.successSignals?.length || details.stopConditions?.length || details.preferredProbes?.length)
+    ?? null;
+}
+
+function strategyList(documentRef, title, entries) {
+  if (!Array.isArray(entries) || !entries.length) return null;
+  const section = documentRef.createElement("div");
+  const label = documentRef.createElement("small");
+  label.textContent = title;
+  const list = documentRef.createElement("ul");
+  entries.slice(0, 5).forEach((entry) => {
+    const item = documentRef.createElement("li");
+    item.textContent = entry;
+    list.append(item);
+  });
+  section.append(label, list);
+  return section;
+}
+
+function controlBoundaryCopy(run = {}) {
+  const target = pageLockLabel(run.pageLock).replace(/^Target: /, "");
+  return {
+    target: target || "active readable browser tab",
+    canSee: "visible page text, links, controls, fields, URL, and readable tab context",
+    canDo: "safe read, scroll, navigation, click, search, and non-sensitive typing through governed browser actions",
+    humanOnly: "wallet signing, payments, login, credentials, public submit/post/send, irreversible value actions"
+  };
 }
 
 export function createMonitorRenderers({
@@ -294,6 +394,60 @@ export function createMonitorRenderers({
         controlSummaryCard.append(title, body);
       }
     }
+    const documentRef = controlMonitor.ownerDocument;
+    let strategyCard = controlMonitor.querySelector(".control-strategy-card");
+    if (!strategyCard) {
+      strategyCard = documentRef.createElement("div");
+      strategyCard.className = "control-strategy-card";
+      controlCurrentAction.insertAdjacentElement("afterend", strategyCard);
+    }
+    const strategy = latestStrategyDetails(currentControlRun);
+    strategyCard.hidden = !strategy;
+    strategyCard.replaceChildren();
+    if (strategy) {
+      const header = documentRef.createElement("div");
+      const eyebrow = documentRef.createElement("small");
+      eyebrow.textContent = "Control strategy";
+      const title = documentRef.createElement("strong");
+      title.textContent = strategy.scenarioName || "Active browser strategy";
+      const phase = documentRef.createElement("span");
+      phase.textContent = strategy.strategyPhase || "Following observe-act-verify loop.";
+      header.append(eyebrow, title, phase);
+      strategyCard.append(header);
+      [
+        strategyList(documentRef, "Success signals", strategy.successSignals),
+        strategyList(documentRef, "Stop boundaries", strategy.stopConditions),
+        strategyList(documentRef, "Preferred probes", strategy.preferredProbes)
+      ].filter(Boolean).forEach((section) => strategyCard.append(section));
+    }
+    let boundaryCard = controlMonitor.querySelector(".control-boundary-card");
+    if (!boundaryCard) {
+      boundaryCard = documentRef.createElement("div");
+      boundaryCard.className = "control-boundary-card";
+      strategyCard.insertAdjacentElement("afterend", boundaryCard);
+    }
+    const boundary = controlBoundaryCopy(currentControlRun);
+    boundaryCard.replaceChildren();
+    const boundaryHeader = documentRef.createElement("div");
+    const boundaryEyebrow = documentRef.createElement("small");
+    boundaryEyebrow.textContent = "Current authority";
+    const boundaryTitle = documentRef.createElement("strong");
+    boundaryTitle.textContent = boundary.target;
+    boundaryHeader.append(boundaryEyebrow, boundaryTitle);
+    boundaryCard.append(boundaryHeader);
+    [
+      ["Can see", boundary.canSee],
+      ["Can do", boundary.canDo],
+      ["Human-only", boundary.humanOnly]
+    ].forEach(([label, value]) => {
+      const row = documentRef.createElement("p");
+      const key = documentRef.createElement("span");
+      key.textContent = label;
+      const text = documentRef.createElement("b");
+      text.textContent = value;
+      row.append(key, text);
+      boundaryCard.append(row);
+    });
     controlCurrentAction.dataset.state = progress.currentStep?.state ?? currentControlRun.status;
     const actionKicker = controlCurrentAction.querySelector("small");
     const actionLabel = controlCurrentAction.querySelector("strong");
@@ -586,6 +740,22 @@ export function createMonitorRenderers({
         focused.textContent = "Focused browser job";
         details.append(focused);
       }
+      const ownership = document.createElement("small");
+      ownership.className = "job-ownership";
+      if (job.id === activeJobId) {
+        ownership.textContent = job.pageLock?.tabId !== null && job.pageLock?.tabId !== undefined
+          ? `Visible page owner: this job controls tab ${job.pageLock.tabId}.`
+          : "Visible page owner: this job follows the active readable tab.";
+      } else if (job.status === "approval" && job.pendingApproval) {
+        ownership.textContent = job.pageLock?.tabId !== null && job.pageLock?.tabId !== undefined
+          ? `Background approval: Focus activates tab ${job.pageLock.tabId} before approve or deny.`
+          : "Background approval: Focus this job before approve or deny.";
+      } else if (["queued", "running", "paused"].includes(job.status)) {
+        ownership.textContent = "Background job: focus it before inspecting or continuing this task.";
+      }
+      if (ownership.textContent) {
+        details.append(ownership);
+      }
       if (job.preflightDecision) {
         const preflight = document.createElement("small");
         preflight.className = "job-preflight";
@@ -603,6 +773,20 @@ export function createMonitorRenderers({
         progress.className = "job-progress";
         progress.textContent = `Progress: ${controlRunProgressSummary(job)}`;
         details.append(progress);
+      }
+      const recoveryEvidence = jobRecoveryEvidence(job);
+      if (recoveryEvidence) {
+        const recovery = document.createElement("small");
+        recovery.className = "job-recovery-evidence";
+        recovery.textContent = `Recovery evidence: ${recoveryEvidence}`;
+        details.append(recovery);
+      }
+      const ambiguityEvidence = jobAmbiguityEvidence(job);
+      if (ambiguityEvidence) {
+        const ambiguity = document.createElement("small");
+        ambiguity.className = "job-ambiguity-evidence";
+        ambiguity.textContent = `Ambiguous target candidates: ${ambiguityEvidence}`;
+        details.append(ambiguity);
       }
       const staleEvidence = staleBrowserJobEvidence(job);
       if (staleEvidence) {
@@ -637,6 +821,31 @@ export function createMonitorRenderers({
         blocker.className = "job-blocker-guidance";
         blocker.textContent = `Next human action: ${nextHumanAction}`;
         details.append(blocker);
+      }
+      if (job.status === "approval" && job.pendingApproval) {
+        const evidence = pendingApprovalEvidence(job);
+        const approval = document.createElement("aside");
+        approval.className = "job-approval-card";
+        const approvalTitle = document.createElement("strong");
+        approvalTitle.textContent = `Approval needed: ${evidence.action}`;
+        const approvalReason = document.createElement("p");
+        approvalReason.textContent = evidence.reason;
+        const preview = document.createElement("dl");
+        [
+          ["Page", evidence.title || "Unknown page"],
+          ["URL", evidence.url || "unknown URL"],
+          ["Target", evidence.target || "unknown target"]
+        ].forEach(([label, value]) => {
+          const term = document.createElement("dt");
+          term.textContent = label;
+          const definition = document.createElement("dd");
+          definition.textContent = value;
+          preview.append(term, definition);
+        });
+        const hint = document.createElement("small");
+        hint.textContent = "Review the visible page state before approving. Public-submit, wallet, payment, login, signing, and credential boundaries stay human-gated.";
+        approval.append(approvalTitle, approvalReason, preview, hint);
+        details.append(approval);
       }
       details.append(id);
       const state = document.createElement("span");

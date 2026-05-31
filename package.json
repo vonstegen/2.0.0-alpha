@@ -22,6 +22,7 @@
     "electron:dev": "npm run build && node electron-host/run-product.mjs",
     "electron:smoke": "npm run build && node electron-host/run-product-smoke.mjs",
     "test:browser-native": "node --test addons/resonant-browser-native/test/*.test.mjs",
+    "browser-native:verify-live": "node scripts/verify-browser-native-live.mjs",
     "health": "node scripts/health-check.mjs",
     "test:health": "node --test --test-concurrency=1 scripts/health-check.test.mjs",
     "engineer:prompt": "node scripts/engineer-runner.mjs prompt",
@@ -33,7 +34,12 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "npm run browser-native:build && tauri build",
-    "browser-first:diagnostics": "node scripts/browser-launch-diagnostics.mjs"
+    "browser-first:diagnostics": "node scripts/browser-launch-diagnostics.mjs",
+    "browser-first:diagnostics:strict": "node scripts/browser-launch-diagnostics.mjs --strict",
+    "browser-first:verify-installed": "node scripts/verify-browser-first-app.mjs",
+    "browser-first:verify-desktop": "node scripts/verify-browser-first-desktop.mjs",
+    "browser-first:audit-desktop": "node scripts/audit-browser-first-desktop-report.mjs",
+    "browser-first:prove-desktop": "node scripts/prove-browser-first-desktop.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",

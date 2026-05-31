@@ -30,6 +30,17 @@ test("main workspace prompt router parses explicit workspace slash commands", ()
   });
 });
 
+test("main workspace prompt router parses delegation status slash commands", () => {
+  assert.deepEqual(planMainWorkspacePrompt("/delegations hermes"), {
+    action: "delegations",
+    filter: "hermes"
+  });
+  assert.deepEqual(planMainWorkspacePrompt("/handoffs"), {
+    action: "delegations",
+    filter: ""
+  });
+});
+
 test("main workspace prompt router delegates natural agent requests before provider chat", () => {
   assert.deepEqual(planMainWorkspacePrompt("ask Hermes to research the add-on strategy"), {
     action: "delegate",
@@ -84,6 +95,7 @@ test("main workspace prompt router preserves explicit command priority", () => {
 
 test("main workspace prompt router separates browser control from normal chat", () => {
   assert.equal(planMainWorkspacePrompt("go to resonantos.com and summarize the page").action, "control");
+  assert.equal(planMainWorkspacePrompt("can you navigate to manoloremiddi.com?").action, "control");
   assert.equal(planMainWorkspacePrompt("find latest AI news on the internet").action, "control");
   assert.equal(planMainWorkspacePrompt("hey what's the most inportant new in the world today?").action, "control");
   assert.equal(planMainWorkspacePrompt("explain the strategy without delegating").action, "chat");

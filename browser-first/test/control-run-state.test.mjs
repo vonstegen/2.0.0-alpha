@@ -12,6 +12,7 @@ function createHarness(overrides = {}) {
   const timers = [];
   const state = createControlRunState({
     browserJobStore: {
+      findJob: (id) => overrides.persistedJobs?.[id] ?? null,
       getActiveJobId: () => activeJobId
     },
     getCurrentControlRun: () => currentControlRun,
@@ -237,6 +238,33 @@ test("control run state records the stopped step when cancelled", async () => {
     event[0] === "overlay" &&
     event[1] === true &&
     /Cancelled: Clicking Reserve/.test(event[2])
+  ));
+});
+
+test("control run state preserves a human-stopped durable job from stale runner completion", async () => {
+  const harness = createHarness({
+    minimumOverlayMs: 0,
+    persistedJobs: {
+      "job-a": { id: "job-a", status: "cancelled" }
+    },
+    currentControlRun: {
+      id: "job-a",
+      planner: "planner",
+      summary: "summary",
+      pageLock: { tabId: 9, siteKey: "example.test", url: "https://example.test/", reason: "stale finish target" },
+      steps: [{ type: "read", state: "completed", note: "read page" }],
+      artifacts: []
+    }
+  });
+
+  harness.state.finishControlRun("completed");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(harness.getCurrentControlRun().status, "cancelled");
+  assert.ok(harness.events.some((event) =>
+    event[0] === "job" &&
+    event[1] === "job-a" &&
+    event[2].status === "cancelled"
   ));
 });
 

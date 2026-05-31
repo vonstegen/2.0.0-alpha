@@ -112,6 +112,9 @@ test("opencode workspace can create an initial routed delegation", async () => {
       /command routing/.test(options.body.mission)
     ));
     assert.match(container.textContent, /opencode-routed/);
+    assert.match(container.textContent, /Blocked: OpenCode runtime unavailable/);
+    assert.match(container.textContent, /Next action: Install or start OpenCode/);
+    assert.match(container.textContent, /OpenCode is an add-on worker/);
   } finally {
     cleanup();
   }

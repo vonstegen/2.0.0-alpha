@@ -59,11 +59,24 @@ test("browser job store normalizes job shape and status classes", () => {
         observation: { title: "Example", url: "https://example.com" },
         decision: "Click the visible button.",
         action: "Click Continue",
+        approvalDecision: "approved-once",
         result: "clicked Continue",
         safetyClass: "safe",
+        strategyPhase: "Retarget visible controls.",
+        strategyRationale: "Use page-work runbook.",
+        completionCheck: "Visible page proves the outcome.",
         confidence: "high",
         uncertainty: "Repeated label on page.",
-        nextHumanAction: "Review target if the click fails."
+        ambiguousTarget: true,
+        targetCandidates: [
+          { ref: "r1", label: "Add", tagName: "button", approvalRequired: false },
+          { ref: "r2", label: "Add", tagName: "button", approvalRequired: true, fieldKind: "search-query" }
+        ],
+        verificationChanged: true,
+        verificationRetry: "settle-reread",
+        actionRetry: "precise-ref-retry",
+        nextHumanAction: "Review target if the click fails.",
+        recoveryOptions: []
       },
       timing: {
         startedAt: "2026-05-26T09:59:59.000Z",
@@ -119,11 +132,28 @@ test("browser job store normalizes job shape and status classes", () => {
       observation: { title: "Example", url: "https://example.com" },
       decision: "Click the visible button.",
       action: "Click Continue",
+      approvalDecision: "approved-once",
       result: "clicked Continue",
       safetyClass: "safe",
+      strategyPhase: "Retarget visible controls.",
+      strategyRationale: "Use page-work runbook.",
+      completionCheck: "Visible page proves the outcome.",
+      scenarioName: null,
+      preferredProbes: [],
+      successSignals: [],
+      stopConditions: [],
       confidence: "high",
       uncertainty: "Repeated label on page.",
-      nextHumanAction: "Review target if the click fails."
+      ambiguousTarget: true,
+      targetCandidates: [
+        { approvalRequired: false, fieldKind: "", label: "Add", ref: "r1", tagName: "button" },
+        { approvalRequired: true, fieldKind: "search-query", label: "Add", ref: "r2", tagName: "button" }
+      ],
+      verificationChanged: true,
+      verificationRetry: "settle-reread",
+      actionRetry: "precise-ref-retry",
+      nextHumanAction: "Review target if the click fails.",
+      recoveryOptions: []
     },
     timing: {
       startedAt: "2026-05-26T09:59:59.000Z",
@@ -305,6 +335,58 @@ test("browser job store creates active jobs and finds by active, id, or goal", a
   assert.equal(harness.writes.at(-1).jobs[0].preflightDecision.mode, "approved-once");
   assert.equal(harness.writes.at(-1).jobs[0].preflightDecision.taskClass, "booking");
   assert.equal(harness.writes.at(-1).active, "job-1");
+});
+
+test("browser job store hydrates to live work instead of a stale terminal active id", async () => {
+  const harness = createHarness({
+    active: "job-done",
+    jobs: [
+      {
+        id: "job-done",
+        goal: "Done task",
+        status: "completed",
+        updatedAt: "2026-05-26T09:59:00.000Z"
+      },
+      {
+        id: "job-live",
+        goal: "Live task",
+        status: "running",
+        updatedAt: "2026-05-26T09:58:00.000Z"
+      }
+    ]
+  });
+
+  await harness.store.hydrate();
+
+  assert.equal(harness.store.getActiveJobId(), "job-live");
+  assert.equal(harness.store.currentJob().id, "job-live");
+});
+
+test("browser job store moves active focus when active runner job becomes terminal and live work remains", async () => {
+  const harness = createHarness({
+    active: "job-a",
+    jobs: [
+      {
+        id: "job-a",
+        goal: "Finish me",
+        status: "running",
+        updatedAt: "2026-05-26T09:59:00.000Z"
+      },
+      {
+        id: "job-b",
+        goal: "Keep watching me",
+        status: "running",
+        updatedAt: "2026-05-26T09:58:00.000Z"
+      }
+    ]
+  });
+  await harness.store.hydrate();
+
+  const completed = await harness.store.updateJob("job-a", { status: "completed" });
+
+  assert.equal(completed.status, "completed");
+  assert.equal(harness.store.getActiveJobId(), "job-b");
+  assert.equal(harness.writes.at(-1).active, "job-b");
 });
 
 test("browser job store can create queued jobs for scheduler-owned execution", async () => {
@@ -552,6 +634,40 @@ test("browser job store updates terminal completion and monitor collapsed state"
   await harness.store.toggleMonitorCollapsed();
   assert.equal(harness.store.getMonitorCollapsed(), false);
   assert.equal(harness.writes.at(-1).collapsed, false);
+});
+
+test("browser job store preserves human stop state from stale runner updates unless explicitly resumed", async () => {
+  const harness = createHarness({
+    active: "job-a",
+    jobs: [
+      {
+        id: "job-a",
+        goal: "Cancel me",
+        status: "cancelled",
+        updatedAt: "2026-05-26T09:59:00.000Z",
+        pageLock: null,
+        steps: [{ type: "read", label: "Read page", state: "completed" }]
+      }
+    ]
+  });
+  await harness.store.hydrate();
+
+  const staleCompletion = await harness.store.updateJob("job-a", {
+    status: "completed",
+    steps: [{ type: "read", label: "Read page", state: "completed" }]
+  });
+
+  assert.equal(staleCompletion.status, "cancelled");
+  assert.equal(harness.store.findJob("job-a").status, "cancelled");
+
+  const explicitResume = await harness.store.updateJob("job-a", {
+    allowHumanStopOverride: true,
+    status: "queued",
+    pageLock: { tabId: 11, siteKey: "example.test", url: "https://example.test/" }
+  });
+
+  assert.equal(explicitResume.status, "queued");
+  assert.equal(explicitResume.pageLock.siteKey, "example.test");
 });
 
 test("browser job store persists active job and recovers interrupted jobs after reload", async () => {

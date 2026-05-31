@@ -1,4 +1,5 @@
 import { noteCard, safeErrorMessage, setStatus, settingsHeader } from "./settings-common.js";
+import { capabilityReviewElement } from "../addon-capability-review.js";
 
 function addonTone(addon) {
   if (addon.available || addon.enabled) return "success";
@@ -17,59 +18,6 @@ function addonBoundary(addon) {
     return "Coding add-ons receive bounded delegation packets and return artifacts through ResonantOS.";
   }
   return "Add-ons are replaceable capabilities. They are not trusted core agents unless explicitly granted scoped authority.";
-}
-
-function capabilityList(value) {
-  return Array.isArray(value) ? value.filter(Boolean).map(String) : [];
-}
-
-function uniqueCapabilities(values) {
-  return [...new Set(values)];
-}
-
-export function capabilityReviewState(addon) {
-  const granted = uniqueCapabilities(capabilityList(addon.grantedCapabilities ?? addon.grants));
-  const denied = uniqueCapabilities(capabilityList(addon.deniedCapabilities ?? addon.denials));
-  const requested = uniqueCapabilities(capabilityList(addon.requestedCapabilities ?? addon.capabilities));
-  const pending = uniqueCapabilities([
-    ...capabilityList(addon.pendingCapabilities),
-    ...requested.filter((capability) => !granted.includes(capability) && !denied.includes(capability))
-  ]);
-  return { denied, granted, pending, requested };
-}
-
-function capabilityGroup(label, state, capabilities) {
-  const group = document.createElement("div");
-  group.className = "settings-addon-capability-group";
-  group.dataset.state = state;
-  const title = document.createElement("small");
-  title.textContent = label;
-  group.append(title);
-  for (const capability of capabilities) {
-    const chip = document.createElement("span");
-    chip.textContent = capability;
-    group.append(chip);
-  }
-  return group;
-}
-
-function capabilityReview(addon) {
-  const state = capabilityReviewState(addon);
-  const wrapper = document.createElement("div");
-  wrapper.className = "settings-addon-capabilities";
-  const groups = [
-    ["Granted", "granted", state.granted],
-    ["Needs review", "pending", state.pending],
-    ["Denied", "denied", state.denied]
-  ].filter(([, , capabilities]) => capabilities.length);
-  if (!groups.length) {
-    wrapper.append(capabilityGroup("Capability state", "empty", ["explicit grants required"]));
-    return wrapper;
-  }
-  for (const [label, status, capabilities] of groups) {
-    wrapper.append(capabilityGroup(label, status, capabilities));
-  }
-  return wrapper;
 }
 
 function addonCard(addon, actions = {}) {
@@ -107,7 +55,7 @@ function addonCard(addon, actions = {}) {
     executionPanel.append(text, toggle);
   }
 
-  card.append(header, boundary, capabilityReview(addon));
+  card.append(header, boundary, capabilityReviewElement(addon));
   if (executionPanel.childNodes.length) card.append(executionPanel);
   return card;
 }

@@ -1,6 +1,8 @@
 // Intent citation: docs/architecture/addon-skills/opencode/CODING_HANDOFF.md
 // Intent citation: docs/architecture/ADR-015-delegation-fabric-addon-catalog-native-tools.md
 
+import { delegationGuidanceText } from "./delegation-guidance.js";
+
 function setStatus(node, text, tone = "neutral") {
   node.textContent = text;
   node.dataset.tone = tone;
@@ -75,13 +77,36 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, initialMissi
     refreshButton.disabled = true;
     try {
       const status = await bridgeRequest("/opencode/status", { method: "GET" });
+      const executionEnabled = status.executionEnabled !== false;
       statusBody.textContent = status.detail;
       statusMeta.textContent = status.command || "OpenCode command not detected";
       statusCard.dataset.ready = status.installed ? "true" : "false";
+      if (!status.installed || !executionEnabled) {
+        const guidance = statusCard.querySelector(".delegation-guidance") ?? document.createElement("pre");
+        guidance.className = "delegation-guidance";
+        guidance.textContent = delegationGuidanceText({
+          blockedReason: status.blockedReason || status.detail,
+          executionEnabled,
+          runtimeAvailable: Boolean(status.installed),
+          target: "opencode"
+        });
+        statusCard.append(guidance);
+      } else {
+        statusCard.querySelector(".delegation-guidance")?.remove();
+      }
     } catch (error) {
       statusBody.textContent = error instanceof Error ? error.message : String(error);
       statusMeta.textContent = "Status unavailable";
       statusCard.dataset.ready = "false";
+      const guidance = statusCard.querySelector(".delegation-guidance") ?? document.createElement("pre");
+      guidance.className = "delegation-guidance";
+      guidance.textContent = delegationGuidanceText({
+        blockedReason: statusBody.textContent,
+        executionEnabled: false,
+        runtimeAvailable: false,
+        target: "opencode"
+      });
+      statusCard.append(guidance);
     } finally {
       refreshButton.disabled = false;
     }
@@ -110,7 +135,12 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, initialMissi
       const lifecycle = started.status === "completed"
         ? `Completed · ${started.resultArtifactPath || "result artifact ready"}`
         : started.status === "blocked"
-          ? `Blocked · ${started.blockedReason || "OpenCode runtime unavailable"}`
+          ? delegationGuidanceText({
+              blockedReason: started.blockedReason || "OpenCode runtime unavailable",
+              executionEnabled: false,
+              runtimeAvailable: false,
+              target: "opencode"
+            })
           : `Status ${started.status || "queued"}`;
       setStatus(taskStatus, `Delegation queued: ${result.id} · ${result.path}\n${lifecycle}`, started.status === "blocked" ? "warning" : "success");
       missionInput.value = "";

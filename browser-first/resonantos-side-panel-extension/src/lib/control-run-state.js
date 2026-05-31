@@ -170,9 +170,15 @@ export function createControlRunState({
         updateOverlayForStep(steps[cancelledIndex], "cancelled", "Stopped by human.");
       }
     }
+    const persistedJob = typeof browserJobStore.findJob === "function"
+      ? browserJobStore.findJob(currentControlRun.id)
+      : null;
+    const preservedHumanStopStatus = ["cancelled", "paused"].includes(persistedJob?.status) && !["cancelled", "paused"].includes(status)
+      ? persistedJob.status
+      : "";
     const completedRun = {
       ...currentControlRun,
-      status,
+      status: preservedHumanStopStatus || status,
       steps,
       completedAt,
       timing: runTiming,
@@ -193,7 +199,7 @@ export function createControlRunState({
       releaseOverlay();
     }
     void updateBrowserJob(completedRun.id, {
-      status,
+      status: completedRun.status,
       artifacts: completedRun.artifacts,
       pageLock: completedRun.pageLock,
       pendingApproval: null,

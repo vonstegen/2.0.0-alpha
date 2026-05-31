@@ -27,8 +27,10 @@ function createHarness() {
     runChatTurn: handler("chat"),
     runControlCommand: handler("control"),
     runDelegateCommand: handler("delegate"),
+    runDelegationsCommand: handler("delegations"),
     runDraftAddonCommand: handler("draft"),
     runGoalCommand: handler("goal"),
+    runHermesStatusCommand: handler("hermes-status"),
     runHistorySearchCommand: handler("history"),
     runJobsCommand: handler("jobs"),
     runMemorySearchCommand: handler("memory"),
@@ -51,7 +53,11 @@ test("side panel command router dispatches slash commands", async () => {
   const harness = createHarness();
 
   await harness.router.respondToCommand("/goal build the app");
+  await harness.router.respondToCommand("/hermes");
+  await harness.router.respondToCommand("/hermes status");
+  await harness.router.respondToCommand("/hermes coordinate research handoff");
   await harness.router.respondToCommand("/delegate opencode fix tests");
+  await harness.router.respondToCommand("/delegations hermes");
   await harness.router.respondToCommand("/status");
   await harness.router.respondToCommand("/browser open resonantos.com");
   await harness.router.respondToCommand("/control find a booking");
@@ -63,8 +69,16 @@ test("side panel command router dispatches slash commands", async () => {
   assert.deepEqual(harness.calls, [
     ["bind", "/goal build the app"],
     ["goal", "build the app"],
+    ["bind", "/hermes"],
+    ["hermes-status"],
+    ["bind", "/hermes status"],
+    ["hermes-status"],
+    ["bind", "/hermes coordinate research handoff"],
+    ["delegate", "hermes coordinate research handoff"],
     ["bind", "/delegate opencode fix tests"],
     ["delegate", "opencode fix tests"],
+    ["bind", "/delegations hermes"],
+    ["delegations", "hermes"],
     ["bind", "/status"],
     ["status"],
     ["bind", "/browser open resonantos.com"],
@@ -134,6 +148,7 @@ test("side panel command router dispatches natural browser intents before chat",
   await harness.router.respondToCommand("scroll to the bottom");
   await harness.router.respondToCommand("show form fields");
   await harness.router.respondToCommand("go to resonantos.com/dao");
+  await harness.router.respondToCommand("can you navigate to manoloremiddi.com?");
   await harness.router.respondToCommand("find latest AI news on the internet");
   await harness.router.respondToCommand("hey what's the most inportant new in the world today?");
   await harness.router.respondToCommand("go to amazon.it and find me a rtx5090");
@@ -147,6 +162,7 @@ test("side panel command router dispatches natural browser intents before chat",
     "summary",
     "scroll",
     "forms",
+    "open",
     "open",
     "search",
     "search",

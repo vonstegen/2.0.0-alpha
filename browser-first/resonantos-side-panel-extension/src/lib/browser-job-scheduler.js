@@ -2,6 +2,7 @@
 // Owns the bounded supervisor for running multiple non-conflicting browser jobs.
 
 const DEFAULT_MAX_CONCURRENT = 2;
+const RESULT_JOB_STATUSES = new Set(["blocked", "approval", "failed", "cancelled", "paused", "completed"]);
 
 function safeMaxConcurrent(value) {
   const parsed = Number(value);
@@ -34,8 +35,13 @@ export function createBrowserJobScheduler({
       const result = await promise;
       const latestJob = browserJobStore.findJob?.(jobId);
       if (latestJob?.status === "running") {
+        const resultStatus = RESULT_JOB_STATUSES.has(result?.status)
+          ? result.status
+          : result?.ok === false
+            ? result?.approvalRequired ? "approval" : "blocked"
+            : "completed";
         await browserJobStore.updateJob(jobId, {
-          status: "completed"
+          status: resultStatus
         });
       }
       await onJobFinished(jobId, result);
@@ -64,7 +70,9 @@ export function createBrowserJobScheduler({
     if (!jobSummary?.id || running.has(jobSummary.id)) return null;
     const job = browserJobStore.findJob(jobSummary.id);
     if (!job || job.status !== "queued") return null;
-    await browserJobStore.activateJob?.(job.id);
+    if (!browserJobStore.getActiveJobId?.()) {
+      await browserJobStore.activateJob?.(job.id);
+    }
     const startedJob = await browserJobStore.updateJob(job.id, { status: "running" });
     await onJobStarted(startedJob);
     const execution = Promise.resolve().then(() => runJob(startedJob));

@@ -229,10 +229,20 @@ test("monitor renderers render control steps, artifacts, and approval boundaries
             observation: { title: "Product page", url: "https://example.com/product" },
             decision: "Read first.",
             action: "Read page",
+            approvalDecision: "approved-once",
             result: "saw page",
             safetyClass: "safe",
+            strategyPhase: "Read the page.",
+            strategyRationale: "Use product runbook.",
+            completionCheck: "Visible product state proves the result.",
+            scenarioName: "Shopping comparison",
+            preferredProbes: ["Read product cards"],
+            successSignals: ["Visible product options"],
+            stopConditions: ["Checkout required"],
             confidence: "high",
             uncertainty: "None detected.",
+            verificationRetry: "settle-reread",
+            actionRetry: "precise-ref-retry",
             nextHumanAction: "No human action needed."
           },
           timing: { durationMs: 1250 }
@@ -280,6 +290,24 @@ test("monitor renderers render control steps, artifacts, and approval boundaries
   assert.match(harness.dom.window.document.querySelector(".control-step-detail").textContent, /1\.3 sec/);
   assert.match(harness.dom.window.document.querySelector(".control-step-detail").textContent, /Confidence/);
   assert.match(harness.dom.window.document.querySelector(".control-step-detail").textContent, /high/);
+  assert.match(harness.dom.window.document.querySelector(".control-step-detail").textContent, /Verification retry/);
+  assert.match(harness.dom.window.document.querySelector(".control-step-detail").textContent, /settle-reread/);
+  assert.match(harness.dom.window.document.querySelector(".control-step-detail").textContent, /Action retry/);
+  assert.match(harness.dom.window.document.querySelector(".control-step-detail").textContent, /precise-ref-retry/);
+  assert.match(harness.dom.window.document.querySelector(".control-step-detail").textContent, /Strategy phase/);
+  assert.match(harness.dom.window.document.querySelector(".control-step-detail").textContent, /Use product runbook/);
+  assert.match(harness.dom.window.document.querySelector(".control-step-detail").textContent, /Approval decision/);
+  assert.match(harness.dom.window.document.querySelector(".control-step-detail").textContent, /approved-once/);
+  assert.match(harness.dom.window.document.querySelector(".control-strategy-card").textContent, /Shopping comparison/);
+  assert.match(harness.dom.window.document.querySelector(".control-strategy-card").textContent, /Visible product options/);
+  assert.match(harness.dom.window.document.querySelector(".control-strategy-card").textContent, /Checkout required/);
+  assert.match(harness.dom.window.document.querySelector(".control-boundary-card").textContent, /Current authority/);
+  assert.match(harness.dom.window.document.querySelector(".control-boundary-card").textContent, /example\.com · tab 44/);
+  assert.match(harness.dom.window.document.querySelector(".control-boundary-card").textContent, /Can see/);
+  assert.match(harness.dom.window.document.querySelector(".control-boundary-card").textContent, /visible page text/);
+  assert.match(harness.dom.window.document.querySelector(".control-boundary-card").textContent, /Human-only/);
+  assert.match(harness.dom.window.document.querySelector(".control-boundary-card").textContent, /wallet signing/);
+  assert.match(harness.dom.window.document.querySelector(".control-step-detail").textContent, /Preferred probes/);
   assert.match(harness.dom.window.document.querySelector(".control-step-detail").textContent, /Next human action/);
   assert.match(harness.dom.window.document.querySelector(".control-step-detail").textContent, /Product page/);
   assert.match(harness.dom.window.document.querySelector("#control-artifacts").textContent, /report: \/tmp\/report\.md/);
@@ -317,7 +345,16 @@ test("monitor renderers render collapsed and expanded browser jobs", () => {
           state: "blocked",
           label: "Click Submit",
           type: "click",
-          details: { nextHumanAction: "Review the submit button before continuing." }
+          details: {
+            actionRetry: "precise-ref-retry",
+            ambiguousTarget: true,
+            nextHumanAction: "Review the submit button before continuing.",
+            targetCandidates: [
+              { ref: "r1", label: "Submit", tagName: "button", approvalRequired: true },
+              { ref: "r2", label: "Submit later", tagName: "button", approvalRequired: false }
+            ],
+            verificationRetry: "settle-reread"
+          }
         }
       ]
     }
@@ -345,6 +382,8 @@ test("monitor renderers render collapsed and expanded browser jobs", () => {
   assert.match(harness.dom.window.document.querySelector(".job-stale-guidance").textContent, /continue the job/);
   assert.match(harness.dom.window.document.querySelector("#jobs-list").textContent, /Preflight: trusted safe actions · booking · example\.com/);
   assert.match(harness.dom.window.document.querySelector("#jobs-list").textContent, /Progress: Blocked · 1\/2 complete · 2\/2 resolved · 1 blocked · 50%/);
+  assert.match(harness.dom.window.document.querySelector("#jobs-list").textContent, /Recovery evidence: verification retry: settle-reread · action retry: precise-ref-retry/);
+  assert.match(harness.dom.window.document.querySelector("#jobs-list").textContent, /Ambiguous target candidates: Submit · #r1 · approval-required; Submit later · #r2/);
   assert.match(harness.dom.window.document.querySelector("#jobs-list").textContent, /Next human action: Review the submit button before continuing/);
   assert.equal(harness.dom.window.document.querySelector(".job-blocker-guidance").textContent, "Next human action: Review the submit button before continuing.");
   assert.match(harness.dom.window.document.querySelector("#jobs-list").textContent, /done · Read page/);
@@ -414,10 +453,16 @@ test("monitor renderers expose job-specific approval focus", () => {
       pendingApproval: {
         reason: "Public-submit boundary.",
         results: [],
-        history: [],
+        history: [{
+          observation: {
+            title: "Checkout Review",
+            url: "https://shop.example/review"
+          }
+        }],
         stepIndex: 1,
         step: { type: "click", text: "Submit public form" }
       },
+      pageLock: { tabId: 77, siteKey: "shop.example", url: "https://shop.example/review", reason: "Agent Control goal: submit reviewed form" },
       steps: [
         { state: "completed", label: "Read form", type: "read" },
         {
@@ -439,6 +484,13 @@ test("monitor renderers expose job-specific approval focus", () => {
 
   assert.match(harness.dom.window.document.querySelector("#jobs-list").textContent, /approval/);
   assert.match(harness.dom.window.document.querySelector("#jobs-list").textContent, /Focus this browser job/);
+  assert.match(harness.dom.window.document.querySelector("#jobs-list").textContent, /Visible page owner: this job follows the active readable tab/);
+  assert.match(harness.dom.window.document.querySelector("#jobs-list").textContent, /Background approval: Focus activates tab 77 before approve or deny/);
+  assert.match(harness.dom.window.document.querySelector(".job-approval-card").textContent, /Approval needed: Submit public form/);
+  assert.match(harness.dom.window.document.querySelector(".job-approval-card").textContent, /Checkout Review/);
+  assert.match(harness.dom.window.document.querySelector(".job-approval-card").textContent, /https:\/\/shop\.example\/review/);
+  assert.match(harness.dom.window.document.querySelector(".job-approval-card").textContent, /shop\.example · tab 77/);
+  assert.match(harness.dom.window.document.querySelector(".job-approval-card").textContent, /Review the visible page state before approving/);
   [...harness.dom.window.document.querySelectorAll(".job-actions button")]
     .find((button) => button.textContent === "Focus")
     .click();

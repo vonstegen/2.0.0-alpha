@@ -19,7 +19,16 @@ const hostBinary = path.join(
 const resonantExtensionId = "cdpdmmalhmokbfcfgogoepnjplaakgnl";
 async function freeLoopbackPort() {
   const server = http.createServer();
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  }).catch((error) => {
+    if (error?.code === "EPERM" || error?.code === "EACCES") {
+      console.log("agent-control-live skipped: localhost bind is denied in this sandbox.");
+      process.exit(0);
+    }
+    throw error;
+  });
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : 0;
   await new Promise((resolve) => server.close(resolve));
@@ -280,6 +289,17 @@ const fixtureHtml = `<!doctype html>
   <body>
     <h1>Agent Control Fixture</h1>
     <p>This page verifies safe browser control, document-style typing, and approval gates.</p>
+    <section id="dao">
+      <h2>DAO Governance Fixture</h2>
+      <p>Proposal 12: upgrade treasury policy. Quorum threshold is 4%. Treasury transfer is 10 SOL. Deadline closes Friday.</p>
+      <button id="dao-connect" type="button">Connect Wallet</button>
+      <button id="dao-vote-for" type="button">Vote For</button>
+      <button id="dao-vote-against" type="button">Against</button>
+      <button id="dao-abstain" type="button">Abstain</button>
+      <button id="dao-execute" type="button">Execute Proposal</button>
+      <label>Treasury recipient <input name="treasury-recipient" aria-label="Treasury recipient" placeholder="Treasury recipient"></label>
+      <label>Delegate vote reason <textarea name="delegate-reason" aria-label="Delegate vote reason"></textarea></label>
+    </section>
     <iframe title="Booking calendar" src="/calendar" width="680" height="260"></iframe>
     <button id="safe">Safe Details</button>
     <button id="cart">Add to Cart</button>
@@ -756,7 +776,11 @@ try {
   await submitControlCommand(panel, `/wallet status`);
   await waitForPanelText(panel, /Wallet status[\s\S]*Phantom Solana: (connected|available, not connected)[\s\S]*read-only detection/, "wallet status command");
   await submitControlCommand(panel, `/dao review the governance action`);
-  await waitForPanelText(panel, /DAO workflow helper[\s\S]*\/wallet status[\s\S]*will not click wallet connect, sign, vote, submit, transfer, or transaction confirmation/, "dao workflow helper");
+  await waitForPanelText(
+    panel,
+    /DAO workflow helper[\s\S]*Connect Wallet[\s\S]*Vote For[\s\S]*Against[\s\S]*Execute Proposal[\s\S]*Treasury recipient[\s\S]*\/wallet status[\s\S]*Risk checklist:[\s\S]*quorum\/threshold[\s\S]*will not click wallet connect, sign, vote, submit, transfer, or transaction confirmation/,
+    "dao workflow helper"
+  );
   await submitControlCommand(panel, `/wallet audit`);
   await waitForPanelText(panel, /Saved a wallet\/DAO audit to Living Archive intake[\s\S]*Wallet connect, signing, voting, transfer, transaction confirmation, and public submission remain human-only/, "wallet audit command");
   await submitControlCommand(panel, `/dao audit review the governance action`);

@@ -20,6 +20,8 @@ export function createBrowserPageActions(deps) {
     sleep
   } = deps;
 
+  const daoTargetTerms = /\b(wallet|connect|sign|signature|vote|voting|for|against|abstain|cast|proposal|quorum|delegate|delegation|governance|submit|confirm|execute|queue|timelock|transaction|transfer|treasury|dao|token|stake|unstake|claim|snapshot|tally)\b/i;
+
   async function activeTab() {
     const controlledTabId = deps.getControlledTabId();
     if (controlledTabId) {
@@ -426,12 +428,11 @@ export function createBrowserPageActions(deps) {
       await addMessage("system", "I cannot prepare a DAO workflow yet. Open the DAO page first, then run `/dao <what you want to do>`.");
       return { ok: false, error: "No readable DAO page context available." };
     }
-    const targetTerms = /\b(wallet|connect|sign|vote|proposal|delegate|governance|submit|confirm|transaction|dao|token|stake|unstake|claim)\b/i;
     const visibleControls = (snapshot.controls ?? [])
-      .filter((control) => targetTerms.test([control.text, control.ariaLabel, control.role, control.tagName].filter(Boolean).join(" ")))
+      .filter((control) => daoTargetTerms.test([control.text, control.ariaLabel, control.role, control.tagName].filter(Boolean).join(" ")))
       .slice(0, 12);
     const fields = (snapshot.fields ?? [])
-      .filter((field) => targetTerms.test([field.label, field.name, field.placeholder, field.kind].filter(Boolean).join(" ")))
+      .filter((field) => daoTargetTerms.test([field.label, field.name, field.placeholder, field.kind].filter(Boolean).join(" ")))
       .slice(0, 8);
     const visibleLines = visibleControls.length
       ? visibleControls.map((control) => `- ${control.text || control.ariaLabel || control.tagName}${control.ref ? ` · ref ${control.ref}` : ""}`)
@@ -460,6 +461,10 @@ export function createBrowserPageActions(deps) {
         "3. Let Augmentor prepare instructions, compare visible values, and identify risk points.",
         "4. Human completes wallet connect, signature, vote, transaction, or public submission manually.",
         "",
+        "Risk checklist:",
+        "- Confirm the domain, proposal id/title, voting choice, quorum/threshold, treasury or token amounts, and transaction destination before acting.",
+        "- Treat Execute, Queue, Sign, Confirm, Vote, Transfer, Claim, Stake, Unstake, and Submit as human-only controls.",
+        "",
         "Stop rule: ResonantOS will not click wallet connect, sign, vote, submit, transfer, or transaction confirmation controls for you."
       ].join("\n")
     );
@@ -467,14 +472,25 @@ export function createBrowserPageActions(deps) {
   }
 
   function daoAffordances(snapshot) {
-    const targetTerms = /\b(wallet|connect|sign|vote|proposal|delegate|governance|submit|confirm|transaction|dao|token|stake|unstake|claim)\b/i;
     const visibleControls = (snapshot?.controls ?? [])
-      .filter((control) => targetTerms.test([control.text, control.ariaLabel, control.role, control.tagName].filter(Boolean).join(" ")))
+      .filter((control) => daoTargetTerms.test([control.text, control.ariaLabel, control.role, control.tagName].filter(Boolean).join(" ")))
       .slice(0, 16);
     const fields = (snapshot?.fields ?? [])
-      .filter((field) => targetTerms.test([field.label, field.name, field.placeholder, field.kind].filter(Boolean).join(" ")))
+      .filter((field) => daoTargetTerms.test([field.label, field.name, field.placeholder, field.kind].filter(Boolean).join(" ")))
       .slice(0, 12);
     return { fields, visibleControls };
+  }
+
+  function daoRiskChecklistMarkdown(snapshot) {
+    const text = String(snapshot?.text ?? "").replace(/\s+/g, " ").trim();
+    const checks = [
+      ["domain", snapshot?.url ? new URL(snapshot.url).hostname : ""],
+      ["proposal", /proposal\s*(?:#|id)?\s*[:#-]?\s*([a-z0-9._-]+)/i.exec(text)?.[0] ?? ""],
+      ["quorum", /\bquorum\b[^.]{0,120}/i.exec(text)?.[0] ?? ""],
+      ["treasury", /\btreasury\b[^.]{0,120}/i.exec(text)?.[0] ?? ""],
+      ["deadline", /\b(deadline|ends?|closes?)\b[^.]{0,120}/i.exec(text)?.[0] ?? ""]
+    ];
+    return checks.map(([label, value]) => `- ${label}: ${value || "not visible in current capture"}`);
   }
 
   function walletDaoAuditMarkdown({ goal, snapshot, walletState }) {
@@ -502,6 +518,9 @@ export function createBrowserPageActions(deps) {
       "",
       "## Relevant Fields",
       ...fieldLines,
+      "",
+      "## DAO Risk Checklist",
+      ...daoRiskChecklistMarkdown(snapshot),
       "",
       "## Requested Goal",
       goal || "_No specific goal was provided._",
@@ -686,6 +705,7 @@ export function createBrowserPageActions(deps) {
         method: "POST",
         body: {
           model: getModel(),
+          surface: "archive-intake",
           thinkingDepth: getThinkingDepth(),
           pageContext: pageIntakeMarkdown(snapshot).slice(0, 12000),
           runtimeContext: "Create a source-grounded Living Archive intake summary. Do not claim trusted wiki promotion. Preserve uncertainty and cite visible source facts only.",

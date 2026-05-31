@@ -13,6 +13,7 @@ import {
   startBridgeServerWithFallback,
   writeBridgeConfig,
 } from "./bridge-server.mjs";
+import { buildAugmentorChatRequestMessages } from "./augmentor-chat-contract.mjs";
 import { mergePromotedMarkdownBody, summarizePromotedPageForIndex, upsertWikiIndexCatalogEntry } from "./archive-merge.mjs";
 import {
   appendProviderHandoffAudit,
@@ -1304,36 +1305,7 @@ async function executeBridgeChat(payload) {
   if (!apiKey) {
     throw new Error(`${route.label} credential missing. Add it in ResonantOS Provider Profiles.`);
   }
-  const messages = Array.isArray(payload.messages)
-    ? payload.messages
-        .filter((message) => ["user", "assistant"].includes(message?.role) && String(message?.content ?? "").trim())
-        .map((message) => ({ role: message.role, content: String(message.content).trim() }))
-    : [];
-  if (!messages.length) {
-    throw new Error("No chat message was provided.");
-  }
-  const systemPrompt = [
-    "You are Augmentor, the Strategist agent inside ResonantOS.",
-    "You are running inside the ResonantOS browser side bar.",
-    "The web page remains in the main browser viewport; never suggest replacing the page with chat UI.",
-    "ResonantOS provides host-mediated browser tools outside the model call: open/search pages, read the active page, click visible page text, and type into editable fields.",
-    "ResonantOS also provides a host-mediated agent control layer for delegation. Augmentor may delegate to approved add-on agents such as Hermes, OpenCode, and Resonant Engineer through governed task packets; never claim delegation is outside Augmentor's ResonantOS capabilities.",
-    "If the user asks for delegation and the request was not executed before this model call, ask for the target agent and mission instead of telling them to use a separate system.",
-    "If the user asks you to navigate, search a site, shop, book, click, type, or operate a webpage, do not claim you will do it in plain chat. Those requests must be handled by the host Agent Control Mode before the model call.",
-    "If such a browser-action request reaches you anyway, do not mention routers, tools, internals, or implementation details. Say briefly that this needs Agent Control and ask the user to resend it as `/control <task>`.",
-    "When the host has already returned a browser-tool result in the conversation, treat that result as authoritative and explain the next useful action.",
-    "If the user asks for a browser action that was not executed by the host, ask them to retry with a specific page action instead of claiming you are only a text assistant.",
-    "Wallet signing, seed phrases, credential autofill, and public submissions require explicit human approval and must not be automated.",
-    "Be direct, pragmatic, and concise. Answer the human outcome first; do not expose file paths, route names, JSON, provider metadata, or system status unless the user asks for diagnostics.",
-    "If browser page context is provided, use it as context but do not claim to mutate memory or execute tools unless the host explicitly returned that result.",
-    payload.systemPrompt ? `Additional user-configured Augmentor system prompt:\n${String(payload.systemPrompt).slice(0, 8000)}` : "",
-    payload.pageContext ? `Current browser page context:\n${String(payload.pageContext).slice(0, 8000)}` : "",
-    payload.runtimeContext ? `Current ResonantOS runtime context:\n${String(payload.runtimeContext).slice(0, 6000)}` : "",
-  ].filter(Boolean).join("\n\n");
-  const requestMessages = [
-    { role: "system", content: systemPrompt },
-    ...messages,
-  ];
+  const requestMessages = buildAugmentorChatRequestMessages(payload);
   const response = await fetch(`${route.apiBaseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: {
@@ -1614,6 +1586,9 @@ function sanitizeNextActionDecision(decision) {
     thought: String(decision.thought ?? "").trim().slice(0, 500),
     doneSummary: decision.doneSummary ? String(decision.doneSummary).trim().slice(0, 700) : null,
     approvalReason: decision.approvalReason ? String(decision.approvalReason).trim().slice(0, 700) : null,
+    strategyPhase: decision.strategyPhase ? String(decision.strategyPhase).trim().slice(0, 300) : null,
+    strategyRationale: decision.strategyRationale ? String(decision.strategyRationale).trim().slice(0, 500) : null,
+    completionCheck: decision.completionCheck ? String(decision.completionCheck).trim().slice(0, 500) : null,
     action: null,
   };
   if (status === "done") {
@@ -1698,6 +1673,7 @@ async function executeControlPlan(payload) {
     throw new Error("Planner requires a browser goal.");
   }
   const pageSnapshot = trimPlannerSnapshot(payload.pageSnapshot);
+  const runbook = payload.runbook && typeof payload.runbook === "object" ? payload.runbook : null;
   const plannerPrompt = [
     "You are the ResonantOS browser control planner.",
     "Return strict JSON only. Do not include markdown or commentary.",
@@ -1716,12 +1692,15 @@ async function executeControlPlan(payload) {
     "Never plan wallet signing, seed phrases, passwords, payments, public posting, account login, destructive document changes, or public form submission. Search-field enter is allowed.",
     "If the goal requires one of those restricted actions, return needsApproval true and a stop reason.",
     "Prefer read/forms before clicking or typing when the page state is unclear.",
+    "Follow the supplied strategyRunbook. Include strategyPhase, strategyRationale, and completionCheck in the response.",
+    "Use strategyRunbook.preferredProbes before acting, strategyRunbook.successSignals before claiming completion, and strategyRunbook.stopConditions before asking for approval or blocking.",
     "Use visible controls and fields from the supplied snapshot when possible.",
-    "JSON schema: {\"summary\":\"short\", \"steps\":[...], \"needsApproval\":false, \"approvalReason\":null}",
+    "JSON schema: {\"summary\":\"short\", \"steps\":[...], \"needsApproval\":false, \"approvalReason\":null, \"strategyPhase\":\"short\", \"strategyRationale\":\"short\", \"completionCheck\":\"short\"}",
   ].join("\n");
   const userPrompt = JSON.stringify({
     goal,
     pageSnapshot,
+    strategyRunbook: runbook,
   });
   const response = await fetch(`${route.apiBaseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
@@ -1764,6 +1743,7 @@ async function executeNextAction(payload) {
     throw new Error("Next-action route requires a browser goal.");
   }
   const pageSnapshot = trimPlannerSnapshot(payload.pageSnapshot);
+  const runbook = payload.runbook && typeof payload.runbook === "object" ? payload.runbook : null;
   const history = Array.isArray(payload.history)
     ? payload.history.slice(-10).map((item) => ({
         action: item?.action ?? null,
@@ -1792,13 +1772,17 @@ async function executeNextAction(payload) {
     "If the next step needs one of those actions, return status needs_approval with approvalReason.",
     "If the goal is complete based on the current page observation, return status done and doneSummary.",
     "If you cannot continue because the page lacks the required controls or content, return status blocked and approvalReason.",
+    "Follow the supplied strategyRunbook. Choose the next action that advances the currentPhase and preserves safetyStops.",
+    "Use strategyRunbook.preferredProbes before acting, strategyRunbook.successSignals before claiming completion, and strategyRunbook.stopConditions before asking for approval or blocking.",
+    "Include strategyPhase, strategyRationale, and completionCheck in every response so the host trace explains the strategy, not only the low-level action.",
     "Prefer observed refs from controls and fields when available; otherwise use precise visible text. Do not claim completion unless the observation proves it.",
-    "JSON schema: {\"thought\":\"short user-visible status\", \"status\":\"continue|done|needs_approval|blocked\", \"action\":{...}|null, \"approvalReason\":null|string, \"doneSummary\":null|string}",
+    "JSON schema: {\"thought\":\"short user-visible status\", \"status\":\"continue|done|needs_approval|blocked\", \"action\":{...}|null, \"approvalReason\":null|string, \"doneSummary\":null|string, \"strategyPhase\":\"short\", \"strategyRationale\":\"short\", \"completionCheck\":\"short\"}",
   ].join("\n");
   const userPrompt = JSON.stringify({
     goal,
     pageSnapshot,
     history,
+    strategyRunbook: runbook,
   });
   const response = await fetch(`${route.apiBaseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
@@ -4412,6 +4396,7 @@ async function executeOpenCodeDelegationStart(payload = {}) {
   await writeFile(taskPath, updated);
   return {
     ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
+    adapter: result.adapter,
     artifact: {
       path: path.relative(userRoot(), artifactPath),
       ...result,
@@ -4528,15 +4513,17 @@ async function executeAddonsStatus() {
       {
         id: "addon.hermes",
         name: "Hermes",
-        available: existsSync(path.join(repoRoot, "src", "modules", "hermes")),
+        available: true,
         mode: "delegation-addon",
         trust: "add-on agent",
         requestedCapabilities: ["agent-delegation", "network", "notifications"],
         grantedCapabilities: ["agent-delegation"],
         execution: {
           localCliExecution: Boolean(executionSettings.hermes.localCliExecution),
+          runtimeAvailable: Boolean(hermesCommand()),
           mode: hermesCommand() ? "local-cli-detected" : "packet-only",
         },
+        boundary: "Bundled browser-first add-on contract. Real Hermes execution still requires a detected local Hermes CLI and explicit execution enablement.",
       },
       {
         id: "addon.opencode",
@@ -5444,6 +5431,120 @@ if (args.get("opencode-delegation-self-test") === "true") {
   process.exit(exitCode);
 }
 
+if (args.get("opencode-cli-execution-self-test") === "true") {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "resonantos-opencode-cli-bridge-"));
+  const previousUserRoot = process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT;
+  const previousOpenCodeCommand = process.env.OPENCODE_COMMAND;
+  process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT = path.join(tempRoot, "ResonantOS_User");
+  let server = null;
+  let exitCode = 1;
+  try {
+    const fakeOpenCode = path.join(tempRoot, "bin", process.platform === "win32" ? "opencode.cmd" : "opencode");
+    const fakeOutput = [
+      "## Final Summary",
+      "OpenCode CLI adapter completed the requested production execution test.",
+      "",
+      "## Changed Files",
+      "- None; fake runtime validation only.",
+      "",
+      "## Commands Run",
+      "- opencode run <governed prompt> --dir <workspace>",
+      "",
+      "## Tests",
+      "- Validated the fake OpenCode executable through the host boundary.",
+      "",
+      "## Residual Risks",
+      "- This is a fake OpenCode executable used only for deterministic adapter validation.",
+      "",
+      "## Verification",
+      "- Local OpenCode CLI process was invoked through the host boundary.",
+    ].join("\n");
+    await mkdir(path.dirname(fakeOpenCode), { recursive: true });
+    await writeFile(fakeOpenCode, process.platform === "win32"
+      ? `@echo off\r\necho ${fakeOutput.replaceAll("\n", "\r\necho ")}\r\n`
+      : `#!/bin/sh\ncat <<'EOF'\n${fakeOutput}\nEOF\n`);
+    await chmod(fakeOpenCode, 0o755).catch(() => undefined);
+    process.env.OPENCODE_COMMAND = fakeOpenCode;
+    server = await startBridgeServer({
+      port: Number(args.get("bridge-port") ?? 0),
+      bridgeToken,
+      bridgeCapabilityTokens,
+      extensionOrigin: resonantExtensionOrigin,
+      routes: bridgeRoutes,
+    });
+    const actualPort = bridgeServerPort(server, Number(args.get("bridge-port") ?? 0));
+    const request = async (route, { method = "POST", body = {}, capabilityToken = "" } = {}) => {
+      const response = await fetch(`http://127.0.0.1:${actualPort}${route}`, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          "Origin": resonantExtensionOrigin,
+          "X-ResonantOS-Bridge-Token": bridgeToken,
+          ...(capabilityToken ? { "X-ResonantOS-Bridge-Capability-Token": capabilityToken } : {}),
+        },
+        ...(method === "GET" ? {} : { body: JSON.stringify(body) }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(`${route} failed: ${payload.error || response.status}`);
+      }
+      return payload;
+    };
+    await request("/addons/execution-settings", {
+      body: { addon: "opencode", localCliExecution: true },
+      capabilityToken: bridgeCapabilityTokens["addon-execution-settings-write"],
+    });
+    const created = await request("/addons/delegate", {
+      body: {
+        target: "opencode",
+        mission: "Validate that enabled OpenCode CLI execution produces a governed coding artifact.",
+        contextMarkdown: "This is deterministic test context only.",
+      },
+    });
+    const started = await request("/opencode/delegation/start", { body: { path: created.path } });
+    const artifact = await request("/opencode/delegation/artifact", { body: { path: created.path } });
+    const statusAfter = await request("/opencode/delegation/status", { body: { path: created.path } });
+    const opencodeStatus = await request("/opencode/status", { method: "GET" });
+    const ok = (
+      started.status === "completed" &&
+      started.adapter === "opencode-cli" &&
+      statusAfter.status === "completed" &&
+      statusAfter.resultArtifactPath &&
+      opencodeStatus.executionEnabled === true &&
+      opencodeStatus.mode === "local-opencode-cli" &&
+      /OpenCode CLI adapter completed/.test(artifact.finalSummary) &&
+      /host boundary/.test(artifact.verification)
+    );
+    console.log(JSON.stringify({
+      ok,
+      adapter: started.adapter,
+      artifactPath: artifact.path,
+      opencodeMode: opencodeStatus.mode,
+      statusAfter: statusAfter.status,
+      summary: artifact.finalSummary,
+    }, null, 2));
+    exitCode = ok ? 0 : 1;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+  } finally {
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    if (previousUserRoot === undefined) {
+      delete process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT;
+    } else {
+      process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT = previousUserRoot;
+    }
+    if (previousOpenCodeCommand === undefined) {
+      delete process.env.OPENCODE_COMMAND;
+    } else {
+      process.env.OPENCODE_COMMAND = previousOpenCodeCommand;
+    }
+    await rm(tempRoot, { recursive: true, force: true }).catch(() => undefined);
+  }
+  process.exit(exitCode);
+}
+
 if (args.get("addon-execution-settings-self-test") === "true") {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "resonantos-addon-execution-bridge-"));
   const previousUserRoot = process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT;
@@ -5517,7 +5618,7 @@ if (args.get("addon-execution-settings-self-test") === "true") {
       hermesStatus.payload.mode === "local-hermes-cli" &&
       opencodeStatus.payload.executionEnabled === true &&
       opencodeStatus.payload.mode === "local-opencode-cli" &&
-      addons.payload.addons.some((addon) => addon.id === "addon.hermes" && addon.execution?.localCliExecution === true) &&
+      addons.payload.addons.some((addon) => addon.id === "addon.hermes" && addon.available === true && addon.execution?.localCliExecution === true && addon.execution?.runtimeAvailable === true) &&
       addons.payload.addons.some((addon) => addon.id === "addon.opencode" && addon.execution?.localCliExecution === true)
     );
     console.log(JSON.stringify({
@@ -5699,6 +5800,7 @@ const hostArgs = [
   `--url=${url}`,
   `--resonantos-user-data-dir=${profileDir}`,
   `--resonantos-extension-dirs=${extensionDirs.join(",")}`,
+  `--resonantos-log-path=${browserLaunchLogPath()}`,
   ...(remoteDebuggingPort ? [`--resonantos-remote-debugging-port=${remoteDebuggingPort}`] : []),
 ];
 
