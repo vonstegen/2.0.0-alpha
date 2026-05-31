@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
 
-import { renderLivingArchiveWorkspace } from "../resonantos-side-panel-extension/src/lib/main-workspace-memory.js";
+import {
+  renderLivingArchiveWorkspace,
+  reviewRequestNextAction
+} from "../resonantos-side-panel-extension/src/lib/main-workspace-memory.js";
 
 function setupDom() {
   const dom = new JSDOM("<!doctype html><main id=\"root\"></main>", { url: "https://resonantos.local/" });
@@ -18,6 +21,39 @@ function setupDom() {
     }
   };
 }
+
+test("review request next action explains the governed memory boundary", () => {
+  assert.deepEqual(reviewRequestNextAction({}), {
+    tone: "error",
+    label: "Repair request",
+    detail: "This review request is missing source evidence. Do not draft or promote it until the intake artifact is restored."
+  });
+  assert.equal(reviewRequestNextAction({
+    artifactPath: "INTAKE/browser/page.md",
+    status: "pending"
+  }).label, "Start review");
+  assert.equal(reviewRequestNextAction({
+    artifactPath: "INTAKE/browser/page.md",
+    status: "approved"
+  }).label, "Generate draft");
+  assert.equal(reviewRequestNextAction({
+    artifactPath: "INTAKE/browser/page.md",
+    status: "approved",
+    draftArtifactPath: "REVIEW/artifacts/page.md"
+  }).label, "Verify draft");
+  assert.equal(reviewRequestNextAction({
+    artifactPath: "INTAKE/browser/page.md",
+    status: "approved",
+    draftArtifactPath: "REVIEW/artifacts/page.md",
+    draftVerificationStatus: "verified"
+  }).label, "Ready to promote");
+  assert.equal(reviewRequestNextAction({
+    artifactPath: "INTAKE/browser/page.md",
+    status: "approved",
+    draftArtifactPath: "REVIEW/artifacts/page.md",
+    promotionStatus: "promoted"
+  }).label, "Promoted");
+});
 
 test("living archive workspace renders status, search, and intake through bridge routes", async () => {
   const { container, cleanup } = setupDom();
@@ -466,6 +502,8 @@ test("living archive workspace renders status, search, and intake through bridge
     assert.match(container.textContent, /Source intake created: INTAKE\/sources\/source-review\.md/);
     assert.match(container.textContent, /Review request: REVIEW\/requests\/source-review\.md/);
     assert.match(container.textContent, /Browser job completed: compare a product/);
+    assert.match(container.textContent, /Next: Start review/);
+    assert.match(container.textContent, /Intake is preserved separately from AI-curated memory/);
     assert.match(container.textContent, /INTAKE\/browser\/job-report\.md/);
     assert.match(container.textContent, /Intake/);
     assert.match(container.textContent, /Review/);
@@ -484,6 +522,7 @@ test("living archive workspace renders status, search, and intake through bridge
       options.body.status === "approved"
     ));
     assert.match(container.textContent, /approved/i);
+    assert.match(container.textContent, /Next: Generate draft/);
     Array.from(container.querySelectorAll(".memory-review-actions button"))
       .find((button) => button.textContent === "Draft")
       .click();
@@ -494,6 +533,7 @@ test("living archive workspace renders status, search, and intake through bridge
       options.body.path === "REVIEW/requests/browser-job-completed.md"
     ));
     assert.match(container.textContent, /REVIEW\/artifacts\/browser\/browser-job-completed-draft\.md/);
+    assert.match(container.textContent, /Next: Verify draft/);
     Array.from(container.querySelectorAll(".memory-review-actions button"))
       .find((button) => button.textContent === "Preview")
       .click();
@@ -523,6 +563,7 @@ test("living archive workspace renders status, search, and intake through bridge
       options.body.path === "REVIEW/artifacts/browser/browser-job-completed-draft.md"
     ));
     assert.match(container.textContent, /Verified draft: REVIEW\/verifications\/browser\/browser-job-completed-verification\.md \(unavailable\)/);
+    assert.match(container.textContent, /Next: Ready to promote/);
     assert.ok(Array.from(container.querySelectorAll(".memory-pipeline-step"))
       .some((step) => step.textContent.includes("Verify") && step.dataset.state === "complete"));
     Array.from(container.querySelectorAll(".memory-review-actions button"))
@@ -555,6 +596,7 @@ test("living archive workspace renders status, search, and intake through bridge
       options.body.path === "REVIEW/artifacts/browser/browser-job-completed-draft.md"
     ));
     assert.match(container.textContent, /Promoted AI_MEMORY\/wiki\/browser-job-completed\.md/);
+    assert.match(container.textContent, /Next: Promoted/);
     assert.ok(Array.from(container.querySelectorAll(".memory-pipeline-step"))
       .some((step) => step.textContent.includes("Promote") && step.dataset.state === "complete"));
     assert.match(container.textContent, /Promotion History/);

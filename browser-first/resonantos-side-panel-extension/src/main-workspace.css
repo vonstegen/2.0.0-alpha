@@ -2181,6 +2181,43 @@ textarea {
   color: rgba(214, 229, 219, 0.76);
 }
 
+.memory-review-next {
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(143, 159, 149, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 9px 10px;
+}
+
+.memory-review-next strong {
+  color: rgba(238, 247, 240, 0.92);
+  font-size: 0.78rem;
+}
+
+.memory-review-next span {
+  color: rgba(175, 191, 181, 0.86);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.memory-review-next[data-tone="active"],
+.memory-review-next[data-tone="success"] {
+  border-color: rgba(36, 209, 143, 0.22);
+  background: rgba(36, 209, 143, 0.06);
+}
+
+.memory-review-next[data-tone="warning"] {
+  border-color: rgba(255, 205, 120, 0.25);
+  background: rgba(255, 205, 120, 0.07);
+}
+
+.memory-review-next[data-tone="blocked"],
+.memory-review-next[data-tone="error"] {
+  border-color: rgba(255, 124, 124, 0.24);
+  background: rgba(255, 124, 124, 0.07);
+}
+
 .memory-review-request code,
 .memory-promotion-card code {
   overflow: hidden;

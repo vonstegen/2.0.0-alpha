@@ -151,6 +151,72 @@ function reviewPipeline(request) {
   return node;
 }
 
+export function reviewRequestNextAction(request = {}) {
+  if (!request.artifactPath && !request.path) {
+    return {
+      tone: "error",
+      label: "Repair request",
+      detail: "This review request is missing source evidence. Do not draft or promote it until the intake artifact is restored."
+    };
+  }
+  if (request.status === "rejected") {
+    return {
+      tone: "blocked",
+      label: "Rejected",
+      detail: "No trusted memory write will happen from this artifact unless a new review request is created."
+    };
+  }
+  if (request.promotionStatus === "promoted") {
+    return {
+      tone: "success",
+      label: "Promoted",
+      detail: request.backupPath
+        ? "This artifact has been promoted into AI Memory. A backup is available if the promotion needs to be restored."
+        : "This artifact has been promoted into AI Memory."
+    };
+  }
+  if (request.draftVerificationStatus === "needs-revision") {
+    return {
+      tone: "warning",
+      label: "Revise draft",
+      detail: "The verifier found issues. Revise the draft before any promotion can be attempted."
+    };
+  }
+  if (request.draftVerificationStatus === "verified") {
+    return {
+      tone: "success",
+      label: "Ready to promote",
+      detail: "The draft is verified. Promotion is the only step that writes into trusted AI Memory."
+    };
+  }
+  if (request.draftArtifactPath) {
+    return {
+      tone: "active",
+      label: "Verify draft",
+      detail: "Preview the draft, then run verification. Unverified drafts remain review artifacts only."
+    };
+  }
+  if (request.status === "approved") {
+    return {
+      tone: "active",
+      label: "Generate draft",
+      detail: "Create a draft wiki update from this approved intake artifact. This still does not write trusted AI Memory."
+    };
+  }
+  if (request.status === "in-progress") {
+    return {
+      tone: "active",
+      label: "Finish review",
+      detail: "Approve only if this source should become a draft candidate; reject it if it should stay as raw intake."
+    };
+  }
+  return {
+    tone: "waiting",
+    label: "Start review",
+    detail: "Inspect the source artifact first. Intake is preserved separately from AI-curated memory."
+  };
+}
+
 function reviewRequestCard(request, onTransition, onDraft, onPreviewDraft) {
   const card = document.createElement("article");
   card.className = "memory-review-request";
@@ -169,6 +235,15 @@ function reviewRequestCard(request, onTransition, onDraft, onPreviewDraft) {
   const reason = document.createElement("p");
   reason.textContent = request.reason || "No review reason recorded.";
   const pipeline = reviewPipeline(request);
+  const next = reviewRequestNextAction(request);
+  const nextAction = document.createElement("p");
+  nextAction.className = "memory-review-next";
+  nextAction.dataset.tone = next.tone;
+  const nextLabel = document.createElement("strong");
+  nextLabel.textContent = `Next: ${next.label}`;
+  const nextDetail = document.createElement("span");
+  nextDetail.textContent = next.detail;
+  nextAction.append(nextLabel, nextDetail);
   const actions = document.createElement("div");
   actions.className = "memory-review-actions";
   const makeAction = (label, nextStatus) => {
@@ -197,7 +272,7 @@ function reviewRequestCard(request, onTransition, onDraft, onPreviewDraft) {
   previewButton.disabled = !request.draftArtifactPath;
   previewButton.addEventListener("click", () => onPreviewDraft(request));
   actions.append(previewButton);
-  card.append(heading, artifact, draft, reason, pipeline, actions);
+  card.append(heading, artifact, draft, reason, pipeline, nextAction, actions);
   return card;
 }
 

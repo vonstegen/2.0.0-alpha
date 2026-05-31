@@ -142,6 +142,7 @@ These are the features currently implemented in the browser-first version.
 - The Living Archive MCP memory service now supports the full deterministic portable loop: external agents can write intake and queue ingest, the service can process queued requests into review artifacts, approved artifacts can be promoted through a narrow trusted path, and promotion updates `AI_MEMORY/wiki`, `index.md`, and `log.md` without allowing arbitrary direct wiki writes.
 - Browser artifacts can request Living Archive review, and the browser-first Living Archive workspace now exposes an auditable review queue with `pending`, `in-progress`, `approved`, and `rejected` state transitions.
 - Review queue cards now show an archive pipeline timeline for `Intake`, `Review`, `Draft`, `Verify`, `Revise`, `Promote`, and `Restore`, using host-read artifact metadata rather than UI guesses.
+- Review queue cards now show an explicit next-action explanation for the current archive pipeline state, including the boundary that intake and draft artifacts are not trusted AI Memory until a verified promotion step completes.
 - Approved browser-first review requests can generate draft wiki-update artifacts under `Memory/REVIEW/artifacts`; these drafts are not trusted AI Memory until a later host-mediated ingest/verifier/promote path completes.
 - Draft wiki-update artifacts can be previewed through a scoped `REVIEW/artifacts` host read path before any trusted promotion work is attempted.
 - Draft wiki-update artifacts must pass a host-owned verifier gate before promotion; the verifier writes an auditable verification artifact under `Memory/REVIEW/verifications` and records `verificationStatus: verified` on the draft.
@@ -668,6 +669,7 @@ These features exist in the desktop vNext codebase and remain important. Some wi
 
 ## 4. Current Gaps And Risks
 
+- Validation checkpoint on 2026-06-01: `npm run test:browser-first` passed with 374 passing tests and 8 explicit localhost-bridge sandbox skips; `npm run build` passed with the existing large desktop chunk warning; `npm test -- --run` passed with 286 Vitest tests. A push to `origin/browser-first-preview` was attempted after this checkpoint but failed because the sandbox could not resolve `github.com`; the local branch remained clean and ahead of origin.
 - Browser-first is now the product direction, but not all desktop vNext modules have been ported into it.
 - Living Archive is complete for desktop V1 architecture, but browser-first memory UX is not complete.
 - Browser-first add-on management now surfaces capability review plus Hermes/OpenCode local-execution toggles; future work still needs install, uninstall, update, and marketplace/registry flows.
@@ -684,19 +686,21 @@ These features exist in the desktop vNext codebase and remain important. Some wi
 ## 5. Recommended Next Implementation Sequence
 
 1. **Agent Control UX vNext**
-   - Add richer action details, current action state, blockers, and completion cards.
-   - Reason: this directly improves the Comet-level experience the user sees every day.
+   - Status: substantially implemented for main-workspace job visibility, including current action state, blocker guidance, completion summaries, approval review cards, pause/continue/cancel controls, and overlay stop routing from the controlled page.
+   - Next refinement: keep improving action-specific copy and recovery actions only where deterministic tests prove a real user-facing gap.
 
 2. **Browser-First Memory Bridge UX**
-   - Add save page, save selection, research trail intake flows, and promotion from approved draft artifacts into the existing trusted ingest/verifier pipeline.
+   - Status: review/promote cards now show the governed pipeline and the immediate next action for each request.
+   - Next refinement: connect saved page, saved selection, research trail, and browser job artifacts to the same clear review/promote affordance from their source workspaces.
    - Reason: this connects the browser product to the LLM Wiki / Living Archive advantage.
 
 3. **Browser-First Add-on Surface**
-   - Expose installed/available add-ons and route delegation to approved add-ons.
+   - Expand installed/available add-on management beyond current status, capability review, Hermes/OpenCode routing, and governed execution toggles.
    - Reason: this restores the ResonantOS modular platform vision inside the browser app.
 
 4. **Hermes/OpenCode Delegation**
-   - Add controlled task handoff and artifact return.
+   - Status: core governed handoff, lifecycle status, artifact summaries, and natural-language Augmentor routing are implemented.
+   - Next refinement: deepen workspace-specific artifact return and recovery UI after runtime failures.
    - Reason: this makes Augmentor more powerful without giving add-ons trusted core authority.
 
 5. **Wallet/DAO Workflow Guardrails**
