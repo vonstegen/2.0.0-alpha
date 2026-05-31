@@ -64,6 +64,39 @@ test("main workspace browser job controller focuses a durable browser job", asyn
   assert.deepEqual(events, ["render", "sidebar"]);
 });
 
+test("main workspace browser job controller routes pause and continue through side-panel authority", async () => {
+  const storage = createMemoryStorage();
+  const events = [];
+  const controller = createMainWorkspaceBrowserJobController({
+    afterChange: () => events.push("render"),
+    now: (() => {
+      const times = [
+        "2026-05-31T10:01:00.000Z",
+        "2026-05-31T10:02:00.000Z"
+      ];
+      return () => times.shift() ?? "2026-05-31T10:03:00.000Z";
+    })(),
+    openSidebar: async () => events.push("sidebar"),
+    storage,
+    storageKeys
+  });
+
+  assert.equal(await controller.pauseJob({ id: "job-123", goal: "Find a booking slot" }), true);
+  assert.equal(storage.data.activeBrowserJob, "job-123");
+  assert.deepEqual(storage.data.pendingSidebarPrompt, {
+    createdAt: "2026-05-31T10:01:00.000Z",
+    prompt: "/pause job-123"
+  });
+
+  assert.equal(await controller.continueJob({ id: "job-123", goal: "Find a booking slot" }), true);
+  assert.equal(storage.data.activeBrowserJob, "job-123");
+  assert.deepEqual(storage.data.pendingSidebarPrompt, {
+    createdAt: "2026-05-31T10:02:00.000Z",
+    prompt: "/continue job-123"
+  });
+  assert.deepEqual(events, ["render", "sidebar", "render", "sidebar"]);
+});
+
 test("main workspace browser job controller cancels non-terminal jobs and releases page locks", async () => {
   const storage = createMemoryStorage({
     activeBrowserJob: "job-a",

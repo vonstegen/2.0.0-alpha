@@ -83,14 +83,24 @@ function createButton(documentRef, label, title, handler, { primary = false } = 
   return button;
 }
 
+function canPauseJob(job) {
+  return ["approval", "queued", "running"].includes(job?.status);
+}
+
+function canContinueJob(job) {
+  return ["blocked", "cancelled", "completed", "denied", "failed", "paused"].includes(job?.status);
+}
+
 export function renderMainBrowserJobStatus({
   activeJobId = "",
   container,
   jobs = [],
   maxConcurrent = 2,
   onCancelFocused,
+  onContinueFocused,
   onFocusJob,
-  onOpenMonitor
+  onOpenMonitor,
+  onPauseFocused
 } = {}) {
   if (!container) return mainBrowserJobSnapshot({ activeJobId, jobs, maxConcurrent });
   const snapshot = mainBrowserJobSnapshot({ activeJobId, jobs, maxConcurrent });
@@ -174,6 +184,12 @@ export function renderMainBrowserJobStatus({
   }
   if (typeof onOpenMonitor === "function") {
     actions.append(createButton(documentRef, "Open monitor", "Open the full Browser Jobs monitor in the Augmentor side panel", onOpenMonitor, { primary: true }));
+  }
+  if (focusedJob && canPauseJob(focusedJob) && typeof onPauseFocused === "function") {
+    actions.append(createButton(documentRef, "Pause", `Pause ${focusedJob.goal}`, () => onPauseFocused(focusedJob)));
+  }
+  if (focusedJob && canContinueJob(focusedJob) && typeof onContinueFocused === "function") {
+    actions.append(createButton(documentRef, "Continue", `Continue ${focusedJob.goal}`, () => onContinueFocused(focusedJob)));
   }
   if (focusedJob && !["completed", "cancelled", "failed", "blocked", "denied"].includes(focusedJob.status) && typeof onCancelFocused === "function") {
     actions.append(createButton(documentRef, "Stop", `Stop ${focusedJob.goal}`, () => onCancelFocused(focusedJob)));

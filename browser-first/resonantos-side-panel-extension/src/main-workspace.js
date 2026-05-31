@@ -232,8 +232,10 @@ async function renderMainBrowserJobStatusFromStorage() {
     container: mainBrowserJobs,
     maxConcurrent: 2,
     onCancelFocused: mainBrowserJobController.cancelJob,
+    onContinueFocused: mainBrowserJobController.continueJob,
     onFocusJob: mainBrowserJobController.focusJob,
-    onOpenMonitor: mainBrowserJobController.openMonitor
+    onOpenMonitor: mainBrowserJobController.openMonitor,
+    onPauseFocused: mainBrowserJobController.pauseJob
   });
 }
 

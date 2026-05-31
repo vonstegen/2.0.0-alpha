@@ -47,6 +47,24 @@ export function createMainWorkspaceBrowserJobController({
     return true;
   };
 
+  const routeJobCommand = async (job, command) => {
+    if (!job?.id || !command) return false;
+    await storage?.set?.({
+      [activeBrowserJobKey]: job.id,
+      [pendingSidebarPromptKey]: {
+        createdAt: now(),
+        prompt: `/${command} ${job.id}`
+      }
+    }).catch(() => undefined);
+    afterChange();
+    await openSidebar();
+    return true;
+  };
+
+  const pauseJob = (job) => routeJobCommand(job, "pause");
+
+  const continueJob = (job) => routeJobCommand(job, "continue");
+
   const cancelJob = async (job) => {
     if (!job?.id) return false;
     const { activeJobId, jobs } = await readJobs();
@@ -75,8 +93,10 @@ export function createMainWorkspaceBrowserJobController({
 
   return {
     cancelJob,
+    continueJob,
     focusJob,
     openMonitor,
+    pauseJob,
     readJobs
   };
 }

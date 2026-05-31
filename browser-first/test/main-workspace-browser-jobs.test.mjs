@@ -117,7 +117,8 @@ test("main workspace browser jobs render monitor, focus, and stop controls", () 
     }],
     onCancelFocused: (job) => events.push(["cancel", job.id]),
     onFocusJob: (job) => events.push(["focus", job.id]),
-    onOpenMonitor: () => events.push(["monitor"])
+    onOpenMonitor: () => events.push(["monitor"]),
+    onPauseFocused: (job) => events.push(["pause", job.id])
   });
 
   assert.equal(snapshot.focusedJob.id, "job-a");
@@ -131,13 +132,43 @@ test("main workspace browser jobs render monitor, focus, and stop controls", () 
 
   [...container.querySelectorAll("button")].find((button) => button.textContent === "Focus").click();
   [...container.querySelectorAll("button")].find((button) => button.textContent === "Open monitor").click();
+  [...container.querySelectorAll("button")].find((button) => button.textContent === "Pause").click();
   [...container.querySelectorAll("button")].find((button) => button.textContent === "Stop").click();
 
   assert.deepEqual(events, [
     ["focus", "job-a"],
     ["monitor"],
+    ["pause", "job-a"],
     ["cancel", "job-a"]
   ]);
+});
+
+test("main workspace browser jobs render continue for stopped or paused work", () => {
+  const dom = new JSDOM(`<section id="jobs"></section>`);
+  const events = [];
+  const container = dom.window.document.querySelector("#jobs");
+
+  const snapshot = renderMainBrowserJobStatus({
+    activeJobId: "job-paused",
+    container,
+    jobs: [{
+      id: "job-paused",
+      goal: "Continue product research",
+      status: "paused",
+      pageLock: null
+    }],
+    onContinueFocused: (job) => events.push(["continue", job.id]),
+    onFocusJob: (job) => events.push(["focus", job.id]),
+    onOpenMonitor: () => events.push(["monitor"])
+  });
+
+  assert.equal(snapshot.focusedJob.id, "job-paused");
+  assert.match(container.textContent, /Paused · Continue product research/);
+  assert.equal([...container.querySelectorAll("button")].some((button) => button.textContent === "Pause"), false);
+
+  [...container.querySelectorAll("button")].find((button) => button.textContent === "Continue").click();
+
+  assert.deepEqual(events, [["continue", "job-paused"]]);
 });
 
 test("main workspace browser jobs render per-job approval review cards", () => {

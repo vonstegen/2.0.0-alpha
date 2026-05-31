@@ -278,6 +278,7 @@ These are the features currently implemented in the browser-first version.
 - The durable browser job scheduler preserves blocked/approval/failed control-loop results instead of converting non-success browser jobs into completed jobs.
 - The main full-screen workspace now renders a compact Agent Control status strip for active/queued/approval browser jobs, including focused job status, page target, scheduler counts, progress, and controls to open the full monitor, focus, or stop the job.
 - The main workspace Agent Control status strip uses a dedicated browser-job controller for Open Monitor, Focus, and Stop so storage mutation, page-lock release, sidebar handoff prompts, and system trace messages are covered outside the UI renderer.
+- The main workspace Agent Control status strip can now route focused jobs to the side-panel Pause and Continue command authority, so the full-screen workspace can control durable browser jobs without duplicating runner state mutation in the renderer.
 - Background browser-job Focus and approval actions activate the job's locked readable tab before review/replay, so approval decisions remain page-specific instead of following the currently active tab by accident.
 - The browser-job monitor labels visible-page ownership and background approval state, including the locked tab that will be activated before approve or deny.
 - Durable Browser Jobs now detect stale running/approval jobs passively and surface last-activity timing plus next human action in `/jobs` and the monitor, without auto-killing, auto-resuming, or changing the persisted status.
@@ -330,7 +331,7 @@ These are the features currently implemented in the browser-first version.
 ### Deterministic Validation Already Passing
 
 - Latest restricted sandbox checkpoint on 2026-06-01: `node --test browser-first/test/browser-first-acceptance.test.mjs` passed and covers the fresh main-chat -> natural current-news prompt -> side-panel Agent Control handoff, plus governed parallel browser jobs with page locks, approval focus, and main-workspace status rendering.
-- Latest restricted sandbox checkpoint on 2026-06-01: `git diff --check && npm run test:browser-first` passed with 362 tests and 8 explicit localhost-bridge skips caused by sandbox bind restrictions.
+- Latest restricted sandbox checkpoint on 2026-06-01: `git diff --check && npm run test:browser-first` passed with 364 tests and 8 explicit localhost-bridge skips caused by sandbox bind restrictions.
 - Latest restricted sandbox checkpoint on 2026-06-01: `npm run build` passed with the existing Vite large chunk warning.
 - Latest restricted sandbox checkpoint on 2026-06-01: `npm test -- --run` passed with 286 tests.
 - Latest local checkpoint on 2026-05-31: `npm run test:browser-first` passed with 310 tests.
