@@ -27,6 +27,7 @@ test("artifacts workspace lists and previews archive intake artifacts", async ()
   const { container, cleanup } = setupDom();
   const calls = [];
   const continued = [];
+  const openedReviews = [];
   const bridgeRequest = async (route, options = {}) => {
     calls.push([route, options]);
     if (route === "/archive/intake/list") {
@@ -130,7 +131,8 @@ test("artifacts workspace lists and previews archive intake artifacts", async ()
     renderArtifactsWorkspace({
       container,
       bridgeRequest,
-      onContinueArtifact: async (artifact) => continued.push(artifact.path)
+      onContinueArtifact: async (artifact) => continued.push(artifact.path),
+      onOpenReviewQueue: (review) => openedReviews.push(review.path)
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -173,7 +175,13 @@ test("artifacts workspace lists and previews archive intake artifacts", async ()
     requestReview.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.ok(calls.some(([route, options]) => route === "/archive/review/request" && options.body.path === "INTAKE/browser/job-report.md"));
-    assert.match(container.textContent, /Review request created: REVIEW\/requests\/job-report\.md/);
+    assert.match(container.textContent, /Review request created: REVIEW\/requests\/job-report\.md\. Next: open the Living Archive review queue/);
+    assert.match(container.textContent, /Next: inspect this artifact in Living Archive review/);
+    assert.match(container.textContent, /trusted AI Memory changes happen only after draft, verify, and promote/);
+    Array.from(container.querySelectorAll(".artifact-review-handoff button"))
+      .find((button) => button.textContent === "Open Review Queue")
+      .click();
+    assert.deepEqual(openedReviews, ["REVIEW/requests/job-report.md"]);
 
     continueFrom.click();
     await new Promise((resolve) => setTimeout(resolve, 0));

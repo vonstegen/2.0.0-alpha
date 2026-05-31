@@ -120,6 +120,30 @@ function actionButton(label, onClick) {
   return button;
 }
 
+function reviewHandoffCard(review, onOpenReviewQueue) {
+  const card = document.createElement("article");
+  card.className = "artifact-review-handoff";
+  const label = document.createElement("span");
+  label.className = "module-eyebrow";
+  label.textContent = "Review queued";
+  const title = document.createElement("strong");
+  title.textContent = "Next: inspect this artifact in Living Archive review.";
+  const detail = document.createElement("p");
+  detail.textContent = [
+    review?.path ? `Request: ${review.path}.` : "Review request created.",
+    "This is still intake evidence; trusted AI Memory changes happen only after draft, verify, and promote."
+  ].join(" ");
+  const actions = document.createElement("div");
+  actions.className = "artifact-actions";
+  const open = actionButton("Open Review Queue", () => {
+    if (typeof onOpenReviewQueue === "function") onOpenReviewQueue(review);
+  });
+  open.disabled = typeof onOpenReviewQueue !== "function";
+  actions.append(open);
+  card.append(label, title, detail, actions);
+  return card;
+}
+
 function previewArticle(artifact, actions) {
   const article = document.createElement("article");
   article.className = "artifact-preview";
@@ -186,7 +210,7 @@ function previewArticle(artifact, actions) {
   return article;
 }
 
-export function renderArtifactsWorkspace({ container, bridgeRequest, onContinueArtifact }) {
+export function renderArtifactsWorkspace({ container, bridgeRequest, onContinueArtifact, onOpenReviewQueue }) {
   const section = document.createElement("section");
   section.className = "artifacts-workspace";
   section.setAttribute("aria-label", "Artifacts workspace");
@@ -249,7 +273,9 @@ export function renderArtifactsWorkspace({ container, bridgeRequest, onContinueA
                 reason: "Evaluate this browser artifact for Living Archive ingestion, contradictions, entities, and durable wiki updates."
               }
             });
-            setStatus(status, `Review request created: ${review.path}.`, "success");
+            preview.querySelector(".artifact-review-handoff")?.remove();
+            preview.append(reviewHandoffCard(review, onOpenReviewQueue));
+            setStatus(status, `Review request created: ${review.path}. Next: open the Living Archive review queue.`, "success");
           } catch (error) {
             setStatus(status, error instanceof Error ? error.message : String(error), "error");
           }

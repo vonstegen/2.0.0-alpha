@@ -846,7 +846,11 @@ function renderMessages() {
     renderArtifactsWorkspace({
       container: transcript,
       bridgeRequest,
-      onContinueArtifact: continueFromArtifact
+      onContinueArtifact: continueFromArtifact,
+      onOpenReviewQueue: () => {
+        setActiveWorkspace("memory", { persist: true });
+        renderAll();
+      }
     });
     return;
   }

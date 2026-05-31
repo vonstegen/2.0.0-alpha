@@ -2484,6 +2484,26 @@ textarea {
   padding: 18px;
 }
 
+.artifact-review-handoff {
+  display: grid;
+  gap: 7px;
+  border: 1px solid rgba(36, 209, 143, 0.22);
+  border-radius: 18px;
+  background: rgba(36, 209, 143, 0.07);
+  padding: 13px;
+}
+
+.artifact-review-handoff strong {
+  color: rgba(238, 247, 240, 0.94);
+}
+
+.artifact-review-handoff p {
+  margin: 0;
+  color: rgba(175, 191, 181, 0.86);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .artifact-preview-heading {
   display: flex;
   align-items: start;
