@@ -231,7 +231,11 @@ test("browser page actions save current page to archive intake", async () => {
   assert.match(bridgeCall[2].body.content, /Important page text/);
   const reviewCall = harness.events.find((event) => event[0] === "bridge" && event[1] === "/archive/review/request");
   assert.equal(reviewCall[2].body.path, "INTAKE/browser/saved-page.md");
-  assert.ok(harness.events.some((event) => event[0] === "message" && /Saved this page/.test(event[2])));
+  assert.ok(harness.events.some((event) =>
+    event[0] === "message" &&
+    /Saved this page/.test(event[2]) &&
+    /Next: open Living Archive > Review Queue/.test(event[2])
+  ));
   assert.equal(harness.events.some((event) => event[0] === "message" && /INTAKE\/browser|REVIEW\/requests/.test(event[2])), false);
 });
 
@@ -256,6 +260,11 @@ test("browser page actions save selected text to archive intake", async () => {
   assert.match(bridgeCall[2].body.content, /Selected passage/);
   const reviewCall = harness.events.find((event) => event[0] === "bridge" && event[1] === "/archive/review/request");
   assert.equal(reviewCall[2].body.path, "INTAKE/browser/selection.md");
+  assert.ok(harness.events.some((event) =>
+    event[0] === "message" &&
+    /Saved the selected text/.test(event[2]) &&
+    /Next: open Living Archive > Review Queue/.test(event[2])
+  ));
   assert.equal(harness.events.some((event) => event[0] === "message" && /INTAKE\/browser|REVIEW\/requests/.test(event[2])), false);
 });
 
@@ -447,7 +456,11 @@ test("browser page actions summarize current page into reviewed archive intake",
   const reviewCall = harness.events.find((event) => event[0] === "bridge" && event[1] === "/archive/review/request");
   assert.equal(reviewCall[2].body.path, "INTAKE/browser/summary.md");
   assert.match(reviewCall[2].body.reason, /Verify this browser page summary/);
-  assert.ok(harness.events.some((event) => event[0] === "message" && /Summarized this page into Living Archive intake/.test(event[2])));
+  assert.ok(harness.events.some((event) =>
+    event[0] === "message" &&
+    /Summarized this page into Living Archive intake/.test(event[2]) &&
+    /Next: open Living Archive > Review Queue/.test(event[2])
+  ));
 });
 
 test("browser page actions create deterministic summary intake when provider fails", async () => {
@@ -521,7 +534,11 @@ test("browser page actions save multi-tab research trail to reviewed intake", as
   const reviewCall = harness.events.find((event) => event[0] === "bridge" && event[1] === "/archive/review/request");
   assert.equal(reviewCall[2].body.path, "INTAKE/browser/research-trail.md");
   assert.match(reviewCall[2].body.reason, /multi-page browser research trail/);
-  assert.ok(harness.events.some((event) => event[0] === "message" && /2-page browser research trail/.test(event[2])));
+  assert.ok(harness.events.some((event) =>
+    event[0] === "message" &&
+    /2-page browser research trail/.test(event[2]) &&
+    /Next: open Living Archive > Review Queue/.test(event[2])
+  ));
 });
 
 test("browser page actions report when research trail has no readable tabs", async () => {

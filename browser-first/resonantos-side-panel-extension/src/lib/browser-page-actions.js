@@ -21,6 +21,7 @@ export function createBrowserPageActions(deps) {
   } = deps;
 
   const daoTargetTerms = /\b(wallet|connect|sign|signature|vote|voting|for|against|abstain|cast|proposal|quorum|delegate|delegation|governance|submit|confirm|execute|queue|timelock|transaction|transfer|treasury|dao|token|stake|unstake|claim|snapshot|tally)\b/i;
+  const reviewQueueGuidance = "Next: open Living Archive > Review Queue to inspect, draft, verify, and promote it if it should become trusted AI Memory.";
 
   async function activeTab() {
     const controlledTabId = deps.getControlledTabId();
@@ -754,7 +755,7 @@ export function createBrowserPageActions(deps) {
     });
     await addMessage(
       "system",
-      `Summarized this page into Living Archive intake and queued it for review.\n\nThis is a review artifact, not trusted AI Memory yet.`
+      `Summarized this page into Living Archive intake and queued it for review.\n\nThis is a review artifact, not trusted AI Memory yet.\n\n${reviewQueueGuidance}`
     );
     setStatus("Page summary saved");
     setActivity("completed", "Saved page summary intake", result.path);
@@ -804,7 +805,7 @@ export function createBrowserPageActions(deps) {
     });
     await addMessage(
       "system",
-      `Saved a ${snapshots.length}-page browser research trail to Living Archive intake and queued it for review.\n\nIt remains raw source material until review, verification, and promotion accept it.`
+      `Saved a ${snapshots.length}-page browser research trail to Living Archive intake and queued it for review.\n\nIt remains raw source material until review, verification, and promotion accept it.\n\n${reviewQueueGuidance}`
     );
     setStatus("Research trail saved");
     setActivity("completed", "Saved research trail intake", result.path);
@@ -838,7 +839,7 @@ export function createBrowserPageActions(deps) {
     });
     await addMessage(
       "system",
-      `Saved this page to Living Archive intake and queued it for review.\n\nIt remains raw source material until the archive review, verification, and promotion pipeline accepts it.`
+      `Saved this page to Living Archive intake and queued it for review.\n\nIt remains raw source material until the archive review, verification, and promotion pipeline accepts it.\n\n${reviewQueueGuidance}`
     );
     setStatus("Page saved to intake");
     setActivity("completed", "Saved page intake", result.path);
@@ -881,7 +882,7 @@ export function createBrowserPageActions(deps) {
     });
     await addMessage(
       "system",
-      `Saved the selected text to Living Archive intake and queued it for review.\n\nIt remains raw source material until the archive review, verification, and promotion pipeline accepts it.`
+      `Saved the selected text to Living Archive intake and queued it for review.\n\nIt remains raw source material until the archive review, verification, and promotion pipeline accepts it.\n\n${reviewQueueGuidance}`
     );
     setStatus("Selection saved to intake");
     setActivity("completed", "Saved selection intake", result.path);
