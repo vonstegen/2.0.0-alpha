@@ -73,6 +73,16 @@ function jobBlockerGuidance(job) {
   ].filter(Boolean).join(" ");
 }
 
+function jobOutcomeSummary(job) {
+  if (job?.status !== "completed") return "";
+  const summary = String(job?.summary ?? "").trim();
+  if (summary) return `Result: ${summary}`;
+  const steps = Array.isArray(job?.steps) ? job.steps : [];
+  const step = [...steps].reverse()
+    .find((candidate) => ["completed", "done", "success"].includes(candidate?.state) && String(candidate?.note ?? "").trim());
+  return step?.note ? `Result: ${String(step.note).trim()}` : "";
+}
+
 function approvalActionLabel(job) {
   const approval = job?.pendingApproval;
   const step = approval?.step ?? {};
@@ -163,6 +173,13 @@ export function renderMainBrowserJobStatus({
     blocker.className = "main-browser-jobs-blocker";
     blocker.textContent = blockerGuidance;
     copy.append(blocker);
+  }
+  const outcomeSummary = jobOutcomeSummary(focusedJob);
+  if (outcomeSummary) {
+    const outcome = documentRef.createElement("span");
+    outcome.className = "main-browser-jobs-outcome";
+    outcome.textContent = outcomeSummary;
+    copy.append(outcome);
   }
   if (approvalJobs.length) {
     const approvalQueue = documentRef.createElement("div");

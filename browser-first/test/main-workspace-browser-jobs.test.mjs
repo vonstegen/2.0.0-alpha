@@ -213,6 +213,35 @@ test("main workspace browser jobs surface blocker guidance for stopped work", ()
   assert.equal(container.querySelector(".main-browser-jobs-blocker")?.textContent.includes("Next:"), true);
 });
 
+test("main workspace browser jobs surface completed job outcome summaries", () => {
+  const dom = new JSDOM(`<section id="jobs"></section>`);
+  const container = dom.window.document.querySelector("#jobs");
+
+  const snapshot = renderMainBrowserJobStatus({
+    activeJobId: "job-completed",
+    container,
+    jobs: [{
+      id: "job-completed",
+      goal: "Research current news",
+      status: "completed",
+      summary: "Opened news search and captured three current headlines.",
+      steps: [{
+        label: "Search news",
+        note: "News page loaded.",
+        state: "completed",
+        type: "search"
+      }]
+    }],
+    onOpenMonitor: () => undefined
+  });
+
+  assert.equal(snapshot.focusedJob.id, "job-completed");
+  assert.equal(container.dataset.status, "completed");
+  assert.match(container.textContent, /Completed · Research current news/);
+  assert.match(container.textContent, /Result: Opened news search and captured three current headlines/);
+  assert.equal(container.querySelector(".main-browser-jobs-outcome")?.textContent.startsWith("Result:"), true);
+});
+
 test("main workspace browser jobs render per-job approval review cards", () => {
   const dom = new JSDOM(`<section id="jobs"></section>`);
   const events = [];
