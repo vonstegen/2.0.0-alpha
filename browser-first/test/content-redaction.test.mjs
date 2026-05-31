@@ -207,3 +207,24 @@ test("content page snapshots and typing include open shadow DOM controls safely"
   assert.equal(response?.ok, true);
   assert.equal(shadow.querySelector("#shadow-search").value, "resonantos shadow");
 });
+
+test("content page snapshots expose accessible field labels for planner targeting", async () => {
+  const { listener } = await loadContentScript(`
+    <!doctype html>
+    <label for="booking-date">Preferred booking date</label>
+    <input id="booking-date" type="text" value="">
+    <span id="project-label">Project name</span>
+    <input id="project-name" type="text" aria-labelledby="project-label" value="">
+  `);
+
+  let snapshot = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "read_page",
+  }, {}, (payload) => {
+    snapshot = payload.snapshot;
+  });
+
+  assert.equal(snapshot.fields.find((field) => field.id === "booking-date")?.label, "preferred booking date");
+  assert.equal(snapshot.fields.find((field) => field.id === "project-name")?.label, "Project name");
+});

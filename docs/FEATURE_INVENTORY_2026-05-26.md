@@ -358,7 +358,7 @@ These are the next capability areas planned for the browser-first app.
 
 - Improve page observation quality for complex modern web apps. Initial open-shadow-DOM read/type discovery is implemented for visible controls and editable fields while keeping closed shadow roots inaccessible and sensitive values redacted.
 - Improve element targeting when the page has repeated labels.
-- Add stronger form-field mapping beyond the current secure autofill guard.
+- Add stronger form-field mapping beyond the current secure autofill guard. Initial accessible-label evidence is implemented for `label[for]` and `aria-labelledby`, so planner targeting can refer to visible field names while sensitive value redaction remains enforced.
 - Add better editable document handling.
 - Add page-state verification after actions.
 - Add more robust tab-aware workflows.

@@ -337,7 +337,27 @@ const describeForms = () => ({
     .map((field) => describeEditable(field))
 });
 
-const visibleText = (element) => (element.innerText || element.textContent || element.getAttribute("aria-label") || element.value || "").trim();
+const idReferenceText = (element, attribute) => {
+  const root = element?.getRootNode?.() ?? document;
+  return String(element?.getAttribute?.(attribute) ?? "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((id) => root.getElementById?.(id) ?? querySelectorAllDeep(`#${cssEscape(id)}`, { root, limit: 1 })[0])
+    .filter(Boolean)
+    .map((node) => node.textContent)
+    .filter(Boolean)
+    .join(" ");
+};
+
+const accessibleLabelText = (element) => [
+  element?.getAttribute?.("aria-label"),
+  idReferenceText(element, "aria-labelledby"),
+  relatedLabelText(element),
+  element?.getAttribute?.("placeholder"),
+  element?.getAttribute?.("title")
+].filter(Boolean).join(" ").trim();
+
+const visibleText = (element) => (element.innerText || element.textContent || accessibleLabelText(element) || element.value || "").trim();
 
 const isResonantosInternalElement = (element) => Boolean(element?.closest?.([
   `#${inlineAssistantId}`,
@@ -523,7 +543,7 @@ const isEditable = (element) =>
   !element.readOnly;
 
 const editableLabel = (element) => [
-  element.getAttribute("aria-label"),
+  accessibleLabelText(element),
   element.getAttribute("placeholder"),
   element.getAttribute("title"),
   element.getAttribute("autocomplete"),
@@ -626,7 +646,7 @@ const describeEditable = (element) => {
     name: element.getAttribute("name") || "",
     id: element.id || "",
     role: element.getAttribute("role") || "",
-    label: element.getAttribute("aria-label") || element.getAttribute("placeholder") || element.getAttribute("title") || "",
+    label: accessibleLabelText(element),
     fieldKind: fieldSafety.kind,
     hasValue: Boolean(rawValue),
     valuePreview: editableValuePreview(element, fieldSafety)
