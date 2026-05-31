@@ -32,8 +32,37 @@ test("main workspace browser jobs summarize focused and queued Agent Control wor
   });
 
   assert.equal(snapshot.activeCount, 2);
+  assert.deepEqual(snapshot.approvalJobs, []);
   assert.equal(snapshot.focusedJob.id, "job-a");
   assert.deepEqual(snapshot.scheduler.runnableQueued.map((job) => job.id), ["job-b"]);
+});
+
+test("main workspace browser jobs prioritize approval jobs when no active focus exists", () => {
+  const snapshot = mainBrowserJobSnapshot({
+    jobs: [
+      {
+        id: "job-running",
+        goal: "Read background docs",
+        status: "running",
+        pageLock: { tabId: 4, siteKey: "docs.example", url: "https://docs.example/" }
+      },
+      {
+        id: "job-approval",
+        goal: "Review booking submit",
+        status: "approval",
+        pendingApproval: {
+          reason: "Public submit requires human review.",
+          step: { type: "click", text: "Book slot" }
+        },
+        pageLock: { tabId: 9, siteKey: "booking.example", url: "https://booking.example/" }
+      }
+    ],
+    maxConcurrent: 2
+  });
+
+  assert.equal(snapshot.activeCount, 2);
+  assert.deepEqual(snapshot.approvalJobs.map((job) => job.id), ["job-approval"]);
+  assert.equal(snapshot.focusedJob.id, "job-approval");
 });
 
 test("main workspace browser jobs do not focus a completed active id while work remains active", () => {
@@ -109,4 +138,50 @@ test("main workspace browser jobs render monitor, focus, and stop controls", () 
     ["monitor"],
     ["cancel", "job-a"]
   ]);
+});
+
+test("main workspace browser jobs render per-job approval review cards", () => {
+  const dom = new JSDOM(`<section id="jobs"></section>`);
+  const events = [];
+  const container = dom.window.document.querySelector("#jobs");
+
+  const snapshot = renderMainBrowserJobStatus({
+    activeJobId: "job-running",
+    container,
+    jobs: [
+      {
+        id: "job-running",
+        goal: "Compare products",
+        status: "running",
+        pageLock: { tabId: 3, siteKey: "shop.example", url: "https://shop.example/" }
+      },
+      {
+        id: "job-approval",
+        goal: "Reserve appointment",
+        status: "approval",
+        pageLock: { tabId: 11, siteKey: "booking.example", url: "https://booking.example/" },
+        pendingApproval: {
+          history: [{ observation: { title: "Booking checkout", url: "https://booking.example/confirm" } }],
+          reason: "Clicking Book now is a public-submit boundary.",
+          step: { type: "click", text: "Book now" }
+        }
+      }
+    ],
+    onCancelFocused: (job) => events.push(["cancel", job.id]),
+    onFocusJob: (job) => events.push(["focus", job.id]),
+    onOpenMonitor: () => events.push(["monitor"])
+  });
+
+  assert.equal(snapshot.focusedJob.id, "job-running");
+  assert.deepEqual(snapshot.approvalJobs.map((job) => job.id), ["job-approval"]);
+  assert.equal(container.dataset.status, "running");
+  assert.match(container.textContent, /1 approval card/);
+  assert.match(container.textContent, /Reserve appointment: Book now/);
+  assert.match(container.textContent, /Clicking Book now is a public-submit boundary/);
+  assert.match(container.textContent, /booking\.example · tab 11 · Booking checkout/);
+
+  const reviewButton = [...container.querySelectorAll("button")].find((button) => button.textContent === "Focus review");
+  reviewButton.click();
+
+  assert.deepEqual(events, [["focus", "job-approval"]]);
 });

@@ -350,7 +350,7 @@ These are the next capability areas planned for the browser-first app.
 - Refine the control monitor with richer aggregate progress semantics and clearer multi-step task phases. Initial aggregate phase/progress evidence is now implemented; next work is to propagate the same clarity into non-control workspace blockers.
 - Add visible blockers with recommended next human action in more workspace surfaces beyond Agent Control. Initial job-monitor, Artifacts workspace, Hermes workspace, OpenCode workspace, and delegation lifecycle guidance are implemented; next work is to expand the same pattern into future add-on workspaces.
 - Add better progress semantics for multi-step tasks. Initial monitor/report progress semantics are implemented; next work is richer phase-specific copy and recovery actions.
-- Add per-job approval-card routing for background jobs; the true scheduler exists, but safe approval review still needs a focused background-job UX instead of one global approval card.
+- Add per-job approval-card routing for background jobs. Implemented in the main workspace status strip as compact approval cards that route the human to the focused Browser Jobs review before approve/deny; the side-panel monitor remains the approval execution surface.
 - Improve replayable run reports with richer aggregate progress and confidence evidence. Initial aggregate progress and confidence evidence is now present in saved reports.
 - Add clearer distinction between reading, deciding, acting, verifying, blocked, and waiting.
 

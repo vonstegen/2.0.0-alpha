@@ -698,6 +698,65 @@ body:not([data-workspace="answer"]) .main-browser-jobs {
   font-weight: 800;
 }
 
+.main-browser-jobs-approvals {
+  display: grid;
+  gap: 7px;
+  margin-top: 5px;
+}
+
+.main-browser-jobs-approval-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255, 154, 138, 0.22);
+  border-radius: 14px;
+  background: rgba(255, 122, 92, 0.07);
+  padding: 8px 9px;
+}
+
+.main-browser-jobs-approval-card[data-active="true"] {
+  border-color: rgba(36, 209, 143, 0.34);
+  background: rgba(36, 209, 143, 0.08);
+}
+
+.main-browser-jobs-approval-card div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.main-browser-jobs-approval-card strong,
+.main-browser-jobs-approval-card span,
+.main-browser-jobs-approval-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.main-browser-jobs-approval-card strong {
+  color: rgba(247, 255, 249, 0.9);
+  font-size: 0.7rem;
+}
+
+.main-browser-jobs-approval-card span,
+.main-browser-jobs-approval-card small {
+  color: rgba(207, 219, 210, 0.62);
+  font-size: 0.6rem;
+}
+
+.main-browser-jobs-approval-card button {
+  border: 1px solid rgba(36, 209, 143, 0.32);
+  border-radius: 999px;
+  background: rgba(36, 209, 143, 0.11);
+  color: rgba(36, 209, 143, 0.95);
+  font-size: 0.58rem;
+  font-weight: 950;
+  padding: 6px 9px;
+  white-space: nowrap;
+}
+
 .main-browser-jobs-actions {
   display: flex;
   flex-wrap: wrap;
@@ -738,6 +797,10 @@ body:not([data-workspace="answer"]) .main-browser-jobs {
 
   .main-browser-jobs-actions {
     justify-content: flex-start;
+  }
+
+  .main-browser-jobs-approval-card {
+    grid-template-columns: 1fr;
   }
 }
 

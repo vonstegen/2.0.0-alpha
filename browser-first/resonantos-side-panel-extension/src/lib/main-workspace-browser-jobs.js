@@ -11,14 +11,16 @@ export function mainBrowserJobSnapshot({ activeJobId = "", jobs = [], maxConcurr
     ? jobs.map((job) => normalizeBrowserJob(job)).filter((job) => job.id)
     : [];
   const activeJobs = normalizedJobs.filter((job) => ACTIVE_STATUSES.has(job.status));
+  const approvalJobs = activeJobs.filter((job) => job.status === "approval" && job.pendingApproval);
   const activeFocusedJob = normalizedJobs.find((job) => job.id === activeJobId && ACTIVE_STATUSES.has(job.status));
-  const focusedJob = activeFocusedJob ?? activeJobs[0] ?? normalizedJobs[0] ?? null;
+  const focusedJob = activeFocusedJob ?? approvalJobs[0] ?? activeJobs[0] ?? normalizedJobs[0] ?? null;
   const scheduler = browserJobSchedulerState(normalizedJobs, { maxConcurrent });
   const blocked = activeJobs.filter((job) => ["approval", "paused"].includes(job.status)).length +
     scheduler.lockBlockedQueued.length +
     scheduler.capacityBlockedQueued.length;
   return {
     activeCount: activeJobs.length,
+    approvalJobs,
     blocked,
     focusedJob,
     jobs: normalizedJobs,
@@ -57,6 +59,20 @@ function jobRecoveryEvidence(job) {
   ].filter(Boolean).join(" · ");
 }
 
+function approvalActionLabel(job) {
+  const approval = job?.pendingApproval;
+  const step = approval?.step ?? {};
+  return String(step.label ?? step.text ?? step.url ?? step.query ?? step.type ?? "pending action").slice(0, 120);
+}
+
+function approvalTargetLabel(job) {
+  return [
+    job?.pageLock?.siteKey,
+    job?.pageLock?.tabId !== null && job?.pageLock?.tabId !== undefined ? `tab ${job.pageLock.tabId}` : "",
+    job?.pendingApproval?.history?.at?.(-1)?.observation?.title
+  ].filter(Boolean).join(" · ");
+}
+
 function createButton(documentRef, label, title, handler, { primary = false } = {}) {
   const button = documentRef.createElement("button");
   button.type = "button";
@@ -79,7 +95,7 @@ export function renderMainBrowserJobStatus({
   if (!container) return mainBrowserJobSnapshot({ activeJobId, jobs, maxConcurrent });
   const snapshot = mainBrowserJobSnapshot({ activeJobId, jobs, maxConcurrent });
   const documentRef = container.ownerDocument;
-  const { activeCount, blocked, focusedJob, scheduler } = snapshot;
+  const { activeCount, approvalJobs, blocked, focusedJob, scheduler } = snapshot;
   container.replaceChildren();
   container.hidden = activeCount === 0 && !focusedJob;
   if (container.hidden) return snapshot;
@@ -114,6 +130,41 @@ export function renderMainBrowserJobStatus({
     recovery.className = "main-browser-jobs-recovery";
     recovery.textContent = `Recovery: ${recoveryEvidence}`;
     copy.append(recovery);
+  }
+  if (approvalJobs.length) {
+    const approvalQueue = documentRef.createElement("div");
+    approvalQueue.className = "main-browser-jobs-approvals";
+    const approvalLabel = documentRef.createElement("small");
+    approvalLabel.textContent = `${approvalJobs.length} approval ${approvalJobs.length === 1 ? "card" : "cards"}`;
+    approvalQueue.append(approvalLabel);
+    approvalJobs.slice(0, 3).forEach((job) => {
+      const card = documentRef.createElement("article");
+      card.className = "main-browser-jobs-approval-card";
+      card.dataset.active = job.id === activeJobId ? "true" : "false";
+      const details = documentRef.createElement("div");
+      const title = documentRef.createElement("strong");
+      title.textContent = `${job.goal}: ${approvalActionLabel(job)}`;
+      const reason = documentRef.createElement("span");
+      reason.textContent = job.pendingApproval?.reason ?? "This browser action requires human approval.";
+      const target = documentRef.createElement("small");
+      target.textContent = approvalTargetLabel(job) || "Review in Browser Jobs before approval.";
+      details.append(title, reason, target);
+      const review = createButton(
+        documentRef,
+        job.id === activeJobId ? "Open review" : "Focus review",
+        `Review approval for ${job.goal}`,
+        () => (job.id === activeJobId ? onOpenMonitor?.() : onFocusJob?.(job)),
+        { primary: job.id !== activeJobId }
+      );
+      card.append(details, review);
+      approvalQueue.append(card);
+    });
+    if (approvalJobs.length > 3) {
+      const more = documentRef.createElement("small");
+      more.textContent = `${approvalJobs.length - 3} more approval jobs in Browser Jobs.`;
+      approvalQueue.append(more);
+    }
+    copy.append(approvalQueue);
   }
 
   const actions = documentRef.createElement("div");
