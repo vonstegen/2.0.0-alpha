@@ -89,6 +89,52 @@ test("browser page actions open URLs in the controlled readable tab", async () =
   assert.ok(harness.events.some((event) => event[0] === "message" && /Opened https:\/\/resonantos.com\//.test(event[2])));
 });
 
+test("browser page actions open news search and report retrieved headlines", async () => {
+  const harness = createHarness({
+    bridgeResponse: {
+      items: [
+        { title: "Global markets react to AI infrastructure buildout", source: "Reuters" },
+        { title: "Climate summit announces new grid agreement", source: "AP" }
+      ]
+    }
+  });
+
+  const result = await harness.actions.searchBrowser({ action: "news", query: "important world news today" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.action, "news");
+  assert.match(result.url, /^https:\/\/www\.bing\.com\/news\/search\?/);
+  assert.ok(harness.events.some((event) => event[0] === "tab.update" && /bing\.com\/news\/search/.test(event[2].url)));
+  assert.ok(harness.events.some((event) =>
+    event[0] === "bridge" &&
+    event[1] === "/web/news" &&
+    event[2].body.query === "important world news today"
+  ));
+  assert.ok(harness.events.some((event) =>
+    event[0] === "message" &&
+    /Opened news search/.test(event[2]) &&
+    /Global markets react/.test(event[2]) &&
+    /Climate summit announces/.test(event[2])
+  ));
+});
+
+test("browser page actions still opens news search when headline extraction fails", async () => {
+  const harness = createHarness({
+    bridgeRequest: () => {
+      throw new Error("provider unavailable");
+    }
+  });
+
+  const result = await harness.actions.searchBrowser({ action: "news", query: "latest AI news" });
+
+  assert.equal(result.ok, true);
+  assert.ok(harness.events.some((event) => event[0] === "tab.update" && /bing\.com\/news\/search/.test(event[2].url)));
+  assert.ok(harness.events.some((event) =>
+    event[0] === "message" &&
+    /I opened the news search, but headline extraction failed: provider unavailable/.test(event[2])
+  ));
+});
+
 test("browser page actions merge frame snapshots when reading the active page", async () => {
   const harness = createHarness({
     frames: [{ frameId: 0 }, { frameId: 7 }],
