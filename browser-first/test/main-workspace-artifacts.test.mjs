@@ -217,6 +217,7 @@ test("artifacts workspace extracts wallet and DAO audit summaries", () => {
   ].join("\n"));
 
   assert.equal(insights.evidenceType, "Wallet / DAO Audit");
+  assert.equal(insights.sourceType, "Wallet / DAO audit");
   assert.equal(insights.pageUrl, "https://dao.example/vote");
   assert.equal(insights.pageTitle, "DAO Vote");
   assert.equal(insights.capturedAt, "2026-05-29T10:00:00.000Z");
@@ -247,17 +248,75 @@ test("artifacts workspace extracts progress and blocker guidance from markdown r
   assert.deepEqual(insights, {
     capturedAt: "",
     evidenceType: "",
+    fallbackSummary: "",
     nextHumanAction: "Review the form, then approve once or deny.",
     pageTitle: "",
     pageUrl: "",
     percentComplete: "67",
     phase: "approval",
+    sourceStats: "",
+    sourceType: "",
+    summaryModel: "",
     status: "approval-required",
     summary: "Awaiting approval · 2/3 complete · 67%",
     targetReason: "Agent Control goal: buy safely",
     targetSite: "checkout.example",
     walletSummary: ""
   });
+});
+
+test("artifacts workspace extracts browser source-specific intake previews", () => {
+  const page = artifactInsightsFromMarkdown([
+    "Captured from: https://resonantos.com/dao/",
+    "",
+    "## Page Context",
+    "- title: ResonantOS DAO",
+    "- url: https://resonantos.com/dao/",
+    "- links captured: 12",
+    "- controls captured: 3",
+    "- fields captured: 1",
+    "",
+    "## Visible Text",
+    "DAO information"
+  ].join("\n"));
+  assert.equal(page.sourceType, "Browser page capture");
+  assert.equal(page.pageTitle, "ResonantOS DAO");
+  assert.equal(page.pageUrl, "https://resonantos.com/dao/");
+  assert.equal(page.sourceStats, "12 link(s) · 3 control(s) · 1 field(s)");
+
+  const summary = artifactInsightsFromMarkdown([
+    "Captured from: https://example.com/report",
+    "",
+    "## AI Summary",
+    "A short summary.",
+    "",
+    "## Provenance",
+    "- title: Example Report",
+    "- url: https://example.com/report",
+    "- model: MiniMax 2.7",
+    "- fallback summary: no",
+    "- visible words captured: 600"
+  ].join("\n"));
+  assert.equal(summary.sourceType, "AI page summary");
+  assert.equal(summary.summaryModel, "MiniMax 2.7");
+  assert.equal(summary.fallbackSummary, "no");
+  assert.equal(summary.sourceStats, "600 visible word(s)");
+
+  const trail = artifactInsightsFromMarkdown([
+    "# Research Trail: DAO research",
+    "",
+    "- collectedAt: 2026-05-30T10:00:00.000Z",
+    "- pages captured: 2",
+    "- tabs skipped: 1",
+    "",
+    "This is a browser research trail intake bundle.",
+    "",
+    "## Page 1: First DAO Page",
+    "- url: https://dao.example/one"
+  ].join("\n"));
+  assert.equal(trail.sourceType, "Browser research trail");
+  assert.equal(trail.capturedAt, "2026-05-30T10:00:00.000Z");
+  assert.equal(trail.sourceStats, "2 page(s) · 1 skipped tab(s) · first: First DAO Page");
 });
 
 test("artifacts workspace reports empty intake clearly", async () => {

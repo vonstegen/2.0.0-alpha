@@ -132,6 +132,7 @@ These are the features currently implemented in the browser-first version.
 - The Artifacts workspace extracts status, target, aggregate progress, and next-human-action summaries from browser-control/job reports so the user can understand saved evidence without opening raw markdown first.
 - The Artifacts workspace groups saved evidence with counts for Agent Control, Browser Jobs, Browser Intake, Wallet/DAO audits, and other intake, so browser-collected memory does not become one undifferentiated pile.
 - The Artifacts workspace extracts browser-source provenance from intake markdown, including page title, page URL, and capture timestamp when present.
+- The Artifacts workspace now extracts source-specific preview metadata for browser page captures, selected text, AI page summaries, research trails, wallet/DAO audits, and browser job reports without exposing raw filesystem paths in chat.
 - The Artifacts workspace now shows a review handoff after requesting Living Archive review, with a direct action into the Living Archive review queue and an explicit reminder that trusted AI Memory writes happen only after draft, verify, and promote.
 - The Augmentor sidebar can summarize the current browser page into a source-grounded Living Archive intake artifact through the selected provider, with a deterministic source-excerpt fallback when the provider is unavailable.
 - The Augmentor sidebar can capture a multi-tab browser research trail into one Living Archive intake artifact, preserving per-page visible text, links, tab provenance, skipped-tab reasons, and a governed review request.
@@ -694,8 +695,8 @@ These features exist in the desktop vNext codebase and remain important. Some wi
    - Next refinement: keep improving action-specific copy and recovery actions only where deterministic tests prove a real user-facing gap.
 
 2. **Browser-First Memory Bridge UX**
-   - Status: review/promote cards now show the governed pipeline and the immediate next action for each request; artifact review requests hand off directly to the Living Archive review queue; direct page, selection, summary, and research-trail captures now give matching review-queue guidance; main-workspace button and command captures show an actionable review-queue notice.
-   - Next refinement: add deeper source-type previews for each review artifact without exposing raw filesystem paths in chat.
+   - Status: review/promote cards now show the governed pipeline and the immediate next action for each request; artifact review requests hand off directly to the Living Archive review queue; direct page, selection, summary, and research-trail captures now give matching review-queue guidance; main-workspace button and command captures show an actionable review-queue notice; Artifacts previews now show source-specific metadata for browser captures and reports.
+   - Next refinement: connect review-queue cards more directly to artifact previews and promotion state, so source review and artifact inspection feel like one workflow.
    - Reason: this connects the browser product to the LLM Wiki / Living Archive advantage.
 
 3. **Browser-First Add-on Surface**
