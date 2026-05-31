@@ -4,6 +4,7 @@ import { JSDOM } from "jsdom";
 
 import { createAgentControlRunner } from "../resonantos-side-panel-extension/src/lib/agent-control-runner.js";
 import { controlStepLabel } from "../resonantos-side-panel-extension/src/lib/agent-control-planner.js";
+import { createAppCommandHandlers } from "../resonantos-side-panel-extension/src/lib/app-command-handlers.js";
 import { createBrowserJobScheduler } from "../resonantos-side-panel-extension/src/lib/browser-job-scheduler.js";
 import { createBrowserJobStore } from "../resonantos-side-panel-extension/src/lib/browser-job-store.js";
 import { createChatSessionStore } from "../resonantos-side-panel-extension/src/lib/chat-session-store.js";
@@ -334,4 +335,64 @@ test("acceptance: parallel browser jobs run only when their page locks and capac
   });
   assert.equal(rendered.approvalJobs.length, 1);
   assert.match(dom.window.document.body.textContent, /Approval required|approval card|Public submit requires human approval/);
+});
+
+test("acceptance: Augmentor delegates natural Hermes requests through governed add-on packets", async () => {
+  const prompt = "ask Hermes to research the next memory architecture risk";
+  const plan = planMainWorkspacePrompt(prompt);
+  assert.equal(plan.action, "delegate");
+  assert.deepEqual(plan.intent, {
+    missingTarget: false,
+    mission: "research the next memory architecture risk",
+    target: "hermes"
+  });
+
+  const calls = [];
+  const handlers = createAppCommandHandlers({
+    addMessage: async (role, content) => calls.push(["message", role, content]),
+    bridgeRequest: async (route, options = {}) => {
+      calls.push(["bridge", route, options.body ?? null]);
+      if (route === "/addons/delegate") {
+        return {
+          id: "hermes-delegation-1",
+          path: "BrowserFirst/Delegations/hermes/hermes-delegation-1.md",
+          target: "hermes"
+        };
+      }
+      if (route === "/hermes/delegation/start") {
+        return {
+          artifact: { finalSummary: "Hermes reviewed the memory architecture risk and returned a bounded artifact." },
+          resultArtifactPath: "BrowserFirst/DelegationArtifacts/hermes/hermes-delegation-1-result.md",
+          status: "completed"
+        };
+      }
+      throw new Error(`unexpected bridge route ${route}`);
+    },
+    browserJobStore: {
+      findJob: () => null,
+      getActiveJobId: () => "",
+      getJobs: () => [],
+      getSchedulerState: () => ({ capacityBlockedQueued: [], lockBlockedQueued: [], runnableQueued: [] })
+    },
+    setActivity: (...args) => calls.push(["activity", ...args])
+  });
+
+  await handlers.runNaturalDelegationCommand(plan.intent);
+
+  assert.deepEqual(calls.filter((call) => call[0] === "bridge").map((call) => call[1]), [
+    "/addons/delegate",
+    "/hermes/delegation/start"
+  ]);
+  assert.ok(calls.some((call) =>
+    call[0] === "bridge" &&
+    call[1] === "/addons/delegate" &&
+    call[2].target === "hermes" &&
+    call[2].mission === "research the next memory architecture risk"
+  ));
+  assert.ok(calls.some((call) =>
+    call[0] === "message" &&
+    /Delegation queued for Hermes: hermes-delegation-1/.test(call[2]) &&
+    /Hermes execution completed/.test(call[2]) &&
+    /Boundary: the add-on receives a governed task packet/.test(call[2])
+  ));
 });

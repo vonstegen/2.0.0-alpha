@@ -65,6 +65,7 @@ These are the features currently implemented in the browser-first version.
 - Chat input supports Command+A, Command+C, Command+X, Command+V, and Command+Z.
 - Command+Q is handled by the native browser host to quit the app.
 - Natural current-news prompts route to browser/news search instead of plain provider chat. When headline extraction works, Augmentor reports retrieved headlines; when extraction fails, ResonantOS still opens the news search and reports the bounded failure.
+- Natural delegation prompts such as “ask Hermes to …” route through ResonantOS governed add-on packets and lifecycle execution instead of provider chat claiming delegation is unavailable.
 - `/wallet status` checks read-only Phantom provider presence and connection state on the active page without requesting connection, signing, seed/private keys, credentials, or transaction submission.
 - `/dao <goal>` prepares a read-only DAO workflow plan from the active page and stops before wallet connect, signing, voting, transfer, transaction confirmation, or public submission.
 - `/wallet audit` and `/dao audit <goal>` save wallet/DAO browser evidence to raw Living Archive intake and queue review while preserving the same human-only wallet/signing/transaction boundary.
@@ -332,7 +333,7 @@ These are the features currently implemented in the browser-first version.
 ### Deterministic Validation Already Passing
 
 - Latest restricted sandbox checkpoint on 2026-06-01: `node --test browser-first/test/browser-first-acceptance.test.mjs` passed and covers the fresh main-chat -> natural current-news prompt -> side-panel Agent Control handoff, plus governed parallel browser jobs with page locks, approval focus, and main-workspace status rendering.
-- Latest restricted sandbox checkpoint on 2026-06-01: `git diff --check && npm run test:browser-first` passed with 366 tests and 8 explicit localhost-bridge skips caused by sandbox bind restrictions.
+- Latest restricted sandbox checkpoint on 2026-06-01: `git diff --check && npm run test:browser-first` passed with 367 tests and 8 explicit localhost-bridge skips caused by sandbox bind restrictions.
 - Latest restricted sandbox checkpoint on 2026-06-01: `npm run build` passed with the existing Vite large chunk warning.
 - Latest restricted sandbox checkpoint on 2026-06-01: `npm test -- --run` passed with 286 tests.
 - Latest local checkpoint on 2026-05-31: `npm run test:browser-first` passed with 310 tests.
