@@ -329,6 +329,10 @@ These are the features currently implemented in the browser-first version.
 
 ### Deterministic Validation Already Passing
 
+- Latest restricted sandbox checkpoint on 2026-06-01: `node --test browser-first/test/browser-first-acceptance.test.mjs` passed and covers the fresh main-chat -> natural current-news prompt -> side-panel Agent Control handoff, plus governed parallel browser jobs with page locks, approval focus, and main-workspace status rendering.
+- Latest restricted sandbox checkpoint on 2026-06-01: `git diff --check && npm run test:browser-first` passed with 362 tests and 8 explicit localhost-bridge skips caused by sandbox bind restrictions.
+- Latest restricted sandbox checkpoint on 2026-06-01: `npm run build` passed with the existing Vite large chunk warning.
+- Latest restricted sandbox checkpoint on 2026-06-01: `npm test -- --run` passed with 286 tests.
 - Latest local checkpoint on 2026-05-31: `npm run test:browser-first` passed with 310 tests.
 - Latest local checkpoint on 2026-05-31: `npm run build` passed.
 - Latest unrestricted local checkpoint on 2026-05-31: `npm run test:browser-first-live` passed and covered Agent Control plus multi-tab browser jobs.
