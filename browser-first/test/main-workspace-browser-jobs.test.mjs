@@ -165,6 +165,8 @@ test("main workspace browser jobs render continue for stopped or paused work", (
   assert.equal(snapshot.focusedJob.id, "job-paused");
   assert.match(container.textContent, /Paused · Continue product research/);
   assert.equal([...container.querySelectorAll("button")].some((button) => button.textContent === "Pause"), false);
+  assert.equal([...container.querySelectorAll("button")].find((button) => button.textContent === "Open monitor").dataset.primary, undefined);
+  assert.equal([...container.querySelectorAll("button")].find((button) => button.textContent === "Continue").dataset.primary, "true");
 
   [...container.querySelectorAll("button")].find((button) => button.textContent === "Continue").click();
 
@@ -208,6 +210,7 @@ test("main workspace browser jobs surface blocker guidance for stopped work", ()
   assert.match(container.textContent, /Why stopped: The page did not expose a clickable slot/);
   assert.match(container.textContent, /Options: Select a visible date before continuing · Ask the site for keyboard navigation/);
   assert.match(container.textContent, /Last error: calendar widget did not expose available times/);
+  assert.equal(container.querySelector(".main-browser-jobs-blocker")?.textContent.includes("Next:"), true);
 });
 
 test("main workspace browser jobs render per-job approval review cards", () => {

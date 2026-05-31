@@ -698,6 +698,15 @@ body:not([data-workspace="answer"]) .main-browser-jobs {
   font-weight: 800;
 }
 
+.main-browser-jobs-copy .main-browser-jobs-blocker {
+  color: rgba(255, 214, 200, 0.82);
+  font-weight: 800;
+  line-height: 1.35;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .main-browser-jobs-approvals {
   display: grid;
   gap: 7px;
