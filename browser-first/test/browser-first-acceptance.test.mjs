@@ -396,3 +396,64 @@ test("acceptance: Augmentor delegates natural Hermes requests through governed a
     /Boundary: the add-on receives a governed task packet/.test(call[2])
   ));
 });
+
+test("acceptance: Augmentor delegates natural OpenCode requests through governed add-on packets", async () => {
+  const prompt = "delegate this to OpenCode: inspect the browser-first test failures";
+  const plan = planMainWorkspacePrompt(prompt);
+  assert.equal(plan.action, "delegate");
+  assert.deepEqual(plan.intent, {
+    missingTarget: false,
+    mission: "inspect the browser-first test failures",
+    target: "opencode"
+  });
+
+  const calls = [];
+  const handlers = createAppCommandHandlers({
+    addMessage: async (role, content) => calls.push(["message", role, content]),
+    bridgeRequest: async (route, options = {}) => {
+      calls.push(["bridge", route, options.body ?? null]);
+      if (route === "/addons/delegate") {
+        return {
+          id: "opencode-delegation-1",
+          path: "BrowserFirst/Delegations/opencode/opencode-delegation-1.md",
+          target: "opencode"
+        };
+      }
+      if (route === "/opencode/delegation/start") {
+        return {
+          artifact: { finalSummary: "OpenCode inspected the browser-first tests and returned a scoped repair artifact." },
+          resultArtifactPath: "BrowserFirst/DelegationArtifacts/opencode/opencode-delegation-1-result.md",
+          status: "completed"
+        };
+      }
+      throw new Error(`unexpected bridge route ${route}`);
+    },
+    browserJobStore: {
+      findJob: () => null,
+      getActiveJobId: () => "",
+      getJobs: () => [],
+      getSchedulerState: () => ({ capacityBlockedQueued: [], lockBlockedQueued: [], runnableQueued: [] })
+    },
+    setActivity: (...args) => calls.push(["activity", ...args])
+  });
+
+  await handlers.runNaturalDelegationCommand(plan.intent);
+
+  assert.deepEqual(calls.filter((call) => call[0] === "bridge").map((call) => call[1]), [
+    "/addons/delegate",
+    "/opencode/delegation/start"
+  ]);
+  assert.ok(calls.some((call) =>
+    call[0] === "bridge" &&
+    call[1] === "/addons/delegate" &&
+    call[2].target === "opencode" &&
+    call[2].mission === "inspect the browser-first test failures"
+  ));
+  assert.ok(calls.some((call) =>
+    call[0] === "message" &&
+    /Delegation queued for OpenCode: opencode-delegation-1/.test(call[2]) &&
+    /OpenCode execution completed/.test(call[2]) &&
+    /Boundary: the add-on receives a governed task packet/.test(call[2]) &&
+    /Result: OpenCode inspected the browser-first tests/.test(call[2])
+  ));
+});

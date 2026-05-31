@@ -334,7 +334,7 @@ These are the features currently implemented in the browser-first version.
 ### Deterministic Validation Already Passing
 
 - Latest restricted sandbox checkpoint on 2026-06-01: `node --test browser-first/test/browser-first-acceptance.test.mjs` passed and covers the fresh main-chat -> natural current-news prompt -> side-panel Agent Control handoff, plus governed parallel browser jobs with page locks, approval focus, and main-workspace status rendering.
-- Latest restricted sandbox checkpoint on 2026-06-01: `git diff --check && npm run test:browser-first` passed with 368 tests and 8 explicit localhost-bridge skips caused by sandbox bind restrictions.
+- Latest restricted sandbox checkpoint on 2026-06-01: `git diff --check && npm run test:browser-first` passed with 369 tests and 8 explicit localhost-bridge skips caused by sandbox bind restrictions.
 - Latest restricted sandbox checkpoint on 2026-06-01: `npm run build` passed with the existing Vite large chunk warning.
 - Latest restricted sandbox checkpoint on 2026-06-01: `npm test -- --run` passed with 286 tests.
 - Latest local checkpoint on 2026-05-31: `npm run test:browser-first` passed with 310 tests.
@@ -668,6 +668,7 @@ These features exist in the desktop vNext codebase and remain important. Some wi
 - Living Archive is complete for desktop V1 architecture, but browser-first memory UX is not complete.
 - Browser-first add-on management now surfaces capability review plus Hermes/OpenCode local-execution toggles; future work still needs install, uninstall, update, and marketplace/registry flows.
 - Hermes and OpenCode delegation now have browser-first production lifecycle foundations: governed task packets, host-mediated start/status/artifact/cancel routes, deterministic execution coverage, Add-ons workspace result reading, and explicit opt-in before real local CLI execution. Both enabled-CLI adapter paths are tested with fake executables so the production handoff, parser, and artifact contracts are validated without relying on a live user runtime. OpenCode execution is scoped to the ResonantOS repository boundary for browser-first V1.
+- Natural Augmentor prompts can route OpenCode coding requests through the same governed add-on delegation path as Hermes, with acceptance coverage proving `/addons/delegate` and `/opencode/delegation/start` are used instead of generic provider chat.
 - Augmentor chat can now report recent delegated work through `/delegations` or `/handoffs`, including target, status, result excerpt, artifact link, and packet path, so Hermes/OpenCode work is visible without manually opening the Add-ons workspace.
 - Hermes runtime status is now available from chat with `/hermes` or `/hermes status`. The add-on contract is treated as bundled in browser-first ResonantOS, while the local Hermes CLI runtime is reported separately as detected/not detected and execution enabled/disabled.
 - Wallet actions intentionally stop at human approval boundaries; automated signing is not a goal.
