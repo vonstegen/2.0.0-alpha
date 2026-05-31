@@ -18,9 +18,12 @@ test("Augmentor chat contract preserves browser and delegation capability bounda
   assert.match(prompt, /Strategist agent inside ResonantOS/);
   assert.match(prompt, /host-mediated browser tools/);
   assert.match(prompt, /Agent Control Mode/);
+  assert.match(prompt, /current\/latest news/);
+  assert.match(prompt, /web research/);
   assert.match(prompt, /may delegate to approved add-on agents such as Hermes, OpenCode, and Resonant Engineer/);
   assert.match(prompt, /never claim delegation is outside Augmentor's ResonantOS capabilities/);
   assert.match(prompt, /If such a browser-action request reaches you anyway/);
+  assert.match(prompt, /lack internet access/);
   assert.match(prompt, /Current browser page context/);
   assert.match(prompt, /Current ResonantOS runtime context/);
   assert.doesNotMatch(prompt, /I can't browse/i);
