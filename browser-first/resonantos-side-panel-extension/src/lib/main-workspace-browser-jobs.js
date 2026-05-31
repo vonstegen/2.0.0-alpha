@@ -59,6 +59,20 @@ function jobRecoveryEvidence(job) {
   ].filter(Boolean).join(" · ");
 }
 
+function jobBlockerGuidance(job) {
+  const steps = Array.isArray(job?.steps) ? job.steps : [];
+  const step = [...steps].reverse()
+    .find((candidate) => candidate?.details?.nextHumanAction || candidate?.details?.uncertainty || candidate?.details?.recoveryOptions?.length);
+  const details = step?.details ?? {};
+  const options = Array.isArray(details.recoveryOptions) ? details.recoveryOptions.filter(Boolean).slice(0, 3) : [];
+  return [
+    details.nextHumanAction ? `Next: ${details.nextHumanAction}` : "",
+    details.uncertainty ? `Why stopped: ${details.uncertainty}` : "",
+    options.length ? `Options: ${options.join(" · ")}` : "",
+    job?.lastError ? `Last error: ${job.lastError}` : ""
+  ].filter(Boolean).join(" ");
+}
+
 function approvalActionLabel(job) {
   const approval = job?.pendingApproval;
   const step = approval?.step ?? {};
@@ -140,6 +154,15 @@ export function renderMainBrowserJobStatus({
     recovery.className = "main-browser-jobs-recovery";
     recovery.textContent = `Recovery: ${recoveryEvidence}`;
     copy.append(recovery);
+  }
+  const blockerGuidance = ["blocked", "failed", "cancelled", "denied", "paused"].includes(focusedJob?.status)
+    ? jobBlockerGuidance(focusedJob)
+    : "";
+  if (blockerGuidance) {
+    const blocker = documentRef.createElement("span");
+    blocker.className = "main-browser-jobs-blocker";
+    blocker.textContent = blockerGuidance;
+    copy.append(blocker);
   }
   if (approvalJobs.length) {
     const approvalQueue = documentRef.createElement("div");

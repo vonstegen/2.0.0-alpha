@@ -171,6 +171,45 @@ test("main workspace browser jobs render continue for stopped or paused work", (
   assert.deepEqual(events, [["continue", "job-paused"]]);
 });
 
+test("main workspace browser jobs surface blocker guidance for stopped work", () => {
+  const dom = new JSDOM(`<section id="jobs"></section>`);
+  const container = dom.window.document.querySelector("#jobs");
+
+  const snapshot = renderMainBrowserJobStatus({
+    activeJobId: "job-blocked",
+    container,
+    jobs: [{
+      id: "job-blocked",
+      goal: "Find exact booking slot",
+      lastError: "calendar widget did not expose available times",
+      status: "blocked",
+      steps: [{
+        label: "Click calendar date",
+        state: "blocked",
+        type: "click",
+        details: {
+          nextHumanAction: "Open the date picker manually, then continue the job.",
+          recoveryOptions: [
+            "Select a visible date before continuing",
+            "Ask the site for keyboard navigation"
+          ],
+          uncertainty: "The page did not expose a clickable slot in the current snapshot."
+        }
+      }]
+    }],
+    onContinueFocused: () => undefined,
+    onOpenMonitor: () => undefined
+  });
+
+  assert.equal(snapshot.focusedJob.id, "job-blocked");
+  assert.equal(container.dataset.status, "blocked");
+  assert.match(container.textContent, /Blocked · Find exact booking slot/);
+  assert.match(container.textContent, /Next: Open the date picker manually, then continue the job/);
+  assert.match(container.textContent, /Why stopped: The page did not expose a clickable slot/);
+  assert.match(container.textContent, /Options: Select a visible date before continuing · Ask the site for keyboard navigation/);
+  assert.match(container.textContent, /Last error: calendar widget did not expose available times/);
+});
+
 test("main workspace browser jobs render per-job approval review cards", () => {
   const dom = new JSDOM(`<section id="jobs"></section>`);
   const events = [];
