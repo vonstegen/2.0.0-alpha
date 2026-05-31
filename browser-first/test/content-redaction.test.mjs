@@ -162,3 +162,48 @@ test("content typing actions use exact editable refs when repeated labels exist"
   assert.equal(dom.window.document.querySelector("#first-search").value, "");
   assert.equal(dom.window.document.querySelector("#second-search").value, "resonantos");
 });
+
+test("content page snapshots and typing include open shadow DOM controls safely", async () => {
+  const { dom, listener } = await loadContentScript(`
+    <!doctype html>
+    <div id="shadow-host"></div>
+  `);
+  const host = dom.window.document.querySelector("#shadow-host");
+  const shadow = host.attachShadow({ mode: "open" });
+  shadow.innerHTML = `
+    <button id="shadow-action">Shadow Action</button>
+    <label for="shadow-search">Shadow Search</label>
+    <input id="shadow-search" type="search" value="private shadow query">
+    <label for="shadow-password">Shadow Password</label>
+    <input id="shadow-password" type="password" value="shadow-secret">
+  `;
+
+  let snapshot = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "read_page",
+  }, {}, (payload) => {
+    snapshot = payload.snapshot;
+  });
+
+  assert.ok(snapshot.controls.some((control) => control.text === "Shadow Action"));
+  const searchField = snapshot.fields.find((field) => field.id === "shadow-search");
+  const passwordField = snapshot.fields.find((field) => field.id === "shadow-password");
+  assert.equal(searchField?.fieldKind, "search-query");
+  assert.equal(searchField.valuePreview, "private shadow query");
+  assert.equal(passwordField?.fieldKind, "credential");
+  assert.equal(passwordField.valuePreview, "[redacted:credential]");
+
+  let response = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "type_text",
+    ref: searchField.ref,
+    text: "resonantos shadow",
+  }, {}, (payload) => {
+    response = payload;
+  });
+
+  assert.equal(response?.ok, true);
+  assert.equal(shadow.querySelector("#shadow-search").value, "resonantos shadow");
+});

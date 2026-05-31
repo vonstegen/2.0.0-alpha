@@ -24,8 +24,45 @@ const elementByControlRef = (ref) => {
   const normalized = String(ref ?? "").trim();
   if (!normalized) return null;
   const escaped = globalThis.CSS?.escape?.(normalized) ?? normalized.replace(/["\\]/g, "\\$&");
-  return document.querySelector(`[${controlRefAttribute}="${escaped}"]`);
+  return querySelectorAllDeep(`[${controlRefAttribute}="${escaped}"]`)[0] ?? null;
 };
+
+const querySelectorAllDeep = (selector, { root = document, limit = 600 } = {}) => {
+  const results = [];
+  const visit = (scope) => {
+    if (!scope?.querySelectorAll || results.length >= limit) return;
+    let scopedElements = [];
+    try {
+      scopedElements = Array.from(scope.querySelectorAll(selector));
+    } catch {
+      return;
+    }
+    for (const element of scopedElements) {
+      if (results.length >= limit) break;
+      results.push(element);
+    }
+    let allElements = [];
+    try {
+      allElements = Array.from(scope.querySelectorAll("*"));
+    } catch {
+      return;
+    }
+    for (const element of allElements) {
+      if (results.length >= limit) break;
+      if (element.shadowRoot) visit(element.shadowRoot);
+    }
+  };
+  visit(root);
+  return uniqueElements(results).slice(0, limit);
+};
+
+const openShadowHosts = () => querySelectorAllDeep("*")
+  .filter((element) => element.shadowRoot);
+
+const visiblePageText = () => [
+  document.body?.innerText ?? document.body?.textContent ?? "",
+  ...openShadowHosts().map((host) => host.shadowRoot?.innerText ?? host.shadowRoot?.textContent ?? "")
+].filter(Boolean).join("\n").slice(0, 12000);
 
 const pageSnapshot = () => ({
   title: document.title,
@@ -34,8 +71,8 @@ const pageSnapshot = () => ({
     isTop: window.top === window,
     referrer: document.referrer || ""
   },
-  text: document.body?.innerText?.slice(0, 12000) ?? "",
-  iframes: Array.from(document.querySelectorAll("iframe"))
+  text: visiblePageText(),
+  iframes: querySelectorAllDeep("iframe")
     .slice(0, 20)
     .map((frame) => ({
       title: frame.getAttribute("title") || frame.getAttribute("aria-label") || "",
@@ -48,7 +85,7 @@ const pageSnapshot = () => ({
     innerHeight: Math.round(window.innerHeight),
     maxScrollY: Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
   },
-  links: Array.from(document.querySelectorAll("a[href]"))
+  links: querySelectorAllDeep("a[href]")
     .slice(0, 80)
     .map((link) => ({
       text: link.textContent?.trim().slice(0, 160) ?? "",
@@ -64,7 +101,7 @@ const pageSnapshot = () => ({
       ariaLabel: element.getAttribute("aria-label") || "",
       approvalRequired: isSubmitLikeElement(element)
     })),
-  fields: Array.from(document.querySelectorAll("input, textarea, select, [contenteditable='true']"))
+  fields: querySelectorAllDeep("input, textarea, select, [contenteditable='true']")
     .filter((element) => !isResonantosInternalElement(element))
     .slice(0, 80)
     .map((element) => describeEditable(element)),
@@ -280,7 +317,7 @@ const setControlSessionOverlay = ({ active = false, label = "Augmentor is operat
 };
 
 const describeForms = () => ({
-  forms: Array.from(document.querySelectorAll("form"))
+  forms: querySelectorAllDeep("form")
     .slice(0, 20)
     .map((form, index) => ({
       index,
@@ -288,12 +325,12 @@ const describeForms = () => ({
       name: form.getAttribute("name") || "",
       action: form.action || "",
       method: form.method || "get",
-      fields: Array.from(form.querySelectorAll("input, textarea, select, [contenteditable='true']"))
+      fields: querySelectorAllDeep("input, textarea, select, [contenteditable='true']", { root: form })
         .filter((field) => !isResonantosInternalElement(field))
         .slice(0, 40)
         .map((field) => describeEditable(field))
     })),
-  looseFields: Array.from(document.querySelectorAll("input, textarea, select, [contenteditable='true']"))
+  looseFields: querySelectorAllDeep("input, textarea, select, [contenteditable='true']")
     .filter((field) => !isResonantosInternalElement(field))
     .filter((field) => !field.closest("form"))
     .slice(0, 40)
@@ -311,7 +348,7 @@ const isResonantosInternalElement = (element) => Boolean(element?.closest?.([
 ].join(", ")));
 
 const candidateClickElements = () => [
-  ...document.querySelectorAll("button, a, [role='button'], input[type='button'], input[type='submit'], summary, [onclick]")
+  ...querySelectorAllDeep("button, a, [role='button'], input[type='button'], input[type='submit'], summary, [onclick]")
 ].filter((element) => !isResonantosInternalElement(element));
 
 const uniqueElements = (elements) => Array.from(new Set(elements.filter(Boolean)));
@@ -453,8 +490,8 @@ const clickControlRef = (ref, { userApproved = false } = {}) => {
 };
 
 const editableCandidates = () => [
-  document.activeElement,
-  ...document.querySelectorAll([
+  deepActiveElement(),
+  ...querySelectorAllDeep([
     "textarea[name='q']",
     "input[name='q']",
     "input[type='search']",
@@ -469,6 +506,14 @@ const editableCandidates = () => [
     "[contenteditable='true']"
   ].join(", "))
 ].filter((element) => element && !isResonantosInternalElement(element));
+
+const deepActiveElement = () => {
+  let active = document.activeElement;
+  while (active?.shadowRoot?.activeElement) {
+    active = active.shadowRoot.activeElement;
+  }
+  return active;
+};
 
 const isEditable = (element) =>
   ((element instanceof HTMLInputElement && !["button", "checkbox", "file", "hidden", "image", "radio", "range", "reset", "submit"].includes(element.type)) ||
@@ -492,8 +537,9 @@ const cssEscape = (value) => window.CSS?.escape?.(String(value ?? "")) ?? String
 
 const relatedLabelText = (element) => {
   const labels = [];
+  const root = element.getRootNode?.() ?? document;
   if (element.id) {
-    document.querySelectorAll(`label[for="${cssEscape(element.id)}"]`).forEach((label) => {
+    querySelectorAllDeep(`label[for="${cssEscape(element.id)}"]`, { root }).forEach((label) => {
       labels.push(label.textContent);
     });
   }

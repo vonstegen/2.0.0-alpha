@@ -356,7 +356,7 @@ These are the next capability areas planned for the browser-first app.
 
 ### Agent Control Browser Capability
 
-- Improve page observation quality for complex modern web apps.
+- Improve page observation quality for complex modern web apps. Initial open-shadow-DOM read/type discovery is implemented for visible controls and editable fields while keeping closed shadow roots inaccessible and sensitive values redacted.
 - Improve element targeting when the page has repeated labels.
 - Add stronger form-field mapping beyond the current secure autofill guard.
 - Add better editable document handling.

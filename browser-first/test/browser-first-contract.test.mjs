@@ -927,10 +927,12 @@ test("browser layer can read active tab context without raw privileged access", 
   assert.match(content, /Credential fields are human-only/);
   assert.match(content, /Payment and wallet fields are human-only/);
   assert.match(content, /safeToSubmit/);
-  assert.match(content, /fields: Array\.from/);
+  assert.match(content, /querySelectorAllDeep/);
+  assert.match(content, /openShadowHosts/);
+  assert.match(content, /fields: querySelectorAllDeep/);
   assert.match(content, /viewport/);
   assert.match(content, /approvalRequired/);
-  assert.match(content, /document\.body\?\.innerText/);
+  assert.match(content, /visiblePageText/);
   assert.match(content, /phantomSolana/);
   assert.match(pageActions, /phantomEthereum/);
   assert.match(pageActions, /phantomSolana/);
