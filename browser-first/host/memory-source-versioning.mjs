@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile, chmod } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile, chmod } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 
@@ -23,6 +23,16 @@ async function readManifest(manifestPath) {
   };
 }
 
+async function writeManifest(manifestPath, manifest) {
+  const directory = path.dirname(manifestPath);
+  await mkdir(directory, { recursive: true });
+  const tempPath = path.join(directory, `.${path.basename(manifestPath)}.${process.pid}.${Date.now()}.tmp`);
+  await writeFile(tempPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+  await chmod(tempPath, 0o600).catch(() => undefined);
+  await rename(tempPath, manifestPath);
+  await chmod(manifestPath, 0o600).catch(() => undefined);
+}
+
 export async function listSourceFileVersions({ manifestPath, sourceId = "", limit = 100 } = {}) {
   if (!manifestPath) throw new Error("Source file version listing requires a manifest path.");
   const manifest = await readManifest(manifestPath);
@@ -43,7 +53,7 @@ export async function listSourceFileVersions({ manifestPath, sourceId = "", limi
   return {
     manifestVersion: manifest.version ?? 1,
     updatedAt: manifest.updatedAt ?? "",
-    entries: entries.slice(0, Math.max(1, Math.min(500, Number(limit ?? 100)))),
+    entries: entries.slice(0, Math.max(1, Math.min(10_000, Number(limit ?? 100)))),
   };
 }
 
@@ -96,9 +106,7 @@ export async function reserveSourceFileVersion({
 
   manifest.files[key] = entry;
   manifest.updatedAt = now;
-  await mkdir(path.dirname(manifestPath), { recursive: true });
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
-  await chmod(manifestPath, 0o600).catch(() => undefined);
+  await writeManifest(manifestPath, manifest);
 
   return {
     changed: true,
@@ -106,6 +114,54 @@ export async function reserveSourceFileVersion({
     contentHash,
     previousHash: previous?.latestHash ?? "",
     previousVersion: previous?.latestVersion ?? 0,
+  };
+}
+
+export async function rollbackSourceFileVersionReservation({
+  manifestPath,
+  sourceId,
+  relativeFile,
+  version,
+  contentHash,
+  now = new Date().toISOString(),
+}) {
+  if (!manifestPath) throw new Error("Source file version rollback requires a manifest path.");
+  if (!sourceId) throw new Error("Source file version rollback requires a source id.");
+  if (!relativeFile) throw new Error("Source file version rollback requires a relative source file.");
+  const manifest = await readManifest(manifestPath);
+  const key = sourceFileKey(sourceId, relativeFile);
+  const entry = manifest.files[key];
+  if (!entry || Number(entry.latestVersion ?? 0) !== Number(version ?? 0) || entry.latestHash !== contentHash) {
+    return { rolledBack: false, reason: "reservation-not-current" };
+  }
+  const history = Array.isArray(entry.history) ? entry.history : [];
+  const latestHistory = history[history.length - 1];
+  if (Number(latestHistory?.version ?? 0) !== Number(version ?? 0) || latestHistory?.intakePath) {
+    return { rolledBack: false, reason: "reservation-already-finalized" };
+  }
+  const previousHistory = history.slice(0, -1);
+  const previous = previousHistory[previousHistory.length - 1];
+  if (!previous) {
+    delete manifest.files[key];
+  } else {
+    manifest.files[key] = {
+      sourceId: entry.sourceId,
+      sourceFile: entry.sourceFile,
+      latestHash: previous.contentHash,
+      latestVersion: Number(previous.version ?? 1),
+      latestModifiedAt: previous.sourceModifiedAt || "",
+      latestIntakePath: previous.intakePath || "",
+      updatedAt: now,
+      history: previousHistory,
+    };
+  }
+  manifest.updatedAt = now;
+  await writeManifest(manifestPath, manifest);
+  return {
+    rolledBack: true,
+    sourceId,
+    sourceFile: String(relativeFile).replace(/\\/g, "/"),
+    restoredVersion: previous ? Number(previous.version ?? 1) : 0,
   };
 }
 
@@ -137,9 +193,7 @@ export async function recordSourceFileIntakeArtifact({
   );
   manifest.files[key] = entry;
   manifest.updatedAt = now;
-  await mkdir(path.dirname(manifestPath), { recursive: true });
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
-  await chmod(manifestPath, 0o600).catch(() => undefined);
+  await writeManifest(manifestPath, manifest);
   return {
     sourceId: entry.sourceId,
     sourceFile: entry.sourceFile,

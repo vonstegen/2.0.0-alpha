@@ -9,6 +9,7 @@ import {
   listSourceFileVersions,
   recordSourceFileIntakeArtifact,
   reserveSourceFileVersion,
+  rollbackSourceFileVersionReservation,
   sourceContentHash,
 } from "../host/memory-source-versioning.mjs";
 
@@ -77,6 +78,82 @@ test("source file versioning increments only when content changes", async () => 
     const listed = await listSourceFileVersions({ manifestPath, sourceId: "source-vault" });
     assert.equal(listed.entries.length, 1);
     assert.equal(listed.entries[0].sourceFile, "notes/identity.md");
+    assert.equal(listed.entries[0].latestVersion, 2);
+    assert.equal(listed.entries[0].latestIntakePath, "INTAKE/sources/identity-v2.md");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("source file versioning rolls back unfinalized reservations only", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-source-versioning-rollback-"));
+  const manifestPath = path.join(root, "Memory", "CONFIG", "source-file-versions.json");
+  try {
+    const firstHash = sourceContentHash("first");
+    await reserveSourceFileVersion({
+      manifestPath,
+      sourceId: "source-vault",
+      relativeFile: "notes/identity.md",
+      contentHash: firstHash,
+      sourceModifiedAt: "2026-05-29T10:00:00.000Z",
+      now: "2026-05-29T10:01:00.000Z",
+    });
+    const secondHash = sourceContentHash("second");
+    const second = await reserveSourceFileVersion({
+      manifestPath,
+      sourceId: "source-vault",
+      relativeFile: "notes/identity.md",
+      contentHash: secondHash,
+      sourceModifiedAt: "2026-05-29T11:00:00.000Z",
+      now: "2026-05-29T11:01:00.000Z",
+    });
+
+    const rolledBack = await rollbackSourceFileVersionReservation({
+      manifestPath,
+      sourceId: "source-vault",
+      relativeFile: "notes/identity.md",
+      version: second.version,
+      contentHash: secondHash,
+      now: "2026-05-29T11:02:00.000Z",
+    });
+    assert.deepEqual(rolledBack, {
+      rolledBack: true,
+      sourceId: "source-vault",
+      sourceFile: "notes/identity.md",
+      restoredVersion: 1,
+    });
+    let listed = await listSourceFileVersions({ manifestPath, sourceId: "source-vault" });
+    assert.equal(listed.entries[0].latestVersion, 1);
+    assert.equal(listed.entries[0].latestHash, firstHash);
+
+    const thirdHash = sourceContentHash("third");
+    const third = await reserveSourceFileVersion({
+      manifestPath,
+      sourceId: "source-vault",
+      relativeFile: "notes/identity.md",
+      contentHash: thirdHash,
+      sourceModifiedAt: "2026-05-29T12:00:00.000Z",
+      now: "2026-05-29T12:01:00.000Z",
+    });
+    await recordSourceFileIntakeArtifact({
+      manifestPath,
+      sourceId: "source-vault",
+      relativeFile: "notes/identity.md",
+      version: third.version,
+      intakePath: "INTAKE/sources/identity-v2.md",
+    });
+    const finalized = await rollbackSourceFileVersionReservation({
+      manifestPath,
+      sourceId: "source-vault",
+      relativeFile: "notes/identity.md",
+      version: third.version,
+      contentHash: thirdHash,
+    });
+    assert.deepEqual(finalized, {
+      rolledBack: false,
+      reason: "reservation-already-finalized",
+    });
+    listed = await listSourceFileVersions({ manifestPath, sourceId: "source-vault" });
     assert.equal(listed.entries[0].latestVersion, 2);
     assert.equal(listed.entries[0].latestIntakePath, "INTAKE/sources/identity-v2.md");
   } finally {

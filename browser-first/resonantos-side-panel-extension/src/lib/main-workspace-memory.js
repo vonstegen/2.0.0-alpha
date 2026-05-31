@@ -642,32 +642,39 @@ function optionNode(value, text) {
   return node;
 }
 
-function sourceCandidateItem(candidate, selected, onPreviewDiff) {
+function sourceCandidateItem(candidate, selected, onPreviewDiff, onSelectionChange = () => {}) {
   const item = document.createElement("li");
-    const label = document.createElement("label");
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.value = candidate.path;
-    input.disabled = candidate.category !== "compatible";
-    input.checked = selected.has(candidate.path);
-    input.addEventListener("change", () => {
-      if (input.checked) selected.add(candidate.path);
-      else selected.delete(candidate.path);
-    });
-    const text = document.createElement("span");
-    const versionLabel = candidate.versionStatus
-      ? ` · ${candidate.versionStatus}${candidate.sourceVersion ? ` v${candidate.sourceVersion}` : ""}`
-      : "";
-    text.textContent = `${candidate.category}${versionLabel} · ${candidate.path} · ${formatCount(candidate.bytes)} bytes`;
-    label.append(input, text);
-    item.append(label);
-    if (candidate.category === "compatible" && candidate.previousSourceContentHash) {
-      const diffButton = document.createElement("button");
-      diffButton.type = "button";
-      diffButton.textContent = "Diff";
-      diffButton.addEventListener("click", () => onPreviewDiff(candidate));
-      item.append(diffButton);
+  const label = document.createElement("label");
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.value = candidate.path;
+  const eligible = isEligibleSourceIntakeCandidate(candidate);
+  input.disabled = !eligible;
+  input.checked = selected.has(candidate.path);
+  input.addEventListener("change", () => {
+    if (!eligible) {
+      input.checked = false;
+      selected.delete(candidate.path);
+      return;
     }
+    if (input.checked) selected.add(candidate.path);
+    else selected.delete(candidate.path);
+    onSelectionChange();
+  });
+  const text = document.createElement("span");
+  const versionLabel = candidate.versionStatus
+    ? ` · ${candidate.versionStatus}${candidate.sourceVersion ? ` v${candidate.sourceVersion}` : ""}`
+    : "";
+  text.textContent = `${candidate.category}${versionLabel} · ${candidate.path} · ${formatCount(candidate.bytes)} bytes`;
+  label.append(input, text);
+  item.append(label);
+  if (candidate.category === "compatible" && candidate.previousSourceContentHash) {
+    const diffButton = document.createElement("button");
+    diffButton.type = "button";
+    diffButton.textContent = "Diff";
+    diffButton.addEventListener("click", () => onPreviewDiff(candidate));
+    item.append(diffButton);
+  }
   return item;
 }
 

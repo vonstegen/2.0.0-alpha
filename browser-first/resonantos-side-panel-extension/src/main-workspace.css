@@ -2209,7 +2209,9 @@ textarea {
 
 .memory-result p,
 .memory-review-request p,
-.memory-source-card p {
+.memory-source-card p,
+.memory-source-approval-plan p,
+.memory-source-repair-guidance p {
   margin: 0;
   color: rgba(214, 229, 219, 0.76);
 }
@@ -2342,6 +2344,89 @@ textarea {
 
 .memory-source-candidates input:disabled + span {
   opacity: 0.55;
+}
+
+.memory-source-approval-plan {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(36, 209, 143, 0.16);
+  border-radius: 14px;
+  background: rgba(36, 209, 143, 0.06);
+  padding: 10px 11px;
+}
+
+.memory-source-repair-guidance {
+  display: grid;
+  gap: 7px;
+  border: 1px solid rgba(255, 184, 77, 0.24);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 184, 77, 0.12), rgba(30, 20, 6, 0.42)),
+    rgba(0, 0, 0, 0.14);
+  padding: 10px 11px;
+}
+
+.memory-source-delta-summary {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(36, 209, 143, 0.16);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(36, 209, 143, 0.08), rgba(9, 28, 20, 0.42)),
+    rgba(0, 0, 0, 0.16);
+  padding: 10px 11px;
+}
+
+.memory-source-approval-plan strong,
+.memory-source-delta-summary strong,
+.memory-source-repair-guidance strong {
+  color: rgba(36, 209, 143, 0.92);
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.memory-source-repair-guidance strong {
+  color: rgba(255, 202, 112, 0.94);
+}
+
+.memory-source-approval-plan small,
+.memory-source-delta-summary small {
+  color: rgba(143, 159, 149, 0.86);
+  line-height: 1.35;
+}
+
+.memory-source-delta-summary p {
+  margin: 0;
+  color: rgba(232, 245, 238, 0.86);
+  font-size: 0.82rem;
+}
+
+.memory-source-delta-files {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.memory-source-repair-guidance ol {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.memory-source-delta-files li,
+.memory-source-repair-guidance li {
+  color: rgba(190, 216, 202, 0.82);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.memory-source-repair-guidance li {
+  color: rgba(235, 219, 183, 0.86);
 }
 
 .memory-source-diff {

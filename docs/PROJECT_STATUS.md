@@ -216,8 +216,8 @@ Current Living Archive status:
 
 - Folder/vault import exists through the `ArchiveLibraryImporter` module.
 - Copy import is the safe default.
-- Host-side move imports are rejected before files are touched.
-- The UI disables `Move into Living Archive` until audited execution exists.
+- Move-on-import is available only through the audited host flow: preflight fingerprint approval, exact confirmation, byte-hash verification, managed Memory destination registration, rollback ledger, and guarded rollback.
+- The UI must not register `move-on-import` through ordinary settings saves; it must use the dedicated preflight/execute/rollback routes.
 - Mixed-library classification review is host-owned.
 - Classification review artifacts must be inside imported-library metadata roots and linked from known import manifests.
 - Library import preflight is implemented and non-destructive: it reports supported/skipped files, noisy folders, skipped examples, Obsidian detection, estimated managed storage, and a recommended import plan before copy.
@@ -232,7 +232,9 @@ Current Living Archive status:
 - The Start tab now reloads the latest persisted AI Memory job for the current library after restart and exposes `Repair AI Memory Build` when a prior job needs attention.
 - Reorganisation plans can be generated as preview-only artifacts.
 - Reorganisation plans are explicitly marked `eligibleForExecution = false`.
-- Actual file moves are not implemented and should not be added without audit, rollback, approval, and tests.
+- Source reviews now surface version-tracking warnings and repair guidance when the source-version manifest is unreadable; blocked files cannot enter bulk or selected intake until source history is repaired.
+- Selected source-file intake now has deterministic tests proving unchanged/blocked files are not submitted from the UI and failed artifact creation rolls back reserved source versions.
+- Reorganisation file moves remain unimplemented and must not be added without separate audit, rollback, approval, and deterministic tests.
 
 ### Recovery And Resonant Engineer
 
@@ -286,8 +288,8 @@ Current Living Archive status:
 
 The latest hardening/refactor pass is present in the worktree:
 
-- host rejects move imports before touching files
-- UI disables move import until audited execution exists
+- host routes move imports only through audited preflight, exact confirmation, verified execution, ledger, and rollback
+- UI blocks ordinary settings-save move registration and uses the dedicated move preflight/execute/rollback path
 - duplicate frontend-only classification approval block was removed
 - `ArchiveLibraryImporter` was extracted from `ArchiveWorkspace`
 - `ArchiveWorkspace` is currently 754 lines after extraction

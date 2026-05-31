@@ -31,8 +31,13 @@ import {
   listSourceFileVersions,
   recordSourceFileIntakeArtifact,
   reserveSourceFileVersion,
+  rollbackSourceFileVersionReservation,
   sourceContentHash,
 } from "./memory-source-versioning.mjs";
+import {
+  assertResolvedSourceFileInsideSource,
+  resolveSourceRelativeFile,
+} from "./memory-source-paths.mjs";
 import {
   buildMoveImportPreflight,
   executeMoveImport,
@@ -78,6 +83,7 @@ const resonantExtensionId = "cdpdmmalhmokbfcfgogoepnjplaakgnl";
 const defaultBridgePort = 47773;
 const resonantExtensionOrigin = `chrome-extension://${resonantExtensionId}`;
 const defaultMainWorkspaceUrl = `${resonantExtensionOrigin}/src/main-workspace.html`;
+const sourceFileIntakeLimit = 200;
 
 function parseArgs(argv) {
   const parsed = new Map();
@@ -2366,26 +2372,18 @@ async function executeMemorySourceIntake(payload = {}) {
   };
 }
 
-function resolveSourceRelativeFile(sourcePath, relativePath) {
-  const normalized = String(relativePath ?? "").replace(/\\/g, "/");
-  if (!normalized || normalized.includes("\0") || normalized.startsWith("/") || normalized.split("/").includes("..")) {
-    throw new Error("Selected source file path must stay inside the connected source.");
-  }
-  const resolved = path.resolve(sourcePath, normalized);
-  const root = path.resolve(sourcePath);
-  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    throw new Error("Selected source file path escapes the connected source.");
-  }
-  return resolved;
-}
-
 async function executeMemorySourceFileIntake(payload = {}) {
   const sourceId = String(payload.sourceId ?? "").trim();
-  const selectedFiles = Array.isArray(payload.files) ? payload.files.slice(0, 20) : [];
+  const requestedFiles = Array.isArray(payload.files)
+    ? payload.files.map((file) => String(file ?? "").replace(/\\/g, "/")).filter(Boolean)
+    : [];
+  const uniqueFiles = [...new Set(requestedFiles)];
+  const duplicateFiles = requestedFiles.filter((file, index) => requestedFiles.indexOf(file) !== index);
+  const selectedFiles = uniqueFiles.slice(0, sourceFileIntakeLimit);
   if (!sourceId) {
     throw new Error("Selected file intake requires a source id.");
   }
-  if (!selectedFiles.length) {
+  if (!requestedFiles.length) {
     throw new Error("Select at least one source file for intake.");
   }
   const settings = await readMemorySettings();
@@ -2404,13 +2402,23 @@ async function executeMemorySourceFileIntake(payload = {}) {
   await mkdir(intakeDir, { recursive: true });
   const now = new Date();
   const created = [];
-  const rejected = [];
+  const rejected = [
+    ...duplicateFiles.map((sourceFile) => ({
+      sourceFile,
+      reason: "duplicate request entry ignored",
+    })),
+    ...uniqueFiles.slice(sourceFileIntakeLimit).map((sourceFile) => ({
+      sourceFile,
+      reason: `batch limit ${sourceFileIntakeLimit} reached; run another intake batch for remaining files`,
+    })),
+  ];
   for (const relativeFile of selectedFiles) {
     try {
       const sourceFile = resolveSourceRelativeFile(sourcePath, relativeFile);
       if (!existsSync(sourceFile)) {
         throw new Error("file missing");
       }
+      await assertResolvedSourceFileInsideSource(sourcePath, sourceFile);
       const category = classifyMemorySourceFile(sourceFile, sourcePath);
       if (category !== "compatible") {
         throw new Error(`unsupported category ${category}`);
@@ -2469,16 +2477,28 @@ async function executeMemorySourceFileIntake(payload = {}) {
         sourceContent.trim() || "_Source file was empty._",
         "",
       ].join("\n");
-      await writeFile(intakePath, body, { mode: 0o600 });
-      await chmod(intakePath, 0o600).catch(() => undefined);
       const relativeIntakePath = path.relative(memoryRoot(), intakePath);
-      await recordSourceFileIntakeArtifact({
-        manifestPath: memorySourceFileManifestPath(),
-        sourceId: source.id,
-        relativeFile,
-        version: version.version,
-        intakePath: relativeIntakePath,
-      });
+      try {
+        await writeFile(intakePath, body, { mode: 0o600 });
+        await chmod(intakePath, 0o600).catch(() => undefined);
+        await recordSourceFileIntakeArtifact({
+          manifestPath: memorySourceFileManifestPath(),
+          sourceId: source.id,
+          relativeFile,
+          version: version.version,
+          intakePath: relativeIntakePath,
+        });
+      } catch (error) {
+        await rm(intakePath, { force: true }).catch(() => undefined);
+        await rollbackSourceFileVersionReservation({
+          manifestPath: memorySourceFileManifestPath(),
+          sourceId: source.id,
+          relativeFile,
+          version: version.version,
+          contentHash: version.contentHash,
+        }).catch(() => undefined);
+        throw error;
+      }
       created.push({
         path: relativeIntakePath,
         sourceFile: String(relativeFile).replace(/\\/g, "/"),

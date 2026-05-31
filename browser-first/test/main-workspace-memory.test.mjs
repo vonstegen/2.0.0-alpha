@@ -481,8 +481,11 @@ test("living archive workspace renders status, search, and intake through bridge
     textFilter.dispatchEvent(new Event("input", { bubbles: true }));
     const candidateChecks = Array.from(container.querySelectorAll(".memory-source-candidates input"));
     assert.equal(candidateChecks.length, 2);
+    assert.equal(candidateChecks.find((input) => input.value === "index.md").disabled, true);
+    assert.equal(candidateChecks.find((input) => input.value === "notes/research.txt").disabled, false);
     candidateChecks.find((input) => input.value === "index.md").checked = true;
     candidateChecks.find((input) => input.value === "index.md").dispatchEvent(new Event("change", { bubbles: true }));
+    assert.equal(candidateChecks.find((input) => input.value === "index.md").checked, false);
     candidateChecks.find((input) => input.value === "notes/research.txt").checked = true;
     candidateChecks.find((input) => input.value === "notes/research.txt").dispatchEvent(new Event("change", { bubbles: true }));
     Array.from(container.querySelectorAll(".memory-review-preview button"))
@@ -494,19 +497,14 @@ test("living archive workspace renders status, search, and intake through bridge
       route === "/memory/source/file-intake" &&
       options.capability === "memory-source-file-intake" &&
       options.body.sourceId === "source-test-vault" &&
-      options.body.files.join(",") === "index.md,notes/research.txt"
+      options.body.files.join(",") === "notes/research.txt"
     ));
     assert.ok(calls.some(([route, options]) =>
       route === "/archive/review/request" &&
       options.body.path === "INTAKE/sources/selected-1.md" &&
-      /selected source file index\.md/.test(options.body.reason)
-    ));
-    assert.ok(calls.some(([route, options]) =>
-      route === "/archive/review/request" &&
-      options.body.path === "INTAKE/sources/selected-2.md" &&
       /selected source file notes\/research\.txt/.test(options.body.reason)
     ));
-    assert.match(container.textContent, /Created 2 selected file intake artifact\(s\); 0 rejected/);
+    assert.match(container.textContent, /Created 1 selected file intake artifact\(s\); 0 rejected/);
     Array.from(container.querySelectorAll(".memory-source-card button"))
       .find((button) => button.textContent === "Create Intake Summary")
       .click();
@@ -660,6 +658,87 @@ test("living archive workspace renders status, search, and intake through bridge
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.ok(calls.some(([route, options]) => route === "/archive/intake" && options.body.title === "Browser note"));
     assert.match(container.textContent, /INTAKE\/browser\/note\.md/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("living archive source review blocks intake when every candidate needs repair", async () => {
+  const { container, cleanup } = setupDom();
+  const calls = [];
+  const bridgeRequest = async (route, options = {}) => {
+    calls.push([route, options]);
+    if (route === "/memory/status") {
+      return { exists: true, wiki: { pages: 1, index: { exists: true } }, intake: { artifacts: 0 }, review: { requests: 0, artifacts: 0 } };
+    }
+    if (route === "/memory/wiki/health") {
+      return { exists: true, score: 100, pages: 1, issues: [], brokenLinks: [], orphanPages: [], missingIndexEntries: [], duplicateTitles: [], index: { exists: true, entries: 1 }, log: { exists: true } };
+    }
+    if (route === "/memory/settings") {
+      return {
+        settings: {
+          sources: [{
+            id: "source-blocked-only",
+            path: "/Users/test/BrokenVault",
+            kind: "obsidian-vault",
+            ownership: "human-knowledge",
+            importMode: "copy-on-import",
+            exists: true
+          }]
+        }
+      };
+    }
+    if (route === "/memory/source/review") {
+      return {
+        source: { id: options.body.sourceId, path: "/Users/test/BrokenVault" },
+        scan: {
+          totalScanned: 2,
+          categories: { compatible: 2, processed: 0, "raw-audio": 0, unsupported: 0 },
+          recommendation: "Repair source version tracking before intake."
+        },
+        versionManifestError: "source version manifest is unreadable",
+        candidates: [{
+          path: "notes/a.md",
+          category: "compatible",
+          bytes: 10,
+          versionStatus: "version-manifest-unavailable",
+          error: "source version manifest is unreadable"
+        }, {
+          path: "notes/b.md",
+          category: "compatible",
+          bytes: 20,
+          versionStatus: "version-manifest-unavailable",
+          error: "source version manifest is unreadable"
+        }],
+        boundary: "Read-only review. Blocked files cannot enter intake."
+      };
+    }
+    if (route === "/archive/review/list") {
+      return { root: "Memory/REVIEW/requests", requests: [] };
+    }
+    if (route === "/archive/review/promotions/list") {
+      return { root: "Memory/REVIEW/artifacts", promotions: [] };
+    }
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  try {
+    renderLivingArchiveWorkspace({ container, bridgeRequest });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    Array.from(container.querySelectorAll(".memory-source-card button"))
+      .find((button) => button.textContent === "Review Source")
+      .click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.match(container.textContent, /No eligible files are available because source\/version repair is required first/);
+    assert.match(container.textContent, /Repair required before blocked files can enter intake/);
+    assert.match(container.textContent, /2 blocked file\(s\) require source\/version repair/);
+    for (const input of container.querySelectorAll(".memory-source-candidates input")) {
+      assert.equal(input.disabled, true);
+    }
+    const buttons = Array.from(container.querySelectorAll(".memory-review-preview button"));
+    assert.equal(buttons.find((button) => button.textContent === "Create Intake From New/Changed Files").disabled, true);
+    assert.equal(buttons.find((button) => button.textContent === "Create Intake From Selected Files").disabled, true);
+    assert.equal(calls.some(([route]) => route === "/memory/source/file-intake"), false);
   } finally {
     cleanup();
   }

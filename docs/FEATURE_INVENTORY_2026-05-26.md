@@ -159,6 +159,8 @@ These are the features currently implemented in the browser-first version.
 - Browser-first promotion now uses section-aware markdown merge: matching `##` sections are updated, unmatched existing sections are preserved, new sections are appended, and superseded sections are retained for provenance.
 - The browser-first Living Archive workspace now shows promotion history from promoted review artifacts, including the promoted wiki page and backup path when a page was overwritten.
 - Promotion history can restore a promoted wiki page from its recorded backup through a scoped host action; the restore operation backs up the current page first and appends a restore event to the wiki log.
+- Connected source review keeps unchanged, unsupported, raw, processed, and blocked files visible for context, but selected-file intake is constrained to new or changed compatible files only.
+- Selected source-file intake now deduplicates requests, caps host batches, rejects symlink/path-escape selections, writes source version manifests atomically, and rolls back reserved source versions if intake artifact creation fails.
 
 ### Browser Tools Available To Augmentor
 
