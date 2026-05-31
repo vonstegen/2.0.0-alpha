@@ -1,7 +1,10 @@
 // Intent citation: docs/architecture/ADR-037-browser-first-chromium-resonantos.md
 // Intent citation: docs/architecture/ADR-027-living-archive-llm-wiki-compliance.md
 
+import { artifactInsightsFromMarkdown } from "./artifact-insights.js";
+
 const formatCount = (value) => Number(value ?? 0).toLocaleString();
+const SOURCE_REVIEW_RENDER_LIMIT = 200;
 
 function metric(label, value, meta = "") {
   const node = document.createElement("div");
@@ -217,7 +220,7 @@ export function reviewRequestNextAction(request = {}) {
   };
 }
 
-function reviewRequestCard(request, onTransition, onDraft, onPreviewDraft) {
+function reviewRequestCard(request, onTransition, onDraft, onPreviewDraft, onPreviewSource) {
   const card = document.createElement("article");
   card.className = "memory-review-request";
   const heading = document.createElement("div");
@@ -260,6 +263,12 @@ function reviewRequestCard(request, onTransition, onDraft, onPreviewDraft) {
     makeAction("Approve", "approved"),
     makeAction("Reject", "rejected")
   );
+  const sourceButton = document.createElement("button");
+  sourceButton.type = "button";
+  sourceButton.textContent = "Inspect Source";
+  sourceButton.disabled = !request.artifactPath;
+  sourceButton.addEventListener("click", () => onPreviewSource(request));
+  actions.append(sourceButton);
   const draftButton = document.createElement("button");
   draftButton.type = "button";
   draftButton.textContent = request.draftArtifactPath ? "Drafted" : "Draft";
@@ -408,6 +417,31 @@ function sourceReviewCard(review, onImportFiles, onPreviewDiff) {
   boundary.textContent = review.boundary || "Source review is read-only.";
   const recommendation = document.createElement("p");
   recommendation.textContent = review.scan?.recommendation || "Review before intake.";
+  const warning = document.createElement("p");
+  warning.className = "memory-status";
+  warning.dataset.tone = "warning";
+  warning.textContent = review.versionManifestError
+    ? `Version tracking warning: ${review.versionManifestError}`
+    : "";
+  warning.hidden = !review.versionManifestError;
+  const repairGuidance = document.createElement("div");
+  repairGuidance.className = "memory-source-repair-guidance";
+  repairGuidance.hidden = !review.versionManifestError;
+  const repairTitle = document.createElement("strong");
+  repairTitle.textContent = "Repair required before blocked files can enter intake";
+  const repairBody = document.createElement("p");
+  repairBody.textContent = "Version tracking protects the human source from being re-imported as false-new memory. When it is unavailable, blocked files stay out of selected and bulk intake until the source history is repaired.";
+  const repairSteps = document.createElement("ol");
+  for (const step of [
+    "Run Scan Source again after confirming the folder is still connected.",
+    "If the warning remains, repair or restore the source-version manifest from the managed Memory metadata backup.",
+    "Only then review changed files and create governed intake; no trusted wiki page is written directly."
+  ]) {
+    const item = document.createElement("li");
+    item.textContent = step;
+    repairSteps.append(item);
+  }
+  repairGuidance.append(repairTitle, repairBody, repairSteps);
 
   const filterBar = document.createElement("div");
   filterBar.className = "memory-source-filterbar";
@@ -430,7 +464,60 @@ function sourceReviewCard(review, onImportFiles, onPreviewDiff) {
   const list = document.createElement("ol");
   list.className = "memory-source-candidates";
   const selected = new Set();
+  let importSelectedButton = null;
+  const updateSelectedActionState = () => {
+    if (importSelectedButton) {
+      importSelectedButton.disabled = selected.size === 0;
+    }
+  };
   const candidates = review.candidates ?? [];
+  const eligibleFiles = candidates.filter(isEligibleSourceIntakeCandidate);
+  const skippedUnchanged = candidates.filter((candidate) =>
+    candidate.category === "compatible" && candidate.versionStatus === "unchanged"
+  );
+  const blockedFiles = candidates.filter((candidate) =>
+    candidate.versionStatus === "version-manifest-unavailable" || candidate.error || candidate.blocked
+  );
+  const skippedUnsupported = candidates.filter((candidate) =>
+    !isEligibleSourceIntakeCandidate(candidate) &&
+    !(candidate.category === "compatible" && candidate.versionStatus === "unchanged") &&
+    !blockedFiles.includes(candidate)
+  );
+  const newFiles = candidates.filter((candidate) =>
+    candidate.category === "compatible" && candidate.versionStatus === "new"
+  );
+  const changedFileCandidates = candidates.filter((candidate) =>
+    candidate.category === "compatible" && candidate.versionStatus === "changed"
+  );
+  const deltaSummary = sourceReviewDeltaSummary({
+    newFiles,
+    changedFiles: changedFileCandidates,
+    skippedUnchanged,
+    skippedUnsupported,
+    blockedFiles,
+  });
+
+  const approvalPlan = document.createElement("div");
+  approvalPlan.className = "memory-source-approval-plan";
+  const approvalTitle = document.createElement("strong");
+  approvalTitle.textContent = "Approval plan";
+  const approvalBody = document.createElement("p");
+  approvalBody.textContent = [
+    `${eligibleFiles.length} new/changed compatible file(s) ready for governed intake`,
+    `${skippedUnchanged.length} unchanged file(s) skipped`,
+    `${skippedUnsupported.length} raw/processed/unsupported file(s) kept out of wiki intake`,
+    `${blockedFiles.length} blocked file(s) require source/version repair`
+  ].join(" · ");
+  const approvalHelp = document.createElement("small");
+  approvalHelp.textContent = "Bulk approval creates intake artifacts and review requests only for eligible files, in host-capped batches. It never writes trusted wiki pages directly.";
+  approvalPlan.append(approvalTitle, approvalBody, approvalHelp);
+  const emptyAction = document.createElement("p");
+  emptyAction.className = "memory-status";
+  emptyAction.dataset.tone = "warning";
+  emptyAction.hidden = eligibleFiles.length > 0;
+  emptyAction.textContent = blockedFiles.length
+    ? "No eligible files are available because source/version repair is required first."
+    : "No eligible new or changed compatible files are available for intake.";
 
   const renderCandidates = () => {
     list.replaceChildren();
@@ -441,7 +528,8 @@ function sourceReviewCard(review, onImportFiles, onPreviewDiff) {
       (!query || String(candidate.path ?? "").toLowerCase().includes(query))
     );
     const groups = new Map();
-    for (const candidate of visible) {
+    const rendered = visible.slice(0, SOURCE_REVIEW_RENDER_LIMIT);
+    for (const candidate of rendered) {
       const folder = String(candidate.path ?? "").includes("/")
         ? String(candidate.path).split("/").slice(0, -1).join("/")
         : "root";
@@ -456,7 +544,7 @@ function sourceReviewCard(review, onImportFiles, onPreviewDiff) {
       groupTitle.textContent = `${folder} · ${entries.length}`;
       const nested = document.createElement("ol");
       for (const candidate of entries) {
-        nested.append(sourceCandidateItem(candidate, selected, onPreviewDiff));
+        nested.append(sourceCandidateItem(candidate, selected, onPreviewDiff, updateSelectedActionState));
       }
       group.append(groupTitle, nested);
       list.append(group);
@@ -466,6 +554,11 @@ function sourceReviewCard(review, onImportFiles, onPreviewDiff) {
       item.textContent = candidates.length
         ? "No source candidates match the current filters."
         : "No directly compatible candidate files found in the review sample.";
+      list.append(item);
+    } else if (visible.length > rendered.length) {
+      const item = document.createElement("li");
+      item.className = "memory-source-candidate-limit";
+      item.textContent = `Showing ${rendered.length} of ${visible.length} matching candidate(s). Narrow the filter to inspect more files; bulk intake still uses all eligible files.`;
       list.append(item);
     }
     count.textContent = `${visible.length}/${candidates.length} candidate(s) visible`;
@@ -479,21 +572,67 @@ function sourceReviewCard(review, onImportFiles, onPreviewDiff) {
   const importChangedButton = document.createElement("button");
   importChangedButton.type = "button";
   importChangedButton.textContent = "Create Intake From New/Changed Files";
-  const changedFiles = candidates
-    .filter((candidate) =>
-      candidate.category === "compatible" &&
-      candidate.versionStatus !== "unchanged"
-    )
-    .map((candidate) => candidate.path);
+  const changedFiles = eligibleFiles.map((candidate) => candidate.path);
   importChangedButton.disabled = changedFiles.length === 0;
   importChangedButton.addEventListener("click", () => onImportFiles(review, changedFiles));
   const importButton = document.createElement("button");
+  importSelectedButton = importButton;
   importButton.type = "button";
   importButton.textContent = "Create Intake From Selected Files";
-  importButton.addEventListener("click", () => onImportFiles(review, [...selected]));
+  importButton.disabled = true;
+  importButton.addEventListener("click", () => onImportFiles(
+    review,
+    [...selected].filter((file) => eligibleFiles.some((candidate) => candidate.path === file))
+  ));
+  updateSelectedActionState();
   actions.append(importChangedButton, importButton);
-  card.append(heading, summary, boundary, recommendation, filterBar, list, actions);
+  card.append(heading, summary, boundary, recommendation, warning, repairGuidance, deltaSummary, approvalPlan, emptyAction, filterBar, list, actions);
   return card;
+}
+
+function sourceReviewDeltaSummary({
+  newFiles = [],
+  changedFiles = [],
+  skippedUnchanged = [],
+  skippedUnsupported = [],
+  blockedFiles = [],
+} = {}) {
+  const panel = document.createElement("div");
+  panel.className = "memory-source-delta-summary";
+  const title = document.createElement("strong");
+  title.textContent = "Review delta";
+  const body = document.createElement("p");
+  body.textContent = [
+    `${newFiles.length} new`,
+    `${changedFiles.length} changed`,
+    `${skippedUnchanged.length} unchanged`,
+    `${skippedUnsupported.length} excluded`,
+    `${blockedFiles.length} blocked`
+  ].join(" · ");
+  const help = document.createElement("small");
+  help.textContent = "Only new and changed compatible files can become governed intake. Unchanged, unsupported, raw, processed, and blocked files stay out of wiki promotion.";
+  const sampleList = document.createElement("ol");
+  sampleList.className = "memory-source-delta-files";
+  for (const [label, files] of [
+    ["New", newFiles],
+    ["Changed", changedFiles],
+    ["Unchanged", skippedUnchanged],
+    ["Excluded", skippedUnsupported],
+    ["Blocked", blockedFiles],
+  ]) {
+    const item = document.createElement("li");
+    const sample = files.slice(0, 3).map((candidate) => candidate.path).join(", ");
+    item.textContent = sample
+      ? `${label}: ${sample}${files.length > 3 ? `, +${files.length - 3} more` : ""}`
+      : `${label}: none`;
+    sampleList.append(item);
+  }
+  panel.append(title, body, help, sampleList);
+  return panel;
+}
+
+function isEligibleSourceIntakeCandidate(candidate) {
+  return candidate.category === "compatible" && ["new", "changed"].includes(candidate.versionStatus);
 }
 
 function optionNode(value, text) {
@@ -573,6 +712,42 @@ function sourceDiffCard(result) {
     return card;
   }
   card.append(heading, list);
+  return card;
+}
+
+function sourceArtifactPreviewCard(result) {
+  const card = document.createElement("article");
+  card.className = "memory-review-preview";
+  const insights = artifactInsightsFromMarkdown(result.content || result.excerpt || "");
+  const heading = document.createElement("div");
+  heading.className = "memory-preview-heading";
+  const title = document.createElement("strong");
+  title.textContent = result.title || "Source intake artifact";
+  const path = document.createElement("code");
+  path.textContent = result.path || "INTAKE";
+  heading.append(title, path);
+  const meta = document.createElement("p");
+  meta.textContent = [
+    insights.sourceType || result.kind || "intake source",
+    insights.pageTitle || "",
+    insights.pageUrl || "",
+    insights.sourceStats || "",
+    insights.capturedAt ? `captured ${insights.capturedAt}` : ""
+  ].filter(Boolean).join(" · ");
+  const boundary = document.createElement("p");
+  boundary.className = "memory-status";
+  boundary.dataset.tone = "warning";
+  boundary.textContent = "This is preserved intake evidence. It can inform a draft, but it is not trusted AI Memory until verification and promotion complete.";
+  const content = document.createElement("pre");
+  content.textContent = result.content || "No source artifact content returned.";
+  card.append(heading, meta, boundary, content);
+  if (result.truncated) {
+    const truncated = document.createElement("p");
+    truncated.className = "memory-status";
+    truncated.dataset.tone = "warning";
+    truncated.textContent = "Source preview truncated for safety. The full artifact remains in Living Archive intake.";
+    card.append(truncated);
+  }
   return card;
 }
 
@@ -779,7 +954,13 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
         setStatus(reviewStatus, "No pending review requests. Browser artifacts can request review from the Artifacts workspace.", "warning");
         return;
       }
-      reviewList.append(...requests.map((request) => reviewRequestCard(request, transitionReviewRequest, draftReviewRequest, previewDraftArtifact)));
+      reviewList.append(...requests.map((request) => reviewRequestCard(
+        request,
+        transitionReviewRequest,
+        draftReviewRequest,
+        previewDraftArtifact,
+        previewSourceArtifact
+      )));
       setStatus(reviewStatus, `${requests.length} review request(s) waiting in ${result.root}.`, "success");
     } catch (error) {
       setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
@@ -1041,6 +1222,27 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
       setStatus(reviewStatus, `Draft artifact ready: ${result.path}.`, "success");
       await loadStatus();
       await loadReviewQueue();
+    } catch (error) {
+      setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
+    }
+  };
+
+  const previewSourceArtifact = async (request) => {
+    if (!request.artifactPath) {
+      setStatus(reviewStatus, "Review request has no source artifact to inspect.", "warning");
+      return;
+    }
+    setStatus(reviewStatus, "Loading source intake artifact…");
+    draftPreview.hidden = true;
+    draftPreview.replaceChildren();
+    try {
+      const result = await bridgeRequest("/archive/intake/read", {
+        method: "POST",
+        body: { path: request.artifactPath }
+      });
+      draftPreview.replaceChildren(sourceArtifactPreviewCard(result));
+      draftPreview.hidden = false;
+      setStatus(reviewStatus, result.truncated ? "Source preview loaded and truncated for safety." : "Source preview loaded.", "success");
     } catch (error) {
       setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
     }

@@ -256,6 +256,29 @@ test("living archive workspace renders status, search, and intake through bridge
         status: "draft-created"
       };
     }
+    if (route === "/archive/intake/read") {
+      return {
+        path: options.body.path,
+        title: "Browser job source evidence",
+        kind: "browser-job-report",
+        bytes: 2048,
+        modifiedAt: "2026-05-28T10:00:00.000Z",
+        content: [
+          "Captured from: https://shop.example/item",
+          "",
+          "## Page Context",
+          "- title: Example Product",
+          "- url: https://shop.example/item",
+          "- links captured: 4",
+          "- controls captured: 2",
+          "- fields captured: 0",
+          "",
+          "## Visible Text",
+          "Product evidence collected for review."
+        ].join("\n"),
+        truncated: false
+      };
+    }
     if (route === "/archive/review/artifact/read") {
       return {
         path: options.body.path,
@@ -534,6 +557,17 @@ test("living archive workspace renders status, search, and intake through bridge
     ));
     assert.match(container.textContent, /REVIEW\/artifacts\/browser\/browser-job-completed-draft\.md/);
     assert.match(container.textContent, /Next: Verify draft/);
+    Array.from(container.querySelectorAll(".memory-review-actions button"))
+      .find((button) => button.textContent === "Inspect Source")
+      .click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(calls.some(([route, options]) =>
+      route === "/archive/intake/read" &&
+      options.body.path === "INTAKE/browser/job-report.md"
+    ));
+    assert.match(container.textContent, /Browser job source evidence/);
+    assert.match(container.textContent, /Browser page capture · Example Product · https:\/\/shop\.example\/item · 4 link\(s\) · 2 control\(s\) · 0 field\(s\)/);
+    assert.match(container.textContent, /This is preserved intake evidence/);
     Array.from(container.querySelectorAll(".memory-review-actions button"))
       .find((button) => button.textContent === "Preview")
       .click();
