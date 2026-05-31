@@ -34,6 +34,7 @@ import { createControlStepExecutor } from "./lib/control-step-executor.js";
 import { createMessageActionController } from "./lib/message-action-controller.js";
 import { createMonitorRenderers } from "./lib/monitor-renderers.js";
 import { createSidePanelCommandRouter } from "./lib/side-panel-command-router.js";
+import { createSidePanelMessageRouter } from "./lib/side-panel-message-router.js";
 import { createSidePanelRenderers } from "./lib/side-panel-renderers.js";
 import { readPersonalizationSettings } from "./lib/personalization-settings.js";
 import { createSitePermissionStore } from "./lib/site-permission-store.js";
@@ -1551,20 +1552,10 @@ const commandRouter = createSidePanelCommandRouter({
 
 const respondToCommand = commandRouter.respondToCommand;
 
-chrome.runtime?.onMessage?.addListener?.((message, _sender, sendResponse) => {
-  if (!message || message.channel !== "resonantos.browser_first.side_panel") {
-    return false;
-  }
-  if (message.type === "cancel_control_run") {
-    void cancelBrowserJob(currentControlRun?.id ?? browserJobStore.getActiveJobId() ?? "").then(() => {
-      sendResponse({ ok: true });
-    }).catch((error) => {
-      sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) });
-    });
-    return true;
-  }
-  return false;
-});
+chrome.runtime?.onMessage?.addListener?.(createSidePanelMessageRouter({
+  cancelBrowserJob,
+  getActiveBrowserJobId: () => currentControlRun?.id ?? browserJobStore.getActiveJobId() ?? ""
+}));
 
 const hydrateChatSettings = async () => {
   await hydrateProviderModelOptions({
