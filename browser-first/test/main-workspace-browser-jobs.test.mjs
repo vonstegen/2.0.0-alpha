@@ -128,6 +128,8 @@ test("main workspace browser jobs render monitor, focus, and stop controls", () 
   assert.match(container.textContent, /1 active/);
   assert.match(container.textContent, /booking\.example · tab 7/);
   assert.match(container.textContent, /Awaiting approval/);
+  assert.match(container.textContent, /Now: needs review · Submit form/);
+  assert.equal(container.querySelector(".main-browser-jobs-current")?.textContent, "Now: needs review · Submit form");
   assert.match(container.textContent, /Recovery: rechecked: settle-reread · retried: precise-ref-retry/);
 
   [...container.querySelectorAll("button")].find((button) => button.textContent === "Focus").click();
@@ -141,6 +143,31 @@ test("main workspace browser jobs render monitor, focus, and stop controls", () 
     ["pause", "job-a"],
     ["cancel", "job-a"]
   ]);
+});
+
+test("main workspace browser jobs surface the active current action", () => {
+  const dom = new JSDOM(`<section id="jobs"></section>`);
+  const container = dom.window.document.querySelector("#jobs");
+
+  renderMainBrowserJobStatus({
+    activeJobId: "job-running",
+    container,
+    jobs: [{
+      id: "job-running",
+      goal: "Compare prices",
+      status: "running",
+      steps: [
+        { label: "Read page", state: "completed", type: "read" },
+        { label: "Click visible filter", state: "active", type: "click" },
+        { label: "Read filtered products", state: "pending", type: "read" }
+      ]
+    }],
+    onOpenMonitor: () => undefined
+  });
+
+  assert.match(container.textContent, /Running · Compare prices/);
+  assert.match(container.textContent, /Now: working · Click visible filter/);
+  assert.equal(container.querySelector(".main-browser-jobs-current")?.textContent, "Now: working · Click visible filter");
 });
 
 test("main workspace browser jobs render continue for stopped or paused work", () => {

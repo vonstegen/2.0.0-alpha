@@ -693,6 +693,11 @@ body:not([data-workspace="answer"]) .main-browser-jobs {
   font-weight: 850;
 }
 
+.main-browser-jobs-copy .main-browser-jobs-current {
+  color: rgba(214, 255, 232, 0.82);
+  font-weight: 900;
+}
+
 .main-browser-jobs-copy .main-browser-jobs-recovery {
   color: rgba(255, 206, 132, 0.72);
   font-weight: 800;

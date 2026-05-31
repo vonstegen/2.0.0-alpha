@@ -2,7 +2,10 @@ import {
   browserJobSchedulerState,
   normalizeBrowserJob
 } from "./browser-job-store.js";
-import { controlRunProgressSummary } from "./monitor-renderers.js";
+import {
+  controlActionStateLabel,
+  controlRunProgressSummary
+} from "./monitor-renderers.js";
 
 const ACTIVE_STATUSES = new Set(["queued", "running", "approval", "paused"]);
 
@@ -57,6 +60,19 @@ function jobRecoveryEvidence(job) {
     details.verificationRetry ? `rechecked: ${details.verificationRetry}` : "",
     details.actionRetry ? `retried: ${details.actionRetry}` : ""
   ].filter(Boolean).join(" · ");
+}
+
+function jobCurrentAction(job) {
+  const steps = Array.isArray(job?.steps) ? job.steps : [];
+  const step = steps.find((candidate) => candidate?.state === "active") ??
+    (job?.status === "approval" ? job?.pendingApproval?.step : null) ??
+    (job?.status === "approval" || job?.status === "blocked" ? [...steps].reverse().find((candidate) => ["blocked", "failed"].includes(candidate?.state)) : null) ??
+    steps.find((candidate) => candidate?.state === "pending") ??
+    null;
+  if (!step) return "";
+  const label = String(step.label ?? step.text ?? step.url ?? step.query ?? step.type ?? "browser action").trim();
+  if (!label) return "";
+  return `Now: ${controlActionStateLabel(step.state ?? (job?.status === "approval" ? "blocked" : "pending"))} · ${label.slice(0, 180)}`;
 }
 
 function jobBlockerGuidance(job) {
@@ -157,6 +173,13 @@ export function renderMainBrowserJobStatus({
     progress.className = "main-browser-jobs-progress";
     progress.textContent = controlRunProgressSummary(focusedJob);
     copy.append(progress);
+  }
+  const currentAction = jobCurrentAction(focusedJob);
+  if (currentAction) {
+    const current = documentRef.createElement("span");
+    current.className = "main-browser-jobs-current";
+    current.textContent = currentAction;
+    copy.append(current);
   }
   const recoveryEvidence = jobRecoveryEvidence(focusedJob);
   if (recoveryEvidence) {

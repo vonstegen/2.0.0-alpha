@@ -284,6 +284,7 @@ These are the features currently implemented in the browser-first version.
 - The main workspace Agent Control status strip surfaces blocked, failed, cancelled, denied, and paused job guidance from durable job evidence, including the next human action, uncertainty, recovery options, and last error when available.
 - The main workspace Agent Control status strip wraps stopped-job guidance instead of truncating it and promotes Continue as the primary action when a stopped job can be resumed.
 - Completed Agent Control jobs now surface a concise result summary in the main workspace status strip, so successful browser work leaves visible outcome evidence without requiring the full monitor.
+- Running and approval Agent Control jobs now surface the current action in the main workspace status strip, making it clear whether Augmentor is working, queued, or waiting for human review without opening the full monitor.
 - Background browser-job Focus and approval actions activate the job's locked readable tab before review/replay, so approval decisions remain page-specific instead of following the currently active tab by accident.
 - The browser-job monitor labels visible-page ownership and background approval state, including the locked tab that will be activated before approve or deny.
 - Durable Browser Jobs now detect stale running/approval jobs passively and surface last-activity timing plus next human action in `/jobs` and the monitor, without auto-killing, auto-resuming, or changing the persisted status.
@@ -336,7 +337,7 @@ These are the features currently implemented in the browser-first version.
 ### Deterministic Validation Already Passing
 
 - Latest restricted sandbox checkpoint on 2026-06-01: `node --test browser-first/test/browser-first-acceptance.test.mjs` passed and covers the fresh main-chat -> natural current-news prompt -> side-panel Agent Control handoff, plus governed parallel browser jobs with page locks, approval focus, and main-workspace status rendering.
-- Latest restricted sandbox checkpoint on 2026-06-01: `git diff --check && npm run test:browser-first` passed with 370 tests and 8 explicit localhost-bridge skips caused by sandbox bind restrictions.
+- Latest restricted sandbox checkpoint on 2026-06-01: `git diff --check && npm run test:browser-first` passed with 371 tests and 8 explicit localhost-bridge skips caused by sandbox bind restrictions.
 - Latest restricted sandbox checkpoint on 2026-06-01: `npm run build` passed with the existing Vite large chunk warning.
 - Latest restricted sandbox checkpoint on 2026-06-01: `npm test -- --run` passed with 286 tests.
 - Latest local checkpoint on 2026-05-31: `npm run test:browser-first` passed with 310 tests.
