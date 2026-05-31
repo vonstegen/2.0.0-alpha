@@ -30,6 +30,26 @@ export const parseDraftSlashCommand = (value) => {
   return match ? { target: match[1].toLowerCase(), body: (match[2] ?? "").trim() } : null;
 };
 
+export const parseIntakeSlashCommand = (value) => {
+  const match = /^\/\s*(save|intake|trail|researchtrail)(?:\s+([\s\S]*))?$/i.exec(String(value ?? "").trim());
+  if (!match) return null;
+  const command = match[1].toLowerCase();
+  const body = (match[2] ?? "").trim();
+  if (command === "trail" || command === "researchtrail") {
+    return { action: "trail", body };
+  }
+  if (/^(?:selection|selected|quote|highlight)\b/i.test(body)) {
+    return { action: "selection", body: body.replace(/^(?:selection|selected|quote|highlight)\b/i, "").trim() };
+  }
+  if (/^(?:summary|summarize|summarise)\b/i.test(body)) {
+    return { action: "summary", body: body.replace(/^(?:summary|summarize|summarise)\b/i, "").trim() };
+  }
+  if (/^(?:trail|research\s+trail|researchtrail)\b/i.test(body)) {
+    return { action: "trail", body: body.replace(/^(?:trail|research\s+trail|researchtrail)\b/i, "").trim() };
+  }
+  return { action: "page", body };
+};
+
 export const parseWalletSlashCommand = (value) => {
   const match = /^\/\s*wallet(?:\s+([\s\S]*))?$/i.exec(String(value ?? "").trim());
   if (!match) return null;
@@ -61,6 +81,8 @@ export function planMainWorkspacePrompt(value) {
   if (hermesMission !== null) return { action: "hermes", mission: hermesMission };
   const delegationFilter = parseDelegationsSlashCommand(prompt);
   if (delegationFilter !== null) return { action: "delegations", filter: delegationFilter };
+  const intakeCommand = parseIntakeSlashCommand(prompt);
+  if (intakeCommand) return { action: "intake", command: intakeCommand };
   const naturalDelegation = parseNaturalDelegationIntent(prompt);
   if (naturalDelegation) return { action: "delegate", intent: naturalDelegation };
   const walletCommand = parseWalletSlashCommand(prompt);

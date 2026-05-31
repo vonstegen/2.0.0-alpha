@@ -1288,6 +1288,23 @@ async function runDaoWorkflowCommand(prompt) {
   await browserPageActions.prepareDaoWorkflowGuidance(command?.goal ?? "");
 }
 
+async function runIntakeCommand(command) {
+  const reviewOptions = { noticeContainer: composerNotice, onOpenReviewQueue: openMemoryReviewQueue };
+  if (command?.action === "selection") {
+    await runReviewableCapture(() => browserPageActions.saveSelectionToArchive(), reviewOptions);
+    return;
+  }
+  if (command?.action === "summary") {
+    await runReviewableCapture(() => browserPageActions.summarizeCurrentPageToArchive(), reviewOptions);
+    return;
+  }
+  if (command?.action === "trail") {
+    await runReviewableCapture(() => browserPageActions.saveResearchTrailToArchive(command.body), reviewOptions);
+    return;
+  }
+  await runReviewableCapture(() => browserPageActions.saveCurrentPageToArchive(), reviewOptions);
+}
+
 commandForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (busy) return;
@@ -1318,6 +1335,8 @@ commandForm.addEventListener("submit", async (event) => {
       }
     } else if (promptPlan.action === "dao") {
       await runDaoWorkflowCommand(prompt);
+    } else if (promptPlan.action === "intake") {
+      await runIntakeCommand(promptPlan.command);
     } else if (promptPlan.action === "draft" && await runDraftAddonCommand(prompt)) {
       // Draft-only communication/scheduling packets are handled locally.
     } else if (promptPlan.action === "control") {

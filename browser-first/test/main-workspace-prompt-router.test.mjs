@@ -5,6 +5,7 @@ import {
   parseDaoSlashCommand,
   parseDraftSlashCommand,
   parseHermesSlashCommand,
+  parseIntakeSlashCommand,
   parseMemorySlashCommand,
   parseOpenCodeSlashCommand,
   parseWalletSlashCommand,
@@ -38,6 +39,36 @@ test("main workspace prompt router parses delegation status slash commands", () 
   assert.deepEqual(planMainWorkspacePrompt("/handoffs"), {
     action: "delegations",
     filter: ""
+  });
+});
+
+test("main workspace prompt router parses reviewed intake slash commands", () => {
+  assert.deepEqual(parseIntakeSlashCommand("/save"), {
+    action: "page",
+    body: ""
+  });
+  assert.deepEqual(parseIntakeSlashCommand("/intake selected quote"), {
+    action: "selection",
+    body: "quote"
+  });
+  assert.deepEqual(parseIntakeSlashCommand("/save summary"), {
+    action: "summary",
+    body: ""
+  });
+  assert.deepEqual(parseIntakeSlashCommand("/save trail DAO research"), {
+    action: "trail",
+    body: "DAO research"
+  });
+  assert.deepEqual(parseIntakeSlashCommand("/trail DAO research"), {
+    action: "trail",
+    body: "DAO research"
+  });
+  assert.deepEqual(planMainWorkspacePrompt("/save selection"), {
+    action: "intake",
+    command: {
+      action: "selection",
+      body: ""
+    }
   });
 });
 
@@ -88,6 +119,7 @@ test("main workspace prompt router preserves explicit command priority", () => {
   assert.equal(planMainWorkspacePrompt("/hermes ask OpenCode to do nothing").action, "hermes");
   assert.equal(planMainWorkspacePrompt("/opencode ask Hermes to do nothing").action, "opencode");
   assert.equal(planMainWorkspacePrompt("/memory ask Hermes about archive").action, "memory");
+  assert.equal(planMainWorkspacePrompt("/save ask Hermes about archive").action, "intake");
   assert.equal(planMainWorkspacePrompt("/wallet status").action, "wallet");
   assert.equal(planMainWorkspacePrompt("/dao review proposal").action, "dao");
   assert.equal(planMainWorkspacePrompt("/calendar Planning | body: Tuesday 10").action, "draft");

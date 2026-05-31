@@ -216,6 +216,10 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(workspaceScript, /connectionLine\.innerHTML/);
   assert.match(workspaceScript, /readPageButton\?\.addEventListener\("click", \(\) => void browserPageActions\.readActivePage\(\)\)/);
   assert.match(workspaceScript, /runReviewableCapture/);
+  assert.match(workspaceScript, /async function runIntakeCommand\(command\)/);
+  assert.match(workspaceScript, /promptPlan\.action === "intake"/);
+  assert.match(workspaceScript, /browserPageActions\.summarizeCurrentPageToArchive\(\)/);
+  assert.match(workspaceScript, /browserPageActions\.saveResearchTrailToArchive\(command\.body\)/);
   assert.match(workspaceScript, /saveIntakeButton\?\.addEventListener\("click", \(\) => void runReviewableCapture\(\s*\(\) => browserPageActions\.saveCurrentPageToArchive\(\),/);
   assert.match(workspaceScript, /saveSelectionButton\?\.addEventListener\("click", \(\) => void runReviewableCapture\(\s*\(\) => browserPageActions\.saveSelectionToArchive\(\),/);
   assert.match(workspaceScript, /noticeContainer: composerNotice/);
