@@ -84,7 +84,7 @@ Release scope:
 
 Known limits for reviewers:
 
-- Living Archive import is safe-copy oriented; move/reorganisation execution is intentionally blocked
+- Living Archive import defaults to safe copy; move-on-import is available only through the audited host flow, while reorganisation execution remains intentionally blocked.
 - Living Archive AI Memory builds now persist job summaries, restore them in the Review Desk, support user-triggered `Continue Build`, and can auto-continue safe jobs only when the persisted Archive automation policy and provider-cost gate allow it
 - add-ons are catalog entries and are not installed or trusted by default; the basic default catalog now exposes only recommended Augmentor Chat and Living Archive contracts
 - Browser, Obsidian, OpenCode, and Terminal add-ons are early foundations, not complete production integrations
@@ -291,7 +291,7 @@ Current Living Archive status:
 
 The latest hardening/refactor pass is present in the worktree:
 
-- host routes move imports only through audited preflight, exact confirmation, verified execution, ledger, and rollback
+- host routes move imports only through audited content-hash-backed preflight, exact confirmation, stale-preflight rejection, verified execution, ledger, and rollback
 - UI blocks ordinary settings-save move registration and uses the dedicated move preflight/execute/rollback path
 - duplicate frontend-only classification approval block was removed
 - `ArchiveLibraryImporter` was extracted from `ArchiveWorkspace`
@@ -430,7 +430,7 @@ Treat this as active current state. If committing, review the full diff first be
 ## Current Guardrails
 
 - Do not allow add-ons to write trusted knowledge pages directly.
-- Do not enable move imports until audited execution, approval, rollback, and tests exist.
+- Do not add any new move-import path outside the audited host preflight/execute/rollback flow.
 - Do not treat reorganisation plans as executable; they are preview artifacts only.
 - Do not place privileged filesystem, provider secrets, wallet signing, or process orchestration in TypeScript UI code.
 - Do not scatter user private data across source folders or app internals; new memory, config, secrets, wallet, logs, and backup work must target the Portable User State Root from `ADR-022`.
