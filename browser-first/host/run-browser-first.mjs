@@ -5715,6 +5715,7 @@ if (args.get("memory-source-move-self-test") === "true") {
   const previousUserRoot = process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT;
   process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT = path.join(tempRoot, "ResonantOS_User");
   const source = path.join(tempRoot, "Human Vault");
+  const staleSource = path.join(tempRoot, "Changing Vault");
   const bridgeCapabilityToken = bridgeCapabilityTokens["memory-source-move"];
   let server = null;
   let exitCode = 1;
@@ -5722,6 +5723,8 @@ if (args.get("memory-source-move-self-test") === "true") {
     await mkdir(path.join(source, ".obsidian"), { recursive: true });
     await writeFile(path.join(source, "note.md"), "# Human note\n");
     await writeFile(path.join(source, ".obsidian", "app.json"), "{}\n");
+    await mkdir(staleSource, { recursive: true });
+    await writeFile(path.join(staleSource, "first.md"), "# First version\n");
     server = await startBridgeServer({
       port: Number(args.get("bridge-port") ?? 0),
       bridgeToken,
@@ -5742,6 +5745,23 @@ if (args.get("memory-source-move-self-test") === "true") {
     });
 
     const unauthorizedCapability = await post("/memory/source/move-preflight", { path: source }, "");
+    const stalePreflightResponse = await post("/memory/source/move-preflight", {
+      path: staleSource,
+      kind: "folder",
+      ownership: "mixed-library",
+    });
+    const stalePreflight = await stalePreflightResponse.json();
+    await writeFile(path.join(staleSource, "added-after-preflight.md"), "# Added after preflight\n");
+    const staleExecuteResponse = await post("/memory/source/move-execute", {
+      path: staleSource,
+      kind: "folder",
+      ownership: "mixed-library",
+      confirmation: stalePreflight.confirmationPhrase,
+      preflightFingerprint: stalePreflight.preflightFingerprint,
+    });
+    const staleExecute = await staleExecuteResponse.json();
+    const staleSourcePreserved = existsSync(path.join(staleSource, "first.md")) &&
+      existsSync(path.join(staleSource, "added-after-preflight.md"));
     const preflightResponse = await post("/memory/source/move-preflight", {
       path: source,
       kind: "obsidian-vault",
@@ -5772,6 +5792,12 @@ if (args.get("memory-source-move-self-test") === "true") {
     const restoredNoteExists = existsSync(path.join(source, "note.md"));
     const settings = JSON.parse(await readFile(memorySettingsPath(), "utf8").catch(() => "{\"sources\":[]}"));
     const ok = unauthorizedCapability.status === 403 &&
+      stalePreflightResponse.ok &&
+      stalePreflight.okToMove === true &&
+      staleExecuteResponse.status === 500 &&
+      staleExecute.ok === false &&
+      /source changed after preflight/i.test(String(staleExecute.error ?? "")) &&
+      staleSourcePreserved &&
       preflightResponse.ok &&
       preflight.ok &&
       preflight.okToMove === true &&
@@ -5795,6 +5821,13 @@ if (args.get("memory-source-move-self-test") === "true") {
         okToMove: preflight.okToMove,
         fileCount: preflight.fileCount,
         hiddenFiles: preflight.hiddenFiles,
+        preflightFingerprint: preflight.preflightFingerprint,
+      },
+      stalePreflight: {
+        ok: stalePreflight.ok,
+        status: staleExecuteResponse.status,
+        sourcePreserved: staleSourcePreserved,
+        error: staleExecute.error,
       },
       execute: {
         ok: executed.ok,
