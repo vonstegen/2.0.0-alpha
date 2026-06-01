@@ -163,6 +163,7 @@ These are the features currently implemented in the browser-first version.
 - Connected source review keeps unchanged, unsupported, raw, processed, and blocked files visible for context, but selected-file intake is constrained to new or changed compatible files only.
 - Connected source review makes capped batch approval explicit: large reviews submit only the first 200 eligible files per governed intake batch and show the deferred count for the next batch.
 - Selected source-file intake now deduplicates requests, caps host batches, rejects symlink/path-escape selections, writes source version manifests atomically, stores content-addressed immutable source snapshots, and rolls back reserved source versions if intake artifact creation fails.
+- Move-on-import uses host-only preflight approval, content-hash fingerprint binding, move-time byte rechecks, destination hash verification, rollback ledgering, partial-failure rollback, guarded rollback, and non-destructive source cleanup that preserves unexpected new source files instead of recursively deleting the old source root.
 - The Living Archive workspace can save a supported single text-like file directly to governed intake; unsupported files become metadata-only attachment stubs until a specialist attachment add-on handles them.
 
 ### Browser Tools Available To Augmentor

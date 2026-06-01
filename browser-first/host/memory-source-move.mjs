@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { appendFile, copyFile, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, copyFile, lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -215,7 +215,21 @@ async function cleanupEmptyDestinationDirs(entries) {
   const directories = [...new Set(entries.map((entry) => path.dirname(entry.destinationPath)))]
     .sort((a, b) => b.length - a.length);
   for (const directory of directories) {
-    await rm(directory, { recursive: false, force: true }).catch(() => undefined);
+    await rmdir(directory).catch(() => undefined);
+  }
+}
+
+async function cleanupMovedSourceRoot(sourcePath, directories) {
+  for (const directory of directories.sort((a, b) => b.length - a.length)) {
+    await rmdir(directory).catch(() => undefined);
+  }
+  try {
+    await rmdir(sourcePath);
+    return "removed";
+  } catch (error) {
+    if (error?.code === "ENOENT") return "removed";
+    if (error?.code === "ENOTEMPTY" || error?.code === "EEXIST") return "preserved-new-content";
+    throw error;
   }
 }
 
@@ -288,6 +302,7 @@ export async function executeMoveImport({
   actor = "resonantos-browser-first",
   moveFile = moveFileAcrossVolumes,
   beforeMoveFileRead = null,
+  beforeSourceCleanup = null,
 }) {
   const preflight = await buildMoveImportPreflight({ sourcePath, memoryRoot, kind, ownership });
   if (!preflight.okToMove) {
@@ -394,13 +409,15 @@ export async function executeMoveImport({
   }
 
   let automaticRollback = { restored: [], skipped: [] };
+  let sourceCleanupStatus = "not-run";
   if (failed.length) {
     automaticRollback = await rollbackMovedEntries(moved);
+    sourceCleanupStatus = "rolled-back";
   } else {
-    for (const directory of directories.sort((a, b) => b.length - a.length)) {
-      await rm(directory, { recursive: false, force: true }).catch(() => undefined);
+    if (typeof beforeSourceCleanup === "function") {
+      await beforeSourceCleanup({ sourcePath: preflight.sourcePath, destinationRoot: preflight.destinationRoot });
     }
-    await rm(preflight.sourcePath, { recursive: true, force: true }).catch(() => undefined);
+    sourceCleanupStatus = await cleanupMovedSourceRoot(preflight.sourcePath, directories);
   }
 
   const finishedAt = new Date().toISOString();
@@ -411,6 +428,7 @@ export async function executeMoveImport({
     failedCount: failed.length,
     rollbackRestoredCount: automaticRollback.restored.length,
     rollbackSkippedCount: automaticRollback.skipped.length,
+    sourceCleanupStatus,
     status: failed.length ? "partial-failure-rolled-back" : "moved",
   };
   await writeFile(manifestPath, `${JSON.stringify(finalManifest, null, 2)}\n`, { mode: 0o600 });

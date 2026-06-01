@@ -101,6 +101,7 @@ test("move import executes into managed memory and rollback restores originals",
     });
     assert.equal(result.status, "moved");
     assert.equal(result.movedCount, 2);
+    assert.equal(result.sourceCleanupStatus, "removed");
     assert.equal(existsSync(source), false);
     assert.equal(existsSync(path.join(result.destinationRoot, "index.md")), true);
     assert.equal(existsSync(path.join(result.destinationRoot, "nested", "paper.txt")), true);
@@ -117,6 +118,34 @@ test("move import executes into managed memory and rollback restores originals",
     assert.equal(existsSync(path.join(source, "index.md")), true);
     assert.equal(existsSync(path.join(source, "nested", "paper.txt")), true);
     assert.equal(existsSync(path.join(result.destinationRoot, "index.md")), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("move import preserves new source files that appear before source cleanup", async () => {
+  const root = await fixtureRoot("move-preserve-new-source");
+  const source = path.join(root, "Live Source");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(source, { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  await writeFile(path.join(source, "approved.md"), "approved\n");
+  try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
+    const result = await executeMoveImport({
+      sourcePath: source,
+      memoryRoot,
+      confirmation: preflight.confirmationPhrase,
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
+      beforeSourceCleanup: async ({ sourcePath }) => {
+        await writeFile(path.join(sourcePath, "new-after-move.md"), "new evidence\n");
+      },
+    });
+    assert.equal(result.status, "moved");
+    assert.equal(result.sourceCleanupStatus, "preserved-new-content");
+    assert.equal(await readFile(path.join(source, "new-after-move.md"), "utf8"), "new evidence\n");
+    assert.equal(existsSync(path.join(source, "approved.md")), false);
+    assert.equal(await readFile(path.join(result.destinationRoot, "approved.md"), "utf8"), "approved\n");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
