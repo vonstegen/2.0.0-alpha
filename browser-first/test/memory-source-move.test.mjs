@@ -115,6 +115,11 @@ test("move import executes into managed memory and rollback restores originals",
       confirmation: "ROLLBACK MOVE",
     });
     assert.equal(rollback.restoredCount, 2);
+    const rolledBackManifest = JSON.parse(await readFile(result.manifestPath, "utf8"));
+    assert.equal(rolledBackManifest.rollbackStatus, "restored");
+    assert.equal(rolledBackManifest.rollbackRestoredCount, 2);
+    assert.equal(rolledBackManifest.rollbackSkippedCount, 0);
+    assert.match(rolledBackManifest.rollbackReportPath, /rollback-report\.json$/);
     assert.equal(existsSync(path.join(source, "index.md")), true);
     assert.equal(existsSync(path.join(source, "nested", "paper.txt")), true);
     assert.equal(existsSync(path.join(result.destinationRoot, "index.md")), false);
@@ -177,6 +182,9 @@ test("move rollback restores moved files without deleting preserved new source f
     });
     assert.equal(rollback.restoredCount, 1);
     assert.equal(rollback.skippedCount, 0);
+    const rolledBackManifest = JSON.parse(await readFile(result.manifestPath, "utf8"));
+    assert.equal(rolledBackManifest.rollbackStatus, "restored");
+    assert.equal(rolledBackManifest.rollbackRestoredCount, 1);
     assert.equal(await readFile(path.join(source, "approved.md"), "utf8"), "approved\n");
     assert.equal(await readFile(path.join(source, "new-after-move.md"), "utf8"), "new evidence\n");
     assert.equal(existsSync(path.join(result.destinationRoot, "approved.md")), false);
@@ -344,6 +352,36 @@ test("move rollback refuses to restore corrupted destination bytes", async () =>
     assert.equal(rollback.skipped[0].reason, "destination-hash-mismatch");
     assert.equal(existsSync(path.join(source, "note.md")), false);
     assert.equal(existsSync(path.join(result.destinationRoot, "note.md")), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("move rollback succeeds even when the move manifest is corrupt", async () => {
+  const root = await fixtureRoot("move-rollback-corrupt-manifest");
+  const source = path.join(root, "Corrupt Manifest");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(source, { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  await writeFile(path.join(source, "note.md"), "restore me\n");
+  try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
+    const result = await executeMoveImport({
+      sourcePath: source,
+      memoryRoot,
+      confirmation: preflight.confirmationPhrase,
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
+    });
+    await writeFile(result.manifestPath, "{not-json\n");
+
+    const rollback = await rollbackMoveImport({
+      ledgerPath: result.ledgerPath,
+      confirmation: "ROLLBACK MOVE",
+    });
+    assert.equal(rollback.restoredCount, 1);
+    assert.equal(await readFile(path.join(source, "note.md"), "utf8"), "restore me\n");
+    assert.equal(await readFile(result.manifestPath, "utf8"), "{not-json\n");
+    assert.equal(existsSync(path.join(path.dirname(result.ledgerPath), "rollback-report.json")), true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

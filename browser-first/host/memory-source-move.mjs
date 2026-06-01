@@ -472,14 +472,32 @@ export async function rollbackMoveImport({ ledgerPath, confirmation }) {
     }
   }
   await cleanupEmptyDestinationDirs(moved);
+  const rolledBackAt = new Date().toISOString();
+  const rollbackReportPath = path.join(path.dirname(resolvedLedger), "rollback-report.json");
   const report = {
-    rolledBackAt: new Date().toISOString(),
+    rolledBackAt,
     ledgerPath: resolvedLedger,
     restoredCount: restored.length,
     skippedCount: skipped.length,
     restored,
     skipped,
   };
-  await writeFile(path.join(path.dirname(resolvedLedger), "rollback-report.json"), `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
+  await writeFile(rollbackReportPath, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
+  const manifestPath = path.join(path.dirname(resolvedLedger), "manifest.json");
+  if (existsSync(manifestPath)) {
+    try {
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      await writeFile(manifestPath, `${JSON.stringify({
+        ...manifest,
+        rollbackStatus: skipped.length ? "partial" : "restored",
+        rolledBackAt,
+        rollbackReportPath,
+        rollbackRestoredCount: restored.length,
+        rollbackSkippedCount: skipped.length,
+      }, null, 2)}\n`, { mode: 0o600 });
+    } catch {
+      // Rollback is the safety operation; a stale or corrupt manifest must not undo a successful restore.
+    }
+  }
   return report;
 }
