@@ -71,7 +71,13 @@ export function assertSafeMoveSource(sourcePath, memoryRoot) {
 }
 
 export function shouldDeregisterMovedSourceAfterRollback(report) {
-  return Number.isInteger(report?.skippedCount) && report.skippedCount === 0;
+  return Number.isInteger(report?.skippedCount) &&
+    report.skippedCount === 0 &&
+    Number.isInteger(report?.skippedDirectoryCount) &&
+    report.skippedDirectoryCount === 0 &&
+    report.sourceRootRestored === true &&
+    Number.isInteger(report?.skippedRootCleanupCount) &&
+    report.skippedRootCleanupCount === 0;
 }
 
 async function listMoveEntries(sourcePath, limit = MAX_MOVE_FILES) {
@@ -191,6 +197,44 @@ async function rollbackMovedEntries(moved) {
   }
   await cleanupEmptyDestinationDirs(moved);
   return { restored, skipped };
+}
+
+async function rollbackCreatedDirectories(directories) {
+  const restored = [];
+  const skipped = [];
+  const ordered = [...directories].sort((a, b) => b.relativePath.length - a.relativePath.length);
+  for (const entry of ordered) {
+    try {
+      await mkdir(entry.sourcePath, { recursive: true });
+      await rmdir(entry.destinationPath).catch(() => undefined);
+      restored.push({ relativePath: entry.relativePath, sourcePath: entry.sourcePath });
+    } catch (error) {
+      skipped.push({ relativePath: entry.relativePath, reason: "directory-restore-failed", error: error.message });
+    }
+  }
+  return { restored, skipped };
+}
+
+async function rollbackMoveRoot(manifest) {
+  if (!manifest?.sourcePath || !manifest?.destinationRoot) {
+    return {
+      restored: false,
+      skippedCleanup: { reason: "manifest-root-missing" },
+    };
+  }
+  await mkdir(manifest.sourcePath, { recursive: true });
+  try {
+    await rmdir(manifest.destinationRoot);
+    return { restored: true, skippedCleanup: null };
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return { restored: true, skippedCleanup: null };
+    }
+    return {
+      restored: true,
+      skippedCleanup: { path: manifest.destinationRoot, reason: "destination-root-cleanup-failed", error: error.message },
+    };
+  }
 }
 
 async function restoreMovedEntry(entry) {
@@ -362,9 +406,28 @@ export async function executeMoveImport({
     status: "running",
   };
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+  await writeFile(ledgerPath, "", { mode: 0o600 });
 
   const moved = [];
+  const createdDirectories = [];
   const failed = [];
+  for (const directory of directories) {
+    const relativePath = path.relative(preflight.sourcePath, directory).replace(/\\/g, "/");
+    const destination = path.join(preflight.destinationRoot, relativePath);
+    ensureInside(destination, preflight.destinationRoot, "Move import directory destination escaped managed memory root.");
+    const ledgerEntry = {
+      moveId,
+      at: new Date().toISOString(),
+      action: "create-directory",
+      sourcePath: directory,
+      destinationPath: destination,
+      relativePath,
+      status: "created-directory",
+    };
+    await mkdir(destination, { recursive: true });
+    createdDirectories.push(ledgerEntry);
+    await appendFile(ledgerPath, `${JSON.stringify(ledgerEntry)}\n`, { mode: 0o600 });
+  }
   for (const file of files) {
     const destination = path.join(preflight.destinationRoot, file.relativePath);
     ensureInside(destination, preflight.destinationRoot, "Move import destination escaped managed memory root.");
@@ -413,9 +476,11 @@ export async function executeMoveImport({
   }
 
   let automaticRollback = { restored: [], skipped: [] };
+  let automaticDirectoryRollback = { restored: [], skipped: [] };
   let sourceCleanupStatus = "not-run";
   if (failed.length) {
     automaticRollback = await rollbackMovedEntries(moved);
+    automaticDirectoryRollback = await rollbackCreatedDirectories(createdDirectories);
     sourceCleanupStatus = "rolled-back";
   } else {
     if (typeof beforeSourceCleanup === "function") {
@@ -429,9 +494,12 @@ export async function executeMoveImport({
     ...manifest,
     finishedAt,
     movedCount: moved.length,
+    createdDirectoryCount: createdDirectories.length,
     failedCount: failed.length,
     rollbackRestoredCount: automaticRollback.restored.length,
     rollbackSkippedCount: automaticRollback.skipped.length,
+    rollbackRestoredDirectoryCount: automaticDirectoryRollback.restored.length,
+    rollbackSkippedDirectoryCount: automaticDirectoryRollback.skipped.length,
     sourceCleanupStatus,
     status: failed.length ? "partial-failure-rolled-back" : "moved",
   };
@@ -452,6 +520,7 @@ export async function executeMoveImport({
     },
     failures: failed.map((entry) => ({ relativePath: entry.relativePath, error: entry.error })),
     automaticRollback,
+    automaticDirectoryRollback,
   };
 }
 
@@ -464,7 +533,9 @@ export async function rollbackMoveImport({ ledgerPath, confirmation }) {
     throw new Error("Move import rollback requires confirmation phrase: ROLLBACK MOVE");
   }
   const lines = (await readFile(resolvedLedger, "utf8")).split(/\r?\n/).filter(Boolean);
-  const moved = lines.map((line) => JSON.parse(line)).filter((entry) => entry.status === "moved").reverse();
+  const entries = lines.map((line) => JSON.parse(line));
+  const moved = entries.filter((entry) => entry.status === "moved").reverse();
+  const createdDirectories = entries.filter((entry) => entry.status === "created-directory");
   const restored = [];
   const skipped = [];
   for (const entry of moved) {
@@ -475,29 +546,49 @@ export async function rollbackMoveImport({ ledgerPath, confirmation }) {
       skipped.push(result.skipped);
     }
   }
+  const directoryRollback = await rollbackCreatedDirectories(createdDirectories);
   await cleanupEmptyDestinationDirs(moved);
   const rolledBackAt = new Date().toISOString();
   const rollbackReportPath = path.join(path.dirname(resolvedLedger), "rollback-report.json");
+  const manifestPath = path.join(path.dirname(resolvedLedger), "manifest.json");
+  let manifest = null;
+  if (existsSync(manifestPath)) {
+    try {
+      manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    } catch {
+      manifest = null;
+    }
+  }
+  const rootRollback = await rollbackMoveRoot(manifest);
   const report = {
     rolledBackAt,
     ledgerPath: resolvedLedger,
     restoredCount: restored.length,
     skippedCount: skipped.length,
+    restoredDirectoryCount: directoryRollback.restored.length,
+    skippedDirectoryCount: directoryRollback.skipped.length,
+    sourceRootRestored: rootRollback.restored,
+    skippedRootCleanupCount: rootRollback.skippedCleanup ? 1 : 0,
     restored,
     skipped,
+    restoredDirectories: directoryRollback.restored,
+    skippedDirectories: directoryRollback.skipped,
+    skippedRootCleanup: rootRollback.skippedCleanup,
   };
   await writeFile(rollbackReportPath, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
-  const manifestPath = path.join(path.dirname(resolvedLedger), "manifest.json");
-  if (existsSync(manifestPath)) {
+  if (manifest) {
     try {
-      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
       await writeFile(manifestPath, `${JSON.stringify({
         ...manifest,
-        rollbackStatus: skipped.length ? "partial" : "restored",
+        rollbackStatus: skipped.length || directoryRollback.skipped.length || rootRollback.skippedCleanup ? "partial" : "restored",
         rolledBackAt,
         rollbackReportPath,
         rollbackRestoredCount: restored.length,
         rollbackSkippedCount: skipped.length,
+        rollbackRestoredDirectoryCount: directoryRollback.restored.length,
+        rollbackSkippedDirectoryCount: directoryRollback.skipped.length,
+        rollbackSourceRootRestored: rootRollback.restored,
+        rollbackSkippedRootCleanupCount: rootRollback.skippedCleanup ? 1 : 0,
       }, null, 2)}\n`, { mode: 0o600 });
     } catch {
       // Rollback is the safety operation; a stale or corrupt manifest must not undo a successful restore.

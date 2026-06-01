@@ -30,12 +30,15 @@ test("move import preflight rejects broad user root and existing memory root", a
 });
 
 test("move rollback deregistration requires zero skipped files", () => {
-  assert.equal(shouldDeregisterMovedSourceAfterRollback({ restoredCount: 2, skippedCount: 0 }), true);
-  assert.equal(shouldDeregisterMovedSourceAfterRollback({ restoredCount: 1, skippedCount: 1 }), false);
-  assert.equal(shouldDeregisterMovedSourceAfterRollback({ skippedCount: 2 }), false);
+  assert.equal(shouldDeregisterMovedSourceAfterRollback({ restoredCount: 2, skippedCount: 0, skippedDirectoryCount: 0, sourceRootRestored: true, skippedRootCleanupCount: 0 }), true);
+  assert.equal(shouldDeregisterMovedSourceAfterRollback({ restoredCount: 1, skippedCount: 1, skippedDirectoryCount: 0, sourceRootRestored: true, skippedRootCleanupCount: 0 }), false);
+  assert.equal(shouldDeregisterMovedSourceAfterRollback({ skippedCount: 2, skippedDirectoryCount: 0, sourceRootRestored: true, skippedRootCleanupCount: 0 }), false);
+  assert.equal(shouldDeregisterMovedSourceAfterRollback({ skippedCount: 0, skippedDirectoryCount: 1, sourceRootRestored: true, skippedRootCleanupCount: 0 }), false);
+  assert.equal(shouldDeregisterMovedSourceAfterRollback({ skippedCount: 0, skippedDirectoryCount: 0, sourceRootRestored: false, skippedRootCleanupCount: 0 }), false);
+  assert.equal(shouldDeregisterMovedSourceAfterRollback({ skippedCount: 0, skippedDirectoryCount: 0, sourceRootRestored: true, skippedRootCleanupCount: 1 }), false);
   assert.equal(shouldDeregisterMovedSourceAfterRollback({}), false);
   assert.equal(shouldDeregisterMovedSourceAfterRollback(null), false);
-  assert.equal(shouldDeregisterMovedSourceAfterRollback({ skippedCount: "0" }), false);
+  assert.equal(shouldDeregisterMovedSourceAfterRollback({ skippedCount: "0", skippedDirectoryCount: 0, sourceRootRestored: true, skippedRootCleanupCount: 0 }), false);
 });
 
 test("move import preflight preserves hidden Obsidian structure in counts", async () => {
@@ -59,6 +62,98 @@ test("move import preflight preserves hidden Obsidian structure in counts", asyn
     assert.match(preflight.destinationRoot, /HUMAN_KNOWLEDGE/);
     assert.equal(preflight.confirmationPhrase, "MOVE Knowledge Vault");
     assert.match(preflight.preflightFingerprint, /^[a-f0-9]{64}$/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("move import preserves empty directories and restores them on rollback", async () => {
+  const root = await fixtureRoot("move-empty-dirs");
+  const source = path.join(root, "Vault With Empty Dirs");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(path.join(source, "01 Notes", "Empty Branch", "Nested Empty"), { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  try {
+    const preflight = await buildMoveImportPreflight({
+      sourcePath: source,
+      memoryRoot,
+      kind: "folder",
+      ownership: "human-knowledge",
+    });
+    assert.equal(preflight.okToMove, true);
+    assert.equal(preflight.fileCount, 0);
+    assert.equal(preflight.directoryCount, 3);
+
+    const result = await executeMoveImport({
+      sourcePath: source,
+      memoryRoot,
+      kind: "folder",
+      ownership: "human-knowledge",
+      confirmation: "MOVE Vault With Empty Dirs",
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
+    });
+    assert.equal(result.status, "moved");
+    assert.equal(result.movedCount, 0);
+    assert.equal(result.createdDirectoryCount, 3);
+    assert.equal(existsSync(path.join(result.source.path, "01 Notes", "Empty Branch", "Nested Empty")), true);
+    assert.equal(existsSync(source), false);
+
+    const rollback = await rollbackMoveImport({
+      ledgerPath: result.ledgerPath,
+      confirmation: "ROLLBACK MOVE",
+    });
+    assert.equal(rollback.restoredCount, 0);
+    assert.equal(rollback.skippedCount, 0);
+    assert.equal(rollback.restoredDirectoryCount, 3);
+    assert.equal(rollback.skippedDirectoryCount, 0);
+    assert.equal(rollback.sourceRootRestored, true);
+    assert.equal(rollback.skippedRootCleanupCount, 0);
+    assert.equal(existsSync(path.join(source, "01 Notes", "Empty Branch", "Nested Empty")), true);
+    assert.equal(existsSync(path.join(result.source.path, "01 Notes", "Empty Branch", "Nested Empty")), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("move import can roll back a completely empty source folder", async () => {
+  const root = await fixtureRoot("move-empty-root");
+  const source = path.join(root, "Empty Vault");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(source, { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  try {
+    const preflight = await buildMoveImportPreflight({
+      sourcePath: source,
+      memoryRoot,
+      kind: "folder",
+      ownership: "human-knowledge",
+    });
+    assert.equal(preflight.okToMove, true);
+    assert.equal(preflight.fileCount, 0);
+    assert.equal(preflight.directoryCount, 0);
+
+    const result = await executeMoveImport({
+      sourcePath: source,
+      memoryRoot,
+      kind: "folder",
+      ownership: "human-knowledge",
+      confirmation: "MOVE Empty Vault",
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
+    });
+    assert.equal(result.status, "moved");
+    assert.equal(existsSync(result.source.path), true);
+    assert.equal(existsSync(source), false);
+
+    const rollback = await rollbackMoveImport({
+      ledgerPath: result.ledgerPath,
+      confirmation: "ROLLBACK MOVE",
+    });
+    assert.equal(rollback.restoredCount, 0);
+    assert.equal(rollback.restoredDirectoryCount, 0);
+    assert.equal(rollback.sourceRootRestored, true);
+    assert.equal(rollback.skippedRootCleanupCount, 0);
+    assert.equal(existsSync(source), true);
+    assert.equal(existsSync(result.source.path), false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
