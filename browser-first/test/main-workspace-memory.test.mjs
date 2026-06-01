@@ -380,12 +380,26 @@ test("living archive workspace renders status, search, and intake through bridge
     renderLivingArchiveWorkspace({ container, bridgeRequest });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    assert.match(container.textContent, /AI-curated memory/);
+    assert.match(container.textContent, /Your AI memory/);
     assert.match(container.textContent, /12/);
     assert.match(container.textContent, /4/);
     assert.match(container.textContent, /5/);
-    assert.match(container.textContent, /Connected Source Review/);
+    assert.match(container.textContent, /Connected sources/);
     assert.match(container.textContent, /Wiki Health/);
+    assert.equal(container.querySelector(".memory-advanced").open, false);
+    const documentPositionFollowing = container.ownerDocument.defaultView.Node.DOCUMENT_POSITION_FOLLOWING;
+    assert.ok(
+      container.querySelector(".memory-search").compareDocumentPosition(container.querySelector(".memory-intake")) &
+        documentPositionFollowing
+    );
+    assert.ok(
+      container.querySelector(".memory-intake").compareDocumentPosition(container.querySelector(".memory-review-queue")) &
+        documentPositionFollowing
+    );
+    assert.ok(
+      container.querySelector(".memory-review-queue").compareDocumentPosition(container.querySelector(".memory-advanced")) &
+        documentPositionFollowing
+    );
     assert.match(container.textContent, /Health 80\/100/);
     assert.match(container.textContent, /missing-index-entries/);
     Array.from(container.querySelectorAll(".memory-wiki-health button"))
@@ -650,7 +664,7 @@ test("living archive workspace renders status, search, and intake through bridge
       options.body.path === "AI_MEMORY/wiki/browser-job-completed.md"
     ));
     assert.match(container.textContent, /Previewing promoted page AI_MEMORY\/wiki\/browser-job-completed\.md/);
-    assert.match(container.textContent, /Promotion History/);
+    assert.match(container.textContent, /Memory history/);
     assert.match(container.textContent, /AI_MEMORY\/backups\/promotions\/2026-05-28\/browser-job-completed\.md/);
     Array.from(container.querySelectorAll(".memory-promotion-card button"))
       .find((button) => button.textContent === "Preview Page")
@@ -711,7 +725,7 @@ test("living archive workspace renders status, search, and intake through bridge
   }
 });
 
-test("living archive single-file intake rejects unsupported files before host write", async () => {
+test("living archive single-file intake creates metadata stubs for unsupported files", async () => {
   const { container, cleanup } = setupDom();
   const calls = [];
   const bridgeRequest = async (route, options = {}) => {
@@ -731,6 +745,9 @@ test("living archive single-file intake rejects unsupported files before host wr
     if (route === "/archive/review/promotions/list") {
       return { root: "Memory/REVIEW/artifacts", promotions: [] };
     }
+    if (route === "/archive/intake") {
+      return { path: "INTAKE/browser/meeting-stub.md", bytes: 240 };
+    }
     throw new Error(`Unexpected route ${route}`);
   };
 
@@ -749,8 +766,12 @@ test("living archive single-file intake rejects unsupported files before host wr
     });
     container.querySelector(".memory-intake").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.match(container.textContent, /needs a specialist attachment add-on/);
-    assert.equal(calls.some(([route]) => route === "/archive/intake"), false);
+    assert.match(container.textContent, /INTAKE\/browser\/meeting-stub\.md/);
+    const intakeCall = calls.find(([route]) => route === "/archive/intake");
+    assert.equal(intakeCall[1].body.title, "meeting.mp3");
+    assert.match(intakeCall[1].body.content, /metadata-only attachment stub/);
+    assert.match(intakeCall[1].body.content, /contentStatus: metadata-only/);
+    assert.match(intakeCall[1].body.content, /specialist attachment add-on/);
   } finally {
     cleanup();
   }

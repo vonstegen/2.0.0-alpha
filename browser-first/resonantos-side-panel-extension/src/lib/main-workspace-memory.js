@@ -37,7 +37,22 @@ async function singleFileIntakeContent(file) {
     return null;
   }
   if (!isSupportedSingleFileIntake(file)) {
-    throw new Error("This file type needs a specialist attachment add-on before Living Archive intake.");
+    return [
+      `# ${file.name || "Unsupported attachment"}`,
+      "",
+      "## Boundary",
+      "This is a metadata-only attachment stub. ResonantOS did not read or copy the binary file content, and this stub is not trusted AI Memory until review, draft, verification, and promotion complete.",
+      "",
+      "## File Metadata",
+      `- name: ${file.name || "unknown"}`,
+      `- type: ${file.type || "unknown"}`,
+      `- bytes: ${Number(file.size ?? 0)}`,
+      "- contentStatus: metadata-only",
+      "",
+      "## Required Add-on",
+      "Install or enable a specialist attachment add-on before extracting content from this file type. Examples include PDF, DOCX, image, audio, video, or Audio2TOL-specific processors.",
+      "",
+    ].join("\n");
   }
   if (Number(file.size ?? 0) > SINGLE_FILE_INTAKE_LIMIT_BYTES) {
     throw new Error("Single-file intake is capped at 1 MB. Use folder import for larger source sets.");
@@ -867,17 +882,17 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
   eyebrow.className = "module-eyebrow";
   eyebrow.textContent = "Living Archive";
   const title = document.createElement("h1");
-  title.textContent = "AI-curated memory, backed by preserved human sources.";
+  title.textContent = "Your AI memory, organized from your sources.";
   const body = document.createElement("p");
-  body.textContent = "Search the current AI Memory, inspect archive health, and send browser notes into governed intake. Trusted wiki promotion remains host-mediated.";
+  body.textContent = "Search what Augmentor already knows, add notes or files, and review items before they become AI Memory.";
   header.append(eyebrow, title, body);
 
   const metrics = document.createElement("div");
   metrics.className = "memory-metrics";
   metrics.append(
-    metric("Wiki pages", "…", "AI_MEMORY/wiki"),
-    metric("Intake artifacts", "…", "raw browser/source drops"),
-    metric("Review queue", "…", "requests + artifacts")
+    metric("Memory pages", "…", "organized AI pages"),
+    metric("Saved sources", "…", "notes and files"),
+    metric("To review", "…", "before trusted memory")
   );
 
   const wikiHealthPanel = document.createElement("section");
@@ -887,7 +902,7 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
   const searchForm = document.createElement("form");
   searchForm.className = "memory-card memory-search";
   const searchLabel = document.createElement("label");
-  searchLabel.textContent = "Search AI Memory";
+  searchLabel.textContent = "Search memory";
   const searchRow = document.createElement("div");
   searchRow.className = "memory-row";
   const searchInput = document.createElement("input");
@@ -907,7 +922,7 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
   const intakeForm = document.createElement("form");
   intakeForm.className = "memory-card memory-intake";
   const intakeLabel = document.createElement("label");
-  intakeLabel.textContent = "Save Note Or File To Intake";
+  intakeLabel.textContent = "Add note or file";
   const titleInput = document.createElement("input");
   titleInput.type = "text";
   titleInput.placeholder = "Note or file title";
@@ -916,11 +931,11 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
   contentInput.placeholder = "Paste/write a note, or choose a supported text file. It is saved as intake, not directly promoted into trusted AI Memory.";
   const fileInput = document.createElement("input");
   fileInput.type = "file";
-  fileInput.accept = ".md,.markdown,.txt,.csv,.json,text/*,application/json";
-  fileInput.setAttribute("aria-label", "Choose a supported text file for governed intake");
+  fileInput.accept = ".md,.markdown,.txt,.csv,.json,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.mp3,.wav,.m4a,.mp4,text/*,application/json,application/pdf,image/*,audio/*,video/*";
+  fileInput.setAttribute("aria-label", "Choose a file for governed intake");
   const intakeButton = document.createElement("button");
   intakeButton.type = "submit";
-  intakeButton.textContent = "Save Intake";
+  intakeButton.textContent = "Save to intake";
   const intakeStatus = document.createElement("p");
   intakeStatus.className = "memory-status";
   intakeForm.append(intakeLabel, titleInput, contentInput, fileInput, intakeButton, intakeStatus);
@@ -930,7 +945,7 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
   const reviewHeader = document.createElement("div");
   reviewHeader.className = "memory-review-top";
   const reviewLabel = document.createElement("label");
-  reviewLabel.textContent = "Review Queue";
+  reviewLabel.textContent = "Items to review";
   const refreshReview = document.createElement("button");
   refreshReview.type = "button";
   refreshReview.textContent = "Refresh";
@@ -949,7 +964,7 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
   const promotionHeader = document.createElement("div");
   promotionHeader.className = "memory-review-top";
   const promotionLabel = document.createElement("label");
-  promotionLabel.textContent = "Promotion History";
+  promotionLabel.textContent = "Memory history";
   const refreshPromotions = document.createElement("button");
   refreshPromotions.type = "button";
   refreshPromotions.textContent = "Refresh";
@@ -968,7 +983,7 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
   const sourceHeader = document.createElement("div");
   sourceHeader.className = "memory-review-top";
   const sourceLabel = document.createElement("label");
-  sourceLabel.textContent = "Connected Source Review";
+  sourceLabel.textContent = "Connected sources";
   const refreshSources = document.createElement("button");
   refreshSources.type = "button";
   refreshSources.textContent = "Refresh";
@@ -997,7 +1012,16 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
   sourcePreview.className = "memory-source-preview";
   sourcePanel.append(sourceHeader, sourceFilterBar, sourceStatus, sourceList, sourcePreview);
 
-  section.append(header, metrics, wikiHealthPanel, sourcePanel, reviewPanel, promotionPanel, searchForm, intakeForm);
+  const advancedPanel = document.createElement("details");
+  advancedPanel.className = "memory-advanced";
+  const advancedSummary = document.createElement("summary");
+  advancedSummary.textContent = "Advanced memory tools";
+  const advancedBody = document.createElement("div");
+  advancedBody.className = "memory-advanced-body";
+  advancedBody.append(sourcePanel, promotionPanel, wikiHealthPanel);
+  advancedPanel.append(advancedSummary, advancedBody);
+
+  section.append(header, metrics, searchForm, intakeForm, reviewPanel, advancedPanel);
   container.append(section);
 
   const loadStatus = async () => {
@@ -1008,9 +1032,9 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
       wikiPages.textContent = formatCount(status.wiki?.pages);
       intakeArtifacts.textContent = formatCount(status.intake?.artifacts);
       reviewWork.textContent = formatCount(Number(status.review?.requests ?? 0) + Number(status.review?.artifacts ?? 0));
-      wikiMeta.textContent = status.wiki?.index?.exists ? "index.md present" : "index.md missing";
-      intakeMeta.textContent = status.exists ? "host memory root active" : "memory root missing";
-      reviewMeta.textContent = `${formatCount(status.review?.requests)} requests · ${formatCount(status.review?.artifacts)} artifacts`;
+      wikiMeta.textContent = status.wiki?.index?.exists ? "ready to search" : "index needs repair";
+      intakeMeta.textContent = status.exists ? "source vault active" : "memory root missing";
+      reviewMeta.textContent = `${formatCount(status.review?.requests)} requests · ${formatCount(status.review?.artifacts)} drafts`;
     } catch (error) {
       metrics.append(metric("Status", "Unavailable", error instanceof Error ? error.message : String(error)));
     }
