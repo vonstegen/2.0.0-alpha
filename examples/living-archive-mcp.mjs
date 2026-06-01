@@ -379,25 +379,29 @@ export const livingArchiveTools = [
 export const createLivingArchiveBridge = (config = parseArgs()) => {
   const memoryRoot = config.memoryRoot;
   const memoryServiceUrl = config.memoryServiceUrl;
+  const memoryServiceTransport = typeof config.memoryServiceTransport === "function" ? config.memoryServiceTransport : null;
   const maxSearchBytes = config.maxSearchBytes;
   const readonly = config.readonly;
-  const backend = memoryServiceUrl ? "host-http" : "portable-folder";
+  const backend = memoryServiceUrl || memoryServiceTransport ? "host-http" : "portable-folder";
 
   const proxy = async (operation, input = {}) => {
-    if (!memoryServiceUrl) {
+    if (!memoryServiceUrl && !memoryServiceTransport) {
       throw new Error(`Tool requires RESONANTOS_MEMORY_SERVICE_URL live memory-provider backend: ${operation}.`);
+    }
+    if (memoryServiceTransport) {
+      return memoryServiceTransport(operation, input);
     }
     return postMemoryJson(memoryServiceUrl, operation, input);
   };
 
   const status = async () => {
-    if (memoryServiceUrl) {
+    if (memoryServiceUrl || memoryServiceTransport) {
       const providerStatus = await proxy("status");
       return {
         ...providerStatus,
         protocol: "mcp-stdio",
         backend,
-        memoryServiceUrl,
+        memoryServiceUrl: memoryServiceUrl || "in-process-test-transport",
         boundary: {
           trustedKnowledgeWrites: "host-mediated-review-only",
           directExternalKnowledgeWrites: false,
@@ -437,7 +441,7 @@ export const createLivingArchiveBridge = (config = parseArgs()) => {
   };
 
   const search = async ({ query, limit = 12, domains = [] }) => {
-    if (memoryServiceUrl) {
+    if (memoryServiceUrl || memoryServiceTransport) {
       return proxy("search", { query, limit, domains });
     }
     const root = assertMemoryRoot(memoryRoot);
@@ -511,7 +515,7 @@ export const createLivingArchiveBridge = (config = parseArgs()) => {
   };
 
   const read = async ({ path }) => {
-    if (memoryServiceUrl) {
+    if (memoryServiceUrl || memoryServiceTransport) {
       return proxy("read", { path });
     }
     const root = assertMemoryRoot(memoryRoot);
@@ -539,7 +543,7 @@ export const createLivingArchiveBridge = (config = parseArgs()) => {
     if (readonly) {
       throw new Error("This Living Archive MCP bridge is running in readonly mode.");
     }
-    if (memoryServiceUrl) {
+    if (memoryServiceUrl || memoryServiceTransport) {
       return proxy("intake-write", { actorId, bucket, fileName, content, metadata });
     }
     if (!writeFileNamePattern.test(String(fileName ?? ""))) {
@@ -581,7 +585,7 @@ export const createLivingArchiveBridge = (config = parseArgs()) => {
     if (readonly) {
       throw new Error("This Living Archive MCP bridge is running in readonly mode.");
     }
-    if (memoryServiceUrl) {
+    if (memoryServiceUrl || memoryServiceTransport) {
       return proxy("ingest-request", { actorId, sourcePath, sourceType, sourceRole, intent, provenance });
     }
     const root = assertMemoryRoot(memoryRoot);
@@ -648,14 +652,14 @@ export const createLivingArchiveBridge = (config = parseArgs()) => {
   };
 
   const reviewQueue = async () => {
-    if (memoryServiceUrl) {
+    if (memoryServiceUrl || memoryServiceTransport) {
       return proxy("review-queue");
     }
     return readJsonFiles(join("INTAKE", "review-queue"));
   };
 
   const reviewArtifacts = async () => {
-    if (memoryServiceUrl) {
+    if (memoryServiceUrl || memoryServiceTransport) {
       return proxy("review-artifacts");
     }
     return readJsonFiles(join("AI_MEMORY", "provenance", "review-artifacts"));
@@ -668,7 +672,7 @@ export const createLivingArchiveBridge = (config = parseArgs()) => {
   };
 
   const lint = async () => {
-    if (memoryServiceUrl) {
+    if (memoryServiceUrl || memoryServiceTransport) {
       return proxy("lint");
     }
     const root = assertMemoryRoot(memoryRoot);
@@ -710,7 +714,7 @@ export const createLivingArchiveBridge = (config = parseArgs()) => {
   };
 
   const processIngestRequest = async ({ requestFile }) => {
-    if (memoryServiceUrl) {
+    if (memoryServiceUrl || memoryServiceTransport) {
       return proxy("process-ingest-request", { requestFile });
     }
     if (readonly) {
@@ -720,7 +724,7 @@ export const createLivingArchiveBridge = (config = parseArgs()) => {
   };
 
   const decideReview = async ({ artifactFile, actorId, action, notes }) => {
-    if (memoryServiceUrl) {
+    if (memoryServiceUrl || memoryServiceTransport) {
       return proxy("decide-review", { artifactFile, actorId, action, notes });
     }
     if (readonly) {
@@ -730,7 +734,7 @@ export const createLivingArchiveBridge = (config = parseArgs()) => {
   };
 
   const promoteReviewArtifact = async ({ artifactFile, actorId }) => {
-    if (memoryServiceUrl) {
+    if (memoryServiceUrl || memoryServiceTransport) {
       return proxy("promote-review-artifact", { artifactFile, actorId });
     }
     if (readonly) {
@@ -740,7 +744,7 @@ export const createLivingArchiveBridge = (config = parseArgs()) => {
   };
 
   const maintenanceCycle = async (input = {}) => {
-    if (memoryServiceUrl) {
+    if (memoryServiceUrl || memoryServiceTransport) {
       return proxy("maintenance-cycle", input);
     }
     if (readonly) {
@@ -755,7 +759,7 @@ export const createLivingArchiveBridge = (config = parseArgs()) => {
   };
 
   const backgroundCycle = async (input = {}) => {
-    if (memoryServiceUrl) {
+    if (memoryServiceUrl || memoryServiceTransport) {
       return proxy("background-cycle", input);
     }
     if (readonly) {
@@ -770,7 +774,7 @@ export const createLivingArchiveBridge = (config = parseArgs()) => {
   };
 
   const semanticLint = async () => {
-    if (memoryServiceUrl) {
+    if (memoryServiceUrl || memoryServiceTransport) {
       return proxy("semantic-lint");
     }
     return runPortableSemanticLint({ memoryRoot: assertMemoryRoot(memoryRoot) });

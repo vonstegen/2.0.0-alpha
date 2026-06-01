@@ -38,6 +38,26 @@ const makeMemoryRoot = async () => {
   return root;
 };
 
+async function listenLocalhost(server) {
+  await new Promise((resolveListen, rejectListen) => {
+    server.once("error", rejectListen);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", rejectListen);
+      resolveListen();
+    });
+  });
+  const address = server.address();
+  return `http://127.0.0.1:${address.port}`;
+}
+
+function skipIfSandboxLocalhostDenied(t, error) {
+  if (error?.code === "EPERM" && error?.address === "127.0.0.1") {
+    t.skip("localhost bind is denied in this sandbox; live HTTP backend proxy behavior must be verified outside sandboxed CI.");
+    return true;
+  }
+  return false;
+}
+
 test("Living Archive MCP bridge exposes scoped status, search, read, intake, and ingest request tools", async () => {
   const root = await makeMemoryRoot();
   try {
@@ -133,7 +153,97 @@ test("Living Archive MCP bridge exposes scoped status, search, read, intake, and
   }
 });
 
-test("Living Archive MCP bridge proxies full V1 memory-provider operations through live HTTP backend", async () => {
+test("Living Archive MCP bridge proxies full V1 memory-provider operations through injected host transport", async () => {
+  const calls = [];
+  const memoryServiceTransport = async (operation, input = {}) => {
+    calls.push({ operation, input });
+    const payloads = {
+      status: {
+        status: "ready",
+        mode: "live",
+        managedRoot: "/portable/Memory",
+        recentActivity: [],
+      },
+      search: { query: input.query, pages: [{ title: "Live Memory", filePath: "live://memory" }], sources: [] },
+      read: { path: input.path, title: "Live Memory", frontmatter: {}, content: "Live content" },
+      "intake-write": { actorId: input.actorId, bucket: input.bucket, artifactPath: "live://intake/artifact.md" },
+      "ingest-request": { requestFile: "live://review/request.json", queuedAt: "2026-05-03T00:00:00.000Z" },
+      "review-queue": [{ requestFile: "live://review/request.json" }],
+      "review-artifacts": [{ artifactFile: "live://review/artifact.json", decision: { status: "pending" } }],
+      "process-ingest-request": { requestFile: input.requestFile, reviewArtifactFile: "live://review/artifact.json" },
+      "decide-review": { artifactFile: input.artifactFile, status: input.action === "approve" ? "approved" : input.action },
+      "promote-review-artifact": { artifactFile: input.artifactFile, pagesWritten: [{ title: "Live Memory" }] },
+      "maintenance-cycle": { processed: [], promoted: [], errors: [] },
+      "background-cycle": { queuedRequestFiles: [], skippedQueueSources: [] },
+      lint: { findings: [] },
+      "semantic-lint": { findings: [], repairRequestFiles: [] },
+    };
+    return payloads[operation] ?? { operation, input };
+  };
+
+  const bridge = createLivingArchiveBridge({
+    memoryRoot: "",
+    memoryServiceTransport,
+    maxSearchBytes: 1024,
+    readonly: false,
+  });
+  const status = await bridge.callTool("living_archive_status");
+  assert.equal(status.backend, "host-http");
+  assert.equal(status.boundary.trustedKnowledgeWrites, "host-mediated-review-only");
+
+  await bridge.callTool("living_archive_search", { query: "live", limit: 1 });
+  await bridge.callTool("living_archive_read", { path: "live://memory" });
+  await bridge.callTool("living_archive_write_intake", {
+    actorId: "external.agent",
+    bucket: "live",
+    fileName: "artifact.md",
+    content: "# Live",
+  });
+  await bridge.callTool("living_archive_request_ingest", {
+    actorId: "external.agent",
+    sourcePath: "live://intake/artifact.md",
+    sourceType: "markdown",
+    intent: "review",
+  });
+  await bridge.callTool("living_archive_review_queue");
+  await bridge.callTool("living_archive_review_artifacts");
+  await bridge.callTool("living_archive_process_ingest_request", { requestFile: "live://review/request.json" });
+  await bridge.callTool("living_archive_decide_review", {
+    artifactFile: "live://review/artifact.json",
+    actorId: "strategist.core",
+    action: "approve",
+  });
+  await bridge.callTool("living_archive_promote_review_artifact", {
+    artifactFile: "live://review/artifact.json",
+    actorId: "strategist.core",
+  });
+  await bridge.callTool("living_archive_maintenance_cycle", { maxRequests: 1 });
+  await bridge.callTool("living_archive_background_cycle", { maxRequests: 1 });
+  await bridge.callTool("living_archive_lint");
+  await bridge.callTool("living_archive_semantic_lint", { maxCandidates: 1 });
+
+  assert.deepEqual(
+    calls.map((call) => call.operation),
+    [
+      "status",
+      "search",
+      "read",
+      "intake-write",
+      "ingest-request",
+      "review-queue",
+      "review-artifacts",
+      "process-ingest-request",
+      "decide-review",
+      "promote-review-artifact",
+      "maintenance-cycle",
+      "background-cycle",
+      "lint",
+      "semantic-lint",
+    ],
+  );
+});
+
+test("Living Archive MCP bridge proxies full V1 memory-provider operations through live HTTP backend", async (t) => {
   const calls = [];
   const server = createServer(async (request, response) => {
     let body = "";
@@ -170,9 +280,13 @@ test("Living Archive MCP bridge proxies full V1 memory-provider operations throu
       response.end(JSON.stringify(payloads[operation] ?? { operation, input }));
     });
   });
-  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
-  const address = server.address();
-  const endpoint = `http://127.0.0.1:${address.port}`;
+  let endpoint;
+  try {
+    endpoint = await listenLocalhost(server);
+  } catch (error) {
+    if (skipIfSandboxLocalhostDenied(t, error)) return;
+    throw error;
+  }
 
   try {
     const bridge = createLivingArchiveBridge({ memoryRoot: "", memoryServiceUrl: endpoint, maxSearchBytes: 1024, readonly: false });

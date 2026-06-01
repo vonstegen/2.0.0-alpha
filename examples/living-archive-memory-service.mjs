@@ -68,6 +68,37 @@ export const memoryOperationToTool = {
   "semantic-lint": "living_archive_semantic_lint",
 };
 
+export const createLivingArchiveMemoryOperationEvaluator = (options = {}) => {
+  const config = {
+    memoryRoot: options.memoryRoot ? resolve(options.memoryRoot) : "",
+    readonly: Boolean(options.readonly),
+    maxSearchBytes: options.maxSearchBytes ?? 1_048_576,
+  };
+  const bridge = createLivingArchiveBridge(config);
+
+  return async (operation, input = {}) => {
+    const toolName = memoryOperationToTool[operation];
+    if (!toolName) {
+      return {
+        status: 404,
+        payload: { error: `Unsupported Living Archive memory operation: ${operation}.` },
+      };
+    }
+    try {
+      const result = await bridge.callTool(toolName, input);
+      return { status: 200, payload: result };
+    } catch (error) {
+      return {
+        status: 400,
+        payload: {
+          error: error instanceof Error ? error.message : "Living Archive memory operation failed.",
+          operation,
+        },
+      };
+    }
+  };
+};
+
 const jsonResponse = (response, statusCode, payload) => {
   response.writeHead(statusCode, {
     "access-control-allow-origin": "http://localhost",
@@ -104,12 +135,7 @@ const readJsonBody = (request) =>
   });
 
 export const createLivingArchiveMemoryService = (options = {}) => {
-  const config = {
-    memoryRoot: options.memoryRoot ? resolve(options.memoryRoot) : "",
-    readonly: Boolean(options.readonly),
-    maxSearchBytes: options.maxSearchBytes ?? 1_048_576,
-  };
-  const bridge = createLivingArchiveBridge(config);
+  const evaluateOperation = createLivingArchiveMemoryOperationEvaluator(options);
 
   return createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -129,16 +155,15 @@ export const createLivingArchiveMemoryService = (options = {}) => {
     }
 
     const operation = decodeURIComponent(match[1]);
-    const toolName = memoryOperationToTool[operation];
-    if (!toolName) {
+    if (!memoryOperationToTool[operation]) {
       jsonResponse(response, 404, { error: `Unsupported Living Archive memory operation: ${operation}.` });
       return;
     }
 
     try {
       const input = await readJsonBody(request);
-      const result = await bridge.callTool(toolName, input);
-      jsonResponse(response, 200, result);
+      const result = await evaluateOperation(operation, input);
+      jsonResponse(response, result.status, result.payload);
     } catch (error) {
       jsonResponse(response, 400, {
         error: error instanceof Error ? error.message : "Living Archive memory operation failed.",
