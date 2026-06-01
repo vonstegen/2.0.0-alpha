@@ -133,6 +133,7 @@ Current status:
 
 - Memory root and Living Archive pipeline exist.
 - Connected source settings, folder browse, scan, enable/disable/remove, source review, and selected-file governed intake exist.
+- Living Archive workspace single-file text intake exists for supported text-like documents and blocks unsupported media/binary files before host writes.
 - Move-on-import is host-mediated and guarded by preflight, exact confirmation phrase, byte-hash verification, rollback ledger, partial-failure rollback, and rollback hash checks.
 - Review, draft, verification, promotion, and restore flows exist.
 - Wiki health now checks for missing `index.md`/`log.md`, broken wiki links, orphan pages, duplicate titles, and pages missing from `index.md`.

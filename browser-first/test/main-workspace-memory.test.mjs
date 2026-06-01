@@ -687,6 +687,70 @@ test("living archive workspace renders status, search, and intake through bridge
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.ok(calls.some(([route, options]) => route === "/archive/intake" && options.body.title === "Browser note"));
     assert.match(container.textContent, /INTAKE\/browser\/note\.md/);
+
+    titleInput.value = "";
+    const fileInput = container.querySelector(".memory-intake input[type='file']");
+    Object.defineProperty(fileInput, "files", {
+      configurable: true,
+      value: [{
+        name: "source-note.md",
+        size: 24,
+        type: "text/markdown",
+        text: async () => "# Source Note\n\nHuman source."
+      }]
+    });
+    container.querySelector(".memory-intake").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const fileIntakeCall = calls.filter(([route]) => route === "/archive/intake").at(-1);
+    assert.equal(fileIntakeCall[1].body.title, "source-note.md");
+    assert.match(fileIntakeCall[1].body.content, /single-file governed intake copy/);
+    assert.match(fileIntakeCall[1].body.content, /# Source Note/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("living archive single-file intake rejects unsupported files before host write", async () => {
+  const { container, cleanup } = setupDom();
+  const calls = [];
+  const bridgeRequest = async (route, options = {}) => {
+    calls.push([route, options]);
+    if (route === "/memory/status") {
+      return { exists: true, wiki: { pages: 1, index: { exists: true } }, intake: { artifacts: 0 }, review: { requests: 0, artifacts: 0 } };
+    }
+    if (route === "/memory/wiki/health") {
+      return { exists: true, score: 100, pages: 1, issues: [], brokenLinks: [], orphanPages: [], missingIndexEntries: [], duplicateTitles: [], index: { exists: true, entries: 1 }, log: { exists: true } };
+    }
+    if (route === "/memory/settings") {
+      return { settings: { sources: [] } };
+    }
+    if (route === "/archive/review/list") {
+      return { root: "Memory/REVIEW/requests", requests: [] };
+    }
+    if (route === "/archive/review/promotions/list") {
+      return { root: "Memory/REVIEW/artifacts", promotions: [] };
+    }
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  try {
+    renderLivingArchiveWorkspace({ container, bridgeRequest });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const fileInput = container.querySelector(".memory-intake input[type='file']");
+    Object.defineProperty(fileInput, "files", {
+      configurable: true,
+      value: [{
+        name: "meeting.mp3",
+        size: 120,
+        type: "audio/mpeg",
+        text: async () => "not used"
+      }]
+    });
+    container.querySelector(".memory-intake").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.match(container.textContent, /needs a specialist attachment add-on/);
+    assert.equal(calls.some(([route]) => route === "/archive/intake"), false);
   } finally {
     cleanup();
   }

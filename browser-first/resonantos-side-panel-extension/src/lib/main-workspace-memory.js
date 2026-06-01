@@ -6,6 +6,8 @@ import { artifactInsightsFromMarkdown } from "./artifact-insights.js";
 const formatCount = (value) => Number(value ?? 0).toLocaleString();
 const SOURCE_REVIEW_RENDER_LIMIT = 200;
 const SOURCE_FILE_INTAKE_BATCH_LIMIT = 200;
+const SINGLE_FILE_INTAKE_LIMIT_BYTES = 1_000_000;
+const SINGLE_FILE_INTAKE_EXTENSIONS = new Set([".md", ".markdown", ".txt", ".csv", ".json"]);
 
 function metric(label, value, meta = "") {
   const node = document.createElement("div");
@@ -18,6 +20,47 @@ function metric(label, value, meta = "") {
   metaNode.textContent = meta;
   node.append(labelNode, valueNode, metaNode);
   return node;
+}
+
+function isSupportedSingleFileIntake(file) {
+  const name = String(file?.name ?? "").toLowerCase();
+  const extension = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
+  const type = String(file?.type ?? "").toLowerCase();
+  return SINGLE_FILE_INTAKE_EXTENSIONS.has(extension) ||
+    type.startsWith("text/") ||
+    type === "application/json" ||
+    type === "application/csv";
+}
+
+async function singleFileIntakeContent(file) {
+  if (!file) {
+    return null;
+  }
+  if (!isSupportedSingleFileIntake(file)) {
+    throw new Error("This file type needs a specialist attachment add-on before Living Archive intake.");
+  }
+  if (Number(file.size ?? 0) > SINGLE_FILE_INTAKE_LIMIT_BYTES) {
+    throw new Error("Single-file intake is capped at 1 MB. Use folder import for larger source sets.");
+  }
+  const text = await file.text();
+  if (!String(text ?? "").trim()) {
+    throw new Error("Selected file is empty.");
+  }
+  return [
+    `# ${file.name || "Uploaded source file"}`,
+    "",
+    "## Boundary",
+    "This is a single-file governed intake copy. It is raw source evidence and is not trusted AI Memory until review, draft, verification, and promotion complete.",
+    "",
+    "## File Metadata",
+    `- name: ${file.name || "unknown"}`,
+    `- type: ${file.type || "unknown"}`,
+    `- bytes: ${Number(file.size ?? 0)}`,
+    "",
+    "## Content",
+    String(text).trim(),
+    "",
+  ].join("\n");
 }
 
 function resultCard(match) {
@@ -864,19 +907,23 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
   const intakeForm = document.createElement("form");
   intakeForm.className = "memory-card memory-intake";
   const intakeLabel = document.createElement("label");
-  intakeLabel.textContent = "Save Browser Note To Intake";
+  intakeLabel.textContent = "Save Note Or File To Intake";
   const titleInput = document.createElement("input");
   titleInput.type = "text";
-  titleInput.placeholder = "Note title";
+  titleInput.placeholder = "Note or file title";
   const contentInput = document.createElement("textarea");
   contentInput.rows = 5;
-  contentInput.placeholder = "Paste or write a note. It will be saved as intake, not directly promoted into trusted AI Memory.";
+  contentInput.placeholder = "Paste/write a note, or choose a supported text file. It is saved as intake, not directly promoted into trusted AI Memory.";
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = ".md,.markdown,.txt,.csv,.json,text/*,application/json";
+  fileInput.setAttribute("aria-label", "Choose a supported text file for governed intake");
   const intakeButton = document.createElement("button");
   intakeButton.type = "submit";
   intakeButton.textContent = "Save Intake";
   const intakeStatus = document.createElement("p");
   intakeStatus.className = "memory-status";
-  intakeForm.append(intakeLabel, titleInput, contentInput, intakeButton, intakeStatus);
+  intakeForm.append(intakeLabel, titleInput, contentInput, fileInput, intakeButton, intakeStatus);
 
   const reviewPanel = document.createElement("section");
   reviewPanel.className = "memory-card memory-review-queue";
@@ -1559,10 +1606,19 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
 
   intakeForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const title = titleInput.value.trim() || "Browser workspace note";
-    const content = contentInput.value.trim();
+    const file = fileInput.files?.[0] ?? null;
+    const title = titleInput.value.trim() || file?.name || "Browser workspace note";
+    let content = contentInput.value.trim();
+    if (file) {
+      try {
+        content = await singleFileIntakeContent(file);
+      } catch (error) {
+        setStatus(intakeStatus, error instanceof Error ? error.message : String(error), "warning");
+        return;
+      }
+    }
     if (!content) {
-      setStatus(intakeStatus, "Write content before saving intake.", "warning");
+      setStatus(intakeStatus, "Write content or choose a supported file before saving intake.", "warning");
       return;
     }
     intakeButton.disabled = true;
@@ -1574,6 +1630,7 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
       });
       setStatus(intakeStatus, `Saved to ${result.path} (${formatCount(result.bytes)} bytes).`, "success");
       contentInput.value = "";
+      fileInput.value = "";
       await loadStatus();
       await loadReviewQueue();
     } catch (error) {
