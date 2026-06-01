@@ -231,7 +231,14 @@ async function rollbackMoveRoot(manifest) {
       skippedCleanup: { reason: "manifest-root-missing" },
     };
   }
-  await mkdir(manifest.sourcePath, { recursive: true });
+  try {
+    await mkdir(manifest.sourcePath, { recursive: true });
+  } catch (error) {
+    return {
+      restored: false,
+      skippedCleanup: { path: manifest.sourcePath, reason: "source-root-restore-failed", error: error.message },
+    };
+  }
   try {
     await rmdir(manifest.destinationRoot);
     return { restored: true, skippedCleanup: null };
@@ -258,7 +265,11 @@ async function restoreMovedEntry(entry) {
   } catch (error) {
     return { skipped: { relativePath: entry.relativePath, reason: "destination-hash-mismatch", error: error.message } };
   }
-  await mkdir(path.dirname(entry.sourcePath), { recursive: true });
+  try {
+    await mkdir(path.dirname(entry.sourcePath), { recursive: true });
+  } catch (error) {
+    return { skipped: { relativePath: entry.relativePath, reason: "source-parent-restore-failed", error: error.message } };
+  }
   await rename(entry.destinationPath, entry.sourcePath);
   try {
     await verifiedFileHash(entry.sourcePath, entry.beforeHash, "Move import rollback restored hash mismatch");

@@ -197,6 +197,48 @@ test("move rollback reports managed directory cleanup conflicts", async () => {
   }
 });
 
+test("move rollback reports source root restore conflicts without aborting file rollback", async () => {
+  const root = await fixtureRoot("move-root-restore-conflict");
+  const source = path.join(root, "Root Restore Conflict");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(source, { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  await writeFile(path.join(source, "note.md"), "restore still happens\n");
+  try {
+    const preflight = await buildMoveImportPreflight({
+      sourcePath: source,
+      memoryRoot,
+      kind: "folder",
+      ownership: "human-knowledge",
+    });
+    const result = await executeMoveImport({
+      sourcePath: source,
+      memoryRoot,
+      kind: "folder",
+      ownership: "human-knowledge",
+      confirmation: preflight.confirmationPhrase,
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
+    });
+    await writeFile(source, "not a directory anymore\n");
+
+    const rollback = await rollbackMoveImport({
+      ledgerPath: result.ledgerPath,
+      confirmation: "ROLLBACK MOVE",
+    });
+    assert.equal(rollback.restoredCount, 0);
+    assert.equal(rollback.skippedCount, 1);
+    assert.equal(rollback.skipped[0].reason, "source-parent-restore-failed");
+    assert.equal(rollback.sourceRootRestored, false);
+    assert.equal(rollback.skippedRootCleanupCount, 1);
+    assert.equal(rollback.skippedRootCleanup.reason, "source-root-restore-failed");
+    assert.equal(shouldDeregisterMovedSourceAfterRollback(rollback), false);
+    assert.equal(await readFile(source, "utf8"), "not a directory anymore\n");
+    assert.equal(existsSync(path.join(result.source.path, "note.md")), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("move import preflight blocks symlinked content", async (t) => {
   const root = await fixtureRoot("move-symlink");
   const source = path.join(root, "Vault");
