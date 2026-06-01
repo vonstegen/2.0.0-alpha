@@ -349,6 +349,16 @@ test("living archive workspace renders status, search, and intake through bridge
         }] : []
       };
     }
+    if (route === "/memory/wiki/page/read") {
+      return {
+        path: options.body.path,
+        title: "Browser job completed",
+        bytes: 1200,
+        modifiedAt: "2026-05-28T11:00:00.000Z",
+        content: "# Browser job completed\n\nTrusted wiki page content promoted from governed review.",
+        truncated: false
+      };
+    }
     if (route === "/archive/review/promotions/restore") {
       restored = true;
       return {
@@ -633,6 +643,16 @@ test("living archive workspace renders status, search, and intake through bridge
       .some((step) => step.textContent.includes("Promote") && step.dataset.state === "complete"));
     assert.match(container.textContent, /Promotion History/);
     assert.match(container.textContent, /AI_MEMORY\/backups\/promotions\/2026-05-28\/browser-job-completed\.md/);
+    Array.from(container.querySelectorAll(".memory-promotion-card button"))
+      .find((button) => button.textContent === "Preview Page")
+      .click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(calls.some(([route, options]) =>
+      route === "/memory/wiki/page/read" &&
+      options.body.path === "AI_MEMORY/wiki/browser-job-completed.md"
+    ));
+    assert.match(container.textContent, /Trusted wiki page content promoted from governed review/);
+    assert.match(container.textContent, /This is trusted AI Memory after governed promotion/);
     Array.from(container.querySelectorAll(".memory-promotion-card button"))
       .find((button) => button.textContent === "Restore Backup")
       .click();

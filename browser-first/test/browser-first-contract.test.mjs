@@ -410,6 +410,8 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(launcher, /memory-source-intake/);
   assert.match(launcher, /\/memory\/source\/file-intake/);
   assert.match(launcher, /\/memory\/wiki\/health/);
+  assert.match(launcher, /\/memory\/wiki\/page\/read/);
+  assert.match(launcher, /executeMemoryWikiPageRead/);
   assert.match(launcher, /computeWikiHealth/);
   assert.match(launcher, /\/memory\/wiki\/lint/);
   assert.match(launcher, /runWikiLint/);
@@ -1423,4 +1425,24 @@ test("browser-first bridge executes move-on-import through scoped routes", (t) =
   assert.equal(payload.rollback.ok, true);
   assert.equal(payload.rollback.restoredCount, 2);
   assert.equal(payload.rollback.restoredNoteExists, true);
+});
+
+test("browser-first bridge hardens selected Living Archive source file intake", (t) => {
+  const payload = runBridgeSelfTest(t, [
+    "--memory-source-file-intake-self-test=true",
+    "--bridge-token=test-token",
+    "--memory-settings-token=settings-token",
+    "--memory-source-file-intake-token=file-intake-token",
+    "--bridge-port=0",
+  ]);
+  if (!payload) return;
+
+  assert.equal(payload.ok, true);
+  assert.equal(payload.unauthorizedCapabilityStatus, 403);
+  assert.equal(payload.createdCount, 199);
+  assert.equal(payload.duplicateRejected, true);
+  assert.equal(payload.escapeRejected, true);
+  assert.equal(payload.overflowRejected, 6);
+  assert.equal(payload.failureStatus, 500);
+  assert.equal(payload.rollbackReservedVersions, 0);
 });

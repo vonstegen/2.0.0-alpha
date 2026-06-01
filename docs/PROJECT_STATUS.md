@@ -234,6 +234,7 @@ Current Living Archive status:
 - Reorganisation plans are explicitly marked `eligibleForExecution = false`.
 - Source reviews now surface version-tracking warnings and repair guidance when the source-version manifest is unreadable; blocked files cannot enter bulk or selected intake until source history is repaired.
 - Selected source-file intake now has deterministic tests proving unchanged/blocked files are not submitted from the UI and failed artifact creation rolls back reserved source versions.
+- Selected source-file intake also has a host bridge self-test for the real `/memory/source/file-intake` route: scoped capability gating, duplicate rejection, path traversal rejection, batch capping, and source-version rollback after artifact write failure. In this Codex sandbox the localhost bridge self-test is skipped because `127.0.0.1` binding is denied; it runs in normal local/CI environments.
 - Reorganisation file moves remain unimplemented and must not be added without separate audit, rollback, approval, and deterministic tests.
 
 ### Recovery And Resonant Engineer

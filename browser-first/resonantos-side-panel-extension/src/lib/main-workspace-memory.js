@@ -285,7 +285,7 @@ function reviewRequestCard(request, onTransition, onDraft, onPreviewDraft, onPre
   return card;
 }
 
-function promotionCard(entry, onRestore) {
+function promotionCard(entry, onRestore, onPreviewPage) {
   const card = document.createElement("article");
   card.className = "memory-promotion-card";
   const heading = document.createElement("div");
@@ -316,12 +316,17 @@ function promotionCard(entry, onRestore) {
   }
   const actions = document.createElement("div");
   actions.className = "memory-review-actions";
+  const previewButton = document.createElement("button");
+  previewButton.type = "button";
+  previewButton.textContent = "Preview Page";
+  previewButton.disabled = !entry.promotedPage;
+  previewButton.addEventListener("click", () => onPreviewPage(entry));
   const restoreButton = document.createElement("button");
   restoreButton.type = "button";
   restoreButton.textContent = entry.rollbackStatus === "restored" ? "Restored" : "Restore Backup";
   restoreButton.disabled = !entry.backupPath || entry.rollbackStatus === "restored";
   restoreButton.addEventListener("click", () => onRestore(entry));
-  actions.append(restoreButton);
+  actions.append(previewButton, restoreButton);
   card.append(actions);
   return card;
 }
@@ -758,6 +763,38 @@ function sourceArtifactPreviewCard(result) {
   return card;
 }
 
+function wikiPagePreviewCard(result) {
+  const card = document.createElement("article");
+  card.className = "memory-review-preview";
+  const heading = document.createElement("div");
+  heading.className = "memory-preview-heading";
+  const title = document.createElement("strong");
+  title.textContent = result.title || "AI Memory page";
+  const path = document.createElement("code");
+  path.textContent = result.path || "AI_MEMORY/wiki";
+  heading.append(title, path);
+  const meta = document.createElement("p");
+  meta.textContent = [
+    result.modifiedAt ? `modified ${result.modifiedAt}` : "",
+    result.bytes ? `${formatCount(result.bytes)} bytes` : ""
+  ].filter(Boolean).join(" · ");
+  const boundary = document.createElement("p");
+  boundary.className = "memory-status";
+  boundary.dataset.tone = "success";
+  boundary.textContent = "This is trusted AI Memory after governed promotion. Compare it with the source artifact and review history before relying on it for important decisions.";
+  const content = document.createElement("pre");
+  content.textContent = result.content || "No AI Memory page content returned.";
+  card.append(heading, meta, boundary, content);
+  if (result.truncated) {
+    const truncated = document.createElement("p");
+    truncated.className = "memory-status";
+    truncated.dataset.tone = "warning";
+    truncated.textContent = "Page preview truncated for safety. The full page remains in AI_MEMORY/wiki.";
+    card.append(truncated);
+  }
+  return card;
+}
+
 function setStatus(node, text, tone = "neutral") {
   node.textContent = text;
   node.dataset.tone = tone;
@@ -861,7 +898,10 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
   promotionStatus.className = "memory-status";
   const promotionList = document.createElement("div");
   promotionList.className = "memory-promotion-list";
-  promotionPanel.append(promotionHeader, promotionStatus, promotionList);
+  const promotionPreview = document.createElement("article");
+  promotionPreview.className = "memory-review-preview";
+  promotionPreview.hidden = true;
+  promotionPanel.append(promotionHeader, promotionStatus, promotionList, promotionPreview);
 
   const sourcePanel = document.createElement("section");
   sourcePanel.className = "memory-card memory-source-review";
@@ -979,6 +1019,8 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
   const loadPromotionHistory = async () => {
     refreshPromotions.disabled = true;
     promotionList.replaceChildren();
+    promotionPreview.hidden = true;
+    promotionPreview.replaceChildren();
     setStatus(promotionStatus, "Loading promotion history…");
     try {
       const result = await bridgeRequest("/archive/review/promotions/list", {
@@ -990,7 +1032,7 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
         setStatus(promotionStatus, "No promoted wiki updates yet.", "warning");
         return;
       }
-      promotionList.append(...promotions.map((entry) => promotionCard(entry, restorePromotionBackup)));
+      promotionList.append(...promotions.map((entry) => promotionCard(entry, restorePromotionBackup, previewPromotedPage)));
       setStatus(promotionStatus, `${promotions.length} promoted wiki update(s) in ${result.root}.`, "success");
     } catch (error) {
       setStatus(promotionStatus, error instanceof Error ? error.message : String(error), "error");
@@ -1187,6 +1229,26 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
       await loadStatus();
       await loadPromotionHistory();
       setStatus(promotionStatus, `Restored ${result.promotedPage} from ${result.backupPath}.`, "success");
+    } catch (error) {
+      setStatus(promotionStatus, error instanceof Error ? error.message : String(error), "error");
+    }
+  };
+
+  const previewPromotedPage = async (entry) => {
+    if (!entry.promotedPage) {
+      setStatus(promotionStatus, "Promotion entry is missing its AI Memory page path.", "error");
+      return;
+    }
+    setStatus(promotionStatus, `Loading ${entry.promotedPage}…`);
+    try {
+      const result = await bridgeRequest("/memory/wiki/page/read", {
+        method: "POST",
+        body: { path: entry.promotedPage }
+      });
+      const previewCard = wikiPagePreviewCard(result);
+      promotionPreview.hidden = false;
+      promotionPreview.replaceChildren(...previewCard.childNodes);
+      setStatus(promotionStatus, `Previewing ${result.path}.`, "success");
     } catch (error) {
       setStatus(promotionStatus, error instanceof Error ? error.message : String(error), "error");
     }

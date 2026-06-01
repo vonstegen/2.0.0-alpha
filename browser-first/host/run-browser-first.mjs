@@ -2400,7 +2400,11 @@ async function executeMemorySourceFileIntake(payload = {}) {
   }
   const intakeDir = path.join(memoryRoot(), "INTAKE", "sources", safeFileSlug(path.basename(sourcePath) || sourceId));
   await mkdir(intakeDir, { recursive: true });
-  const now = new Date();
+  const fixedNow = process.env.RESONANTOS_BROWSER_FIRST_FILE_INTAKE_FIXED_NOW;
+  const now = fixedNow ? new Date(fixedNow) : new Date();
+  if (Number.isNaN(now.valueOf())) {
+    throw new Error("Invalid fixed source file intake timestamp.");
+  }
   const created = [];
   const rejected = [
     ...duplicateFiles.map((sourceFile) => ({
@@ -2792,6 +2796,22 @@ async function executeArchiveIntakeRead(payload) {
     kind: artifactKind(content, filePath),
     bytes: details.size,
     insights: artifactInsights(content),
+    modifiedAt: details.mtime.toISOString(),
+    content: content.slice(0, 24_000),
+    truncated: content.length > 24_000,
+  };
+}
+
+async function executeMemoryWikiPageRead(payload = {}) {
+  const filePath = safeMemoryRelativePath(payload.path, "AI_MEMORY/wiki");
+  if (!/\.(md|markdown)$/i.test(filePath)) {
+    throw new Error("AI Memory page preview only supports markdown wiki pages.");
+  }
+  const [details, content] = await Promise.all([stat(filePath), readFile(filePath, "utf8")]);
+  return {
+    path: path.relative(memoryRoot(), filePath),
+    title: markdownTitle(content, path.basename(filePath, path.extname(filePath))),
+    bytes: details.size,
     modifiedAt: details.mtime.toISOString(),
     content: content.slice(0, 24_000),
     truncated: content.length > 24_000,
@@ -5025,6 +5045,7 @@ const bridgeRoutes = [
   },
   { method: "POST", path: "/memory/search", handler: executeMemorySearch },
   { method: "GET", path: "/memory/wiki/health", handler: executeMemoryWikiHealth },
+  { method: "POST", path: "/memory/wiki/page/read", handler: executeMemoryWikiPageRead },
   {
     method: "POST",
     path: "/memory/wiki/lint",
@@ -5782,6 +5803,123 @@ if (args.get("memory-source-move-self-test") === "true") {
       delete process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT;
     } else {
       process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT = previousUserRoot;
+    }
+    await rm(tempRoot, { recursive: true, force: true }).catch(() => undefined);
+  }
+  process.exit(exitCode);
+}
+
+if (args.get("memory-source-file-intake-self-test") === "true") {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "resonantos-file-intake-bridge-"));
+  const previousUserRoot = process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT;
+  const previousFixedNow = process.env.RESONANTOS_BROWSER_FIRST_FILE_INTAKE_FIXED_NOW;
+  process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT = path.join(tempRoot, "ResonantOS_User");
+  const source = path.join(tempRoot, "Human Vault");
+  const settingsCapabilityToken = bridgeCapabilityTokens["memory-settings-write"];
+  const fileIntakeCapabilityToken = bridgeCapabilityTokens["memory-source-file-intake"];
+  let server = null;
+  let exitCode = 1;
+  try {
+    await mkdir(source, { recursive: true });
+    await writeFile(path.join(tempRoot, "outside.md"), "# Outside\n");
+    for (let index = 0; index < 205; index += 1) {
+      await writeFile(path.join(source, `note-${String(index).padStart(3, "0")}.md`), `# Note ${index}\n\nVersion ${index}.\n`);
+    }
+    await writeFile(path.join(source, "fail.md"), "# Failing file\n\nThis reservation must roll back.\n");
+    server = await startBridgeServer({
+      port: Number(args.get("bridge-port") ?? 0),
+      bridgeToken,
+      bridgeCapabilityTokens,
+      extensionOrigin: resonantExtensionOrigin,
+      routes: bridgeRoutes,
+    });
+    const actualPort = bridgeServerPort(server, Number(args.get("bridge-port") ?? 0));
+    const post = (route, body, capabilityToken) => fetch(`http://127.0.0.1:${actualPort}${route}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Origin": resonantExtensionOrigin,
+        "X-ResonantOS-Bridge-Token": bridgeToken,
+        ...(capabilityToken ? { "X-ResonantOS-Bridge-Capability-Token": capabilityToken } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+
+    const savedResponse = await post("/memory/settings", {
+      source: {
+        path: source,
+        kind: "folder",
+        ownership: "human-knowledge",
+        importMode: "copy-on-import",
+      },
+    }, settingsCapabilityToken);
+    const saved = await savedResponse.json();
+    const sourceId = saved.settings.sources[0].id;
+    const requestedFiles = [
+      "note-000.md",
+      "note-000.md",
+      "../outside.md",
+      ...Array.from({ length: 205 }, (_, index) => `note-${String(index).padStart(3, "0")}.md`),
+    ];
+    const unauthorizedCapability = await post("/memory/source/file-intake", {
+      sourceId,
+      files: ["note-000.md"],
+    }, "");
+    const intakeResponse = await post("/memory/source/file-intake", {
+      sourceId,
+      files: requestedFiles,
+    }, fileIntakeCapabilityToken);
+    const intake = await intakeResponse.json();
+
+    const fixedNow = "2026-06-01T10:00:00.000Z";
+    process.env.RESONANTOS_BROWSER_FIRST_FILE_INTAKE_FIXED_NOW = fixedNow;
+    const intakeDir = path.join(memoryRoot(), "INTAKE", "sources", safeFileSlug(path.basename(source) || sourceId));
+    const failingArtifact = path.join(
+      intakeDir,
+      `${fixedNow.replace(/[:.]/g, "-")}-${safeFileSlug("fail.md")}.md`,
+    );
+    await mkdir(failingArtifact, { recursive: true });
+    const failureResponse = await post("/memory/source/file-intake", {
+      sourceId,
+      files: ["fail.md"],
+    }, fileIntakeCapabilityToken);
+    const failure = await failureResponse.json();
+    const manifest = JSON.parse(await readFile(memorySourceFileManifestPath(), "utf8"));
+    const failVersions = Object.values(manifest.files ?? {})
+      .filter((entry) => entry?.sourceId === sourceId && entry?.sourceFile === "fail.md");
+    const ok = savedResponse.ok &&
+      unauthorizedCapability.status === 403 &&
+      intakeResponse.ok &&
+      intake.created.length === 199 &&
+      intake.rejected.some((entry) => entry.sourceFile === "note-000.md" && /duplicate/.test(entry.reason)) &&
+      intake.rejected.some((entry) => entry.sourceFile === "../outside.md" && /must stay inside|outside source root|parent traversal|escapes/i.test(entry.reason)) &&
+      intake.rejected.filter((entry) => /batch limit/.test(entry.reason)).length === 6 &&
+      failureResponse.status === 500 &&
+      /No selected source files could be imported/.test(failure.error ?? "") &&
+      failVersions.length === 0;
+    console.log(JSON.stringify({
+      ok,
+      unauthorizedCapabilityStatus: unauthorizedCapability.status,
+      createdCount: intake.created.length,
+      rejectedCount: intake.rejected.length,
+      duplicateRejected: intake.rejected.some((entry) => entry.sourceFile === "note-000.md" && /duplicate/.test(entry.reason)),
+      escapeRejected: intake.rejected.some((entry) => entry.sourceFile === "../outside.md" && /outside source root|parent traversal|escapes/i.test(entry.reason)),
+      overflowRejected: intake.rejected.filter((entry) => /batch limit/.test(entry.reason)).length,
+      failureStatus: failureResponse.status,
+      rollbackReservedVersions: failVersions.length,
+    }, null, 2));
+    exitCode = ok ? 0 : 1;
+  } finally {
+    await new Promise((resolve) => server?.close?.(resolve) ?? resolve());
+    if (previousUserRoot === undefined) {
+      delete process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT;
+    } else {
+      process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT = previousUserRoot;
+    }
+    if (previousFixedNow === undefined) {
+      delete process.env.RESONANTOS_BROWSER_FIRST_FILE_INTAKE_FIXED_NOW;
+    } else {
+      process.env.RESONANTOS_BROWSER_FIRST_FILE_INTAKE_FIXED_NOW = previousFixedNow;
     }
     await rm(tempRoot, { recursive: true, force: true }).catch(() => undefined);
   }
