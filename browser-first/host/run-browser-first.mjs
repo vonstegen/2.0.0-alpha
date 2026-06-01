@@ -2032,7 +2032,10 @@ async function executeMemorySourceMoveExecute(payload = {}) {
   });
   if (result.status !== "moved") {
     throw new Error(
-      `Move import failed and automatic rollback restored ${result.rollbackRestoredCount ?? 0} file(s); ${result.rollbackSkippedCount ?? 0} skipped.`
+      `Move import failed and automatic rollback restored ${result.rollbackRestoredCount ?? 0} file(s), ` +
+      `${result.rollbackRestoredDirectoryCount ?? 0} folder(s), source root restored: ${result.rollbackSourceRootRestored === true ? "yes" : "no"}; ` +
+      `${result.rollbackSkippedCount ?? 0} file(s), ${result.rollbackSkippedDirectoryCount ?? 0} folder(s), ` +
+      `${result.rollbackSkippedRootCleanupCount ?? 0} root cleanup issue(s) skipped.`
     );
   }
   const current = await readMemorySettings();

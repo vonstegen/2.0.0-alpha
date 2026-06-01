@@ -97,8 +97,8 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(workspace, /ResonantOS main workspace/);
   assert.match(workspace, /New chat/);
   assert.match(workspace, /Search chats/);
-  assert.match(workspace, /Pinned Add-ons/);
-  assert.doesNotMatch(workspace, /aria-label="Pinned"/);
+  assert.match(workspace, /Tools/);
+  assert.doesNotMatch(workspace, /Pinned Add-ons/);
   assert.match(workspace, /Projects/);
   assert.match(workspace, /rail-new-project/);
   assert.match(workspace, /rail-project-list/);
@@ -120,6 +120,9 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(workspaceScript, /initialSettingsSection/);
   assert.match(workspace, /model-select/);
   assert.match(workspace, /thinking-depth/);
+  assert.match(workspace, /composer-tools-menu/);
+  assert.doesNotMatch(workspace, />Links<\/button>/);
+  assert.doesNotMatch(workspace, />Images<\/button>/);
   assert.match(workspace, /read-page/);
   assert.match(workspace, /save-intake/);
   assert.match(workspace, /save-selection/);
@@ -140,6 +143,11 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.doesNotMatch(workspace, /Open Sidebar/);
   assert.doesNotMatch(workspace, /id="open-sidebar"/);
   assert.match(workspace, /main-workspace\.js/);
+  assert.match(workspaceStyles, /body:not\(\[data-workspace="answer"\]\):not\(\[data-workspace="hermes"\]\) \.answer-thread/);
+  assert.match(workspaceStyles, /grid-template-columns: repeat\(auto-fit, minmax\(170px, 1fr\)\)/);
+  assert.match(workspaceStyles, /@media \(max-width: 860px\)/);
+  assert.match(workspaceStyles, /body \{\s+min-width: 0;/);
+  assert.match(workspaceStyles, /word-break: normal/);
   assert.match(workspaceScript, /createChatSessionStore/);
   assert.match(workspaceScript, /surface:\s*"main-workspace"/);
   assert.doesNotMatch(workspaceScript, /role:\s*"system"[\s\S]{0,220}full ResonantOS main workspace/);
@@ -240,7 +248,7 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(aboutSettings, /Customize Chromium/);
   assert.match(aboutSettings, /chrome:\/\/settings\/appearance/);
   assert.match(aboutSettings, /chrome:\/\/extensions\/\?id=/);
-  assert.match(browserControlSettings, /Native browser surfaces/);
+  assert.match(browserControlSettings, /Native browser tools/);
   assert.match(browserControlSettings, /Recent downloads/);
   assert.match(browserControlSettings, /\/browser\/downloads/);
   assert.match(browserControlSettings, /\/browser\/downloads\/action/);
@@ -402,6 +410,9 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(launcher, /memory-source-move/);
   assert.match(launcher, /result\.status !== "moved"/);
   assert.match(launcher, /automatic rollback restored/);
+  assert.match(launcher, /rollbackRestoredDirectoryCount/);
+  assert.match(launcher, /rollbackSourceRootRestored/);
+  assert.match(launcher, /rollbackSkippedRootCleanupCount/);
   assert.match(launcher, /Memory\/CONFIG\/move-imports/);
   assert.match(launcher, /outsideLedgerStatus/);
   assert.match(launcher, /\/memory\/source\/review/);
