@@ -33,6 +33,9 @@ test("move rollback deregistration requires zero skipped files", () => {
   assert.equal(shouldDeregisterMovedSourceAfterRollback({ restoredCount: 2, skippedCount: 0 }), true);
   assert.equal(shouldDeregisterMovedSourceAfterRollback({ restoredCount: 1, skippedCount: 1 }), false);
   assert.equal(shouldDeregisterMovedSourceAfterRollback({ skippedCount: 2 }), false);
+  assert.equal(shouldDeregisterMovedSourceAfterRollback({}), false);
+  assert.equal(shouldDeregisterMovedSourceAfterRollback(null), false);
+  assert.equal(shouldDeregisterMovedSourceAfterRollback({ skippedCount: "0" }), false);
 });
 
 test("move import preflight preserves hidden Obsidian structure in counts", async () => {

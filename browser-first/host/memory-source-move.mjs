@@ -71,7 +71,7 @@ export function assertSafeMoveSource(sourcePath, memoryRoot) {
 }
 
 export function shouldDeregisterMovedSourceAfterRollback(report) {
-  return Number(report?.skippedCount ?? 0) === 0;
+  return Number.isInteger(report?.skippedCount) && report.skippedCount === 0;
 }
 
 async function listMoveEntries(sourcePath, limit = MAX_MOVE_FILES) {
