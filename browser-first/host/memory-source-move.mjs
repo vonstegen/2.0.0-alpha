@@ -70,6 +70,10 @@ export function assertSafeMoveSource(sourcePath, memoryRoot) {
   }
 }
 
+export function shouldDeregisterMovedSourceAfterRollback(report) {
+  return Number(report?.skippedCount ?? 0) === 0;
+}
+
 async function listMoveEntries(sourcePath, limit = MAX_MOVE_FILES) {
   const source = path.resolve(sourcePath);
   const files = [];

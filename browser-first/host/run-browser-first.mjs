@@ -43,6 +43,7 @@ import {
   buildMoveImportPreflight,
   executeMoveImport,
   rollbackMoveImport,
+  shouldDeregisterMovedSourceAfterRollback,
 } from "./memory-source-move.mjs";
 import { summarizeBrowserLaunchLog } from "./browser-launch-diagnostics.mjs";
 import {
@@ -2077,7 +2078,9 @@ async function executeMemorySourceMoveRollback(payload = {}) {
     confirmation: payload.confirmation,
   });
   const current = await readMemorySettings();
-  const nextSources = current.sources.filter((source) => expandUserPath(source.ledgerPath ?? "") !== path.resolve(ledgerPath));
+  const nextSources = shouldDeregisterMovedSourceAfterRollback(report)
+    ? current.sources.filter((source) => expandUserPath(source.ledgerPath ?? "") !== path.resolve(ledgerPath))
+    : current.sources;
   const next = { ...current, sources: nextSources };
   const filePath = memorySettingsPath();
   await mkdir(path.dirname(filePath), { recursive: true });

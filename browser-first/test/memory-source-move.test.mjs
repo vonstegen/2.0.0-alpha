@@ -10,6 +10,7 @@ import {
   buildMoveImportPreflight,
   executeMoveImport,
   rollbackMoveImport,
+  shouldDeregisterMovedSourceAfterRollback,
 } from "../host/memory-source-move.mjs";
 
 async function fixtureRoot(name) {
@@ -26,6 +27,12 @@ test("move import preflight rejects broad user root and existing memory root", a
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("move rollback deregistration requires zero skipped files", () => {
+  assert.equal(shouldDeregisterMovedSourceAfterRollback({ restoredCount: 2, skippedCount: 0 }), true);
+  assert.equal(shouldDeregisterMovedSourceAfterRollback({ restoredCount: 1, skippedCount: 1 }), false);
+  assert.equal(shouldDeregisterMovedSourceAfterRollback({ skippedCount: 2 }), false);
 });
 
 test("move import preflight preserves hidden Obsidian structure in counts", async () => {
