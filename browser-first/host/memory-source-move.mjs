@@ -302,13 +302,6 @@ export async function executeMoveImport({
   if (String(expectedPreflightFingerprint) !== preflight.preflightFingerprint) {
     throw new Error("Move import source changed after preflight. Run preflight again before moving.");
   }
-  const now = new Date().toISOString();
-  const moveId = `move-${Date.now()}-${pathHash(`${preflight.sourcePath}-${now}`)}`;
-  const metadataRoot = path.join(path.resolve(memoryRoot), "CONFIG", "move-imports", moveId);
-  const ledgerPath = path.join(metadataRoot, "move-ledger.jsonl");
-  const manifestPath = path.join(metadataRoot, "manifest.json");
-  await mkdir(metadataRoot, { recursive: true });
-  await mkdir(preflight.destinationRoot, { recursive: true });
   const { files, directories, blocked } = await listMoveEntries(preflight.sourcePath);
   await attachPreflightContentHashes(files, blocked);
   if (blocked.length) {
@@ -325,6 +318,13 @@ export async function executeMoveImport({
   if (executionFingerprint !== preflight.preflightFingerprint) {
     throw new Error("Move import source changed after preflight. Run preflight again before moving.");
   }
+  const now = new Date().toISOString();
+  const moveId = `move-${Date.now()}-${pathHash(`${preflight.sourcePath}-${now}`)}`;
+  const metadataRoot = path.join(path.resolve(memoryRoot), "CONFIG", "move-imports", moveId);
+  const ledgerPath = path.join(metadataRoot, "move-ledger.jsonl");
+  const manifestPath = path.join(metadataRoot, "manifest.json");
+  await mkdir(metadataRoot, { recursive: true });
+  await mkdir(preflight.destinationRoot, { recursive: true });
   const manifest = {
     moveId,
     actor,

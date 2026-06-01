@@ -295,6 +295,8 @@ test("move import rejects stale preflight fingerprints before moving files", asy
     );
     assert.equal(existsSync(path.join(source, "note.md")), true);
     assert.equal(existsSync(path.join(source, "added-after-preflight.md")), true);
+    assert.equal(existsSync(preflight.destinationRoot), false);
+    assert.equal(existsSync(path.join(memoryRoot, "CONFIG", "move-imports")), false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -323,6 +325,8 @@ test("move import fingerprints source content, not only path size and mtime", as
       /source changed after preflight/i
     );
     assert.equal(await readFile(notePath, "utf8"), "bravo\n");
+    assert.equal(existsSync(preflight.destinationRoot), false);
+    assert.equal(existsSync(path.join(memoryRoot, "CONFIG", "move-imports")), false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
