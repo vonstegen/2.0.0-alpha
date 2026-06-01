@@ -327,3 +327,35 @@ test("move import fingerprints source content, not only path size and mtime", as
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("move import rejects bytes changed after execution fingerprint validation", async () => {
+  const root = await fixtureRoot("move-late-content-change");
+  const source = path.join(root, "Late Change");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(source, { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  await writeFile(path.join(source, "note.md"), "approved bytes\n");
+  let mutated = false;
+  try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
+    const result = await executeMoveImport({
+      sourcePath: source,
+      memoryRoot,
+      confirmation: preflight.confirmationPhrase,
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
+      beforeMoveFileRead: async (file) => {
+        if (!mutated && file.relativePath === "note.md") {
+          mutated = true;
+          await writeFile(file.absolutePath, "changed bytes\n");
+        }
+      },
+    });
+    assert.equal(result.status, "partial-failure-rolled-back");
+    assert.equal(result.failedCount, 1);
+    assert.match(result.failures[0].error, /source bytes changed after preflight/i);
+    assert.equal(await readFile(path.join(source, "note.md"), "utf8"), "changed bytes\n");
+    assert.equal(existsSync(path.join(result.destinationRoot, "note.md")), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

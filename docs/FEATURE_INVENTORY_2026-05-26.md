@@ -560,7 +560,7 @@ These features exist in the desktop vNext codebase and remain important. Some wi
 - Source folder import.
 - Folder/vault preflight.
 - Copy-on-import default.
-- Move-on-import with explicit confirmation, approved content-hash-backed preflight fingerprint matching, managed-memory canonicalization, SHA-256 destination verification, ledgered rollback, and automatic rollback on partial failure.
+- Move-on-import with explicit confirmation, approved content-hash-backed preflight fingerprint matching, move-time source byte rechecks, managed-memory canonicalization, SHA-256 destination verification, ledgered rollback, and automatic rollback on partial failure.
 - Mixed Library classification.
 - Human Knowledge, External Knowledge, AI Memory, Mixed Library domains.
 - Source manifests.

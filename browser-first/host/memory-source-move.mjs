@@ -287,6 +287,7 @@ export async function executeMoveImport({
   expectedPreflightFingerprint,
   actor = "resonantos-browser-first",
   moveFile = moveFileAcrossVolumes,
+  beforeMoveFileRead = null,
 }) {
   const preflight = await buildMoveImportPreflight({ sourcePath, memoryRoot, kind, ownership });
   if (!preflight.okToMove) {
@@ -309,8 +310,20 @@ export async function executeMoveImport({
   await mkdir(metadataRoot, { recursive: true });
   await mkdir(preflight.destinationRoot, { recursive: true });
   const { files, directories, blocked } = await listMoveEntries(preflight.sourcePath);
+  await attachPreflightContentHashes(files, blocked);
   if (blocked.length) {
     throw new Error(`Move import source changed after preflight: ${blocked.map((entry) => entry.reason).join(", ")}`);
+  }
+  const executionFingerprint = movePreflightFingerprint({
+    sourcePath: preflight.sourcePath,
+    destinationRoot: preflight.destinationRoot,
+    kind,
+    ownership,
+    files,
+    directories,
+  });
+  if (executionFingerprint !== preflight.preflightFingerprint) {
+    throw new Error("Move import source changed after preflight. Run preflight again before moving.");
   }
   const manifest = {
     moveId,
@@ -335,8 +348,6 @@ export async function executeMoveImport({
     const destination = path.join(preflight.destinationRoot, file.relativePath);
     ensureInside(destination, preflight.destinationRoot, "Move import destination escaped managed memory root.");
     await mkdir(path.dirname(destination), { recursive: true });
-    const bytes = await readFile(file.absolutePath);
-    const beforeHash = contentHash(bytes);
     const ledgerEntry = {
       moveId,
       at: new Date().toISOString(),
@@ -345,12 +356,19 @@ export async function executeMoveImport({
       destinationPath: destination,
       relativePath: file.relativePath,
       size: file.size,
-      beforeHash,
+      beforeHash: file.contentHash,
       status: "pending",
     };
     try {
-      ledgerEntry.moveMethod = await moveFile(file.absolutePath, destination, beforeHash);
-      ledgerEntry.afterHash = await verifiedFileHash(destination, beforeHash, "Move import destination hash mismatch");
+      if (typeof beforeMoveFileRead === "function") {
+        await beforeMoveFileRead(file);
+      }
+      const currentHash = contentHash(await readFile(file.absolutePath));
+      if (currentHash !== file.contentHash) {
+        throw new Error(`Move import source bytes changed after preflight for ${file.relativePath}`);
+      }
+      ledgerEntry.moveMethod = await moveFile(file.absolutePath, destination, file.contentHash);
+      ledgerEntry.afterHash = await verifiedFileHash(destination, file.contentHash, "Move import destination hash mismatch");
       ledgerEntry.status = "moved";
       moved.push(ledgerEntry);
     } catch (error) {
