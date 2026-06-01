@@ -12,6 +12,14 @@ const contentScriptPath = path.join(
   "src",
   "content.js",
 );
+const controlOverlayScriptPath = path.join(
+  repoRoot,
+  "browser-first",
+  "resonantos-side-panel-extension",
+  "src",
+  "lib",
+  "control-overlay.js",
+);
 
 async function loadContentScript(html) {
   const dom = new JSDOM(html, {
@@ -35,6 +43,7 @@ async function loadContentScript(html) {
     },
   };
   dom.window.HTMLElement.prototype.scrollIntoView = function scrollIntoView() {};
+  dom.window.eval(await readFile(controlOverlayScriptPath, "utf8"));
   dom.window.eval(await readFile(contentScriptPath, "utf8"));
   assert.equal(typeof listener, "function");
   return { dom, listener };
