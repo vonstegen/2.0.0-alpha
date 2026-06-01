@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   assertResolvedSourceFileInsideSource,
+  assertSourceRootDirectory,
   resolveSourceRelativeFile,
 } from "../host/memory-source-paths.mjs";
 
@@ -41,6 +42,15 @@ test("source path helpers keep selected files inside the source root", async () 
     assert.throws(
       () => resolveSourceRelativeFile(source, "notes\0identity.md"),
       /must stay inside the connected source/
+    );
+    await assert.doesNotReject(() => assertSourceRootDirectory(source));
+    await assert.rejects(
+      () => assertSourceRootDirectory(note),
+      /must be a folder/
+    );
+    await assert.rejects(
+      () => assertSourceRootDirectory(path.join(root, "missing")),
+      /does not exist/
     );
     await assert.doesNotReject(() => assertResolvedSourceFileInsideSource(source, note));
     await assert.rejects(

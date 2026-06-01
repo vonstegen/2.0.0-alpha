@@ -1,4 +1,4 @@
-import { lstat, realpath } from "node:fs/promises";
+import { lstat, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 function ensureInside(child, parent, message) {
@@ -26,6 +26,19 @@ export function resolveSourceRelativeFile(sourcePath, relativePath) {
     throw new Error("Selected source file path escapes the connected source.");
   }
   return resolved;
+}
+
+export async function assertSourceRootDirectory(sourcePath) {
+  const details = await stat(sourcePath).catch((error) => {
+    if (error?.code === "ENOENT") {
+      throw new Error("Memory source path does not exist.");
+    }
+    throw error;
+  });
+  if (!details.isDirectory()) {
+    throw new Error("Memory source path must be a folder.");
+  }
+  return details;
 }
 
 export async function assertResolvedSourceFileInsideSource(sourcePath, sourceFile) {

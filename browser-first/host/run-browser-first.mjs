@@ -37,6 +37,7 @@ import {
 } from "./memory-source-versioning.mjs";
 import {
   assertResolvedSourceFileInsideSource,
+  assertSourceRootDirectory,
   resolveSourceRelativeFile,
 } from "./memory-source-paths.mjs";
 import {
@@ -2403,9 +2404,7 @@ async function executeMemorySourceFileIntake(payload = {}) {
     throw new Error("Memory source is disabled. Re-enable it before intake.");
   }
   const sourcePath = expandUserPath(source.path);
-  if (!existsSync(sourcePath)) {
-    throw new Error("Memory source path does not exist.");
-  }
+  await assertSourceRootDirectory(sourcePath);
   const intakeDir = path.join(memoryRoot(), "INTAKE", "sources", safeFileSlug(path.basename(sourcePath) || sourceId));
   await mkdir(intakeDir, { recursive: true });
   const fixedNow = process.env.RESONANTOS_BROWSER_FIRST_FILE_INTAKE_FIXED_NOW;
@@ -2594,10 +2593,12 @@ async function executeMemorySourceDiff(payload = {}) {
     throw new Error("Memory source is disabled. Re-enable it before diff preview.");
   }
   const sourcePath = expandUserPath(source.path);
+  await assertSourceRootDirectory(sourcePath);
   const sourceFile = resolveSourceRelativeFile(sourcePath, relativeFile);
   if (!existsSync(sourceFile)) {
     throw new Error("Source file does not exist.");
   }
+  await assertResolvedSourceFileInsideSource(sourcePath, sourceFile);
   const category = classifyMemorySourceFile(sourceFile, sourcePath);
   const extension = path.extname(sourceFile).toLowerCase();
   if (category !== "compatible" || ![".md", ".markdown", ".txt", ".csv", ".json"].includes(extension)) {
