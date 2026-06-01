@@ -322,8 +322,8 @@ function stripThinkBlocks(content) {
 }
 
 function providerWireModel(providerType, model) {
-  if (providerType === "minimax" && model === "MiniMax-M2.7-highspeed") {
-    return "MiniMax-M2.7";
+  if (providerType === "minimax" && model === "MiniMax-M3") {
+    return "MiniMax-M3";
   }
   return model;
 }
@@ -1009,7 +1009,7 @@ async function runProductSmoke() {
             providerId: "shared-minimax",
             providerType: "minimax",
             runtimeNodeKind: "cloud",
-            model: "MiniMax-M2.7-highspeed",
+            model: "MiniMax-M3",
             reasoningEffort: "minimal",
             systemPrompt: "Reply with exactly: ResonantOS provider smoke OK",
             messages: [{ role: "user", content: "Run the smoke test." }],

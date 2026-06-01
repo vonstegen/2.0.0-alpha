@@ -29,7 +29,13 @@ async function fixtureServer() {
       <button>Approve Transaction</button>
       <a href="/dao">DAO</a>`);
   });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolveListen, rejectListen) => {
+    server.once("error", rejectListen);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", rejectListen);
+      resolveListen();
+    });
+  });
   const address = server.address();
   return {
     url: `http://127.0.0.1:${address.port}/`,
@@ -50,7 +56,16 @@ test("wallet browser host starts a real browser profile and reads a page", { tim
     return;
   }
 
-  const fixture = await fixtureServer();
+  let fixture;
+  try {
+    fixture = await fixtureServer();
+  } catch (error) {
+    if (error?.code === "EPERM" && error?.address === "127.0.0.1") {
+      t.skip("localhost bind is denied in this sandbox; wallet browser live host behavior must be verified outside sandboxed CI.");
+      return;
+    }
+    throw error;
+  }
   const profileDir = await mkdtemp(path.join(os.tmpdir(), "resonantos-wallet-browser-test-"));
   try {
     const started = await startWalletBrowserHost({ url: fixture.url, profileDir });
