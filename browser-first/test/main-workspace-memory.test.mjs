@@ -641,6 +641,15 @@ test("living archive workspace renders status, search, and intake through bridge
     assert.match(container.textContent, /Next: Promoted/);
     assert.ok(Array.from(container.querySelectorAll(".memory-pipeline-step"))
       .some((step) => step.textContent.includes("Promote") && step.dataset.state === "complete"));
+    Array.from(container.querySelectorAll(".memory-review-request button"))
+      .find((button) => button.textContent === "Preview Page")
+      .click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(calls.some(([route, options]) =>
+      route === "/memory/wiki/page/read" &&
+      options.body.path === "AI_MEMORY/wiki/browser-job-completed.md"
+    ));
+    assert.match(container.textContent, /Previewing promoted page AI_MEMORY\/wiki\/browser-job-completed\.md/);
     assert.match(container.textContent, /Promotion History/);
     assert.match(container.textContent, /AI_MEMORY\/backups\/promotions\/2026-05-28\/browser-job-completed\.md/);
     Array.from(container.querySelectorAll(".memory-promotion-card button"))
@@ -759,6 +768,100 @@ test("living archive source review blocks intake when every candidate needs repa
     assert.equal(buttons.find((button) => button.textContent === "Create Intake From New/Changed Files").disabled, true);
     assert.equal(buttons.find((button) => button.textContent === "Create Intake From Selected Files").disabled, true);
     assert.equal(calls.some(([route]) => route === "/memory/source/file-intake"), false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("living archive source review submits capped eligible intake batches", async () => {
+  const { container, cleanup } = setupDom();
+  const calls = [];
+  const candidates = Array.from({ length: 205 }, (_, index) => ({
+    path: `notes/note-${String(index).padStart(3, "0")}.md`,
+    category: "compatible",
+    bytes: 100 + index,
+    versionStatus: "new"
+  }));
+  const bridgeRequest = async (route, options = {}) => {
+    calls.push([route, options]);
+    if (route === "/memory/status") {
+      return { exists: true, wiki: { pages: 1, index: { exists: true } }, intake: { artifacts: 0 }, review: { requests: 0, artifacts: 0 } };
+    }
+    if (route === "/memory/wiki/health") {
+      return { exists: true, score: 100, pages: 1, issues: [], brokenLinks: [], orphanPages: [], missingIndexEntries: [], duplicateTitles: [], index: { exists: true, entries: 1 }, log: { exists: true } };
+    }
+    if (route === "/memory/settings") {
+      return {
+        settings: {
+          sources: [{
+            id: "source-large-vault",
+            path: "/Users/test/LargeVault",
+            kind: "folder",
+            ownership: "human-knowledge",
+            importMode: "copy-on-import",
+            exists: true
+          }]
+        }
+      };
+    }
+    if (route === "/memory/source/review") {
+      return {
+        source: { id: options.body.sourceId, path: "/Users/test/LargeVault" },
+        scan: {
+          totalScanned: candidates.length,
+          categories: { compatible: candidates.length, processed: 0, "raw-audio": 0, unsupported: 0 },
+          recommendation: "Create governed intake in capped batches."
+        },
+        candidates,
+        boundary: "Read-only review. Bulk intake is host capped."
+      };
+    }
+    if (route === "/memory/source/file-intake") {
+      return {
+        sourceId: options.body.sourceId,
+        created: options.body.files.map((file, index) => ({
+          path: `INTAKE/sources/selected-${index}.md`,
+          sourceFile: file,
+          title: file,
+          bytes: 120,
+          sourceVersion: 1
+        })),
+        rejected: []
+      };
+    }
+    if (route === "/archive/review/request") {
+      return { path: `REVIEW/requests/${options.body.path.split("/").pop()}`, status: "queued" };
+    }
+    if (route === "/archive/review/list") {
+      return { root: "Memory/REVIEW/requests", requests: [] };
+    }
+    if (route === "/archive/review/promotions/list") {
+      return { root: "Memory/REVIEW/artifacts", promotions: [] };
+    }
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  try {
+    renderLivingArchiveWorkspace({ container, bridgeRequest });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    Array.from(container.querySelectorAll(".memory-source-card button"))
+      .find((button) => button.textContent === "Review Source")
+      .click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.match(container.textContent, /205 new\/changed compatible file\(s\) ready for governed intake/);
+    assert.match(container.textContent, /200 will be submitted in this batch; 5 deferred/);
+    assert.match(container.textContent, /Showing 200 of 205 matching candidate\(s\)/);
+    Array.from(container.querySelectorAll(".memory-review-preview button"))
+      .find((button) => button.textContent === "Create Intake Batch (200/205)")
+      .click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const intakeCall = calls.find(([route]) => route === "/memory/source/file-intake");
+    assert.equal(intakeCall[1].body.files.length, 200);
+    assert.equal(intakeCall[1].body.files[0], "notes/note-000.md");
+    assert.equal(intakeCall[1].body.files.at(-1), "notes/note-199.md");
+    assert.equal(intakeCall[1].body.files.includes("notes/note-200.md"), false);
+    assert.match(container.textContent, /Created 200 selected file intake artifact\(s\); 0 rejected/);
   } finally {
     cleanup();
   }

@@ -5,6 +5,7 @@ import { artifactInsightsFromMarkdown } from "./artifact-insights.js";
 
 const formatCount = (value) => Number(value ?? 0).toLocaleString();
 const SOURCE_REVIEW_RENDER_LIMIT = 200;
+const SOURCE_FILE_INTAKE_BATCH_LIMIT = 200;
 
 function metric(label, value, meta = "") {
   const node = document.createElement("div");
@@ -220,7 +221,7 @@ export function reviewRequestNextAction(request = {}) {
   };
 }
 
-function reviewRequestCard(request, onTransition, onDraft, onPreviewDraft, onPreviewSource) {
+function reviewRequestCard(request, onTransition, onDraft, onPreviewDraft, onPreviewSource, onPreviewPage) {
   const card = document.createElement("article");
   card.className = "memory-review-request";
   const heading = document.createElement("div");
@@ -281,6 +282,12 @@ function reviewRequestCard(request, onTransition, onDraft, onPreviewDraft, onPre
   previewButton.disabled = !request.draftArtifactPath;
   previewButton.addEventListener("click", () => onPreviewDraft(request));
   actions.append(previewButton);
+  const pageButton = document.createElement("button");
+  pageButton.type = "button";
+  pageButton.textContent = "Preview Page";
+  pageButton.disabled = request.promotionStatus !== "promoted" || !request.promotedPage;
+  pageButton.addEventListener("click", () => onPreviewPage(request));
+  actions.append(pageButton);
   card.append(heading, artifact, draft, reason, pipeline, nextAction, actions);
   return card;
 }
@@ -507,8 +514,13 @@ function sourceReviewCard(review, onImportFiles, onPreviewDiff) {
   const approvalTitle = document.createElement("strong");
   approvalTitle.textContent = "Approval plan";
   const approvalBody = document.createElement("p");
+  const batchFiles = eligibleFiles.slice(0, SOURCE_FILE_INTAKE_BATCH_LIMIT).map((candidate) => candidate.path);
+  const deferredEligibleFiles = Math.max(0, eligibleFiles.length - batchFiles.length);
   approvalBody.textContent = [
     `${eligibleFiles.length} new/changed compatible file(s) ready for governed intake`,
+    deferredEligibleFiles
+      ? `${batchFiles.length} will be submitted in this batch; ${deferredEligibleFiles} deferred`
+      : `${batchFiles.length} will be submitted in this batch`,
     `${skippedUnchanged.length} unchanged file(s) skipped`,
     `${skippedUnsupported.length} raw/processed/unsupported file(s) kept out of wiki intake`,
     `${blockedFiles.length} blocked file(s) require source/version repair`
@@ -576,10 +588,11 @@ function sourceReviewCard(review, onImportFiles, onPreviewDiff) {
   actions.className = "memory-review-actions";
   const importChangedButton = document.createElement("button");
   importChangedButton.type = "button";
-  importChangedButton.textContent = "Create Intake From New/Changed Files";
-  const changedFiles = eligibleFiles.map((candidate) => candidate.path);
-  importChangedButton.disabled = changedFiles.length === 0;
-  importChangedButton.addEventListener("click", () => onImportFiles(review, changedFiles));
+  importChangedButton.textContent = deferredEligibleFiles
+    ? `Create Intake Batch (${batchFiles.length}/${eligibleFiles.length})`
+    : "Create Intake From New/Changed Files";
+  importChangedButton.disabled = batchFiles.length === 0;
+  importChangedButton.addEventListener("click", () => onImportFiles(review, batchFiles));
   const importButton = document.createElement("button");
   importSelectedButton = importButton;
   importButton.type = "button";
@@ -1006,7 +1019,8 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
         transitionReviewRequest,
         draftReviewRequest,
         previewDraftArtifact,
-        previewSourceArtifact
+        previewSourceArtifact,
+        previewReviewPromotedPage
       )));
       setStatus(reviewStatus, `${requests.length} review request(s) waiting in ${result.root}.`, "success");
     } catch (error) {
@@ -1312,6 +1326,27 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
       draftPreview.replaceChildren(sourceArtifactPreviewCard(result));
       draftPreview.hidden = false;
       setStatus(reviewStatus, result.truncated ? "Source preview loaded and truncated for safety." : "Source preview loaded.", "success");
+    } catch (error) {
+      setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
+    }
+  };
+
+  const previewReviewPromotedPage = async (request) => {
+    if (!request.promotedPage) {
+      setStatus(reviewStatus, "Review request has no promoted AI Memory page yet.", "warning");
+      return;
+    }
+    setStatus(reviewStatus, `Loading promoted page ${request.promotedPage}…`);
+    draftPreview.hidden = true;
+    draftPreview.replaceChildren();
+    try {
+      const result = await bridgeRequest("/memory/wiki/page/read", {
+        method: "POST",
+        body: { path: request.promotedPage }
+      });
+      draftPreview.replaceChildren(wikiPagePreviewCard(result));
+      draftPreview.hidden = false;
+      setStatus(reviewStatus, `Previewing promoted page ${result.path}.`, "success");
     } catch (error) {
       setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
     }
