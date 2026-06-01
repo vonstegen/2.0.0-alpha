@@ -992,6 +992,7 @@ test("settings memory section gates move-on-import behind preflight and confirma
       }];
       return {
         movedCount: 2,
+        sourceCleanupStatus: "preserved-new-content",
         ledgerPath: sources[0].ledgerPath,
         settings: { sources }
       };
@@ -1032,6 +1033,8 @@ test("settings memory section gates move-on-import behind preflight and confirma
       options.body.preflightFingerprint === "preflight-fingerprint-123"
     ));
     assert.match(container.textContent, /Move import completed and source registered/);
+    assert.match(container.textContent, /Original source folder preserved because new files appeared during cleanup/);
+    assert.match(container.textContent, /review it before deleting anything/);
     assert.match(container.textContent, /move on import/);
     assert.match(container.textContent, /Rollback/);
   } finally {

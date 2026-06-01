@@ -331,12 +331,20 @@ export function renderMemorySection(container, { bridgeRequest }) {
         }
       });
       pathInput.value = "";
+      const preservedSource = result.sourceCleanupStatus === "preserved-new-content";
       scanPanel.replaceChildren(noteCard({
         title: "Move import complete",
-        body: `Moved ${result.movedCount ?? 0} file(s) into managed memory. Ledger: ${result.ledgerPath}`
+        body: `Moved ${result.movedCount ?? 0} file(s) into managed memory. Ledger: ${result.ledgerPath}${
+          preservedSource
+            ? " The original source folder was kept because new files appeared during cleanup; review it before deleting anything."
+            : ""
+        }`
       }));
       await load();
-      setStatus(statusNode, "Move import completed and source registered.", "success");
+      setStatus(statusNode, preservedSource
+        ? "Move import completed and source registered. Original source folder preserved because new files appeared during cleanup."
+        : "Move import completed and source registered.",
+      preservedSource ? "warning" : "success");
     } catch (error) {
       setStatus(statusNode, `Move import failed: ${safeErrorMessage(error)}`, "error");
       executeButton.disabled = false;
