@@ -230,10 +230,17 @@ export async function recordSourceFileIntakeArtifact({
     throw new Error("Source file version entry was not found.");
   }
   const numericVersion = Number(version ?? entry.latestVersion ?? 0);
+  if (numericVersion !== Number(entry.latestVersion ?? 0)) {
+    throw new Error("Source file artifact recording must target the latest reserved source version.");
+  }
+  const history = Array.isArray(entry.history) ? entry.history : [];
+  if (!history.some((historyEntry) => Number(historyEntry.version) === numericVersion)) {
+    throw new Error("Source file artifact recording target version is missing from history.");
+  }
   entry.latestIntakePath = String(intakePath).replace(/\\/g, "/");
   entry.latestSnapshotPath = snapshotPath ? String(snapshotPath).replace(/\\/g, "/") : entry.latestSnapshotPath ?? "";
   entry.updatedAt = now;
-  entry.history = (Array.isArray(entry.history) ? entry.history : []).map((historyEntry) =>
+  entry.history = history.map((historyEntry) =>
     Number(historyEntry.version) === numericVersion
       ? { ...historyEntry, intakePath: entry.latestIntakePath, snapshotPath: entry.latestSnapshotPath }
       : historyEntry

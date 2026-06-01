@@ -194,6 +194,50 @@ test("source file versioning rolls back unfinalized reservations only", async ()
   }
 });
 
+test("source file artifact recording rejects stale version targets", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-source-versioning-stale-record-"));
+  const manifestPath = path.join(root, "Memory", "CONFIG", "source-file-versions.json");
+  try {
+    const firstHash = sourceContentHash("first");
+    const first = await reserveSourceFileVersion({
+      manifestPath,
+      sourceId: "source-vault",
+      relativeFile: "notes/identity.md",
+      contentHash: firstHash,
+      sourceModifiedAt: "2026-05-29T10:00:00.000Z",
+      now: "2026-05-29T10:01:00.000Z",
+    });
+    const secondHash = sourceContentHash("second");
+    const second = await reserveSourceFileVersion({
+      manifestPath,
+      sourceId: "source-vault",
+      relativeFile: "notes/identity.md",
+      contentHash: secondHash,
+      sourceModifiedAt: "2026-05-29T11:00:00.000Z",
+      now: "2026-05-29T11:01:00.000Z",
+    });
+
+    await assert.rejects(
+      () => recordSourceFileIntakeArtifact({
+        manifestPath,
+        sourceId: "source-vault",
+        relativeFile: "notes/identity.md",
+        version: first.version,
+        intakePath: "INTAKE/sources/stale.md",
+        snapshotPath: sourceFileSnapshotPath(firstHash),
+      }),
+      /must target the latest reserved source version/
+    );
+
+    const listed = await listSourceFileVersions({ manifestPath, sourceId: "source-vault" });
+    assert.equal(listed.entries[0].latestVersion, second.version);
+    assert.equal(listed.entries[0].latestHash, secondHash);
+    assert.equal(listed.entries[0].latestIntakePath, "");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("line diff summary returns bounded added and removed lines", () => {
   const diff = lineDiffSummary("A\nB\nC", "A\nBee\nC\nD", { limit: 10 });
   assert.equal(diff.changed, true);
