@@ -236,6 +236,7 @@ Current Living Archive status:
 - Selected source-file intake now has deterministic tests proving unchanged/blocked files are not submitted from the UI and failed artifact creation rolls back reserved source versions.
 - Selected source-file intake also has a host bridge self-test for the real `/memory/source/file-intake` route: scoped capability gating, duplicate rejection, path traversal rejection, batch capping, and source-version rollback after artifact write failure. In this Codex sandbox the localhost bridge self-test is skipped because `127.0.0.1` binding is denied; it runs in normal local/CI environments.
 - Source review approval now makes the 200-file host batch limit explicit: large reviews show how many files will enter the current governed intake batch and how many eligible files remain deferred for the next batch.
+- Source-file version history now stores content-addressed immutable source snapshots under managed Memory and diff preview prefers those snapshots, so previous source versions do not depend on parsing generated intake artifacts.
 - Reorganisation file moves remain unimplemented and must not be added without separate audit, rollback, approval, and deterministic tests.
 
 ### Recovery And Resonant Engineer

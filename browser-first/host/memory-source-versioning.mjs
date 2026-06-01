@@ -7,6 +7,49 @@ export function sourceContentHash(content) {
   return createHash("sha256").update(String(content ?? ""), "utf8").digest("hex");
 }
 
+function normalizedContentHash(contentHash) {
+  const normalized = String(contentHash ?? "").trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(normalized)) {
+    throw new Error("Source snapshot requires a sha256 content hash.");
+  }
+  return normalized;
+}
+
+export function sourceFileSnapshotPath(contentHash) {
+  const hash = normalizedContentHash(contentHash);
+  return path.join("CONFIG", "source-file-history", "blobs", hash.slice(0, 2), `${hash}.txt`).replace(/\\/g, "/");
+}
+
+export async function writeSourceFileSnapshot({
+  memoryRoot,
+  contentHash,
+  content,
+}) {
+  if (!memoryRoot) throw new Error("Source snapshot requires a memory root.");
+  const snapshotPath = sourceFileSnapshotPath(contentHash);
+  const absolutePath = path.join(memoryRoot, snapshotPath);
+  if (existsSync(absolutePath)) {
+    return {
+      path: snapshotPath,
+      bytes: Buffer.byteLength(String(content ?? ""), "utf8"),
+      contentHash: normalizedContentHash(contentHash),
+      reused: true,
+    };
+  }
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+  const tempPath = path.join(path.dirname(absolutePath), `.${path.basename(absolutePath)}.${process.pid}.${Date.now()}.tmp`);
+  await writeFile(tempPath, String(content ?? ""), { mode: 0o600 });
+  await chmod(tempPath, 0o600).catch(() => undefined);
+  await rename(tempPath, absolutePath);
+  await chmod(absolutePath, 0o600).catch(() => undefined);
+  return {
+    path: snapshotPath,
+    bytes: Buffer.byteLength(String(content ?? ""), "utf8"),
+    contentHash: normalizedContentHash(contentHash),
+    reused: false,
+  };
+}
+
 function sourceFileKey(sourceId, relativeFile) {
   return `${String(sourceId ?? "").trim()}::${String(relativeFile ?? "").replace(/\\/g, "/")}`;
 }
@@ -45,6 +88,7 @@ export async function listSourceFileVersions({ manifestPath, sourceId = "", limi
       latestHash: entry.latestHash,
       latestVersion: entry.latestVersion,
       latestIntakePath: entry.latestIntakePath ?? "",
+      latestSnapshotPath: entry.latestSnapshotPath ?? "",
       latestModifiedAt: entry.latestModifiedAt,
       updatedAt: entry.updatedAt,
       history: Array.isArray(entry.history) ? entry.history : [],
@@ -151,6 +195,7 @@ export async function rollbackSourceFileVersionReservation({
       latestVersion: Number(previous.version ?? 1),
       latestModifiedAt: previous.sourceModifiedAt || "",
       latestIntakePath: previous.intakePath || "",
+      latestSnapshotPath: previous.snapshotPath || "",
       updatedAt: now,
       history: previousHistory,
     };
@@ -171,6 +216,7 @@ export async function recordSourceFileIntakeArtifact({
   relativeFile,
   version,
   intakePath,
+  snapshotPath = "",
   now = new Date().toISOString(),
 }) {
   if (!manifestPath) throw new Error("Source file artifact recording requires a manifest path.");
@@ -185,10 +231,11 @@ export async function recordSourceFileIntakeArtifact({
   }
   const numericVersion = Number(version ?? entry.latestVersion ?? 0);
   entry.latestIntakePath = String(intakePath).replace(/\\/g, "/");
+  entry.latestSnapshotPath = snapshotPath ? String(snapshotPath).replace(/\\/g, "/") : entry.latestSnapshotPath ?? "";
   entry.updatedAt = now;
   entry.history = (Array.isArray(entry.history) ? entry.history : []).map((historyEntry) =>
     Number(historyEntry.version) === numericVersion
-      ? { ...historyEntry, intakePath: entry.latestIntakePath }
+      ? { ...historyEntry, intakePath: entry.latestIntakePath, snapshotPath: entry.latestSnapshotPath }
       : historyEntry
   );
   manifest.files[key] = entry;
@@ -199,6 +246,7 @@ export async function recordSourceFileIntakeArtifact({
     sourceFile: entry.sourceFile,
     latestVersion: entry.latestVersion,
     latestIntakePath: entry.latestIntakePath,
+    latestSnapshotPath: entry.latestSnapshotPath,
   };
 }
 

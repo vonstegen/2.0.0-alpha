@@ -1440,6 +1440,7 @@ test("browser-first bridge hardens selected Living Archive source file intake", 
   assert.equal(payload.ok, true);
   assert.equal(payload.unauthorizedCapabilityStatus, 403);
   assert.equal(payload.createdCount, 199);
+  assert.equal(payload.snapshotRecorded, true);
   assert.equal(payload.duplicateRejected, true);
   assert.equal(payload.escapeRejected, true);
   assert.equal(payload.overflowRejected, 6);

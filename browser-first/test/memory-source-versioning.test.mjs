@@ -11,6 +11,8 @@ import {
   reserveSourceFileVersion,
   rollbackSourceFileVersionReservation,
   sourceContentHash,
+  sourceFileSnapshotPath,
+  writeSourceFileSnapshot,
 } from "../host/memory-source-versioning.mjs";
 
 test("source file versioning increments only when content changes", async () => {
@@ -72,14 +74,43 @@ test("source file versioning increments only when content changes", async () => 
       relativeFile: "notes/identity.md",
       version: 2,
       intakePath: "INTAKE/sources/identity-v2.md",
+      snapshotPath: sourceFileSnapshotPath(secondHash),
     });
     assert.equal(recorded.latestIntakePath, "INTAKE/sources/identity-v2.md");
+    assert.equal(recorded.latestSnapshotPath, sourceFileSnapshotPath(secondHash));
 
     const listed = await listSourceFileVersions({ manifestPath, sourceId: "source-vault" });
     assert.equal(listed.entries.length, 1);
     assert.equal(listed.entries[0].sourceFile, "notes/identity.md");
     assert.equal(listed.entries[0].latestVersion, 2);
     assert.equal(listed.entries[0].latestIntakePath, "INTAKE/sources/identity-v2.md");
+    assert.equal(listed.entries[0].latestSnapshotPath, sourceFileSnapshotPath(secondHash));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("source file snapshots are content-addressed immutable history blobs", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-source-snapshots-"));
+  try {
+    const content = "# Snapshot\n\nHuman source version.\n";
+    const contentHash = sourceContentHash(content);
+    const snapshot = await writeSourceFileSnapshot({
+      memoryRoot: path.join(root, "Memory"),
+      contentHash,
+      content,
+    });
+    assert.equal(snapshot.path, sourceFileSnapshotPath(contentHash));
+    assert.equal(snapshot.reused, false);
+    assert.equal(await readFile(path.join(root, "Memory", snapshot.path), "utf8"), content);
+
+    const reused = await writeSourceFileSnapshot({
+      memoryRoot: path.join(root, "Memory"),
+      contentHash,
+      content: "different content with the same claimed hash should not overwrite\n",
+    });
+    assert.equal(reused.reused, true);
+    assert.equal(await readFile(path.join(root, "Memory", snapshot.path), "utf8"), content);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -141,6 +172,7 @@ test("source file versioning rolls back unfinalized reservations only", async ()
       relativeFile: "notes/identity.md",
       version: third.version,
       intakePath: "INTAKE/sources/identity-v2.md",
+      snapshotPath: sourceFileSnapshotPath(thirdHash),
     });
     const finalized = await rollbackSourceFileVersionReservation({
       manifestPath,
@@ -156,6 +188,7 @@ test("source file versioning rolls back unfinalized reservations only", async ()
     listed = await listSourceFileVersions({ manifestPath, sourceId: "source-vault" });
     assert.equal(listed.entries[0].latestVersion, 2);
     assert.equal(listed.entries[0].latestIntakePath, "INTAKE/sources/identity-v2.md");
+    assert.equal(listed.entries[0].latestSnapshotPath, sourceFileSnapshotPath(thirdHash));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -33,6 +33,7 @@ import {
   reserveSourceFileVersion,
   rollbackSourceFileVersionReservation,
   sourceContentHash,
+  writeSourceFileSnapshot,
 } from "./memory-source-versioning.mjs";
 import {
   assertResolvedSourceFileInsideSource,
@@ -2485,12 +2486,18 @@ async function executeMemorySourceFileIntake(payload = {}) {
       try {
         await writeFile(intakePath, body, { mode: 0o600 });
         await chmod(intakePath, 0o600).catch(() => undefined);
+        const snapshot = await writeSourceFileSnapshot({
+          memoryRoot: memoryRoot(),
+          contentHash: version.contentHash,
+          content: sourceContent,
+        });
         await recordSourceFileIntakeArtifact({
           manifestPath: memorySourceFileManifestPath(),
           sourceId: source.id,
           relativeFile,
           version: version.version,
           intakePath: relativeIntakePath,
+          snapshotPath: snapshot.path,
         });
       } catch (error) {
         await rm(intakePath, { force: true }).catch(() => undefined);
@@ -2595,7 +2602,7 @@ async function executeMemorySourceDiff(payload = {}) {
     limit: 500,
   });
   const versionEntry = versions.entries.find((entry) => entry.sourceFile === relativeFile);
-  if (!versionEntry?.latestIntakePath) {
+  if (!versionEntry?.latestIntakePath && !versionEntry?.latestSnapshotPath) {
     return {
       sourceId,
       sourceFile: relativeFile,
@@ -2604,12 +2611,16 @@ async function executeMemorySourceDiff(payload = {}) {
       changes: [],
     };
   }
-  const intakeFile = safeMemoryRelativePath(versionEntry.latestIntakePath, "INTAKE");
-  const [currentContent, intakeContent] = await Promise.all([
+  const previousFile = versionEntry.latestSnapshotPath
+    ? safeMemoryRelativePath(versionEntry.latestSnapshotPath, "CONFIG/source-file-history")
+    : safeMemoryRelativePath(versionEntry.latestIntakePath, "INTAKE");
+  const [currentContent, previousStoredContent] = await Promise.all([
     readFile(sourceFile, "utf8"),
-    readFile(intakeFile, "utf8"),
+    readFile(previousFile, "utf8"),
   ]);
-  const previousContent = markdownSection(intakeContent, "Content") || markdownBody(intakeContent);
+  const previousContent = versionEntry.latestSnapshotPath
+    ? previousStoredContent
+    : markdownSection(previousStoredContent, "Content") || markdownBody(previousStoredContent);
   const diff = lineDiffSummary(previousContent.trimEnd(), currentContent.trimEnd(), {
     limit: Math.max(10, Math.min(200, Number(payload.limit ?? 80))),
   });
@@ -2620,6 +2631,7 @@ async function executeMemorySourceDiff(payload = {}) {
     status: currentHash === versionEntry.latestHash ? "unchanged" : "changed",
     latestVersion: versionEntry.latestVersion,
     latestIntakePath: versionEntry.latestIntakePath,
+    latestSnapshotPath: versionEntry.latestSnapshotPath ?? "",
     previousHash: versionEntry.latestHash,
     currentHash,
     ...diff,
@@ -5887,10 +5899,16 @@ if (args.get("memory-source-file-intake-self-test") === "true") {
     const manifest = JSON.parse(await readFile(memorySourceFileManifestPath(), "utf8"));
     const failVersions = Object.values(manifest.files ?? {})
       .filter((entry) => entry?.sourceId === sourceId && entry?.sourceFile === "fail.md");
+    const firstSnapshotPath = manifest.files?.[`${sourceId}::note-000.md`]?.latestSnapshotPath ?? "";
+    const firstSnapshotContent = firstSnapshotPath
+      ? await readFile(path.join(memoryRoot(), firstSnapshotPath), "utf8").catch(() => "")
+      : "";
     const ok = savedResponse.ok &&
       unauthorizedCapability.status === 403 &&
       intakeResponse.ok &&
       intake.created.length === 199 &&
+      firstSnapshotPath.startsWith("CONFIG/source-file-history/blobs/") &&
+      firstSnapshotContent.includes("# Note 0") &&
       intake.rejected.some((entry) => entry.sourceFile === "note-000.md" && /duplicate/.test(entry.reason)) &&
       intake.rejected.some((entry) => entry.sourceFile === "../outside.md" && /must stay inside|outside source root|parent traversal|escapes/i.test(entry.reason)) &&
       intake.rejected.filter((entry) => /batch limit/.test(entry.reason)).length === 6 &&
@@ -5902,6 +5920,7 @@ if (args.get("memory-source-file-intake-self-test") === "true") {
       unauthorizedCapabilityStatus: unauthorizedCapability.status,
       createdCount: intake.created.length,
       rejectedCount: intake.rejected.length,
+      snapshotRecorded: firstSnapshotPath.startsWith("CONFIG/source-file-history/blobs/"),
       duplicateRejected: intake.rejected.some((entry) => entry.sourceFile === "note-000.md" && /duplicate/.test(entry.reason)),
       escapeRejected: intake.rejected.some((entry) => entry.sourceFile === "../outside.md" && /outside source root|parent traversal|escapes/i.test(entry.reason)),
       overflowRejected: intake.rejected.filter((entry) => /batch limit/.test(entry.reason)).length,

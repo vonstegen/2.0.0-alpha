@@ -162,7 +162,7 @@ These are the features currently implemented in the browser-first version.
 - Promotion history can restore a promoted wiki page from its recorded backup through a scoped host action; the restore operation backs up the current page first and appends a restore event to the wiki log.
 - Connected source review keeps unchanged, unsupported, raw, processed, and blocked files visible for context, but selected-file intake is constrained to new or changed compatible files only.
 - Connected source review makes capped batch approval explicit: large reviews submit only the first 200 eligible files per governed intake batch and show the deferred count for the next batch.
-- Selected source-file intake now deduplicates requests, caps host batches, rejects symlink/path-escape selections, writes source version manifests atomically, and rolls back reserved source versions if intake artifact creation fails.
+- Selected source-file intake now deduplicates requests, caps host batches, rejects symlink/path-escape selections, writes source version manifests atomically, stores content-addressed immutable source snapshots, and rolls back reserved source versions if intake artifact creation fails.
 
 ### Browser Tools Available To Augmentor
 

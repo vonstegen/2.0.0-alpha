@@ -137,6 +137,7 @@ Current status:
 - Review, draft, verification, promotion, and restore flows exist.
 - Wiki health now checks for missing `index.md`/`log.md`, broken wiki links, orphan pages, duplicate titles, and pages missing from `index.md`.
 - Source file intake now records content hashes and source versions, rejects unchanged duplicate imports, and preserves the original connected source.
+- Source file version history now stores content-addressed immutable source snapshots for governed intake versions.
 - Source version history is visible from Connected Source Review, using the host-managed source version manifest.
 - Connected Source Review marks compatible files as new, changed, unchanged, or tracked against the source version manifest.
 - Host bridge self-tests now cover selected source-file intake capability gating, duplicate rejection, path traversal rejection, batch capping, and rollback after artifact write failure.
