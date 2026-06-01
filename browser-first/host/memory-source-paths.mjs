@@ -10,7 +10,14 @@ function ensureInside(child, parent, message) {
 
 export function resolveSourceRelativeFile(sourcePath, relativePath) {
   const normalized = String(relativePath ?? "").replace(/\\/g, "/");
-  if (!normalized || normalized.includes("\0") || normalized.startsWith("/") || normalized.split("/").includes("..")) {
+  if (
+    !normalized ||
+    normalized === "." ||
+    normalized.includes("\0") ||
+    normalized.startsWith("/") ||
+    /^[A-Za-z]:\//.test(normalized) ||
+    normalized.split("/").includes("..")
+  ) {
     throw new Error("Selected source file path must stay inside the connected source.");
   }
   const resolved = path.resolve(sourcePath, normalized);
@@ -25,6 +32,9 @@ export async function assertResolvedSourceFileInsideSource(sourcePath, sourceFil
   const details = await lstat(sourceFile);
   if (details.isSymbolicLink()) {
     throw new Error("Selected source file is a symbolic link and cannot be imported.");
+  }
+  if (!details.isFile()) {
+    throw new Error("Selected source path must be a regular file.");
   }
   const [realSourceRoot, realSourceFile] = await Promise.all([
     realpath(sourcePath),

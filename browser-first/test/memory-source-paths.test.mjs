@@ -23,10 +23,30 @@ test("source path helpers keep selected files inside the source root", async () 
 
     assert.equal(resolveSourceRelativeFile(source, "notes/identity.md"), note);
     assert.throws(
+      () => resolveSourceRelativeFile(source, "."),
+      /must stay inside the connected source/
+    );
+    assert.throws(
       () => resolveSourceRelativeFile(source, "../outside/secret.md"),
       /must stay inside the connected source/
     );
+    assert.throws(
+      () => resolveSourceRelativeFile(source, "/tmp/secret.md"),
+      /must stay inside the connected source/
+    );
+    assert.throws(
+      () => resolveSourceRelativeFile(source, "C:\\Users\\secret.md"),
+      /must stay inside the connected source/
+    );
+    assert.throws(
+      () => resolveSourceRelativeFile(source, "notes\0identity.md"),
+      /must stay inside the connected source/
+    );
     await assert.doesNotReject(() => assertResolvedSourceFileInsideSource(source, note));
+    await assert.rejects(
+      () => assertResolvedSourceFileInsideSource(source, path.join(source, "notes")),
+      /regular file/
+    );
 
     const link = path.join(source, "notes", "secret-link.md");
     await symlink(external, link);
