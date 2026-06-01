@@ -26,26 +26,36 @@ export async function writeSourceFileSnapshot({
   content,
 }) {
   if (!memoryRoot) throw new Error("Source snapshot requires a memory root.");
+  const normalizedHash = normalizedContentHash(contentHash);
+  const snapshotContent = String(content ?? "");
+  const actualHash = sourceContentHash(snapshotContent);
+  if (actualHash !== normalizedHash) {
+    throw new Error("Source snapshot content does not match the claimed content hash.");
+  }
   const snapshotPath = sourceFileSnapshotPath(contentHash);
   const absolutePath = path.join(memoryRoot, snapshotPath);
   if (existsSync(absolutePath)) {
+    const existingContent = await readFile(absolutePath, "utf8");
+    if (sourceContentHash(existingContent) !== normalizedHash) {
+      throw new Error("Source snapshot hash mismatch; existing snapshot is corrupt.");
+    }
     return {
       path: snapshotPath,
-      bytes: Buffer.byteLength(String(content ?? ""), "utf8"),
-      contentHash: normalizedContentHash(contentHash),
+      bytes: Buffer.byteLength(snapshotContent, "utf8"),
+      contentHash: normalizedHash,
       reused: true,
     };
   }
   await mkdir(path.dirname(absolutePath), { recursive: true });
   const tempPath = path.join(path.dirname(absolutePath), `.${path.basename(absolutePath)}.${process.pid}.${Date.now()}.tmp`);
-  await writeFile(tempPath, String(content ?? ""), { mode: 0o600 });
+  await writeFile(tempPath, snapshotContent, { mode: 0o600 });
   await chmod(tempPath, 0o600).catch(() => undefined);
   await rename(tempPath, absolutePath);
   await chmod(absolutePath, 0o600).catch(() => undefined);
   return {
     path: snapshotPath,
-    bytes: Buffer.byteLength(String(content ?? ""), "utf8"),
-    contentHash: normalizedContentHash(contentHash),
+    bytes: Buffer.byteLength(snapshotContent, "utf8"),
+    contentHash: normalizedHash,
     reused: false,
   };
 }

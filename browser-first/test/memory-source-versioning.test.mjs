@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -107,10 +107,55 @@ test("source file snapshots are content-addressed immutable history blobs", asyn
     const reused = await writeSourceFileSnapshot({
       memoryRoot: path.join(root, "Memory"),
       contentHash,
-      content: "different content with the same claimed hash should not overwrite\n",
+      content,
     });
     assert.equal(reused.reused, true);
     assert.equal(await readFile(path.join(root, "Memory", snapshot.path), "utf8"), content);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("source file snapshots reject claimed hash mismatches", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-source-snapshot-mismatch-"));
+  try {
+    const content = "# Snapshot\n\nHuman source version.\n";
+    const contentHash = sourceContentHash(content);
+    await assert.rejects(
+      () => writeSourceFileSnapshot({
+        memoryRoot: path.join(root, "Memory"),
+        contentHash,
+        content: "different content with the same claimed hash should not write\n",
+      }),
+      /does not match the claimed content hash/
+    );
+    await assert.rejects(
+      () => readFile(path.join(root, "Memory", sourceFileSnapshotPath(contentHash)), "utf8"),
+      /ENOENT/
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("source file snapshots reject corrupt existing blobs before reuse", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-source-snapshot-corrupt-"));
+  try {
+    const content = "# Snapshot\n\nHuman source version.\n";
+    const contentHash = sourceContentHash(content);
+    const absoluteSnapshotPath = path.join(root, "Memory", sourceFileSnapshotPath(contentHash));
+    await mkdir(path.dirname(absoluteSnapshotPath), { recursive: true });
+    await writeFile(absoluteSnapshotPath, "corrupted bytes\n", "utf8");
+
+    await assert.rejects(
+      () => writeSourceFileSnapshot({
+        memoryRoot: path.join(root, "Memory"),
+        contentHash,
+        content,
+      }),
+      /existing snapshot is corrupt/
+    );
+    assert.equal(await readFile(absoluteSnapshotPath, "utf8"), "corrupted bytes\n");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
