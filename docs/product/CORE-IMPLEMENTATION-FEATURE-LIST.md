@@ -141,9 +141,9 @@ Current status:
 - Connected Source Review marks compatible files as new, changed, unchanged, or tracked against the source version manifest.
 - Host bridge self-tests now cover selected source-file intake capability gating, duplicate rejection, path traversal rejection, batch capping, and rollback after artifact write failure.
 - Changed/tracked compatible files can open a bounded diff preview against the last governed intake artifact.
-- Connected Source Review can create governed intake from all new/changed compatible files in one action while skipping unchanged files.
+- Connected Source Review can create governed intake from new/changed compatible files in explicit host-capped batches while skipping unchanged files and showing deferred counts.
 - Wiki lint can now run through a host-mediated Living Archive action, write a durable `REVIEW/lint` artifact, and append a `lint` event to `AI_MEMORY/wiki/log.md` without modifying trusted AI Memory pages.
-- Needs richer source-change approval UX.
+- Needs real-data validation against large user vaults and provider-routed AI Memory builds.
 
 ### 5. Settings
 
