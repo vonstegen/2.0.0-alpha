@@ -115,7 +115,28 @@ async function listMoveEntries(sourcePath, limit = MAX_MOVE_FILES) {
     }
   }
   await walk(source);
+  files.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  directories.sort((a, b) => path.relative(source, a).localeCompare(path.relative(source, b)));
+  blocked.sort((a, b) => String(a.path).localeCompare(String(b.path)));
   return { files, directories, blocked };
+}
+
+function movePreflightFingerprint({ sourcePath, destinationRoot, kind, ownership, files, directories }) {
+  const source = path.resolve(sourcePath);
+  const payload = {
+    sourcePath: source,
+    destinationRoot: path.resolve(destinationRoot),
+    kind,
+    ownership,
+    files: files.map((file) => ({
+      path: file.relativePath,
+      size: file.size,
+      modifiedAt: file.modifiedAt,
+      hidden: Boolean(file.hidden),
+    })),
+    directories: directories.map((directory) => path.relative(source, directory).replace(/\\/g, "/")).sort(),
+  };
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
 async function verifiedFileHash(filePath, expectedHash, message) {
@@ -213,6 +234,14 @@ export async function buildMoveImportPreflight({ sourcePath, memoryRoot, kind = 
   if (existsSync(destinationRoot)) {
     blocked.push({ path: destinationRoot, reason: "destination-already-exists" });
   }
+  const preflightFingerprint = movePreflightFingerprint({
+    sourcePath: source,
+    destinationRoot,
+    kind,
+    ownership,
+    files,
+    directories,
+  });
   return {
     okToMove: blocked.length === 0,
     sourcePath: source,
@@ -227,6 +256,7 @@ export async function buildMoveImportPreflight({ sourcePath, memoryRoot, kind = 
     hiddenFiles,
     blocked,
     confirmationPhrase: `MOVE ${sourceName}`,
+    preflightFingerprint,
     files: files.slice(0, 25).map((file) => ({
       relativePath: file.relativePath,
       size: file.size,
@@ -242,6 +272,7 @@ export async function executeMoveImport({
   kind = "folder",
   ownership = "mixed-library",
   confirmation,
+  expectedPreflightFingerprint,
   actor = "resonantos-browser-first",
   moveFile = moveFileAcrossVolumes,
 }) {
@@ -251,6 +282,12 @@ export async function executeMoveImport({
   }
   if (String(confirmation ?? "").trim() !== moveConfirmationPhrase(preflight)) {
     throw new Error(`Move import requires confirmation phrase: ${moveConfirmationPhrase(preflight)}`);
+  }
+  if (!expectedPreflightFingerprint) {
+    throw new Error("Move import requires a matching preflight fingerprint.");
+  }
+  if (String(expectedPreflightFingerprint) !== preflight.preflightFingerprint) {
+    throw new Error("Move import source changed after preflight. Run preflight again before moving.");
   }
   const now = new Date().toISOString();
   const moveId = `move-${Date.now()}-${pathHash(`${preflight.sourcePath}-${now}`)}`;

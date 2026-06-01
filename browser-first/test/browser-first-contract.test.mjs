@@ -1417,6 +1417,7 @@ test("browser-first bridge executes move-on-import through scoped routes", (t) =
   assert.equal(payload.preflight.okToMove, true);
   assert.equal(payload.preflight.fileCount, 2);
   assert.equal(payload.preflight.hiddenFiles, 1);
+  assert.match(payload.preflight.preflightFingerprint, /^[a-f0-9]{64}$/);
   assert.equal(payload.execute.ok, true);
   assert.equal(payload.execute.status, "moved");
   assert.equal(payload.execute.movedCount, 2);

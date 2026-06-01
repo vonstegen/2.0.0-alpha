@@ -2027,6 +2027,7 @@ async function executeMemorySourceMoveExecute(payload = {}) {
       ? payload.ownership
       : "mixed-library",
     confirmation: payload.confirmation,
+    expectedPreflightFingerprint: payload.preflightFingerprint,
   });
   if (result.status !== "moved") {
     throw new Error(
@@ -5752,6 +5753,7 @@ if (args.get("memory-source-move-self-test") === "true") {
       kind: "obsidian-vault",
       ownership: "human-knowledge",
       confirmation: preflight.confirmationPhrase,
+      preflightFingerprint: preflight.preflightFingerprint,
     });
     const executed = await executeResponse.json();
     const movedNoteExists = existsSync(path.join(executed.destinationRoot ?? "", "note.md"));

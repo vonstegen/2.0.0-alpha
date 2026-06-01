@@ -976,7 +976,8 @@ test("settings memory section gates move-on-import behind preflight and confirma
         hiddenFiles: 0,
         totalBytes: 2048,
         blocked: [],
-        confirmationPhrase: "MOVE MoveMe"
+        confirmationPhrase: "MOVE MoveMe",
+        preflightFingerprint: "preflight-fingerprint-123"
       };
     }
     if (route === "/memory/source/move-execute") {
@@ -1027,7 +1028,8 @@ test("settings memory section gates move-on-import behind preflight and confirma
     assert.ok(calls.some(([route, options]) =>
       route === "/memory/source/move-execute" &&
       options.capability === "memory-source-move" &&
-      options.body.confirmation === "MOVE MoveMe"
+      options.body.confirmation === "MOVE MoveMe" &&
+      options.body.preflightFingerprint === "preflight-fingerprint-123"
     ));
     assert.match(container.textContent, /Move import completed and source registered/);
     assert.match(container.textContent, /move on import/);

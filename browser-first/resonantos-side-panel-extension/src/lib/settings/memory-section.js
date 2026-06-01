@@ -326,7 +326,8 @@ export function renderMemorySection(container, { bridgeRequest }) {
           path: preflight.sourcePath,
           kind: kind.value,
           ownership: ownership.value,
-          confirmation
+          confirmation,
+          preflightFingerprint: preflight.preflightFingerprint
         }
       });
       pathInput.value = "";

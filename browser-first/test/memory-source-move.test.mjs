@@ -48,6 +48,7 @@ test("move import preflight preserves hidden Obsidian structure in counts", asyn
     assert.equal(preflight.hiddenFiles, 1);
     assert.match(preflight.destinationRoot, /HUMAN_KNOWLEDGE/);
     assert.equal(preflight.confirmationPhrase, "MOVE Knowledge Vault");
+    assert.match(preflight.preflightFingerprint, /^[a-f0-9]{64}$/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -90,11 +91,13 @@ test("move import executes into managed memory and rollback restores originals",
   await writeFile(path.join(nested, "paper.txt"), "paper notes\n");
 
   try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot, ownership: "external-knowledge" });
     const result = await executeMoveImport({
       sourcePath: source,
       memoryRoot,
       ownership: "external-knowledge",
       confirmation: "MOVE Research",
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
     });
     assert.equal(result.status, "moved");
     assert.equal(result.movedCount, 2);
@@ -127,10 +130,12 @@ test("move import supports verified copy-unlink relocation", async () => {
   await mkdir(memoryRoot, { recursive: true });
   await writeFile(path.join(source, "note.md"), "copy me\n");
   try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
     const result = await executeMoveImport({
       sourcePath: source,
       memoryRoot,
       confirmation: "MOVE Cross Volume",
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
       moveFile: async (sourcePath, destinationPath) => {
         const bytes = await readFile(sourcePath);
         await writeFile(destinationPath, bytes);
@@ -155,10 +160,12 @@ test("move import rejects destination hash mismatch and keeps original source", 
   await mkdir(memoryRoot, { recursive: true });
   await writeFile(path.join(source, "note.md"), "correct bytes\n");
   try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
     const result = await executeMoveImport({
       sourcePath: source,
       memoryRoot,
       confirmation: "MOVE Hash Guard",
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
       moveFile: async (_sourcePath, destinationPath) => {
         await writeFile(destinationPath, "corrupt bytes\n");
         return "bad-copy";
@@ -184,10 +191,12 @@ test("move import automatically rolls back earlier files after a later move fail
   await writeFile(path.join(source, "b.md"), "second\n");
   let calls = 0;
   try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
     const result = await executeMoveImport({
       sourcePath: source,
       memoryRoot,
       confirmation: "MOVE Rollback Guard",
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
       moveFile: async (sourcePath, destinationPath) => {
         calls += 1;
         if (calls === 2) {
@@ -219,10 +228,12 @@ test("move rollback refuses to restore corrupted destination bytes", async () =>
   await mkdir(memoryRoot, { recursive: true });
   await writeFile(path.join(source, "note.md"), "trusted bytes\n");
   try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
     const result = await executeMoveImport({
       sourcePath: source,
       memoryRoot,
       confirmation: "MOVE Rollback Hash",
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
     });
     await writeFile(path.join(result.destinationRoot, "note.md"), "tampered bytes\n");
     const rollback = await rollbackMoveImport({
@@ -247,11 +258,43 @@ test("move import requires exact human confirmation phrase", async () => {
   await mkdir(memoryRoot, { recursive: true });
   await writeFile(path.join(source, "note.md"), "note\n");
   try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
     await assert.rejects(
-      () => executeMoveImport({ sourcePath: source, memoryRoot, confirmation: "yes" }),
+      () => executeMoveImport({
+        sourcePath: source,
+        memoryRoot,
+        confirmation: "yes",
+        expectedPreflightFingerprint: preflight.preflightFingerprint,
+      }),
       /requires confirmation phrase/
     );
     assert.equal(existsSync(path.join(source, "note.md")), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("move import rejects stale preflight fingerprints before moving files", async () => {
+  const root = await fixtureRoot("move-stale-preflight");
+  const source = path.join(root, "Changing Source");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(source, { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  await writeFile(path.join(source, "note.md"), "original\n");
+  try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
+    await writeFile(path.join(source, "added-after-preflight.md"), "new evidence\n");
+    await assert.rejects(
+      () => executeMoveImport({
+        sourcePath: source,
+        memoryRoot,
+        confirmation: preflight.confirmationPhrase,
+        expectedPreflightFingerprint: preflight.preflightFingerprint,
+      }),
+      /source changed after preflight/i
+    );
+    assert.equal(existsSync(path.join(source, "note.md")), true);
+    assert.equal(existsSync(path.join(source, "added-after-preflight.md")), true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
