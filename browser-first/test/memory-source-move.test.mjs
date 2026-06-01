@@ -151,6 +151,40 @@ test("move import preserves new source files that appear before source cleanup",
   }
 });
 
+test("move rollback restores moved files without deleting preserved new source files", async () => {
+  const root = await fixtureRoot("move-rollback-preserved-source");
+  const source = path.join(root, "Live Source");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(source, { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  await writeFile(path.join(source, "approved.md"), "approved\n");
+  try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
+    const result = await executeMoveImport({
+      sourcePath: source,
+      memoryRoot,
+      confirmation: preflight.confirmationPhrase,
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
+      beforeSourceCleanup: async ({ sourcePath }) => {
+        await writeFile(path.join(sourcePath, "new-after-move.md"), "new evidence\n");
+      },
+    });
+    assert.equal(result.sourceCleanupStatus, "preserved-new-content");
+
+    const rollback = await rollbackMoveImport({
+      ledgerPath: result.ledgerPath,
+      confirmation: "ROLLBACK MOVE",
+    });
+    assert.equal(rollback.restoredCount, 1);
+    assert.equal(rollback.skippedCount, 0);
+    assert.equal(await readFile(path.join(source, "approved.md"), "utf8"), "approved\n");
+    assert.equal(await readFile(path.join(source, "new-after-move.md"), "utf8"), "new evidence\n");
+    assert.equal(existsSync(path.join(result.destinationRoot, "approved.md")), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("move import supports verified copy-unlink relocation", async () => {
   const root = await fixtureRoot("move-copy-unlink");
   const source = path.join(root, "Cross Volume");
