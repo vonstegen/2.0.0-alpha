@@ -4,6 +4,7 @@ export function createBridgeClient(config = defaultBridgeConfig) {
   const bridgeUrl = config.bridgeUrl ?? "http://127.0.0.1:47773";
   const bridgeToken = config.bridgeToken ?? "";
   const bridgeCapabilityTokens = config.bridgeCapabilityTokens ?? {};
+  const fetchImpl = config.fetchImpl ?? fetch;
 
   return async function bridgeRequest(route, options = {}) {
     const headers = options.body ? { "Content-Type": "application/json" } : {};
@@ -13,7 +14,7 @@ export function createBridgeClient(config = defaultBridgeConfig) {
     if (options.capability && bridgeCapabilityTokens[options.capability]) {
       headers["X-ResonantOS-Bridge-Capability-Token"] = bridgeCapabilityTokens[options.capability];
     }
-    const response = await fetch(`${bridgeUrl}${route}`, {
+    const response = await fetchImpl(`${bridgeUrl}${route}`, {
       method: options.method ?? "GET",
       headers,
       body: options.body ? JSON.stringify(options.body) : undefined,

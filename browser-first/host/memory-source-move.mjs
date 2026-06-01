@@ -35,6 +35,57 @@ function isSameOrInside(candidate, root) {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
+function normalizeLedgerRelativePath(value) {
+  const relativePath = String(value ?? "").replace(/\\/g, "/").trim();
+  if (!relativePath || relativePath === "." || path.isAbsolute(relativePath) || relativePath.split("/").includes("..")) {
+    throw new Error("Move import rollback ledger contains an unsafe relative path.");
+  }
+  return relativePath;
+}
+
+function assertLedgerEntryMatchesManifest(entry, manifest) {
+  if (!manifest?.sourcePath || !manifest?.destinationRoot) {
+    throw new Error("Move import rollback requires a readable manifest or ledger boundary.");
+  }
+  const relativePath = normalizeLedgerRelativePath(entry.relativePath);
+  const expectedSource = path.resolve(manifest.sourcePath, relativePath);
+  const expectedDestination = path.resolve(manifest.destinationRoot, relativePath);
+  if (path.resolve(entry.sourcePath) !== expectedSource || path.resolve(entry.destinationPath) !== expectedDestination) {
+    throw new Error(`Move import rollback ledger entry escaped its manifest boundary: ${relativePath}`);
+  }
+  ensureInside(entry.sourcePath, manifest.sourcePath, "Move import rollback source path escaped original source root.");
+  ensureInside(entry.destinationPath, manifest.destinationRoot, "Move import rollback destination path escaped managed memory root.");
+}
+
+function ledgerBoundaryManifest(entries) {
+  const boundary = entries.find((entry) => entry?.action === "move-boundary" && entry?.status === "move-boundary");
+  if (!boundary?.sourcePath || !boundary?.destinationRoot) {
+    return null;
+  }
+  return {
+    moveId: boundary.moveId,
+    sourcePath: boundary.sourcePath,
+    destinationRoot: boundary.destinationRoot,
+    kind: boundary.kind,
+    ownership: boundary.ownership,
+    importMode: boundary.importMode,
+    preflightFingerprint: boundary.preflightFingerprint,
+  };
+}
+
+function assertLedgerBoundaryMatchesManifest(boundaryManifest, manifest) {
+  if (!manifest || !boundaryManifest) {
+    return;
+  }
+  if (
+    path.resolve(boundaryManifest.sourcePath) !== path.resolve(manifest.sourcePath) ||
+    path.resolve(boundaryManifest.destinationRoot) !== path.resolve(manifest.destinationRoot) ||
+    String(boundaryManifest.preflightFingerprint ?? "") !== String(manifest.preflightFingerprint ?? "")
+  ) {
+    throw new Error("Move import rollback ledger boundary does not match the move manifest.");
+  }
+}
+
 function memoryDomainForOwnership(ownership) {
   if (ownership === "human-knowledge") return path.join("HUMAN_KNOWLEDGE", "sources");
   if (ownership === "external-knowledge") return path.join("EXTERNAL_KNOWLEDGE", "sources");
@@ -427,6 +478,18 @@ export async function executeMoveImport({
   };
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
   await writeFile(ledgerPath, "", { mode: 0o600 });
+  await appendFile(ledgerPath, `${JSON.stringify({
+    moveId,
+    at: now,
+    action: "move-boundary",
+    sourcePath: preflight.sourcePath,
+    destinationRoot: preflight.destinationRoot,
+    kind,
+    ownership,
+    importMode: "move-on-import",
+    preflightFingerprint: preflight.preflightFingerprint,
+    status: "move-boundary",
+  })}\n`, { mode: 0o600 });
 
   const moved = [];
   const createdDirectories = [];
@@ -512,6 +575,11 @@ export async function executeMoveImport({
   }
 
   const finishedAt = new Date().toISOString();
+  const automaticRollbackStatus = automaticRollback.skipped.length ||
+    automaticDirectoryRollback.skipped.length ||
+    automaticRootRollback.skippedCleanup
+    ? "partial"
+    : "restored";
   const finalManifest = {
     ...manifest,
     finishedAt,
@@ -524,6 +592,7 @@ export async function executeMoveImport({
     rollbackSkippedDirectoryCount: automaticDirectoryRollback.skipped.length,
     rollbackSourceRootRestored: automaticRootRollback.restored,
     rollbackSkippedRootCleanupCount: automaticRootRollback.skippedCleanup ? 1 : 0,
+    rollbackStatus: failed.length ? automaticRollbackStatus : "",
     sourceCleanupStatus,
     status: failed.length ? "partial-failure-rolled-back" : "moved",
   };
@@ -554,11 +623,35 @@ export async function rollbackMoveImport({ ledgerPath, confirmation }) {
   if (!existsSync(resolvedLedger)) {
     throw new Error("Move import rollback ledger was not found.");
   }
+  const ledgerInfo = await lstat(resolvedLedger);
+  if (!ledgerInfo.isFile() || ledgerInfo.isSymbolicLink()) {
+    throw new Error("Move import rollback ledger must be a regular file.");
+  }
   if (String(confirmation ?? "").trim() !== "ROLLBACK MOVE") {
     throw new Error("Move import rollback requires confirmation phrase: ROLLBACK MOVE");
   }
+  const manifestPath = path.join(path.dirname(resolvedLedger), "manifest.json");
+  let manifest = null;
+  if (existsSync(manifestPath)) {
+    try {
+      manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    } catch {
+      manifest = null;
+    }
+  }
+  if (manifest?.rollbackStatus === "restored") {
+    throw new Error("This move import has already been fully restored.");
+  }
   const lines = (await readFile(resolvedLedger, "utf8")).split(/\r?\n/).filter(Boolean);
   const entries = lines.map((line) => JSON.parse(line));
+  const boundaryManifest = ledgerBoundaryManifest(entries);
+  assertLedgerBoundaryMatchesManifest(boundaryManifest, manifest);
+  const rollbackBoundary = manifest ?? boundaryManifest;
+  for (const entry of entries) {
+    if (["moved", "created-directory"].includes(entry.status)) {
+      assertLedgerEntryMatchesManifest(entry, rollbackBoundary);
+    }
+  }
   const moved = entries.filter((entry) => entry.status === "moved").reverse();
   const createdDirectories = entries.filter((entry) => entry.status === "created-directory");
   const restored = [];
@@ -575,16 +668,7 @@ export async function rollbackMoveImport({ ledgerPath, confirmation }) {
   await cleanupEmptyDestinationDirs(moved);
   const rolledBackAt = new Date().toISOString();
   const rollbackReportPath = path.join(path.dirname(resolvedLedger), "rollback-report.json");
-  const manifestPath = path.join(path.dirname(resolvedLedger), "manifest.json");
-  let manifest = null;
-  if (existsSync(manifestPath)) {
-    try {
-      manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-    } catch {
-      manifest = null;
-    }
-  }
-  const rootRollback = await rollbackMoveRoot(manifest);
+  const rootRollback = await rollbackMoveRoot(rollbackBoundary);
   const report = {
     rolledBackAt,
     ledgerPath: resolvedLedger,

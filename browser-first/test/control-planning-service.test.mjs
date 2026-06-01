@@ -30,7 +30,7 @@ function createHarness(overrides = {}) {
   const service = createControlPlanningService({
     bridgeRequest,
     getLastSnapshot: () => overrides.lastSnapshot ?? { title: "Last", url: "https://last.example/" },
-    getModel: () => "MiniMax-M2.7",
+    getModel: () => "MiniMax-M3",
     getThinkingDepth: () => "high",
     globalScope: overrides.globalScope ?? {},
     readActivePage: async () => {
@@ -63,7 +63,7 @@ test("control planning service requests and sanitizes full plans through the bri
   assert.equal(harness.calls[0][0], "bridge");
   assert.equal(harness.calls[0][1], "/augmentor/control-plan");
   assert.equal(harness.calls[0][2].goal, "open example");
-  assert.equal(harness.calls[0][2].model, "MiniMax-M2.7");
+  assert.equal(harness.calls[0][2].model, "MiniMax-M3");
   assert.equal(harness.calls[0][2].thinkingDepth, "high");
   assert.deepEqual(harness.calls[0][2].pageSnapshot, { title: "Page" });
   assert.equal(harness.calls[0][2].runbook.taskClass, "page-work");
@@ -76,7 +76,7 @@ test("control planning service requests and sanitizes full plans through the bri
     "/augmentor/control-plan",
     {
       goal: "open example",
-      model: "MiniMax-M2.7",
+      model: "MiniMax-M3",
       thinkingDepth: "high",
       pageSnapshot: { title: "Page" }
     }

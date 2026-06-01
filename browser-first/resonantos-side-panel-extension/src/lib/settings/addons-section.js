@@ -1,5 +1,5 @@
 import { noteCard, safeErrorMessage, setStatus, settingsHeader } from "./settings-common.js";
-import { capabilityReviewElement } from "../addon-capability-review.js";
+import { capabilityReviewElement, capabilityReviewState } from "../addon-capability-review.js";
 
 function addonTone(addon) {
   if (addon.available || addon.enabled) return "success";
@@ -18,6 +18,32 @@ function addonBoundary(addon) {
     return "Coding add-ons receive bounded delegation packets and return artifacts through ResonantOS.";
   }
   return "Add-ons are replaceable capabilities. They are not trusted core agents unless explicitly granted scoped authority.";
+}
+
+function addonCapabilitySummary(addon) {
+  const state = capabilityReviewState(addon);
+  const parts = [];
+  if (state.granted.length) parts.push(`${state.granted.length} granted`);
+  if (state.pending.length) parts.push(`${state.pending.length} needs review`);
+  if (state.denied.length) parts.push(`${state.denied.length} denied`);
+  return parts.length ? parts.join(" · ") : "Explicit grants required";
+}
+
+function addonDisclosure(title, body, children = []) {
+  const details = document.createElement("details");
+  details.className = "settings-addon-disclosure";
+  const summary = document.createElement("summary");
+  summary.textContent = title;
+  const panel = document.createElement("div");
+  panel.className = "settings-addon-disclosure-body";
+  if (body) {
+    const copy = document.createElement("p");
+    copy.textContent = body;
+    panel.append(copy);
+  }
+  panel.append(...children);
+  details.append(summary, panel);
+  return details;
 }
 
 function addonCard(addon, actions = {}) {
@@ -40,6 +66,10 @@ function addonCard(addon, actions = {}) {
   const boundary = document.createElement("p");
   boundary.textContent = addonBoundary(addon);
 
+  const summary = document.createElement("small");
+  summary.className = "settings-addon-summary";
+  summary.textContent = addonCapabilitySummary(addon);
+
   const executionPanel = document.createElement("div");
   executionPanel.className = "settings-addon-execution";
   const executionState = Boolean(addon.execution?.localCliExecution);
@@ -55,8 +85,20 @@ function addonCard(addon, actions = {}) {
     executionPanel.append(text, toggle);
   }
 
-  card.append(header, boundary, capabilityReviewElement(addon));
-  if (executionPanel.childNodes.length) card.append(executionPanel);
+  const capabilities = addonDisclosure(
+    "Capabilities and grants",
+    "Review exactly what this add-on can request, what is granted, and what remains denied or pending.",
+    [capabilityReviewElement(addon)]
+  );
+
+  card.append(header, boundary, summary, capabilities);
+  if (executionPanel.childNodes.length) {
+    card.append(addonDisclosure(
+      "Runtime controls",
+      "Local execution is optional and remains governed by ResonantOS packets and artifacts.",
+      [executionPanel]
+    ));
+  }
   return card;
 }
 
@@ -71,14 +113,14 @@ export function renderAddonsSection(container, { bridgeRequest }) {
     settingsHeader({
       eyebrow: "Add-ons and permissions",
       title: "Add-on Control",
-      body: "Inspect installed add-ons, availability, trust posture, and capability grants. Core Settings shows boundaries; add-on-specific internals stay inside each add-on workspace."
+      body: "Enable replaceable capabilities without lock-in. Start by checking availability and trust posture; open details only when you need grants or runtime controls."
     }),
     statusNode,
-    grid,
     noteCard({
       title: "Permission rule",
       body: "Add-ons declare requirements. ResonantOS mediates provider, memory, browser, filesystem, and future wallet access through scoped capability grants."
-    })
+    }),
+    grid
   );
 
   const load = async () => {

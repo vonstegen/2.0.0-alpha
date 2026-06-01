@@ -39,7 +39,9 @@
     "browser-first:verify-installed": "node scripts/verify-browser-first-app.mjs",
     "browser-first:verify-desktop": "node scripts/verify-browser-first-desktop.mjs",
     "browser-first:audit-desktop": "node scripts/audit-browser-first-desktop-report.mjs",
-    "browser-first:prove-desktop": "node scripts/prove-browser-first-desktop.mjs"
+    "browser-first:prove-desktop": "node scripts/prove-browser-first-desktop.mjs",
+    "browser-first:audit-scope": "node scripts/browser-first-release-scope-audit.mjs",
+    "browser-first:audit-scope:staged": "node scripts/browser-first-release-scope-audit.mjs --staged --strict"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",

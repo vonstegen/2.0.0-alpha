@@ -23,6 +23,7 @@ test("wiki lint writes a durable review artifact and appends wiki log entry", as
     });
     assert.equal(result.ok, true);
     assert.equal(result.relativeArtifactPath, "REVIEW/lint/wiki-lint-2026-05-31T12-00-00-000Z.md");
+    assert.equal(result.logAppended, true);
     assert.equal(existsSync(result.artifactPath), true);
     const artifact = await readFile(result.artifactPath, "utf8");
     assert.match(artifact, /kind: wiki-lint-report/);
@@ -38,6 +39,33 @@ test("wiki lint writes a durable review artifact and appends wiki log entry", as
   }
 });
 
+test("wiki lint reports a missing log without creating one", async () => {
+  const memoryRoot = await mkdtemp(path.join(os.tmpdir(), "resonantos-wiki-lint-no-log-"));
+  const wikiRoot = path.join(memoryRoot, "AI_MEMORY", "wiki");
+  const logPath = path.join(wikiRoot, "log.md");
+  await mkdir(wikiRoot, { recursive: true });
+  await writeFile(path.join(wikiRoot, "index.md"), "# Index\n\n- [[claim]]\n");
+  await writeFile(path.join(wikiRoot, "claim.md"), "# Claim\n\nSource-backed claim.\n\nSource: seed.md\n");
+  try {
+    const result = await runWikiLint({
+      memoryRoot,
+      actor: "test-runner",
+      reason: "missing log should stay visible",
+      now: "2026-05-31T12:15:00.000Z",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.health.exists, true);
+    assert.equal(result.logAppended, false);
+    assert.equal(existsSync(logPath), false);
+    assert.equal(result.health.issues.some((issue) => issue.type === "missing-log"), true);
+    const artifact = await readFile(result.artifactPath, "utf8");
+    assert.match(artifact, /missing-log/);
+    assert.match(artifact, /missing log should stay visible/);
+  } finally {
+    await rm(memoryRoot, { recursive: true, force: true });
+  }
+});
+
 test("wiki lint still writes an artifact when the wiki root is missing", async () => {
   const memoryRoot = await mkdtemp(path.join(os.tmpdir(), "resonantos-wiki-lint-missing-"));
   try {
@@ -47,6 +75,7 @@ test("wiki lint still writes an artifact when the wiki root is missing", async (
     });
     assert.equal(result.ok, true);
     assert.equal(result.health.exists, false);
+    assert.equal(result.logAppended, false);
     assert.equal(existsSync(result.artifactPath), true);
     const artifact = await readFile(result.artifactPath, "utf8");
     assert.match(artifact, /AI_MEMORY\/wiki missing/);

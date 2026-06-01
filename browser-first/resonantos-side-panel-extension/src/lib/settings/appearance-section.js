@@ -14,6 +14,17 @@ function option(value, text, selected) {
   return node;
 }
 
+function labelledControl(label, help, control) {
+  const wrapper = document.createElement("label");
+  wrapper.className = "settings-appearance-control";
+  const title = document.createElement("span");
+  title.textContent = label;
+  const detail = document.createElement("small");
+  detail.textContent = help;
+  wrapper.append(title, detail, control);
+  return wrapper;
+}
+
 function applyAppearance(preferences = {}) {
   const next = { ...defaults, ...preferences };
   document.body.dataset.density = next.density;
@@ -34,7 +45,7 @@ export function renderAppearanceSection(container, { storage, storageKeys = {} }
   statusNode.className = "settings-status";
   statusNode.textContent = "Loading appearance settings...";
   const form = document.createElement("form");
-  form.className = "settings-routing-form";
+  form.className = "settings-appearance-form";
 
   const density = document.createElement("select");
   density.name = "density";
@@ -62,18 +73,23 @@ export function renderAppearanceSection(container, { storage, storageKeys = {} }
   const save = document.createElement("button");
   save.type = "submit";
   save.textContent = "Save Appearance";
-  form.append(density, fontScale, motion, save);
+  form.append(
+    labelledControl("Density", "Choose compact desktop spacing or larger touch-friendly controls.", density),
+    labelledControl("Text size", "Adjust chat, navigation, and settings text without changing workflows.", fontScale),
+    labelledControl("Motion", "Reduce motion when animation should be calmer or less distracting.", motion),
+    save
+  );
 
   container.replaceChildren(
     settingsHeader({
       eyebrow: "Appearance and accessibility",
       title: "Interface Preferences",
-      body: "Tune the browser workspace for compact desktop use or larger touch-friendly controls without changing the underlying workflows."
+      body: "Tune the workspace for desktop focus or touch-friendly use. These settings change presentation only, not agent behavior."
     }),
     statusNode,
     noteCard({
-      title: "Touch direction",
-      body: "Touch-friendly density keeps the interface usable on tablets and touch screens. Compact density keeps the sidebar efficient for desktop power use."
+      title: "Recommended default",
+      body: "Use Comfortable + Standard + Full motion for the normal desktop experience. Switch to Touch friendly when using a touchscreen."
     }),
     form
   );

@@ -702,8 +702,8 @@ These features exist in the desktop vNext codebase and remain important. Some wi
    - Next refinement: keep improving action-specific copy and recovery actions only where deterministic tests prove a real user-facing gap.
 
 2. **Browser-First Memory Bridge UX**
-   - Status: review/promote cards now show the governed pipeline and the immediate next action for each request; artifact review requests hand off directly to the Living Archive review queue; direct page, selection, summary, and research-trail captures now give matching review-queue guidance; main-workspace button and command captures show an actionable review-queue notice; Artifacts previews now show source-specific metadata for browser captures and reports; review-queue cards can inspect preserved source evidence in-place before drafting.
-   - Next refinement: make post-promotion state easier to navigate from the review card, including direct promoted-page preview and restore context.
+   - Status: review/promote cards now show the governed pipeline and the immediate next action for each request; artifact review requests hand off directly to the Living Archive review queue; direct page, selection, summary, and research-trail captures now give matching review-queue guidance; main-workspace button and command captures show an actionable review-queue notice; that notice now carries the exact review request into Living Archive, focuses the matching review card, and previews preserved source evidence when available; promoted-page handoffs now focus the matching promotion history card and auto-preview the trusted AI Memory page; Artifacts previews now show source-specific metadata for browser captures and reports; review-queue cards can inspect preserved source evidence in-place before drafting.
+   - Next refinement: make restore context and post-promotion audit evidence easier to navigate wherever a completed review result appears.
    - Reason: this connects the browser product to the LLM Wiki / Living Archive advantage.
 
 3. **Browser-First Add-on Surface**
@@ -720,5 +720,6 @@ These features exist in the desktop vNext codebase and remain important. Some wi
    - Reason: this supports ResonantDAO use cases without compromising security.
 
 6. **Browser-First Onboarding And Settings**
-   - Add provider, memory, permissions, add-ons, and diagnostics settings inside the browser-first app.
+   - Status: provider, memory, permissions, add-ons, diagnostics, profile, appearance, and routing settings are present inside the browser-first app; direct settings links such as `#settings/profile` and `#settings/providers` now open the exact section without overriding the default fresh-chat launch.
+   - Next refinement: continue simplifying copy, defaults, and first-run guidance based on rendered UI audits rather than adding more visible controls.
    - Reason: the product needs to be usable without terminal/config knowledge.

@@ -16,75 +16,103 @@ const sections = [
     id: "profile",
     label: "Profile",
     hint: "User and Augmentor",
+    group: "Start here",
     render: renderPersonalizationSection
   },
   {
     id: "overview",
-    label: "Overview",
-    hint: "System health",
+    label: "Start Here",
+    hint: "Setup checklist",
+    group: "Start here",
     render: renderOverviewSection
   },
   {
     id: "providers",
     label: "Providers",
     hint: "Models and credentials",
+    group: "Start here",
     render: renderProvidersSection
-  },
-  {
-    id: "routing",
-    label: "Routing",
-    hint: "Cost and fallback",
-    render: renderRoutingSection
-  },
-  {
-    id: "work",
-    label: "Chats & Projects",
-    hint: "Archive and restore",
-    render: renderWorkSection
   },
   {
     id: "memory",
     label: "Memory",
     hint: "Sources and sync",
+    group: "Start here",
     render: renderMemorySection
+  },
+  {
+    id: "work",
+    label: "Chats & Projects",
+    hint: "Archive and restore",
+    group: "Work",
+    render: renderWorkSection
   },
   {
     id: "browser-control",
     label: "Browser Control",
     hint: "AI permissions",
+    group: "Work",
     render: renderBrowserControlSection
   },
   {
     id: "addons",
     label: "Add-ons",
     hint: "Permissions",
+    group: "Work",
     render: renderAddonsSection
+  },
+  {
+    id: "routing",
+    label: "Routing",
+    hint: "Cost and fallback",
+    group: "Advanced",
+    render: renderRoutingSection
   },
   {
     id: "privacy",
     label: "Privacy",
     hint: "Trust boundaries",
+    group: "Advanced",
     render: renderPrivacySection
   },
   {
     id: "diagnostics",
     label: "Diagnostics",
     hint: "Logs and reports",
+    group: "Advanced",
     render: renderDiagnosticsSection
   },
   {
     id: "appearance",
     label: "Appearance",
     hint: "Density and motion",
+    group: "Advanced",
     render: renderAppearanceSection
   },
   {
     id: "about",
     label: "About",
     hint: "Version and architecture",
+    group: "Advanced",
     render: renderAboutSection
   }
 ];
+
+function groupedSectionButtons(activeId, onSelect) {
+  const nodes = [];
+  let currentGroup = "";
+  for (const section of sections) {
+    if (section.group !== currentGroup) {
+      currentGroup = section.group;
+      const label = document.createElement("span");
+      label.className = "settings-nav-group-label";
+      label.textContent = currentGroup;
+      nodes.push(label);
+    }
+    nodes.push(sectionButton(section, activeId, onSelect));
+  }
+  return nodes;
+}
 
 function sectionButton(section, activeId, onSelect) {
   const button = document.createElement("button");
@@ -146,11 +174,11 @@ export function renderSettingsWorkspace({
 
   const renderActive = () => {
     const activeSection = sections.find((section) => section.id === activeId) ?? sections[0];
-    nav.replaceChildren(...sections.map((section) => sectionButton(section, activeId, (nextId) => {
+    nav.replaceChildren(...groupedSectionButtons(activeId, (nextId) => {
       if (nextId === activeId) return;
       activeId = nextId;
       renderActive();
-    })));
+    }));
     activeSection.render(panel, { ...context, sectionId: activeSection.id });
   };
 

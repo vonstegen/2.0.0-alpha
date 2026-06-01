@@ -64,6 +64,10 @@ Intent: keep the browser-first ResonantOS work aligned with the AI-browser capab
 - Browser job ownership labels v1: the monitor labels which job owns the visible page and which approval jobs are backgrounded, including the locked tab that Focus activates before approve or deny.
 - Browser page summaries can be generated into Living Archive intake with source provenance, review queueing, and a deterministic fallback when the provider is unavailable.
 - Multi-tab browser research trails can be captured into one Living Archive intake bundle with per-page provenance and review queueing.
+- Browser-first Memory Bridge UX v1.2: main-workspace review handoffs now carry the exact review request and source artifact into the Living Archive workspace, focus the matching review card, and auto-preview preserved source evidence when available.
+- Browser-first Memory Bridge UX v1.3: promoted-page handoffs now carry the trusted AI Memory page into the Living Archive workspace, focus the matching promotion history card, and auto-preview the promoted wiki page so completed review results are easier to inspect.
+- Browser-first New Tab UX v1: ResonantOS now owns the Chromium new-tab override, seeds startup to the main workspace, and suppresses first-run/default-browser/crash-restore distractions where safe so the product opens as ResonantOS first, not raw Chromium.
+- Browser-first Settings deep links v1: direct links such as `#settings/profile` and `#settings/providers` now open the exact Settings section, Settings/Profile clicks update the browser hash, and the default no-hash launch still opens a fresh main chat.
 - Living Archive wiki index maintenance v1: trusted promotion upserts the promoted page in `AI_MEMORY/wiki/index.md` as a deduplicated content catalog while preserving `log.md` as the append-only chronology.
 - Living Archive wiki health v1.1: health checks now flag duplicate `index.md` catalog entries so old append-style drift is visible and repairable.
 - Living Archive search v1.1: AI Memory search now uses `index.md` as the first navigation layer, prioritizes catalog hits, and falls back to page content when the catalog has not caught up.

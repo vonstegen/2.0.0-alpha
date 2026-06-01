@@ -10,6 +10,7 @@ import { ResonantBrowserHost, handleJsonRpcLine } from "../src/browser-host.mjs"
 
 let server;
 let baseUrl;
+let localhostBindDenied = false;
 
 function html(body) {
   return `<!doctype html>
@@ -47,17 +48,37 @@ before(async () => {
     );
   });
 
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    await new Promise((resolveListen, rejectListen) => {
+      server.once("error", rejectListen);
+      server.listen(0, "127.0.0.1", () => {
+        server.off("error", rejectListen);
+        resolveListen();
+      });
+    });
+  } catch (error) {
+    if (error?.code === "EPERM" && error?.address === "127.0.0.1") {
+      localhostBindDenied = true;
+      return;
+    }
+    throw error;
+  }
   const address = server.address();
   baseUrl = `http://127.0.0.1:${address.port}`;
 });
 
 after(async () => {
-  await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  if (server?.listening) {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
 });
 
 describe("ResonantBrowserHost", () => {
-  it("opens, reads, clicks, types, captures evidence, and closes a Chromium session", async () => {
+  it("opens, reads, clicks, types, captures evidence, and closes a Chromium session", async (t) => {
+    if (localhostBindDenied) {
+      t.skip("localhost bind is denied in this sandbox; browser-host live Chromium behavior must be verified outside sandboxed CI.");
+      return;
+    }
     const artifactsDir = await mkdtemp(join(tmpdir(), "resonant-browser-host-"));
     const host = new ResonantBrowserHost({ headless: true });
 
@@ -95,7 +116,11 @@ describe("ResonantBrowserHost", () => {
     await assert.rejects(() => host.start({ defaultUrl: "file:///etc/passwd" }), /http and https URLs/);
   });
 
-  it("handles stdio JSON-RPC method lines", async () => {
+  it("handles stdio JSON-RPC method lines", async (t) => {
+    if (localhostBindDenied) {
+      t.skip("localhost bind is denied in this sandbox; browser-host JSON-RPC live Chromium behavior must be verified outside sandboxed CI.");
+      return;
+    }
     const host = new ResonantBrowserHost({ headless: true });
 
     const response = await handleJsonRpcLine(

@@ -21,23 +21,29 @@ test("provider fabric auto route uses primary subscription model when available"
   assert.equal(decision.source, "strategy");
   assert.equal(decision.strategy.id, "augmentor-chat");
   assert.equal(decision.route.providerId, "shared-minimax");
-  assert.equal(decision.route.wireModel, "MiniMax-M2.7");
+  assert.equal(decision.route.wireModel, "MiniMax-M3");
 });
 
 test("provider fabric skips disabled primary models and uses next allowed configured fallback", () => {
   const secrets = { "shared-minimax": "stored-minimax", "shared-openai": "stored-openai" };
   const preferences = {
     allowedModels: {
-      "shared-minimax": ["MiniMax-M2.7"],
-      "shared-openai": ["gpt-5.5", "gpt-5.4-mini"],
+      "shared-minimax": ["MiniMax-M3"],
+      "shared-openai": ["gpt-5.4-mini"],
     },
   };
-  const strategies = resolveRoutingStrategies({ secrets, preferences });
+  const overrides = {
+    "augmentor-chat": {
+      primaryModel: "gpt-5.5",
+      fallbackModels: ["MiniMax-M3"],
+    },
+  };
+  const strategies = resolveRoutingStrategies({ secrets, preferences, overrides });
   const augmentor = strategies.find((strategy) => strategy.id === "augmentor-chat");
 
-  assert.equal(augmentor.primary.model, "MiniMax-M2.7-highspeed");
+  assert.equal(augmentor.primary.model, "gpt-5.5");
   assert.equal(augmentor.primary.state, "disabled");
-  assert.equal(augmentor.fallbackChain[0].model, "MiniMax-M2.7");
+  assert.equal(augmentor.fallbackChain[0].model, "MiniMax-M3");
   assert.equal(augmentor.fallbackChain[0].state, "available");
 
   const decision = providerRouteForWorkload({
@@ -48,7 +54,7 @@ test("provider fabric skips disabled primary models and uses next allowed config
   });
 
   assert.equal(decision.route.providerId, "shared-minimax");
-  assert.equal(decision.route.wireModel, "MiniMax-M2.7");
+  assert.equal(decision.route.wireModel, "MiniMax-M3");
 });
 
 test("provider fabric escalates to paid fallback only when subscription route is unavailable", () => {
@@ -69,16 +75,16 @@ test("provider fabric escalates to paid fallback only when subscription route is
 test("provider fabric blocks manual selection of disabled models", () => {
   const preferences = {
     allowedModels: {
-      "shared-minimax": ["MiniMax-M2.7"],
+      "shared-openai": ["gpt-5.5"],
     },
   };
   const decision = providerRouteForWorkload({
     workloadId: "augmentor-chat",
-    requestedModel: "MiniMax-M2.7-highspeed",
-    secrets: { "shared-minimax": "stored-minimax" },
+    requestedModel: "gpt-5.4-mini",
+    secrets: { "shared-openai": "stored-openai" },
     preferences,
     strategies: resolveRoutingStrategies({
-      secrets: { "shared-minimax": "stored-minimax" },
+      secrets: { "shared-openai": "stored-openai" },
       preferences,
     }),
   });
@@ -141,12 +147,12 @@ test("provider fabric can describe separate accounts for the same provider type"
     id: "minimax-routine-account",
     label: "MiniMax Routine Account",
     providerType: "minimax",
-    models: ["MiniMax-M2.7"],
+    models: ["MiniMax-M3"],
   });
 
   assert.equal(entries.length, 1);
   assert.equal(entries[0].providerId, "minimax-routine-account");
   assert.equal(entries[0].providerLabel, "MiniMax Routine Account");
   assert.equal(entries[0].providerType, "minimax");
-  assert.equal(entries[0].wireModel, "MiniMax-M2.7");
+  assert.equal(entries[0].wireModel, "MiniMax-M3");
 });

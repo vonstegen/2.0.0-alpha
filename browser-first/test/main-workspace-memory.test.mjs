@@ -63,6 +63,55 @@ test("living archive workspace renders status, search, and intake through bridge
   let verified = false;
   let promoted = false;
   let restored = false;
+  let selectedFileIntakeCreated = false;
+  let latestSyncHistory = [{
+    id: "sync-review-only",
+    startedAt: "2026-05-29T10:50:00.000Z",
+    finishedAt: "2026-05-29T10:51:00.000Z",
+    status: "review-only",
+    mode: "manual-review",
+    autoSync: false,
+    autoIntake: false,
+    reviewedSources: 1,
+    eligibleFiles: 1,
+    createdArtifacts: 0,
+    reviewRequests: 0,
+    skippedSources: [{
+      sourceId: "source-disabled",
+      path: "[path]/DisabledVault",
+      reason: "source disabled"
+    }],
+    sources: [{
+      sourceId: "source-test-vault",
+      status: "reviewed",
+      candidates: 3,
+      eligibleFiles: 1,
+      createdArtifacts: 0,
+      reviewRequests: 0,
+      rejectedFiles: 0,
+      eligibleFileSamples: ["notes/research.txt"]
+    }]
+  }];
+  const latestRepairHistory = [{
+    id: "repair-existing",
+    status: "repaired",
+    repairedAt: "2026-05-29T09:00:00.000Z",
+    sourceId: "source-test-vault",
+    sourcePath: "[path]/KnowledgeVault",
+    backupPath: "CONFIG/source-file-history/repairs/source-file-versions.json",
+    message: "Unreadable source version manifest was backed up and reset."
+  }];
+  const latestMoveHistory = [{
+    id: "move-existing",
+    status: "moved",
+    action: "move-execute",
+    at: "2026-05-29T08:30:00.000Z",
+    sourceId: "source-test-vault",
+    originalPath: "[path]/OriginalKnowledgeVault",
+    managedPath: "HUMAN_KNOWLEDGE/sources/OriginalKnowledgeVault",
+    ledgerPath: "CONFIG/move-imports/move-a/move-ledger.jsonl",
+    message: "Source moved into managed Memory and registered as the canonical source."
+  }];
   const bridgeRequest = async (route, options = {}) => {
     calls.push([route, options]);
     if (route === "/memory/status") {
@@ -125,8 +174,42 @@ test("living archive workspace renders status, search, and intake through bridge
             importMode: "copy-on-import",
             exists: false
           }]
-        }
+        },
+        syncHistory: latestSyncHistory,
+        sourceRepairHistory: latestRepairHistory,
+        sourceMoveHistory: latestMoveHistory
       };
+    }
+    if (route === "/memory/source/sync") {
+      latestSyncHistory = [{
+        id: "sync-intake-created",
+        startedAt: "2026-05-29T11:00:00.000Z",
+        finishedAt: "2026-05-29T11:01:00.000Z",
+        status: "intake-created",
+        mode: "auto-intake-review",
+        autoSync: true,
+        autoIntake: true,
+        reviewedSources: 1,
+        eligibleFiles: 2,
+        createdArtifacts: 2,
+        reviewRequests: 2,
+        skippedSources: [],
+        sources: [{
+          sourceId: "source-test-vault",
+          status: "intake-created",
+          candidates: 4,
+          eligibleFiles: 2,
+          createdArtifacts: 2,
+          reviewRequests: 2,
+          rejectedFiles: 0,
+          eligibleFileSamples: ["notes/research.txt", "notes/new.md"],
+          createdArtifactSamples: [
+            { sourceFile: "notes/research.txt", path: "INTAKE/sources/research.md" },
+            { sourceFile: "notes/new.md", path: "INTAKE/sources/new.md" }
+          ]
+        }]
+      }, ...latestSyncHistory];
+      return latestSyncHistory[0];
     }
     if (route === "/memory/source/review") {
       return {
@@ -145,7 +228,15 @@ test("living archive workspace renders status, search, and intake through bridge
         },
         candidates: [
           { path: "index.md", category: "compatible", versionStatus: "unchanged", sourceVersion: 2, previousSourceContentHash: "aaaa", bytes: 1200, modifiedAt: "2026-05-29T10:00:00.000Z" },
-          { path: "notes/research.txt", category: "compatible", versionStatus: "changed", sourceVersion: 1, previousSourceContentHash: "abcdef", bytes: 1800, modifiedAt: "2026-05-29T10:00:30.000Z" },
+          {
+            path: "notes/research.txt",
+            category: "compatible",
+            versionStatus: selectedFileIntakeCreated ? "unchanged" : "changed",
+            sourceVersion: selectedFileIntakeCreated ? 2 : 1,
+            previousSourceContentHash: "abcdef",
+            bytes: 1800,
+            modifiedAt: "2026-05-29T10:00:30.000Z"
+          },
           { path: "raw/tol.mp3", category: "raw-audio", bytes: 2400, modifiedAt: "2026-05-29T10:01:00.000Z" }
         ],
         boundary: "Source review is read-only."
@@ -186,6 +277,7 @@ test("living archive workspace renders status, search, and intake through bridge
       };
     }
     if (route === "/memory/source/file-intake") {
+      selectedFileIntakeCreated = true;
       return {
         sourceId: options.body.sourceId,
         created: options.body.files.map((file, index) => ({
@@ -415,6 +507,35 @@ test("living archive workspace renders status, search, and intake through bridge
     assert.match(container.textContent, /\/Users\/test\/DisabledVault/);
     assert.match(container.textContent, /\/Users\/test\/MissingVault/);
     assert.match(container.textContent, /3\/3 source\(s\) visible/);
+    assert.match(container.textContent, /Recent source syncs/);
+    assert.match(container.textContent, /Recent source repairs/);
+    assert.match(container.textContent, /CONFIG\/source-file-history\/repairs\/source-file-versions\.json/);
+    assert.match(container.textContent, /Recent source moves/);
+    assert.match(container.textContent, /HUMAN_KNOWLEDGE\/sources\/OriginalKnowledgeVault/);
+    assert.match(container.textContent, /CONFIG\/move-imports\/move-a\/move-ledger\.jsonl/);
+    assert.match(container.textContent, /review-only/);
+    assert.match(container.textContent, /1 new\/changed/);
+    assert.match(container.textContent, /Inspect outcome/);
+    assert.match(container.textContent, /source-test-vault · reviewed/);
+    assert.match(container.textContent, /Files: notes\/research\.txt/);
+    assert.match(container.textContent, /source-disabled · skipped/);
+    assert.match(container.textContent, /\[path\]\/DisabledVault · source disabled/);
+    Array.from(container.querySelectorAll(".memory-source-review button"))
+      .find((button) => button.textContent === "Run Sync Now")
+      .click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(calls.some(([route, options]) =>
+      route === "/memory/source/sync" &&
+      options.capability === "memory-source-file-intake" &&
+      options.body.limit === 2_000
+    ));
+    assert.match(container.textContent, /intake-created/);
+    assert.match(container.textContent, /2 new\/changed/);
+    assert.match(container.textContent, /created 2 intake artifact\(s\), and queued 2 review request\(s\)/i);
+    assert.match(container.textContent, /source-test-vault · intake-created/);
+    assert.match(container.textContent, /Files: notes\/research\.txt, notes\/new\.md/);
+    assert.match(container.textContent, /Intake: notes\/research\.txt → INTAKE\/sources\/research\.md/);
     Array.from(container.querySelectorAll(".memory-source-card button"))
       .find((button) => button.textContent === "Versions")
       .click();
@@ -456,34 +577,29 @@ test("living archive workspace renders status, search, and intake through bridge
     ));
     assert.match(container.textContent, /7 scanned/);
     assert.match(container.textContent, /index\.md/);
-    assert.match(container.textContent, /unchanged v2/);
+    assert.match(container.textContent, /Unchanged v2/);
+    assert.match(container.textContent, /Skipped: already imported and unchanged/);
     assert.match(container.textContent, /notes\/research\.txt/);
-    assert.match(container.textContent, /changed v1/);
+    assert.match(container.textContent, /Changed from v1/);
+    assert.match(container.textContent, /Eligible: this file changed since the last governed intake/);
     assert.match(container.textContent, /raw\/tol\.mp3/);
+    assert.match(container.textContent, /Raw source/);
     assert.match(container.textContent, /root · 1/);
     assert.match(container.textContent, /notes · 1/);
     assert.match(container.textContent, /raw · 1/);
     assert.match(container.textContent, /3\/3 candidate\(s\) visible/);
-    Array.from(container.querySelectorAll(".memory-review-preview button"))
-      .find((button) => button.textContent === "Create Intake From New/Changed Files")
-      .click();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.ok(calls.some(([route, options]) =>
-      route === "/memory/source/file-intake" &&
-      options.body.files.join(",") === "notes/research.txt"
-    ));
-    assert.ok(calls.some(([route, options]) =>
-      route === "/archive/review/request" &&
-      options.body.path === "INTAKE/sources/selected-1.md" &&
-      /selected source file notes\/research\.txt/.test(options.body.reason)
-    ));
-    assert.match(container.textContent, /Created 1 selected file intake artifact\(s\); 0 rejected/);
-    const categoryFilter = container.querySelector(".memory-review-preview .memory-source-filterbar select");
+    const [categoryFilter, statusFilter] = container.querySelectorAll(".memory-review-preview .memory-source-filterbar select");
     categoryFilter.value = "compatible";
     categoryFilter.dispatchEvent(new Event("change", { bubbles: true }));
     assert.match(container.textContent, /2\/3 candidate\(s\) visible/);
     assert.doesNotMatch(container.querySelector(".memory-source-candidates").textContent, /raw\/tol\.mp3/);
+    statusFilter.value = "changed";
+    statusFilter.dispatchEvent(new Event("change", { bubbles: true }));
+    assert.match(container.textContent, /1\/3 candidate\(s\) visible/);
+    assert.match(container.querySelector(".memory-source-candidates").textContent, /notes\/research\.txt/);
+    assert.doesNotMatch(container.querySelector(".memory-source-candidates").textContent, /index\.md|raw\/tol\.mp3/);
+    statusFilter.value = "all";
+    statusFilter.dispatchEvent(new Event("change", { bubbles: true }));
     const textFilter = container.querySelector(".memory-review-preview .memory-source-filterbar input");
     textFilter.value = "research";
     textFilter.dispatchEvent(new Event("input", { bubbles: true }));
@@ -528,7 +644,9 @@ test("living archive workspace renders status, search, and intake through bridge
       options.body.path === "INTAKE/sources/selected-1.md" &&
       /selected source file notes\/research\.txt/.test(options.body.reason)
     ));
-    assert.match(container.textContent, /Created 1 selected file intake artifact\(s\); 0 rejected/);
+    assert.match(container.textContent, /Created 1 selected file intake artifact\(s\); 0 rejected\. Source review refreshed/);
+    assert.match(container.textContent, /Unchanged v2/);
+    assert.match(container.textContent, /No eligible new or changed compatible files are available for intake/);
     Array.from(container.querySelectorAll(".memory-source-card button"))
       .find((button) => button.textContent === "Create Intake Summary")
       .click();
@@ -564,7 +682,9 @@ test("living archive workspace renders status, search, and intake through bridge
     assert.ok(calls.some(([route, options]) =>
       route === "/archive/review/transition" &&
       options.body.path === "REVIEW/requests/browser-job-completed.md" &&
-      options.body.status === "approved"
+      options.body.status === "approved" &&
+      options.body.actor === "human" &&
+      options.body.actorType === "human"
     ));
     assert.match(container.textContent, /approved/i);
     assert.match(container.textContent, /Next: Generate draft/);
@@ -780,6 +900,8 @@ test("living archive single-file intake creates metadata stubs for unsupported f
 test("living archive source review blocks intake when every candidate needs repair", async () => {
   const { container, cleanup } = setupDom();
   const calls = [];
+  let repaired = false;
+  let latestRepairHistory = [];
   const bridgeRequest = async (route, options = {}) => {
     calls.push([route, options]);
     if (route === "/memory/status") {
@@ -799,10 +921,33 @@ test("living archive source review blocks intake when every candidate needs repa
             importMode: "copy-on-import",
             exists: true
           }]
-        }
+        },
+        sourceRepairHistory: latestRepairHistory
       };
     }
     if (route === "/memory/source/review") {
+      if (repaired) {
+        return {
+          source: { id: options.body.sourceId, path: "/Users/test/BrokenVault" },
+          scan: {
+            totalScanned: 2,
+            categories: { compatible: 2, processed: 0, "raw-audio": 0, unsupported: 0 },
+            recommendation: "Review changed files before intake."
+          },
+          candidates: [{
+            path: "notes/a.md",
+            category: "compatible",
+            bytes: 10,
+            versionStatus: "new"
+          }, {
+            path: "notes/b.md",
+            category: "compatible",
+            bytes: 20,
+            versionStatus: "new"
+          }],
+          boundary: "Read-only review."
+        };
+      }
       return {
         source: { id: options.body.sourceId, path: "/Users/test/BrokenVault" },
         scan: {
@@ -825,6 +970,23 @@ test("living archive source review blocks intake when every candidate needs repa
           error: "source version manifest is unreadable"
         }],
         boundary: "Read-only review. Blocked files cannot enter intake."
+      };
+    }
+    if (route === "/memory/source/versions/repair") {
+      repaired = true;
+      latestRepairHistory = [{
+        status: "repaired",
+        sourceId: options.body.sourceId,
+        repairedAt: "2026-06-01T10:00:00.000Z",
+        sourcePath: "[path]/BrokenVault",
+        backupPath: "CONFIG/source-file-history/repairs/source-file-versions.json",
+        message: "Unreadable source version manifest was backed up and reset."
+      }];
+      return {
+        status: "repaired",
+        sourceId: options.body.sourceId,
+        backupPath: "CONFIG/source-file-history/repairs/source-file-versions.json",
+        message: "Unreadable source version manifest was backed up and reset."
       };
     }
     if (route === "/archive/review/list") {
@@ -850,9 +1012,26 @@ test("living archive source review blocks intake when every candidate needs repa
       assert.equal(input.disabled, true);
     }
     const buttons = Array.from(container.querySelectorAll(".memory-review-preview button"));
+    assert.equal(buttons.find((button) => button.textContent === "Repair Version Tracking").disabled, false);
     assert.equal(buttons.find((button) => button.textContent === "Create Intake From New/Changed Files").disabled, true);
     assert.equal(buttons.find((button) => button.textContent === "Create Intake From Selected Files").disabled, true);
     assert.equal(calls.some(([route]) => route === "/memory/source/file-intake"), false);
+    buttons.find((button) => button.textContent === "Repair Version Tracking").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(calls.some(([route, options]) =>
+      route === "/memory/source/versions/repair" &&
+      options.capability === "memory-source-manage" &&
+      options.body.sourceId === "source-blocked-only" &&
+      options.body.confirmation === "REPAIR SOURCE VERSIONS"
+    ));
+    assert.match(container.textContent, /Source version tracking repaired/);
+    assert.match(container.textContent, /Backup: CONFIG\/source-file-history\/repairs\/source-file-versions\.json/);
+    assert.match(container.textContent, /Recent source repairs/);
+    assert.match(container.textContent, /\[path\]\/BrokenVault/);
+    assert.match(container.textContent, /2 new\/changed compatible file\(s\) ready for governed intake/);
+    const repairedButtons = Array.from(container.querySelectorAll(".memory-review-preview button"));
+    assert.equal(repairedButtons.find((button) => button.textContent === "Create Intake From New/Changed Files").disabled, false);
   } finally {
     cleanup();
   }
@@ -1004,6 +1183,71 @@ test("living archive workspace can run an initial routed search", async () => {
   }
 });
 
+test("living archive workspace focuses a review handoff and previews source evidence", async () => {
+  const { container, cleanup } = setupDom();
+  const calls = [];
+  const bridgeRequest = async (route, options = {}) => {
+    calls.push([route, options]);
+    if (route === "/memory/status") {
+      return { exists: true, wiki: { pages: 1, index: { exists: true } }, intake: { artifacts: 1 }, review: { requests: 1, artifacts: 0 } };
+    }
+    if (route === "/memory/wiki/health") {
+      return { exists: true, score: 100, pages: 1, issues: [], brokenLinks: [], orphanPages: [], index: { exists: true, entries: 1 }, log: { exists: true } };
+    }
+    if (route === "/memory/settings") {
+      return { settings: { sources: [] } };
+    }
+    if (route === "/archive/review/list") {
+      return {
+        root: "Memory/REVIEW/requests",
+        requests: [{
+          title: "Captured browser page",
+          status: "pending",
+          path: "REVIEW/requests/captured-page.md",
+          artifactPath: "INTAKE/browser/captured-page.md",
+          reason: "Review current browser page for AI Memory."
+        }]
+      };
+    }
+    if (route === "/archive/intake/read") {
+      return {
+        path: options.body.path,
+        title: "Captured browser page source",
+        kind: "browser-page",
+        content: "# Captured page\n\nSource evidence for review."
+      };
+    }
+    if (route === "/archive/review/promotions/list") {
+      return { root: "Memory/REVIEW/artifacts", promotions: [] };
+    }
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  try {
+    renderLivingArchiveWorkspace({
+      container,
+      bridgeRequest,
+      initialReviewPath: "REVIEW/requests/captured-page.md",
+      initialArtifactPath: "INTAKE/browser/captured-page.md"
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const focused = container.querySelector('.memory-review-request[data-focused="true"]');
+    assert.ok(focused);
+    assert.equal(focused.dataset.reviewPath, "REVIEW/requests/captured-page.md");
+    assert.match(container.textContent, /Focused review request: REVIEW\/requests\/captured-page\.md/);
+    assert.ok(calls.some(([route, options]) =>
+      route === "/archive/intake/read" &&
+      options.body.path === "INTAKE/browser/captured-page.md"
+    ));
+    assert.match(container.textContent, /Captured browser page source/);
+    assert.match(container.textContent, /This is preserved intake evidence/);
+  } finally {
+    cleanup();
+  }
+});
+
 test("living archive workspace can revise a draft after verifier findings", async () => {
   const { container, cleanup } = setupDom();
   const calls = [];
@@ -1099,6 +1343,70 @@ test("living archive workspace can revise a draft after verifier findings", asyn
     ));
     assert.match(container.textContent, /Revised draft ready: REVIEW\/artifacts\/browser\/needs-revision-revision\.md/);
     assert.match(container.textContent, /REVIEW\/artifacts\/browser\/needs-revision-revision\.md/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("living archive workspace focuses a promoted-page handoff and previews trusted memory", async () => {
+  const { container, cleanup } = setupDom();
+  const calls = [];
+  const bridgeRequest = async (route, options = {}) => {
+    calls.push([route, options]);
+    if (route === "/memory/status") {
+      return { exists: true, wiki: { pages: 3, index: { exists: true } }, intake: { artifacts: 1 }, review: { requests: 0, artifacts: 1 } };
+    }
+    if (route === "/memory/wiki/health") {
+      return { exists: true, score: 100, pages: 3, issues: [], brokenLinks: [], orphanPages: [], missingIndexEntries: [], duplicateTitles: [], index: { exists: true, entries: 3 }, log: { exists: true } };
+    }
+    if (route === "/archive/review/list") {
+      return { root: "Memory/REVIEW/requests", requests: [] };
+    }
+    if (route === "/archive/review/promotions/list") {
+      return {
+        root: "Memory/REVIEW/artifacts",
+        promotions: [{
+          title: "Promoted DAO page",
+          path: "REVIEW/artifacts/browser/dao-page-draft.md",
+          promotedPage: "AI_MEMORY/wiki/dao-page.md",
+          promotedAt: "2026-06-01T10:00:00.000Z",
+          status: "promoted",
+          backupPath: "BACKUPS/dao-page.md"
+        }]
+      };
+    }
+    if (route === "/memory/wiki/page/read") {
+      assert.equal(options.body.path, "AI_MEMORY/wiki/dao-page.md");
+      return {
+        path: options.body.path,
+        title: "DAO page",
+        content: "# DAO page\n\nTrusted promoted AI Memory content.",
+        truncated: false
+      };
+    }
+    if (route === "/memory/settings") return { sources: [] };
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  try {
+    renderLivingArchiveWorkspace({
+      container,
+      bridgeRequest,
+      initialPromotedPage: "AI_MEMORY/wiki/dao-page.md"
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const focused = container.querySelector('.memory-promotion-card[data-focused="true"]');
+    assert.ok(focused);
+    assert.equal(focused.dataset.promotedPage, "AI_MEMORY/wiki/dao-page.md");
+    assert.match(container.textContent, /Focused promoted page: AI_MEMORY\/wiki\/dao-page\.md/);
+    assert.ok(calls.some(([route, options]) =>
+      route === "/memory/wiki/page/read" &&
+      options.body.path === "AI_MEMORY/wiki/dao-page.md"
+    ));
+    assert.match(container.textContent, /Trusted promoted AI Memory content/);
+    assert.match(container.textContent, /This is trusted AI Memory after governed promotion/);
   } finally {
     cleanup();
   }

@@ -5,7 +5,7 @@ export function createBrowserPageActions(deps) {
     addMessage,
     bridgeRequest,
     chrome,
-    getModel = () => "MiniMax-M2.7",
+    getModel = () => "MiniMax-M3",
     getThinkingDepth = () => "minimal",
     isReadableBrowserTab,
     normalizeBrowserUrl,

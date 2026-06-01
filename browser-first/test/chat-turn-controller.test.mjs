@@ -53,7 +53,7 @@ function createHarness({ fail = false, systemPrompt = "" } = {}) {
     clearActivitySoon: () => events.push(["clearActivitySoon"]),
     clearAttachments: async () => events.push(["clearAttachments"]),
     getLastSnapshot: () => ({ title: "Page", url: "https://example.com/", text: "Visible" }),
-    getModel: () => "MiniMax-M2.7",
+    getModel: () => "MiniMax-M3",
     getSystemPrompt: () => systemPrompt,
     getThinkingDepth: () => "high",
     setActivity: (...args) => events.push(["activity", ...args]),
@@ -70,7 +70,7 @@ test("chat turn controller calls provider and records assistant reply", async ()
   assert.deepEqual(harness.events[0], ["status", "Thinking"]);
   assert.ok(harness.events.some((event) => event[0] === "bridge" && event[1] === "/augmentor/chat"));
   const bridgeEvent = harness.events.find((event) => event[0] === "bridge");
-  assert.equal(bridgeEvent[2].body.model, "MiniMax-M2.7");
+  assert.equal(bridgeEvent[2].body.model, "MiniMax-M3");
   assert.equal(bridgeEvent[2].body.surface, "side-panel");
   assert.equal(bridgeEvent[2].body.systemPrompt, "");
   assert.equal(bridgeEvent[2].body.workload, "augmentor-chat");

@@ -283,6 +283,75 @@ test("source file artifact recording rejects stale version targets", async () =>
   }
 });
 
+test("source file versioning rejects unsafe source file paths", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-source-versioning-paths-"));
+  const manifestPath = path.join(root, "Memory", "CONFIG", "source-file-versions.json");
+  try {
+    await assert.rejects(
+      () => reserveSourceFileVersion({
+        manifestPath,
+        sourceId: "source-vault",
+        relativeFile: "../outside.md",
+        contentHash: sourceContentHash("outside"),
+      }),
+      /Source file must be a safe relative path/
+    );
+    await assert.rejects(
+      () => reserveSourceFileVersion({
+        manifestPath,
+        sourceId: "source-vault",
+        relativeFile: path.resolve(root, "absolute.md"),
+        contentHash: sourceContentHash("absolute"),
+      }),
+      /Source file must be a safe relative path/
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("source file artifact recording keeps intake and snapshot paths inside managed roots", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-source-versioning-managed-paths-"));
+  const manifestPath = path.join(root, "Memory", "CONFIG", "source-file-versions.json");
+  try {
+    const contentHash = sourceContentHash("managed source");
+    const version = await reserveSourceFileVersion({
+      manifestPath,
+      sourceId: "source-vault",
+      relativeFile: "notes/identity.md",
+      contentHash,
+    });
+    await assert.rejects(
+      () => recordSourceFileIntakeArtifact({
+        manifestPath,
+        sourceId: "source-vault",
+        relativeFile: "notes/identity.md",
+        version: version.version,
+        intakePath: "AI_MEMORY/wiki/identity.md",
+        snapshotPath: sourceFileSnapshotPath(contentHash),
+      }),
+      /Source file intake path must stay under INTAKE/
+    );
+    await assert.rejects(
+      () => recordSourceFileIntakeArtifact({
+        manifestPath,
+        sourceId: "source-vault",
+        relativeFile: "notes/identity.md",
+        version: version.version,
+        intakePath: "INTAKE/sources/identity.md",
+        snapshotPath: "INTAKE/sources/not-a-snapshot.md",
+      }),
+      /Source file snapshot path must stay under CONFIG\/source-file-history/
+    );
+
+    const listed = await listSourceFileVersions({ manifestPath, sourceId: "source-vault" });
+    assert.equal(listed.entries[0].latestIntakePath, "");
+    assert.equal(listed.entries[0].latestSnapshotPath, "");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("line diff summary returns bounded added and removed lines", () => {
   const diff = lineDiffSummary("A\nB\nC", "A\nBee\nC\nD", { limit: 10 });
   assert.equal(diff.changed, true);

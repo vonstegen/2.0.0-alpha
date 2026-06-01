@@ -111,22 +111,28 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
           </button>
           <input id="file-input" type="file" multiple hidden />
-          <button id="read-page" type="button" class="icon-button" title="Read current page" aria-label="Read current page">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>
-          </button>
-          <button id="save-intake" type="button" class="icon-button" title="Save current page to Living Archive intake" aria-label="Save current page to Living Archive intake">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v6h8V4"/><path d="M8 16h8"/></svg>
-          </button>
-          <button id="save-selection" type="button" class="icon-button" title="Save selected page text to Living Archive intake" aria-label="Save selected page text to Living Archive intake">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v14H5z"/><path d="M8 9h8"/><path d="M8 13h5"/><path d="m15 15 2 2 3-4"/></svg>
-          </button>
-          <button id="context-toggle" type="button" class="icon-button context-usage-button" title="Show context usage and browser status" aria-label="Show context usage and browser status">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 1 16 0"/><path d="M4 12h4"/><path d="M16 12h4"/><path d="M12 4v4"/><path d="M8.5 17.5 12 12l3.5 5.5"/></svg>
-          </button>
+          <details class="composer-tools-menu">
+            <summary aria-label="Open page tools" title="Page tools">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="18" cy="12" r="1.5"/></svg>
+            </summary>
+            <div class="composer-tools-panel" aria-label="Page tools">
+              <button id="read-page" type="button" class="icon-button" title="Read current page" aria-label="Read current page">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+              </button>
+              <button id="save-intake" type="button" class="icon-button" title="Save current page to Living Archive intake" aria-label="Save current page to Living Archive intake">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v6h8V4"/><path d="M8 16h8"/></svg>
+              </button>
+              <button id="save-selection" type="button" class="icon-button" title="Save selected page text to Living Archive intake" aria-label="Save selected page text to Living Archive intake">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v14H5z"/><path d="M8 9h8"/><path d="M8 13h5"/><path d="m15 15 2 2 3-4"/></svg>
+              </button>
+              <button id="context-toggle" type="button" class="icon-button context-usage-button" title="Show context usage and browser status" aria-label="Show context usage and browser status">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 1 16 0"/><path d="M4 12h4"/><path d="M16 12h4"/><path d="M12 4v4"/><path d="M8.5 17.5 12 12l3.5 5.5"/></svg>
+              </button>
+            </div>
+          </details>
           <select id="model-select" class="model-select" aria-label="Connected model">
             <option value="__auto__">Auto route</option>
-            <option value="MiniMax-M2.7">MiniMax 2.7</option>
-            <option value="MiniMax-M2.7-highspeed">MiniMax 2.7 High Speed</option>
+              <option value="MiniMax-M3">MiniMax M3</option>
             <option value="gpt-5.5">GPT 5.5</option>
             <option value="gpt-5.4-mini">GPT 5.4 Mini</option>
             <option value="batiai/gemma4-e2b:q4">Gemma 4 2B</option>
@@ -139,7 +145,7 @@
           <button id="dictate-button" type="button" class="icon-button muted" title="Start voice dictation" aria-label="Start voice dictation">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
           </button>
-          <button id="connection-line" type="button" class="connection-line" title="Connected to MiniMax 2.7 · Ready" aria-label="Connected to MiniMax 2.7 · Ready">
+          <button id="connection-line" type="button" class="connection-line" title="Connected to MiniMax M3 · Ready" aria-label="Connected to MiniMax M3 · Ready">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h4l2-7 4 14 2-7h4"/></svg>
           </button>
           <button id="context-meter" type="button" class="context-meter" title="Estimated conversation, attachment, and captured page context for this session." aria-label="Context usage 0 percent">

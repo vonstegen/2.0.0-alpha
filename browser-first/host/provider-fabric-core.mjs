@@ -4,7 +4,7 @@ export const providerProfiles = [
     label: "MiniMax",
     providerType: "minimax",
     authType: "api-key",
-    models: ["MiniMax-M2.7", "MiniMax-M2.7-highspeed"],
+    models: ["MiniMax-M3"],
     role: "Default Augmentor and agent-control provider",
   },
   {
@@ -19,22 +19,13 @@ export const providerProfiles = [
 
 export const modelCatalog = [
   {
-    model: "MiniMax-M2.7-highspeed",
-    label: "MiniMax 2.7 High Speed",
+    model: "MiniMax-M3",
+    label: "MiniMax M3",
     providerId: "shared-minimax",
     providerLabel: "MiniMax",
     runtime: "cloud",
     costTier: "subscription",
-    qualityTier: "daily strategic work",
-  },
-  {
-    model: "MiniMax-M2.7",
-    label: "MiniMax 2.7",
-    providerId: "shared-minimax",
-    providerLabel: "MiniMax",
-    runtime: "cloud",
-    costTier: "subscription",
-    qualityTier: "routine and fallback work",
+    qualityTier: "daily strategic and agentic work",
   },
   {
     model: "gpt-5.5",
@@ -70,8 +61,8 @@ export const defaultRoutingStrategies = [
     id: "augmentor-chat",
     label: "Augmentor Chat",
     workload: "trusted_conversation",
-    primaryModel: "MiniMax-M2.7-highspeed",
-    fallbackModels: ["MiniMax-M2.7", "gpt-5.5", "batiai/gemma4-e2b:q4"],
+    primaryModel: "MiniMax-M3",
+    fallbackModels: ["gpt-5.5", "gpt-5.4-mini", "batiai/gemma4-e2b:q4"],
     costPosture: "subscription-first",
     hardStop: false,
     notes: "Use fast subscription capacity first, then higher reasoning only when subscription routes fail.",
@@ -80,8 +71,8 @@ export const defaultRoutingStrategies = [
     id: "agent-control",
     label: "Agent Control",
     workload: "browser_execution",
-    primaryModel: "MiniMax-M2.7-highspeed",
-    fallbackModels: ["MiniMax-M2.7", "gpt-5.5"],
+    primaryModel: "MiniMax-M3",
+    fallbackModels: ["gpt-5.4-mini", "gpt-5.5"],
     costPosture: "responsive-subscription",
     hardStop: false,
     notes: "Browser control needs a responsive model, but high-cost escalation should remain visible.",
@@ -91,7 +82,7 @@ export const defaultRoutingStrategies = [
     label: "Archive Ingest",
     workload: "knowledge_promotion",
     primaryModel: "gpt-5.5",
-    fallbackModels: ["gpt-5.4-mini", "MiniMax-M2.7"],
+    fallbackModels: ["gpt-5.4-mini", "MiniMax-M3"],
     costPosture: "quality-first",
     hardStop: true,
     notes: "Knowledge writes should prefer the strongest verifier route and stop if no trusted model is available.",
@@ -100,8 +91,8 @@ export const defaultRoutingStrategies = [
     id: "routine-delegation",
     label: "Routine Delegation",
     workload: "delegated_routine_work",
-    primaryModel: "MiniMax-M2.7",
-    fallbackModels: ["MiniMax-M2.7-highspeed", "batiai/gemma4-e2b:q4"],
+    primaryModel: "MiniMax-M3",
+    fallbackModels: ["batiai/gemma4-e2b:q4"],
     costPosture: "low-cost-first",
     hardStop: false,
     notes: "Routine background work should avoid expensive routes unless explicitly escalated.",
@@ -110,8 +101,8 @@ export const defaultRoutingStrategies = [
     id: "recovery-engineer",
     label: "Recovery Engineer",
     workload: "resurrect_mode",
-    primaryModel: "MiniMax-M2.7-highspeed",
-    fallbackModels: ["gpt-5.5", "MiniMax-M2.7", "batiai/gemma4-e2b:q4"],
+    primaryModel: "MiniMax-M3",
+    fallbackModels: ["gpt-5.5", "batiai/gemma4-e2b:q4"],
     costPosture: "best-available-in-emergency",
     hardStop: false,
     notes: "Emergency recovery should find the best reachable brain, with Gemma 4 2B as the final local fallback.",
@@ -257,7 +248,7 @@ export function providerRouteForModel(model, { localRuntimeUrl = "" } = {}) {
     providerId: "shared-minimax",
     providerType: "minimax",
     apiBaseUrl: "https://api.minimax.io/v1",
-    wireModel: model === "MiniMax-M2.7-highspeed" ? "MiniMax-M2.7" : model || "MiniMax-M2.7",
+    wireModel: model === "MiniMax-M3" ? "MiniMax-M3" : model || "MiniMax-M3",
     label: "Shared MiniMax",
   };
 }
@@ -321,11 +312,7 @@ export function providerRouteForWorkload({
     ?? strategies.find((entry) => entry.id === "augmentor-chat")
     ?? null;
   const chain = [strategy?.primary, ...(strategy?.fallbackChain ?? [])].filter(Boolean);
-  const available = chain.find((entry) =>
-    entry.providerId === "desktop-local"
-      ? Boolean(localRuntimeUrl)
-      : Boolean(secrets[entry.providerId])
-  );
+  const available = chain.find((entry) => entry.configured);
   if (!available) {
     return {
       route: null,

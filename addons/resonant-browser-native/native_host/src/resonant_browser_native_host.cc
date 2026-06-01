@@ -454,6 +454,14 @@ class ResonantBrowserClient final : public CefClient,
         browser->GetHost()->CloseBrowser(true);
         return;
       }
+      if (browser_first_auto_open_side_panel_ && loaded_url.rfind("chrome://newtab", 0) == 0) {
+        // Intent citation: docs/UX_AUDIT_2026-06-01.md
+        // CEF Chrome Runtime can restore or create a raw Chromium new-tab
+        // surface before extension new-tab ownership applies. Browser-first
+        // ResonantOS must make new tabs land in the AI workspace, not Google.
+        browser->GetMainFrame()->LoadURL(default_browser_url_.empty() ? kDefaultUrl : default_browser_url_);
+        return;
+      }
       const bool loaded_web_page =
           loaded_url.rfind("http://", 0) == 0 || loaded_url.rfind("https://", 0) == 0;
       if (browser_first_auto_open_side_panel_ && !browser_first_side_panel_requested_ && loaded_web_page) {
@@ -1144,6 +1152,10 @@ class ResonantBrowserApp final : public CefApp, public CefBrowserProcessHandler 
         extension_dirs = extension_dir;
       }
       command_line->AppendSwitch("enable-chrome-runtime");
+      command_line->AppendSwitch("no-first-run");
+      command_line->AppendSwitch("no-default-browser-check");
+      command_line->AppendSwitch("disable-infobars");
+      command_line->AppendSwitch("hide-crash-restore-bubble");
       command_line->AppendSwitch("disable-features=GlobalMediaControls");
       command_line->AppendSwitch("disable-gpu");
       command_line->AppendSwitch("disable-gpu-compositing");

@@ -1,15 +1,13 @@
 const DEFAULT_MODEL_LABELS = {
   "__auto__": "Auto route",
-  "MiniMax-M2.7": "MiniMax 2.7",
-  "MiniMax-M2.7-highspeed": "MiniMax 2.7 High Speed",
+  "MiniMax-M3": "MiniMax M3",
   "gpt-5.5": "GPT 5.5",
   "gpt-5.4-mini": "GPT 5.4 Mini",
   "batiai/gemma4-e2b:q4": "Gemma 4 2B"
 };
 
 const MODEL_CONTEXT_WINDOWS = {
-  "MiniMax-M2.7": 64_000,
-  "MiniMax-M2.7-highspeed": 64_000,
+  "MiniMax-M3": 1_000_000,
   "gpt-5.5": 128_000,
   "gpt-5.4-mini": 128_000,
   "batiai/gemma4-e2b:q4": 8_000,

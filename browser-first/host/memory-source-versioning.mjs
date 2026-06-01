@@ -15,6 +15,24 @@ function normalizedContentHash(contentHash) {
   return normalized;
 }
 
+function normalizedRelativeToken(value, label) {
+  const normalized = String(value ?? "").replace(/\\/g, "/").trim();
+  const parts = normalized.split("/").filter(Boolean);
+  if (!normalized || normalized === "." || path.isAbsolute(normalized) || parts.includes("..")) {
+    throw new Error(`${label} must be a safe relative path.`);
+  }
+  return parts.join("/");
+}
+
+function normalizedManagedPath(value, allowedRoot, label) {
+  const normalized = normalizedRelativeToken(value, label);
+  const root = String(allowedRoot).replace(/\\/g, "/").replace(/\/+$/, "");
+  if (normalized !== root && !normalized.startsWith(`${root}/`)) {
+    throw new Error(`${label} must stay under ${root}.`);
+  }
+  return normalized;
+}
+
 export function sourceFileSnapshotPath(contentHash) {
   const hash = normalizedContentHash(contentHash);
   return path.join("CONFIG", "source-file-history", "blobs", hash.slice(0, 2), `${hash}.txt`).replace(/\\/g, "/");
@@ -61,7 +79,7 @@ export async function writeSourceFileSnapshot({
 }
 
 function sourceFileKey(sourceId, relativeFile) {
-  return `${String(sourceId ?? "").trim()}::${String(relativeFile ?? "").replace(/\\/g, "/")}`;
+  return `${String(sourceId ?? "").trim()}::${normalizedRelativeToken(relativeFile, "Source file")}`;
 }
 
 async function readManifest(manifestPath) {
@@ -124,8 +142,9 @@ export async function reserveSourceFileVersion({
   if (!relativeFile) throw new Error("Source file versioning requires a relative source file.");
   if (!contentHash) throw new Error("Source file versioning requires a content hash.");
 
+  const sourceFile = normalizedRelativeToken(relativeFile, "Source file");
   const manifest = await readManifest(manifestPath);
-  const key = sourceFileKey(sourceId, relativeFile);
+  const key = sourceFileKey(sourceId, sourceFile);
   const previous = manifest.files[key] ?? null;
   if (previous?.latestHash === contentHash) {
     return {
@@ -140,7 +159,7 @@ export async function reserveSourceFileVersion({
   const version = Number(previous?.latestVersion ?? 0) + 1;
   const entry = {
     sourceId,
-    sourceFile: String(relativeFile).replace(/\\/g, "/"),
+    sourceFile,
     latestHash: contentHash,
     latestVersion: version,
     latestModifiedAt: sourceModifiedAt || "",
@@ -182,8 +201,9 @@ export async function rollbackSourceFileVersionReservation({
   if (!manifestPath) throw new Error("Source file version rollback requires a manifest path.");
   if (!sourceId) throw new Error("Source file version rollback requires a source id.");
   if (!relativeFile) throw new Error("Source file version rollback requires a relative source file.");
+  const sourceFile = normalizedRelativeToken(relativeFile, "Source file");
   const manifest = await readManifest(manifestPath);
-  const key = sourceFileKey(sourceId, relativeFile);
+  const key = sourceFileKey(sourceId, sourceFile);
   const entry = manifest.files[key];
   if (!entry || Number(entry.latestVersion ?? 0) !== Number(version ?? 0) || entry.latestHash !== contentHash) {
     return { rolledBack: false, reason: "reservation-not-current" };
@@ -215,7 +235,7 @@ export async function rollbackSourceFileVersionReservation({
   return {
     rolledBack: true,
     sourceId,
-    sourceFile: String(relativeFile).replace(/\\/g, "/"),
+    sourceFile,
     restoredVersion: previous ? Number(previous.version ?? 1) : 0,
   };
 }
@@ -233,8 +253,13 @@ export async function recordSourceFileIntakeArtifact({
   if (!sourceId) throw new Error("Source file artifact recording requires a source id.");
   if (!relativeFile) throw new Error("Source file artifact recording requires a relative source file.");
   if (!intakePath) throw new Error("Source file artifact recording requires an intake path.");
+  const sourceFile = normalizedRelativeToken(relativeFile, "Source file");
+  const normalizedIntakePath = normalizedManagedPath(intakePath, "INTAKE", "Source file intake path");
+  const normalizedSnapshotPath = snapshotPath
+    ? normalizedManagedPath(snapshotPath, "CONFIG/source-file-history", "Source file snapshot path")
+    : "";
   const manifest = await readManifest(manifestPath);
-  const key = sourceFileKey(sourceId, relativeFile);
+  const key = sourceFileKey(sourceId, sourceFile);
   const entry = manifest.files[key];
   if (!entry) {
     throw new Error("Source file version entry was not found.");
@@ -247,8 +272,8 @@ export async function recordSourceFileIntakeArtifact({
   if (!history.some((historyEntry) => Number(historyEntry.version) === numericVersion)) {
     throw new Error("Source file artifact recording target version is missing from history.");
   }
-  entry.latestIntakePath = String(intakePath).replace(/\\/g, "/");
-  entry.latestSnapshotPath = snapshotPath ? String(snapshotPath).replace(/\\/g, "/") : entry.latestSnapshotPath ?? "";
+  entry.latestIntakePath = normalizedIntakePath;
+  entry.latestSnapshotPath = normalizedSnapshotPath || (entry.latestSnapshotPath ?? "");
   entry.updatedAt = now;
   entry.history = history.map((historyEntry) =>
     Number(historyEntry.version) === numericVersion

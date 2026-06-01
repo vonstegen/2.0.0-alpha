@@ -1,8 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import { renderSettingsWorkspace } from "../resonantos-side-panel-extension/src/lib/main-workspace-settings.js";
+import {
+  buildMoveImportPreflight,
+  executeMoveImport,
+  rollbackMoveImport,
+  shouldDeregisterMovedSourceAfterRollback,
+} from "../host/memory-source-move.mjs";
 
 function memoryStorage(initial = {}) {
   const state = { ...initial };
@@ -96,16 +106,10 @@ test("settings workspace renders provider status without exposing credentials", 
             authType: "api-key",
             role: "Default Augmentor provider",
             models: [{
-              model: "MiniMax-M2.7",
-              label: "MiniMax 2.7",
+              model: "MiniMax-M3",
+              label: "MiniMax M3",
               costTier: "subscription",
-              qualityTier: "routine and fallback work",
-              allowed: true
-            }, {
-              model: "MiniMax-M2.7-highspeed",
-              label: "MiniMax 2.7 High Speed",
-              costTier: "subscription",
-              qualityTier: "daily strategic work",
+              qualityTier: "daily strategic and agentic work",
               allowed: true
             }],
             routeConsumers: [{
@@ -166,14 +170,14 @@ test("settings workspace renders provider status without exposing credentials", 
     if (route === "/providers/routing-strategies") {
       return {
         models: [
-          { model: "MiniMax-M2.7-highspeed", label: "MiniMax 2.7 High Speed", providerLabel: "MiniMax", costTier: "subscription" },
+          { model: "MiniMax-M3", label: "MiniMax M3", providerLabel: "MiniMax", costTier: "subscription" },
           { model: "gpt-5.5", label: "GPT 5.5", providerLabel: "OpenAI", costTier: "paid-per-call" }
         ],
         strategies: [{
           id: "augmentor-chat",
           label: "Augmentor Chat",
           workload: "trusted_conversation",
-          primaryModel: "MiniMax-M2.7-highspeed",
+          primaryModel: "MiniMax-M3",
           fallbackModels: ["gpt-5.5"],
           fallbackChain: [{ model: "gpt-5.5", label: "GPT 5.5", providerLabel: "OpenAI", costTier: "paid-per-call", configured: false }],
           routeState: "routable",
@@ -189,17 +193,20 @@ test("settings workspace renders provider status without exposing credentials", 
     renderSettingsWorkspace({ container, bridgeRequest, initialSection: "providers" });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    assert.match(container.textContent, /Overview/);
+    assert.match(container.textContent, /Start Here/);
     assert.match(container.textContent, /Providers/);
     assert.match(container.textContent, /Provider Profiles/);
     assert.match(container.textContent, /MiniMax/);
     assert.match(container.textContent, /OpenAI/);
     assert.match(container.textContent, /Vault/);
     assert.match(container.textContent, /Created/);
+    assert.equal(container.querySelector(".settings-provider-advanced").open, false);
     const initialMiniMaxCard = [...container.querySelectorAll(".settings-provider-card")].find((card) => /MiniMax/.test(card.textContent));
+    assert.match(initialMiniMaxCard.textContent, /Details/);
+    assert.match(initialMiniMaxCard.textContent, /More/);
     initialMiniMaxCard.querySelector("[data-action='show-provider']").click();
-    assert.match(container.textContent, /MiniMax 2\.7 · subscription · routine and fallback work/i);
-    assert.match(container.textContent, /MiniMax 2\.7 High Speed · subscription · daily strategic work/i);
+    assert.match(initialMiniMaxCard.textContent, /Hide details/);
+    assert.match(container.textContent, /MiniMax M3 · subscription · daily strategic and agentic work/i);
     const initialOpenAiCard = [...container.querySelectorAll(".settings-provider-card")].find((card) => /OpenAI/.test(card.textContent));
     initialOpenAiCard.querySelector("[data-action='show-provider']").click();
     assert.match(container.textContent, /GPT 5\.5 · paid per call · highest reasoning/i);
@@ -218,8 +225,8 @@ test("settings workspace renders provider status without exposing credentials", 
 
     const miniMaxCard = [...container.querySelectorAll(".settings-provider-card")].find((card) => /MiniMax/.test(card.textContent));
     miniMaxCard.querySelector("[data-action='show-provider']").click();
-    const highSpeed = [...miniMaxCard.querySelectorAll("input[name='allowedModel']")].find((input) => input.value === "MiniMax-M2.7-highspeed");
-    highSpeed.checked = false;
+    const miniMaxModel = [...miniMaxCard.querySelectorAll("input[name='allowedModel']")].find((input) => input.value === "MiniMax-M3");
+    miniMaxModel.checked = true;
     miniMaxCard.querySelector(".settings-provider-model-policy").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.ok(calls.some(([route, options]) =>
@@ -227,7 +234,7 @@ test("settings workspace renders provider status without exposing credentials", 
       options.capability === "provider-routing-write" &&
       options.body.providerId === "shared-minimax" &&
       options.body.allowedModels.length === 1 &&
-      options.body.allowedModels[0] === "MiniMax-M2.7"
+      options.body.allowedModels[0] === "MiniMax-M3"
     ));
     const reloadedMiniMaxCard = [...container.querySelectorAll(".settings-provider-card")].find((card) => /MiniMax/.test(card.textContent));
     [...reloadedMiniMaxCard.querySelectorAll(".settings-provider-actions button")].find((button) => button.textContent === "Check readiness").click();
@@ -264,7 +271,7 @@ test("settings workspace saves provider credentials through the host bridge", as
           id: "shared-minimax",
           label: "MiniMax",
           role: "Default Augmentor provider",
-          models: ["MiniMax-M2.7"],
+          models: ["MiniMax-M3"],
           configured,
           credentialPreview: configured ? "stored" : "missing"
         }]
@@ -314,8 +321,8 @@ test("settings provider profiles can add and edit separate accounts for the same
       role: "Fast subscription account for Augmentor",
       source: "user",
       models: [{
-        model: "MiniMax-M2.7-highspeed",
-        label: "MiniMax 2.7 High Speed",
+        model: "MiniMax-M3",
+        label: "MiniMax M3",
         costTier: "subscription",
         qualityTier: "daily strategic work",
         allowed: true
@@ -333,8 +340,8 @@ test("settings provider profiles can add and edit separate accounts for the same
       role: "Slow subscription account for background work",
       source: "user",
       models: [{
-        model: "MiniMax-M2.7",
-        label: "MiniMax 2.7",
+        model: "MiniMax-M3",
+        label: "MiniMax M3",
         costTier: "subscription",
         qualityTier: "routine and fallback work",
         allowed: true
@@ -404,7 +411,7 @@ test("settings provider profiles can add and edit separate accounts for the same
     modal.querySelector("select[name='templateId']").value = "minimax";
     modal.querySelector("input[name='apiBaseUrl']").value = "https://api.minimax.io/v1";
     modal.querySelector("input[name='role']").value = "Research subscription account";
-    modal.querySelector("textarea[name='models']").value = "MiniMax-M2.7";
+    modal.querySelector("textarea[name='models']").value = "MiniMax-M3";
     modal.querySelector("input[name='credential']").value = "minimax-research-key";
     modal.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -425,7 +432,7 @@ test("settings provider profiles can add and edit separate accounts for the same
     routineCard.querySelector("[data-action='edit-provider']").click();
     routineCard.querySelector("input[name='label']").value = "MiniMax Slow";
     routineCard.querySelector("input[name='role']").value = "Background and cron account";
-    routineCard.querySelector("textarea[name='models']").value = "MiniMax-M2.7";
+    routineCard.querySelector("textarea[name='models']").value = "MiniMax-M3";
     routineCard.querySelector(".settings-provider-account-form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.ok(calls.some(([route, options]) =>
@@ -485,21 +492,21 @@ test("settings routing section renders cost-aware workload strategies", async ()
     if (route === "/providers/routing-strategies") {
       return {
         models: [
-          { model: "MiniMax-M2.7-highspeed", label: "MiniMax 2.7 High Speed", providerLabel: "MiniMax", costTier: "subscription" },
+          { model: "MiniMax-M3", label: "MiniMax M3", providerLabel: "MiniMax", costTier: "subscription" },
           { model: "gpt-5.5", label: "GPT 5.5", providerLabel: "OpenAI", costTier: "paid-per-call" }
         ],
         strategies: [{
           id: "augmentor-chat",
           label: "Augmentor Chat",
           workload: "trusted_conversation",
-          primaryModel: "MiniMax-M2.7-highspeed",
+          primaryModel: "MiniMax-M3",
           fallbackModels: ["gpt-5.5"],
           costPosture: "subscription-first",
           hardStop: false,
           notes: "Use subscription first.",
           routeState: "routable",
           primary: {
-            label: "MiniMax 2.7 High Speed",
+            label: "MiniMax M3",
             providerLabel: "MiniMax",
             costTier: "subscription",
             state: "available"
@@ -522,7 +529,7 @@ test("settings routing section renders cost-aware workload strategies", async ()
 
     assert.match(container.textContent, /Provider Fabric Routing/);
     assert.match(container.textContent, /Augmentor Chat/);
-    assert.match(container.textContent, /MiniMax 2\.7 High Speed · MiniMax · Subscription · available/);
+    assert.match(container.textContent, /MiniMax M3 · MiniMax · Subscription · available/);
     assert.match(container.textContent, /GPT 5\.5 · OpenAI · Paid per call · unavailable/);
     assert.match(container.textContent, /1\/1 routing strategies currently have at least one available route/);
   } finally {
@@ -538,7 +545,7 @@ test("settings routing section saves strategy changes through scoped capability"
     if (route === "/providers/routing-strategies" && options.method !== "POST") {
       return {
         models: [
-          { model: "MiniMax-M2.7-highspeed", label: "MiniMax 2.7 High Speed", providerLabel: "MiniMax", costTier: "subscription" },
+          { model: "MiniMax-M3", label: "MiniMax M3", providerLabel: "MiniMax", costTier: "subscription" },
           { model: "gpt-5.5", label: "GPT 5.5", providerLabel: "OpenAI", costTier: "paid-per-call" }
         ],
         strategies: [{
@@ -546,7 +553,7 @@ test("settings routing section saves strategy changes through scoped capability"
           label: "Archive Ingest",
           workload: "knowledge_promotion",
           primaryModel: "gpt-5.5",
-          fallbackModels: ["MiniMax-M2.7-highspeed"],
+          fallbackModels: ["MiniMax-M3"],
           costPosture: "quality-first",
           hardStop: true,
           notes: "Quality first.",
@@ -567,7 +574,7 @@ test("settings routing section saves strategy changes through scoped capability"
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     const form = container.querySelector(".settings-routing-form");
-    form.querySelector("select[name='primaryModel']").value = "MiniMax-M2.7-highspeed";
+    form.querySelector("select[name='primaryModel']").value = "MiniMax-M3";
     form.querySelector("input[name='fallbackModels']").value = "gpt-5.5";
     form.querySelector("select[name='costPosture']").value = "subscription-first";
     form.querySelector("input[name='hardStop']").checked = false;
@@ -579,7 +586,7 @@ test("settings routing section saves strategy changes through scoped capability"
       options.method === "POST" &&
       options.capability === "provider-routing-write" &&
       options.body.strategyId === "archive-ingest" &&
-      options.body.primaryModel === "MiniMax-M2.7-highspeed" &&
+      options.body.primaryModel === "MiniMax-M3" &&
       options.body.fallbackModels.join(",") === "gpt-5.5" &&
       options.body.costPosture === "subscription-first" &&
       options.body.hardStop === false
@@ -845,7 +852,54 @@ test("settings work section manages active chats and projects", async () => {
 
 test("settings memory section renders active add-on and connected sources", async () => {
   const { container, cleanup } = setupDom();
-  const bridgeRequest = async (route) => {
+  const calls = [];
+  let latestSyncHistory = [{
+    id: "sync-existing",
+    finishedAt: "2026-06-01T10:00:00.000Z",
+    status: "review-only",
+    reviewedSources: 1,
+    eligibleFiles: 1,
+    createdArtifacts: 0,
+    reviewRequests: 0,
+    skippedSources: [{
+      sourceId: "source-disabled",
+      path: "[path]/DisabledVault",
+      reason: "source disabled"
+    }],
+    sources: [{
+      sourceId: "source-vault",
+      status: "reviewed",
+      candidates: 3,
+      eligibleFiles: 1,
+      createdArtifacts: 0,
+      reviewRequests: 0,
+      rejectedFiles: 0,
+      eligibleFileSamples: ["notes/research.txt"]
+    }],
+    autoIntake: false
+  }];
+  const latestRepairHistory = [{
+    id: "repair-existing",
+    repairedAt: "2026-06-01T09:45:00.000Z",
+    status: "repaired",
+    sourceId: "source-vault",
+    sourcePath: "[path]/Vault",
+    backupPath: "CONFIG/source-file-history/repairs/source-file-versions.json",
+    message: "Unreadable source version manifest was backed up and reset."
+  }];
+  const latestMoveHistory = [{
+    id: "move-existing",
+    at: "2026-06-01T09:30:00.000Z",
+    action: "move-execute",
+    status: "moved",
+    sourceId: "source-vault",
+    originalPath: "[path]/OriginalVault",
+    managedPath: "HUMAN_KNOWLEDGE/sources/OriginalVault",
+    ledgerPath: "CONFIG/move-imports/move-a/move-ledger.jsonl",
+    message: "Source moved into managed Memory and registered as the canonical source."
+  }];
+  const bridgeRequest = async (route, options = {}) => {
+    calls.push([route, options]);
     if (route === "/memory/settings") {
       return {
         settings: {
@@ -864,8 +918,39 @@ test("settings memory section renders active add-on and connected sources", asyn
           wiki: { pages: 42 },
           intake: { artifacts: 7 }
         },
-        memoryAddons: [{ id: "addon.living-archive", name: "Living Archive", mode: "memory-system" }]
+        memoryAddons: [{ id: "addon.living-archive", name: "Living Archive", mode: "memory-system" }],
+        syncHistory: latestSyncHistory,
+        sourceRepairHistory: latestRepairHistory,
+        sourceMoveHistory: latestMoveHistory
       };
+    }
+    if (route === "/memory/source/sync") {
+      const result = {
+        status: "intake-created",
+        autoIntake: true,
+        finishedAt: "2026-06-01T10:05:00.000Z",
+        reviewedSources: 1,
+        eligibleFiles: 2,
+        createdArtifacts: 2,
+        reviewRequests: 2,
+        rejectedFiles: 0,
+        sources: [{
+          sourceId: "source-vault",
+          status: "intake-created",
+          candidates: 4,
+          eligibleFiles: 2,
+          createdArtifacts: 2,
+          reviewRequests: 2,
+          rejectedFiles: 0,
+          eligibleFileSamples: ["notes/research.txt", "notes/new.md"],
+          createdArtifactSamples: [
+            { sourceFile: "notes/research.txt", path: "INTAKE/sources/research.md" },
+            { sourceFile: "notes/new.md", path: "INTAKE/sources/new.md" }
+          ]
+        }]
+      };
+      latestSyncHistory = [{ id: "sync-new", ...result }];
+      return result;
     }
     throw new Error(`Unexpected route ${route}`);
   };
@@ -875,12 +960,41 @@ test("settings memory section renders active add-on and connected sources", asyn
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     assert.match(container.textContent, /Living Archive Settings/);
+    assert.match(container.textContent, /Connect the folders or vaults Augmentor can learn from/);
+    assert.match(container.textContent, /Connected sources/);
+    assert.match(container.textContent, /Add a source/);
+    assert.match(container.textContent, /Advanced source options/);
+    assert.match(container.textContent, /Source boundary and move-on-import/);
+    assert.equal(container.querySelector(".settings-memory-advanced").open, false);
     assert.match(container.textContent, /living-archive/);
     assert.match(container.textContent, /42/);
     assert.match(container.textContent, /7/);
     assert.match(container.textContent, /\/Users\/test\/Vault/);
     assert.match(container.textContent, /Obsidian vault · human knowledge · copy on import · found/);
     assert.match(container.textContent, /1 source connected · auto-intake-review/);
+    assert.match(container.textContent, /Last source sync/);
+    assert.match(container.textContent, /Last source repair/);
+    assert.match(container.textContent, /CONFIG\/source-file-history\/repairs\/source-file-versions\.json/);
+    assert.match(container.textContent, /Last source move/);
+    assert.match(container.textContent, /HUMAN_KNOWLEDGE\/sources\/OriginalVault/);
+    assert.match(container.textContent, /CONFIG\/move-imports\/move-a\/move-ledger\.jsonl/);
+    assert.match(container.textContent, /review-only/);
+    assert.match(container.textContent, /1 new\/changed/);
+    assert.match(container.textContent, /Inspect source outcome/);
+    assert.match(container.textContent, /source-vault · reviewed/);
+    assert.match(container.textContent, /Files: notes\/research\.txt/);
+    assert.match(container.textContent, /\[path\]\/DisabledVault: source disabled/);
+    [...container.querySelectorAll("button")].find((button) => button.textContent === "Run Sync Now").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.ok(calls.some(([route, options]) =>
+      route === "/memory/source/sync" &&
+      options.capability === "memory-source-file-intake"
+    ));
+    assert.match(container.textContent, /created 2 intake artifact\(s\), and queued 2 review request\(s\)/);
+    assert.match(container.textContent, /intake-created/);
+    assert.match(container.textContent, /2 new\/changed/);
+    assert.match(container.textContent, /source-vault · intake-created/);
+    assert.match(container.textContent, /Intake: notes\/research\.txt → INTAKE\/sources\/research\.md/);
   } finally {
     cleanup();
   }
@@ -950,6 +1064,7 @@ test("settings memory section saves source and sync policy through scoped capabi
 test("settings memory section gates move-on-import behind preflight and confirmation", async () => {
   const { container, cleanup } = setupDom();
   const calls = [];
+  const openedWorkspaces = [];
   let sources = [];
   const bridgeRequest = async (route, options = {}) => {
     calls.push([route, options]);
@@ -1001,7 +1116,14 @@ test("settings memory section gates move-on-import behind preflight and confirma
   };
 
   try {
-    renderSettingsWorkspace({ container, bridgeRequest, initialSection: "memory" });
+    renderSettingsWorkspace({
+      container,
+      bridgeRequest,
+      initialSection: "memory",
+      onOpenWorkspace: async (workspaceId) => {
+        openedWorkspaces.push(workspaceId);
+      }
+    });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     const form = container.querySelector(".settings-routing-form");
@@ -1009,7 +1131,7 @@ test("settings memory section gates move-on-import behind preflight and confirma
     form.querySelector("select[name='ownership']").value = "human-knowledge";
     form.querySelector("select[name='importMode']").value = "move-on-import";
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
     assert.ok(calls.some(([route, options]) =>
       route === "/memory/source/move-preflight" &&
@@ -1022,8 +1144,16 @@ test("settings memory section gates move-on-import behind preflight and confirma
     assert.match(container.textContent, /verifies file hashes/);
     assert.equal(calls.some(([route, options]) => route === "/memory/settings" && options.method === "POST"), false);
 
-    container.querySelector('[aria-label="Move import confirmation phrase"]').value = "MOVE MoveMe";
-    [...container.querySelectorAll("button")].find((button) => button.textContent === "Execute Move Import").click();
+    const confirmationInput = container.querySelector('[aria-label="Move import confirmation phrase"]');
+    const executeMoveButton = [...container.querySelectorAll("button")].find((button) => button.textContent === "Execute Move Import");
+    assert.equal(executeMoveButton.disabled, true);
+    confirmationInput.value = "MOVE";
+    confirmationInput.dispatchEvent(new Event("input", { bubbles: true }));
+    assert.equal(executeMoveButton.disabled, true);
+    confirmationInput.value = "MOVE MoveMe";
+    confirmationInput.dispatchEvent(new Event("input", { bubbles: true }));
+    assert.equal(executeMoveButton.disabled, false);
+    executeMoveButton.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     assert.ok(calls.some(([route, options]) =>
@@ -1035,8 +1165,278 @@ test("settings memory section gates move-on-import behind preflight and confirma
     assert.match(container.textContent, /Move import completed and source registered/);
     assert.match(container.textContent, /Original source folder preserved because new files appeared during cleanup/);
     assert.match(container.textContent, /review it before deleting anything/);
+    assert.match(container.textContent, /canonical knowledge source/);
+    assert.match(container.textContent, /Open Living Archive/);
     assert.match(container.textContent, /move on import/);
     assert.match(container.textContent, /Rollback/);
+
+    [...container.querySelectorAll("button")].find((button) => button.textContent === "Open Living Archive").click();
+    assert.deepEqual(openedWorkspaces, ["memory"]);
+  } finally {
+    cleanup();
+  }
+});
+
+test("settings memory section completes real move-on-import and rollback against a temporary source", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-settings-real-move-"));
+  const source = path.join(root, "Human Vault");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(path.join(source, ".obsidian"), { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  await writeFile(path.join(source, "note.md"), "# Human note\n");
+  await writeFile(path.join(source, ".obsidian", "app.json"), "{}\n");
+
+  const { container, cleanup } = setupDom();
+  const calls = [];
+  let sources = [];
+  window.prompt = () => "ROLLBACK MOVE";
+  const bridgeRequest = async (route, options = {}) => {
+    calls.push([route, options]);
+    if (route === "/memory/settings") {
+      return {
+        settings: {
+          activeMemoryAddon: "living-archive",
+          autoSync: false,
+          syncMode: "manual-review",
+          sources
+        },
+        status: { wiki: { pages: 0 }, intake: { artifacts: 0 } },
+        memoryAddons: []
+      };
+    }
+    if (route === "/memory/source/move-preflight") {
+      return buildMoveImportPreflight({
+        sourcePath: options.body.path,
+        memoryRoot,
+        kind: options.body.kind,
+        ownership: options.body.ownership,
+      });
+    }
+    if (route === "/memory/source/move-execute") {
+      const result = await executeMoveImport({
+        sourcePath: options.body.path,
+        memoryRoot,
+        kind: options.body.kind,
+        ownership: options.body.ownership,
+        confirmation: options.body.confirmation,
+        expectedPreflightFingerprint: options.body.preflightFingerprint,
+      });
+      sources = [{
+        id: "source-real-move",
+        path: result.source.path,
+        kind: result.source.kind,
+        ownership: result.source.ownership,
+        importMode: "move-on-import",
+        ledgerPath: result.source.ledgerPath,
+        exists: existsSync(result.source.path)
+      }];
+      return {
+        ...result,
+        source: sources[0],
+        settings: { sources }
+      };
+    }
+    if (route === "/memory/source/move-rollback") {
+      const report = await rollbackMoveImport({
+        ledgerPath: options.body.ledgerPath,
+        confirmation: options.body.confirmation,
+      });
+      if (shouldDeregisterMovedSourceAfterRollback(report)) {
+        sources = [];
+      }
+      return {
+        ...report,
+        settings: { sources }
+      };
+    }
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  try {
+    renderSettingsWorkspace({ container, bridgeRequest, initialSection: "memory" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const form = container.querySelector(".settings-routing-form");
+    form.querySelector("input[name='path']").value = source;
+    form.querySelector("select[name='kind']").value = "obsidian-vault";
+    form.querySelector("select[name='ownership']").value = "human-knowledge";
+    form.querySelector("select[name='importMode']").value = "move-on-import";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.match(container.textContent, /Move preflight ready/);
+    assert.match(container.textContent, /2 file\(s\)/);
+    assert.match(container.textContent, /1 hidden file\(s\)/);
+
+    const confirmationInput = container.querySelector('[aria-label="Move import confirmation phrase"]');
+    const executeMoveButton = [...container.querySelectorAll("button")].find((button) => button.textContent === "Execute Move Import");
+    confirmationInput.value = `MOVE ${path.basename(source)}`;
+    confirmationInput.dispatchEvent(new Event("input", { bubbles: true }));
+    executeMoveButton.click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.equal(existsSync(source), false);
+    assert.equal(sources.length, 1);
+    assert.equal(sources[0].importMode, "move-on-import");
+    assert.equal(existsSync(path.join(sources[0].path, "note.md")), true);
+    assert.equal(await readFile(path.join(sources[0].path, "note.md"), "utf8"), "# Human note\n");
+    assert.equal(existsSync(path.join(sources[0].path, ".obsidian", "app.json")), true);
+    assert.match(container.textContent, /Move import completed and source registered/);
+    assert.match(container.textContent, /This managed Memory copy is now the canonical knowledge source/);
+    assert.match(container.textContent, /Rollback/);
+
+    [...container.querySelectorAll("button")].find((button) => button.textContent === "Rollback").click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.equal(sources.length, 0);
+    assert.equal(existsSync(path.join(source, "note.md")), true);
+    assert.equal(await readFile(path.join(source, "note.md"), "utf8"), "# Human note\n");
+    assert.equal(existsSync(path.join(source, ".obsidian", "app.json")), true);
+    assert.match(container.textContent, /Move rollback restored 2 file/);
+    assert.ok(calls.some(([route, options]) =>
+      route === "/memory/source/move-preflight" &&
+      options.capability === "memory-source-move"
+    ));
+    assert.ok(calls.some(([route, options]) =>
+      route === "/memory/source/move-execute" &&
+      options.capability === "memory-source-move"
+    ));
+    assert.ok(calls.some(([route, options]) =>
+      route === "/memory/source/move-rollback" &&
+      options.capability === "memory-source-move"
+    ));
+  } finally {
+    cleanup();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("settings memory section blocks unsafe move preflight without execute controls", async () => {
+  const { container, cleanup } = setupDom();
+  const calls = [];
+  const bridgeRequest = async (route, options = {}) => {
+    calls.push([route, options]);
+    if (route === "/memory/settings") {
+      return {
+        settings: {
+          activeMemoryAddon: "living-archive",
+          autoSync: false,
+          syncMode: "manual-review",
+          sources: []
+        },
+        status: { wiki: { pages: 0 }, intake: { artifacts: 0 } },
+        memoryAddons: []
+      };
+    }
+    if (route === "/memory/source/move-preflight") {
+      return {
+        okToMove: false,
+        sourcePath: options.body.path,
+        destinationRoot: "/Users/test/ResonantOS_User/Memory/HUMAN_KNOWLEDGE/sources",
+        fileCount: 0,
+        directoryCount: 0,
+        hiddenFiles: 0,
+        totalBytes: 0,
+        blocked: [{ reason: "selected path is too broad" }]
+      };
+    }
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  try {
+    renderSettingsWorkspace({ container, bridgeRequest, initialSection: "memory" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const form = container.querySelector(".settings-routing-form");
+    form.querySelector("input[name='path']").value = "/Users/test";
+    form.querySelector("select[name='importMode']").value = "move-on-import";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.ok(calls.some(([route, options]) =>
+      route === "/memory/source/move-preflight" &&
+      options.capability === "memory-source-move" &&
+      options.body.path === "/Users/test"
+    ));
+    assert.match(container.textContent, /Move preflight blocked/);
+    assert.match(container.textContent, /selected path is too broad/);
+    assert.match(container.textContent, /Move preflight blocked\. Review the listed reason before continuing/);
+    assert.equal(container.querySelector('[aria-label="Move import confirmation phrase"]'), null);
+    assert.equal([...container.querySelectorAll("button")].some((button) => button.textContent === "Execute Move Import"), false);
+    assert.equal(calls.some(([route]) => route === "/memory/source/move-execute"), false);
+  } finally {
+    cleanup();
+  }
+});
+
+test("settings memory section recovers when move execution fails after approval", async () => {
+  const { container, cleanup } = setupDom();
+  const calls = [];
+  const bridgeRequest = async (route, options = {}) => {
+    calls.push([route, options]);
+    if (route === "/memory/settings") {
+      return {
+        settings: {
+          activeMemoryAddon: "living-archive",
+          autoSync: false,
+          syncMode: "manual-review",
+          sources: []
+        },
+        status: { wiki: { pages: 0 }, intake: { artifacts: 0 } },
+        memoryAddons: []
+      };
+    }
+    if (route === "/memory/source/move-preflight") {
+      return {
+        okToMove: true,
+        sourcePath: options.body.path,
+        sourceName: "Unstable Vault",
+        destinationRoot: "/Users/test/ResonantOS_User/Memory/INTAKE/imports/mixed/unstable-vault",
+        fileCount: 3,
+        directoryCount: 1,
+        hiddenFiles: 0,
+        totalBytes: 4096,
+        blocked: [],
+        confirmationPhrase: "MOVE Unstable Vault",
+        preflightFingerprint: "preflight-fingerprint-unstable"
+      };
+    }
+    if (route === "/memory/source/move-execute") {
+      throw new Error(
+        "Move import failed and automatic rollback restored 2 file(s), 1 folder(s), source root restored: yes; 0 file(s), 0 folder(s), 0 root cleanup issue(s) skipped."
+      );
+    }
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  try {
+    renderSettingsWorkspace({ container, bridgeRequest, initialSection: "memory" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const form = container.querySelector(".settings-routing-form");
+    form.querySelector("input[name='path']").value = "/Users/test/Unstable Vault";
+    form.querySelector("select[name='importMode']").value = "move-on-import";
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const confirmationInput = container.querySelector('[aria-label="Move import confirmation phrase"]');
+    const executeMoveButton = [...container.querySelectorAll("button")].find((button) => button.textContent === "Execute Move Import");
+    confirmationInput.value = "MOVE Unstable Vault";
+    confirmationInput.dispatchEvent(new Event("input", { bubbles: true }));
+    assert.equal(executeMoveButton.disabled, false);
+    executeMoveButton.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.ok(calls.some(([route, options]) =>
+      route === "/memory/source/move-execute" &&
+      options.capability === "memory-source-move" &&
+      options.body.preflightFingerprint === "preflight-fingerprint-unstable"
+    ));
+    assert.match(container.textContent, /Move import failed/);
+    assert.match(container.textContent, /automatic rollback restored 2 file/);
+    assert.match(container.textContent, /source root restored: yes/);
+    assert.equal(executeMoveButton.disabled, false);
+    assert.equal(calls.some(([route, options]) => route === "/memory/settings" && options.method === "POST"), false);
   } finally {
     cleanup();
   }
@@ -1045,7 +1445,11 @@ test("settings memory section gates move-on-import behind preflight and confirma
 test("settings memory section rolls back moved sources through scoped capability", async () => {
   const { container, cleanup } = setupDom();
   const calls = [];
-  window.prompt = () => "ROLLBACK MOVE";
+  let promptMessage = "";
+  window.prompt = (message) => {
+    promptMessage = message;
+    return "ROLLBACK MOVE";
+  };
   let sources = [{
     id: "source-moved",
     path: "/Users/test/ResonantOS_User/Memory/HUMAN_KNOWLEDGE/sources/moveme",
@@ -1078,6 +1482,7 @@ test("settings memory section rolls back moved sources through scoped capability
     [...container.querySelectorAll("button")].find((button) => button.textContent === "Rollback").click();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
+    assert.match(promptMessage, /restores files from ResonantOS Memory back to the original source path/);
     assert.ok(calls.some(([route, options]) =>
       route === "/memory/source/move-rollback" &&
       options.capability === "memory-source-move" &&
@@ -1378,11 +1783,16 @@ test("settings appearance section loads, applies, and saves local UI preferences
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     assert.match(container.textContent, /Interface Preferences/);
+    assert.match(container.textContent, /Tune the workspace for desktop focus or touch-friendly use/);
+    assert.match(container.textContent, /Recommended default/);
+    assert.match(container.textContent, /Density/);
+    assert.match(container.textContent, /Text size/);
+    assert.match(container.textContent, /Motion/);
     assert.equal(document.body.dataset.density, "compact");
     assert.equal(document.body.dataset.fontScale, "small");
     assert.equal(document.body.dataset.motion, "reduced");
 
-    const form = container.querySelector(".settings-routing-form");
+    const form = container.querySelector(".settings-appearance-form");
     form.querySelector("select[name='density']").value = "touch";
     form.querySelector("select[name='fontScale']").value = "large";
     form.querySelector("select[name='motion']").value = "full";
@@ -1413,7 +1823,7 @@ test("settings workspace defaults to overview health and routes sections from su
             id: "shared-minimax",
             label: "MiniMax",
             role: "Default Augmentor provider",
-            models: ["MiniMax-M2.7"],
+            models: ["MiniMax-M3"],
             configured: true
           }
         ]
@@ -1446,6 +1856,21 @@ test("settings workspace defaults to overview health and routes sections from su
         intake: { artifacts: 4 }
       };
     }
+    if (route === "/memory/settings") {
+      return {
+        settings: {
+          activeMemoryAddon: "living-archive",
+          autoSync: false,
+          syncMode: "manual-review",
+          sources: []
+        },
+        status: {
+          wiki: { pages: 12 },
+          intake: { artifacts: 4 }
+        },
+        memoryAddons: [{ id: "addon.living-archive", name: "Living Archive", mode: "memory-system", available: true }]
+      };
+    }
     if (route === "/browser/launch-diagnostics") {
       return {
         status: "ready",
@@ -1474,7 +1899,15 @@ test("settings workspace defaults to overview health and routes sections from su
     renderSettingsWorkspace({ container, bridgeRequest });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    assert.match(container.textContent, /Overview & Health/);
+    assert.match(container.textContent, /Start Here/);
+    assert.match(container.textContent, /Set the essentials first/);
+    assert.match(container.textContent, /Edit profile/);
+    assert.match(container.textContent, /Set models/);
+    assert.match(container.textContent, /Open memory/);
+    assert.match(container.textContent, /Start here/);
+    assert.match(container.textContent, /Work/);
+    assert.match(container.textContent, /Advanced/);
+    assert.equal(container.querySelector(".settings-advanced-disclosure").open, false);
     assert.match(container.textContent, /1\/1/);
     assert.match(container.textContent, /1\/2/);
     assert.match(container.textContent, /12/);
@@ -1482,6 +1915,25 @@ test("settings workspace defaults to overview health and routes sections from su
     assert.match(container.textContent, /Export Report/);
     assert.match(container.textContent, /Start Recovery Handoff/);
     assert.equal(container.querySelector('[data-section="overview"]').dataset.active, "true");
+
+    [...container.querySelectorAll(".settings-setup-card button")].find((button) => button.textContent === "Edit profile").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(container.querySelector('[data-section="profile"]').dataset.active, "true");
+
+    container.querySelector('[data-section="overview"]').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    [...container.querySelectorAll(".settings-setup-card button")].find((button) => button.textContent === "Set models").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(container.querySelector('[data-section="providers"]').dataset.active, "true");
+
+    container.querySelector('[data-section="overview"]').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    [...container.querySelectorAll(".settings-setup-card button")].find((button) => button.textContent === "Open memory").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(container.querySelector('[data-section="memory"]').dataset.active, "true");
+
+    container.querySelector('[data-section="overview"]').click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     [...container.querySelectorAll(".settings-overview-action-buttons button")].find((button) => button.textContent === "Export Report").click();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1683,9 +2135,18 @@ test("settings workspace renders add-on status and capability boundaries", async
     assert.match(container.textContent, /Add-on Control/);
     await new Promise((resolve) => setTimeout(resolve, 0));
     assert.match(container.textContent, /2\/3 add-ons available/);
+    assert.match(container.textContent, /Enable replaceable capabilities without lock-in/);
+    assert.match(container.textContent, /Permission rule/);
     assert.match(container.textContent, /Hermes/);
     assert.match(container.textContent, /Living Archive/);
     assert.match(container.textContent, /OpenCode/);
+    assert.match(container.textContent, /2 granted · 1 denied/);
+    assert.match(container.textContent, /2 granted · 1 denied/);
+    assert.match(container.textContent, /Explicit grants required/);
+    assert.deepEqual(
+      [...container.querySelectorAll(".settings-addon-disclosure")].map((details) => details.open),
+      [false, false, false, false, false]
+    );
     assert.match(container.textContent, /Granted/);
     assert.match(container.textContent, /agent-delegation/);
     assert.match(container.textContent, /notifications/);
@@ -1836,12 +2297,19 @@ test("settings diagnostics section summarizes host status and exports redacted r
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     assert.match(container.textContent, /Diagnostics/);
+    assert.match(container.textContent, /Check whether ResonantOS is healthy/);
+    assert.match(container.textContent, /Endpoint details/);
+    assert.match(container.textContent, /Support report/);
     assert.match(container.textContent, /resonantos-browser-first/);
     assert.match(container.textContent, /1\/2/);
     assert.match(container.textContent, /3 pages/);
     assert.match(container.textContent, /Chromium/);
     assert.match(container.textContent, /launch=mac-app-bundle · menu=installed · bridge=started · Phantom=loaded/);
     assert.match(container.textContent, /Diagnostics loaded from host-mediated status endpoints/);
+    assert.deepEqual(
+      [...container.querySelectorAll(".settings-diagnostics-advanced")].map((details) => details.open),
+      [false, false]
+    );
 
     container.querySelector(".settings-primary-action").click();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1957,12 +2425,21 @@ test("settings browser control section manages scoped grants and browser jobs", 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     assert.match(container.textContent, /Agent Control Permissions/);
+    assert.match(container.textContent, /The default is ask-before-action/);
+    assert.match(container.textContent, /Agent permissions/);
+    assert.match(container.textContent, /Native browser tools/);
+    assert.match(container.textContent, /Recent downloads/);
+    assert.match(container.textContent, /Browser job history/);
     assert.match(container.textContent, /example\.com · Trusted safe actions/);
     assert.match(container.textContent, /blocked\.test/);
     assert.match(container.textContent, /example\.com · shopping/);
     assert.match(container.textContent, /Find the booking page/);
     assert.match(container.textContent, /running · focused/);
     assert.match(container.textContent, /3 stored grants · 2 browser jobs/);
+    assert.deepEqual(
+      [...container.querySelectorAll(".settings-control-advanced")].map((details) => details.open),
+      [false, false, false]
+    );
 
     [...container.querySelectorAll("button")].find((button) => button.textContent === "Reset").click();
     await new Promise((resolve) => setTimeout(resolve, 0));

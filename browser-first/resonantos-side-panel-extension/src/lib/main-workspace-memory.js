@@ -1,13 +1,28 @@
 // Intent citation: docs/architecture/ADR-037-browser-first-chromium-resonantos.md
 // Intent citation: docs/architecture/ADR-027-living-archive-llm-wiki-compliance.md
 
-import { artifactInsightsFromMarkdown } from "./artifact-insights.js";
+import { singleFileIntakeContent } from "./memory-single-file-intake.js";
+import {
+  optionNode,
+  sourceArtifactPreviewCard,
+  sourceCard,
+  sourceDiffCard,
+  sourceMoveHistoryPanel,
+  sourceRepairHistoryPanel,
+  sourceReviewCard,
+  sourceSyncHistoryPanel,
+  sourceVersionsCard,
+  wikiPagePreviewCard
+} from "./memory-source-renderers.js";
+import {
+  promotionCard,
+  reviewRequestCard,
+  reviewRequestNextAction
+} from "./memory-review-renderers.js";
+
+export { reviewRequestNextAction } from "./memory-review-renderers.js";
 
 const formatCount = (value) => Number(value ?? 0).toLocaleString();
-const SOURCE_REVIEW_RENDER_LIMIT = 200;
-const SOURCE_FILE_INTAKE_BATCH_LIMIT = 200;
-const SINGLE_FILE_INTAKE_LIMIT_BYTES = 1_000_000;
-const SINGLE_FILE_INTAKE_EXTENSIONS = new Set([".md", ".markdown", ".txt", ".csv", ".json"]);
 
 function metric(label, value, meta = "") {
   const node = document.createElement("div");
@@ -20,62 +35,6 @@ function metric(label, value, meta = "") {
   metaNode.textContent = meta;
   node.append(labelNode, valueNode, metaNode);
   return node;
-}
-
-function isSupportedSingleFileIntake(file) {
-  const name = String(file?.name ?? "").toLowerCase();
-  const extension = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
-  const type = String(file?.type ?? "").toLowerCase();
-  return SINGLE_FILE_INTAKE_EXTENSIONS.has(extension) ||
-    type.startsWith("text/") ||
-    type === "application/json" ||
-    type === "application/csv";
-}
-
-async function singleFileIntakeContent(file) {
-  if (!file) {
-    return null;
-  }
-  if (!isSupportedSingleFileIntake(file)) {
-    return [
-      `# ${file.name || "Unsupported attachment"}`,
-      "",
-      "## Boundary",
-      "This is a metadata-only attachment stub. ResonantOS did not read or copy the binary file content, and this stub is not trusted AI Memory until review, draft, verification, and promotion complete.",
-      "",
-      "## File Metadata",
-      `- name: ${file.name || "unknown"}`,
-      `- type: ${file.type || "unknown"}`,
-      `- bytes: ${Number(file.size ?? 0)}`,
-      "- contentStatus: metadata-only",
-      "",
-      "## Required Add-on",
-      "Install or enable a specialist attachment add-on before extracting content from this file type. Examples include PDF, DOCX, image, audio, video, or Audio2TOL-specific processors.",
-      "",
-    ].join("\n");
-  }
-  if (Number(file.size ?? 0) > SINGLE_FILE_INTAKE_LIMIT_BYTES) {
-    throw new Error("Single-file intake is capped at 1 MB. Use folder import for larger source sets.");
-  }
-  const text = await file.text();
-  if (!String(text ?? "").trim()) {
-    throw new Error("Selected file is empty.");
-  }
-  return [
-    `# ${file.name || "Uploaded source file"}`,
-    "",
-    "## Boundary",
-    "This is a single-file governed intake copy. It is raw source evidence and is not trusted AI Memory until review, draft, verification, and promotion complete.",
-    "",
-    "## File Metadata",
-    `- name: ${file.name || "unknown"}`,
-    `- type: ${file.type || "unknown"}`,
-    `- bytes: ${Number(file.size ?? 0)}`,
-    "",
-    "## Content",
-    String(text).trim(),
-    "",
-  ].join("\n");
 }
 
 function resultCard(match) {
@@ -148,730 +107,38 @@ function wikiHealthCard(health, onRefresh, onRunLint) {
   return card;
 }
 
-function pipelineStep(label, state, detail = "") {
-  const node = document.createElement("li");
-  node.className = "memory-pipeline-step";
-  node.dataset.state = state;
-  const marker = document.createElement("span");
-  marker.className = "memory-pipeline-marker";
-  marker.setAttribute("aria-hidden", "true");
-  const labelNode = document.createElement("strong");
-  labelNode.textContent = label;
-  const detailNode = document.createElement("small");
-  detailNode.textContent = detail;
-  node.append(marker, labelNode, detailNode);
-  return node;
-}
-
-function reviewPipeline(request) {
-  const node = document.createElement("ol");
-  node.className = "memory-pipeline";
-  node.setAttribute("aria-label", "Archive pipeline timeline");
-  const reviewStatus = request.status || "pending";
-  const verificationStatus = request.draftVerificationStatus || "";
-  const promotionStatus = request.promotionStatus || "";
-  const rollbackStatus = request.rollbackStatus || "";
-  const revisionStatus = request.draftRevisionStatus || "";
-  const hasDraft = Boolean(request.draftArtifactPath);
-
-  const reviewState = reviewStatus === "approved"
-    ? "complete"
-    : reviewStatus === "rejected"
-      ? "blocked"
-      : reviewStatus === "in-progress"
-        ? "active"
-        : "waiting";
-  const draftState = hasDraft ? "complete" : reviewStatus === "approved" ? "active" : "waiting";
-  const verifyState = verificationStatus === "verified"
-    ? "complete"
-    : verificationStatus === "needs-revision"
-      ? "blocked"
-      : hasDraft
-        ? "active"
-        : "waiting";
-  const reviseState = revisionStatus === "revised" || request.supersedesDraftPath
-    ? "complete"
-    : verificationStatus === "needs-revision"
-      ? "active"
-      : "waiting";
-  const promoteState = promotionStatus === "promoted"
-    ? "complete"
-    : verificationStatus === "verified"
-      ? "active"
-      : "waiting";
-  const restoreState = rollbackStatus === "restored" ? "complete" : request.backupPath ? "available" : "waiting";
-
-  node.append(
-    pipelineStep("Intake", request.artifactPath ? "complete" : "blocked", request.artifactPath ? "source captured" : "missing source"),
-    pipelineStep("Review", reviewState, reviewStatus),
-    pipelineStep("Draft", draftState, hasDraft ? "artifact ready" : "not generated"),
-    pipelineStep("Verify", verifyState, verificationStatus || "not run"),
-    pipelineStep("Revise", reviseState, revisionStatus || (verificationStatus === "needs-revision" ? "needed" : "optional")),
-    pipelineStep("Promote", promoteState, promotionStatus || "blocked until verified"),
-    pipelineStep("Restore", restoreState, rollbackStatus || (request.backupPath ? "backup available" : "no backup"))
-  );
-  return node;
-}
-
-export function reviewRequestNextAction(request = {}) {
-  if (!request.artifactPath && !request.path) {
-    return {
-      tone: "error",
-      label: "Repair request",
-      detail: "This review request is missing source evidence. Do not draft or promote it until the intake artifact is restored."
-    };
-  }
-  if (request.status === "rejected") {
-    return {
-      tone: "blocked",
-      label: "Rejected",
-      detail: "No trusted memory write will happen from this artifact unless a new review request is created."
-    };
-  }
-  if (request.promotionStatus === "promoted") {
-    return {
-      tone: "success",
-      label: "Promoted",
-      detail: request.backupPath
-        ? "This artifact has been promoted into AI Memory. A backup is available if the promotion needs to be restored."
-        : "This artifact has been promoted into AI Memory."
-    };
-  }
-  if (request.draftVerificationStatus === "needs-revision") {
-    return {
-      tone: "warning",
-      label: "Revise draft",
-      detail: "The verifier found issues. Revise the draft before any promotion can be attempted."
-    };
-  }
-  if (request.draftVerificationStatus === "verified") {
-    return {
-      tone: "success",
-      label: "Ready to promote",
-      detail: "The draft is verified. Promotion is the only step that writes into trusted AI Memory."
-    };
-  }
-  if (request.draftArtifactPath) {
-    return {
-      tone: "active",
-      label: "Verify draft",
-      detail: "Preview the draft, then run verification. Unverified drafts remain review artifacts only."
-    };
-  }
-  if (request.status === "approved") {
-    return {
-      tone: "active",
-      label: "Generate draft",
-      detail: "Create a draft wiki update from this approved intake artifact. This still does not write trusted AI Memory."
-    };
-  }
-  if (request.status === "in-progress") {
-    return {
-      tone: "active",
-      label: "Finish review",
-      detail: "Approve only if this source should become a draft candidate; reject it if it should stay as raw intake."
-    };
-  }
-  return {
-    tone: "waiting",
-    label: "Start review",
-    detail: "Inspect the source artifact first. Intake is preserved separately from AI-curated memory."
-  };
-}
-
-function reviewRequestCard(request, onTransition, onDraft, onPreviewDraft, onPreviewSource, onPreviewPage) {
-  const card = document.createElement("article");
-  card.className = "memory-review-request";
-  const heading = document.createElement("div");
-  heading.className = "memory-review-heading";
-  const title = document.createElement("strong");
-  title.textContent = request.title || "Untitled review request";
-  const status = document.createElement("span");
-  status.textContent = request.status || "pending";
-  heading.append(title, status);
-  const artifact = document.createElement("code");
-  artifact.textContent = request.artifactPath || request.path || "REVIEW/requests";
-  const draft = document.createElement("code");
-  draft.className = "memory-review-draft";
-  draft.textContent = request.draftArtifactPath ? `draft: ${request.draftArtifactPath}` : "draft: not generated";
-  const reason = document.createElement("p");
-  reason.textContent = request.reason || "No review reason recorded.";
-  const pipeline = reviewPipeline(request);
-  const next = reviewRequestNextAction(request);
-  const nextAction = document.createElement("p");
-  nextAction.className = "memory-review-next";
-  nextAction.dataset.tone = next.tone;
-  const nextLabel = document.createElement("strong");
-  nextLabel.textContent = `Next: ${next.label}`;
-  const nextDetail = document.createElement("span");
-  nextDetail.textContent = next.detail;
-  nextAction.append(nextLabel, nextDetail);
-  const actions = document.createElement("div");
-  actions.className = "memory-review-actions";
-  const makeAction = (label, nextStatus) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = label;
-    button.dataset.reviewStatus = nextStatus;
-    button.disabled = request.status === nextStatus;
-    button.addEventListener("click", () => onTransition(request, nextStatus));
-    return button;
-  };
-  actions.append(
-    makeAction("Start", "in-progress"),
-    makeAction("Approve", "approved"),
-    makeAction("Reject", "rejected")
-  );
-  const sourceButton = document.createElement("button");
-  sourceButton.type = "button";
-  sourceButton.textContent = "Inspect Source";
-  sourceButton.disabled = !request.artifactPath;
-  sourceButton.addEventListener("click", () => onPreviewSource(request));
-  actions.append(sourceButton);
-  const draftButton = document.createElement("button");
-  draftButton.type = "button";
-  draftButton.textContent = request.draftArtifactPath ? "Drafted" : "Draft";
-  draftButton.disabled = request.status !== "approved" || Boolean(request.draftArtifactPath);
-  draftButton.addEventListener("click", () => onDraft(request));
-  actions.append(draftButton);
-  const previewButton = document.createElement("button");
-  previewButton.type = "button";
-  previewButton.textContent = "Preview";
-  previewButton.disabled = !request.draftArtifactPath;
-  previewButton.addEventListener("click", () => onPreviewDraft(request));
-  actions.append(previewButton);
-  const pageButton = document.createElement("button");
-  pageButton.type = "button";
-  pageButton.textContent = "Preview Page";
-  pageButton.disabled = request.promotionStatus !== "promoted" || !request.promotedPage;
-  pageButton.addEventListener("click", () => onPreviewPage(request));
-  actions.append(pageButton);
-  card.append(heading, artifact, draft, reason, pipeline, nextAction, actions);
-  return card;
-}
-
-function promotionCard(entry, onRestore, onPreviewPage) {
-  const card = document.createElement("article");
-  card.className = "memory-promotion-card";
-  const heading = document.createElement("div");
-  heading.className = "memory-promotion-heading";
-  const title = document.createElement("strong");
-  title.textContent = entry.title || "Promoted wiki update";
-  const status = document.createElement("span");
-  status.textContent = entry.status || "promoted";
-  heading.append(title, status);
-  const page = document.createElement("code");
-  page.textContent = entry.promotedPage || "AI_MEMORY/wiki";
-  const meta = document.createElement("p");
-  meta.textContent = entry.promotedAt
-    ? `Promoted ${entry.promotedAt}`
-    : "Promotion time not recorded.";
-  card.append(heading, page, meta);
-  if (entry.backupPath) {
-    const backup = document.createElement("code");
-    backup.textContent = `backup: ${entry.backupPath}`;
-    card.append(backup);
-  }
-  if (entry.rollbackStatus === "restored") {
-    const restored = document.createElement("p");
-    restored.textContent = entry.restoredAt
-      ? `Restored from backup ${entry.restoredAt}.`
-      : "Restored from backup.";
-    card.append(restored);
-  }
-  const actions = document.createElement("div");
-  actions.className = "memory-review-actions";
-  const previewButton = document.createElement("button");
-  previewButton.type = "button";
-  previewButton.textContent = "Preview Page";
-  previewButton.disabled = !entry.promotedPage;
-  previewButton.addEventListener("click", () => onPreviewPage(entry));
-  const restoreButton = document.createElement("button");
-  restoreButton.type = "button";
-  restoreButton.textContent = entry.rollbackStatus === "restored" ? "Restored" : "Restore Backup";
-  restoreButton.disabled = !entry.backupPath || entry.rollbackStatus === "restored";
-  restoreButton.addEventListener("click", () => onRestore(entry));
-  actions.append(previewButton, restoreButton);
-  card.append(actions);
-  return card;
-}
-
-function sourceCard(source, onReview, onCreateIntake, onVersions) {
-  const card = document.createElement("article");
-  card.className = "memory-source-card";
-  if (source.disabledAt) {
-    card.dataset.disabled = "true";
-  }
-  const heading = document.createElement("div");
-  heading.className = "memory-promotion-heading";
-  const title = document.createElement("strong");
-  title.textContent = source.path || "Unnamed source";
-  const status = document.createElement("span");
-  status.textContent = source.disabledAt ? "disabled" : source.exists ? "connected" : "missing";
-  heading.append(title, status);
-  const meta = document.createElement("p");
-  meta.textContent = `${source.kind || "folder"} · ${source.ownership || "mixed-library"} · ${source.importMode || "copy-on-import"}`;
-  const actions = document.createElement("div");
-  actions.className = "memory-review-actions";
-  const reviewButton = document.createElement("button");
-  reviewButton.type = "button";
-  reviewButton.textContent = "Review Source";
-  reviewButton.disabled = Boolean(source.disabledAt) || !source.exists;
-  reviewButton.addEventListener("click", () => onReview(source));
-  const intakeButton = document.createElement("button");
-  intakeButton.type = "button";
-  intakeButton.textContent = "Create Intake Summary";
-  intakeButton.disabled = Boolean(source.disabledAt) || !source.exists;
-  intakeButton.addEventListener("click", () => onCreateIntake(source));
-  const versionsButton = document.createElement("button");
-  versionsButton.type = "button";
-  versionsButton.textContent = "Versions";
-  versionsButton.addEventListener("click", () => onVersions(source));
-  actions.append(reviewButton, intakeButton, versionsButton);
-  card.append(heading, meta, actions);
-  return card;
-}
-
-function sourceVersionsCard(source, result) {
-  const card = document.createElement("article");
-  card.className = "memory-review-preview";
-  const heading = document.createElement("div");
-  heading.className = "memory-preview-heading";
-  const title = document.createElement("strong");
-  title.textContent = `Source versions: ${source.path || source.id}`;
-  const meta = document.createElement("code");
-  meta.textContent = result.updatedAt ? `manifest updated ${result.updatedAt}` : "no source version manifest yet";
-  heading.append(title, meta);
-  const list = document.createElement("ol");
-  list.className = "memory-source-candidates";
-  const entries = Array.isArray(result.entries) ? result.entries : [];
-  if (!entries.length) {
-    const empty = document.createElement("li");
-    empty.textContent = "No imported source-file versions recorded for this source yet.";
-    list.append(empty);
-  }
-  for (const entry of entries) {
-    const item = document.createElement("li");
-    item.textContent = [
-      `v${entry.latestVersion ?? 0}`,
-      entry.sourceFile || "unknown file",
-      entry.latestModifiedAt || "unknown source modified time",
-      `${String(entry.latestHash ?? "").slice(0, 12)}…`
-    ].join(" · ");
-    list.append(item);
-  }
-  card.append(heading, list);
-  return card;
-}
-
-function sourceReviewCard(review, onImportFiles, onPreviewDiff) {
-  const card = document.createElement("article");
-  card.className = "memory-review-preview";
-  const heading = document.createElement("div");
-  heading.className = "memory-preview-heading";
-  const title = document.createElement("strong");
-  title.textContent = review.source?.path || "Source review";
-  const sourceId = document.createElement("code");
-  sourceId.textContent = review.source?.id || "source";
-  heading.append(title, sourceId);
-  const categories = review.scan?.categories ?? {};
-  const summary = document.createElement("p");
-  summary.textContent = [
-    `${review.scan?.totalScanned ?? 0} scanned`,
-    `${categories.compatible ?? 0} compatible`,
-    `${categories.processed ?? 0} processed`,
-    `${categories["raw-audio"] ?? 0} raw audio`,
-    `${categories.unsupported ?? 0} unsupported`
-  ].join(" · ");
-  const boundary = document.createElement("p");
-  boundary.textContent = review.boundary || "Source review is read-only.";
-  const recommendation = document.createElement("p");
-  recommendation.textContent = review.scan?.recommendation || "Review before intake.";
-  const warning = document.createElement("p");
-  warning.className = "memory-status";
-  warning.dataset.tone = "warning";
-  warning.textContent = review.versionManifestError
-    ? `Version tracking warning: ${review.versionManifestError}`
-    : "";
-  warning.hidden = !review.versionManifestError;
-  const repairGuidance = document.createElement("div");
-  repairGuidance.className = "memory-source-repair-guidance";
-  repairGuidance.hidden = !review.versionManifestError;
-  const repairTitle = document.createElement("strong");
-  repairTitle.textContent = "Repair required before blocked files can enter intake";
-  const repairBody = document.createElement("p");
-  repairBody.textContent = "Version tracking protects the human source from being re-imported as false-new memory. When it is unavailable, blocked files stay out of selected and bulk intake until the source history is repaired.";
-  const repairSteps = document.createElement("ol");
-  for (const step of [
-    "Run Scan Source again after confirming the folder is still connected.",
-    "If the warning remains, repair or restore the source-version manifest from the managed Memory metadata backup.",
-    "Only then review changed files and create governed intake; no trusted wiki page is written directly."
-  ]) {
-    const item = document.createElement("li");
-    item.textContent = step;
-    repairSteps.append(item);
-  }
-  repairGuidance.append(repairTitle, repairBody, repairSteps);
-
-  const filterBar = document.createElement("div");
-  filterBar.className = "memory-source-filterbar";
-  const categoryFilter = document.createElement("select");
-  categoryFilter.setAttribute("aria-label", "Filter source candidates by category");
-  categoryFilter.append(
-    optionNode("all", "All candidates"),
-    optionNode("compatible", "Compatible"),
-    optionNode("processed", "Processed"),
-    optionNode("raw-audio", "Raw audio"),
-    optionNode("unsupported", "Unsupported")
-  );
-  const textFilter = document.createElement("input");
-  textFilter.type = "search";
-  textFilter.placeholder = "Filter by filename or folder";
-  textFilter.setAttribute("aria-label", "Filter source candidates by text");
-  const count = document.createElement("small");
-  filterBar.append(categoryFilter, textFilter, count);
-
-  const list = document.createElement("ol");
-  list.className = "memory-source-candidates";
-  const selected = new Set();
-  let importSelectedButton = null;
-  const updateSelectedActionState = () => {
-    if (importSelectedButton) {
-      importSelectedButton.disabled = selected.size === 0;
-    }
-  };
-  const candidates = review.candidates ?? [];
-  const eligibleFiles = candidates.filter(isEligibleSourceIntakeCandidate);
-  const skippedUnchanged = candidates.filter((candidate) =>
-    candidate.category === "compatible" && candidate.versionStatus === "unchanged"
-  );
-  const blockedFiles = candidates.filter((candidate) =>
-    candidate.versionStatus === "version-manifest-unavailable" || candidate.error || candidate.blocked
-  );
-  const skippedUnsupported = candidates.filter((candidate) =>
-    !isEligibleSourceIntakeCandidate(candidate) &&
-    !(candidate.category === "compatible" && candidate.versionStatus === "unchanged") &&
-    !blockedFiles.includes(candidate)
-  );
-  const newFiles = candidates.filter((candidate) =>
-    candidate.category === "compatible" && candidate.versionStatus === "new"
-  );
-  const changedFileCandidates = candidates.filter((candidate) =>
-    candidate.category === "compatible" && candidate.versionStatus === "changed"
-  );
-  const deltaSummary = sourceReviewDeltaSummary({
-    newFiles,
-    changedFiles: changedFileCandidates,
-    skippedUnchanged,
-    skippedUnsupported,
-    blockedFiles,
-  });
-
-  const approvalPlan = document.createElement("div");
-  approvalPlan.className = "memory-source-approval-plan";
-  const approvalTitle = document.createElement("strong");
-  approvalTitle.textContent = "Approval plan";
-  const approvalBody = document.createElement("p");
-  const batchFiles = eligibleFiles.slice(0, SOURCE_FILE_INTAKE_BATCH_LIMIT).map((candidate) => candidate.path);
-  const deferredEligibleFiles = Math.max(0, eligibleFiles.length - batchFiles.length);
-  approvalBody.textContent = [
-    `${eligibleFiles.length} new/changed compatible file(s) ready for governed intake`,
-    deferredEligibleFiles
-      ? `${batchFiles.length} will be submitted in this batch; ${deferredEligibleFiles} deferred`
-      : `${batchFiles.length} will be submitted in this batch`,
-    `${skippedUnchanged.length} unchanged file(s) skipped`,
-    `${skippedUnsupported.length} raw/processed/unsupported file(s) kept out of wiki intake`,
-    `${blockedFiles.length} blocked file(s) require source/version repair`
-  ].join(" · ");
-  const approvalHelp = document.createElement("small");
-  approvalHelp.textContent = "Bulk approval creates intake artifacts and review requests only for eligible files, in host-capped batches. It never writes trusted wiki pages directly.";
-  approvalPlan.append(approvalTitle, approvalBody, approvalHelp);
-  const emptyAction = document.createElement("p");
-  emptyAction.className = "memory-status";
-  emptyAction.dataset.tone = "warning";
-  emptyAction.hidden = eligibleFiles.length > 0;
-  emptyAction.textContent = blockedFiles.length
-    ? "No eligible files are available because source/version repair is required first."
-    : "No eligible new or changed compatible files are available for intake.";
-
-  const renderCandidates = () => {
-    list.replaceChildren();
-    const category = categoryFilter.value;
-    const query = textFilter.value.trim().toLowerCase();
-    const visible = candidates.filter((candidate) =>
-      (category === "all" || candidate.category === category) &&
-      (!query || String(candidate.path ?? "").toLowerCase().includes(query))
-    );
-    const groups = new Map();
-    const rendered = visible.slice(0, SOURCE_REVIEW_RENDER_LIMIT);
-    for (const candidate of rendered) {
-      const folder = String(candidate.path ?? "").includes("/")
-        ? String(candidate.path).split("/").slice(0, -1).join("/")
-        : "root";
-      const entries = groups.get(folder) ?? [];
-      entries.push(candidate);
-      groups.set(folder, entries);
-    }
-    for (const [folder, entries] of groups) {
-      const group = document.createElement("li");
-      group.className = "memory-source-candidate-group";
-      const groupTitle = document.createElement("strong");
-      groupTitle.textContent = `${folder} · ${entries.length}`;
-      const nested = document.createElement("ol");
-      for (const candidate of entries) {
-        nested.append(sourceCandidateItem(candidate, selected, onPreviewDiff, updateSelectedActionState));
-      }
-      group.append(groupTitle, nested);
-      list.append(group);
-    }
-    if (!visible.length) {
-      const item = document.createElement("li");
-      item.textContent = candidates.length
-        ? "No source candidates match the current filters."
-        : "No directly compatible candidate files found in the review sample.";
-      list.append(item);
-    } else if (visible.length > rendered.length) {
-      const item = document.createElement("li");
-      item.className = "memory-source-candidate-limit";
-      item.textContent = `Showing ${rendered.length} of ${visible.length} matching candidate(s). Narrow the filter to inspect more files; bulk intake still uses all eligible files.`;
-      list.append(item);
-    }
-    count.textContent = `${visible.length}/${candidates.length} candidate(s) visible`;
-  };
-  categoryFilter.addEventListener("change", renderCandidates);
-  textFilter.addEventListener("input", renderCandidates);
-  renderCandidates();
-
-  const actions = document.createElement("div");
-  actions.className = "memory-review-actions";
-  const importChangedButton = document.createElement("button");
-  importChangedButton.type = "button";
-  importChangedButton.textContent = deferredEligibleFiles
-    ? `Create Intake Batch (${batchFiles.length}/${eligibleFiles.length})`
-    : "Create Intake From New/Changed Files";
-  importChangedButton.disabled = batchFiles.length === 0;
-  importChangedButton.addEventListener("click", () => onImportFiles(review, batchFiles));
-  const importButton = document.createElement("button");
-  importSelectedButton = importButton;
-  importButton.type = "button";
-  importButton.textContent = "Create Intake From Selected Files";
-  importButton.disabled = true;
-  importButton.addEventListener("click", () => onImportFiles(
-    review,
-    [...selected].filter((file) => eligibleFiles.some((candidate) => candidate.path === file))
-  ));
-  updateSelectedActionState();
-  actions.append(importChangedButton, importButton);
-  card.append(heading, summary, boundary, recommendation, warning, repairGuidance, deltaSummary, approvalPlan, emptyAction, filterBar, list, actions);
-  return card;
-}
-
-function sourceReviewDeltaSummary({
-  newFiles = [],
-  changedFiles = [],
-  skippedUnchanged = [],
-  skippedUnsupported = [],
-  blockedFiles = [],
-} = {}) {
-  const panel = document.createElement("div");
-  panel.className = "memory-source-delta-summary";
-  const title = document.createElement("strong");
-  title.textContent = "Review delta";
-  const body = document.createElement("p");
-  body.textContent = [
-    `${newFiles.length} new`,
-    `${changedFiles.length} changed`,
-    `${skippedUnchanged.length} unchanged`,
-    `${skippedUnsupported.length} excluded`,
-    `${blockedFiles.length} blocked`
-  ].join(" · ");
-  const help = document.createElement("small");
-  help.textContent = "Only new and changed compatible files can become governed intake. Unchanged, unsupported, raw, processed, and blocked files stay out of wiki promotion.";
-  const sampleList = document.createElement("ol");
-  sampleList.className = "memory-source-delta-files";
-  for (const [label, files] of [
-    ["New", newFiles],
-    ["Changed", changedFiles],
-    ["Unchanged", skippedUnchanged],
-    ["Excluded", skippedUnsupported],
-    ["Blocked", blockedFiles],
-  ]) {
-    const item = document.createElement("li");
-    const sample = files.slice(0, 3).map((candidate) => candidate.path).join(", ");
-    item.textContent = sample
-      ? `${label}: ${sample}${files.length > 3 ? `, +${files.length - 3} more` : ""}`
-      : `${label}: none`;
-    sampleList.append(item);
-  }
-  panel.append(title, body, help, sampleList);
-  return panel;
-}
-
-function isEligibleSourceIntakeCandidate(candidate) {
-  return candidate.category === "compatible" && ["new", "changed"].includes(candidate.versionStatus);
-}
-
-function optionNode(value, text) {
-  const node = document.createElement("option");
-  node.value = value;
-  node.textContent = text;
-  return node;
-}
-
-function sourceCandidateItem(candidate, selected, onPreviewDiff, onSelectionChange = () => {}) {
-  const item = document.createElement("li");
-  const label = document.createElement("label");
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.value = candidate.path;
-  const eligible = isEligibleSourceIntakeCandidate(candidate);
-  input.disabled = !eligible;
-  input.checked = selected.has(candidate.path);
-  input.addEventListener("change", () => {
-    if (!eligible) {
-      input.checked = false;
-      selected.delete(candidate.path);
-      return;
-    }
-    if (input.checked) selected.add(candidate.path);
-    else selected.delete(candidate.path);
-    onSelectionChange();
-  });
-  const text = document.createElement("span");
-  const versionLabel = candidate.versionStatus
-    ? ` · ${candidate.versionStatus}${candidate.sourceVersion ? ` v${candidate.sourceVersion}` : ""}`
-    : "";
-  text.textContent = `${candidate.category}${versionLabel} · ${candidate.path} · ${formatCount(candidate.bytes)} bytes`;
-  label.append(input, text);
-  item.append(label);
-  if (candidate.category === "compatible" && candidate.previousSourceContentHash) {
-    const diffButton = document.createElement("button");
-    diffButton.type = "button";
-    diffButton.textContent = "Diff";
-    diffButton.addEventListener("click", () => onPreviewDiff(candidate));
-    item.append(diffButton);
-  }
-  return item;
-}
-
-function sourceDiffCard(result) {
-  const card = document.createElement("article");
-  card.className = "memory-review-preview";
-  const heading = document.createElement("div");
-  heading.className = "memory-preview-heading";
-  const title = document.createElement("strong");
-  title.textContent = `Source diff: ${result.sourceFile || "source file"}`;
-  const meta = document.createElement("code");
-  meta.textContent = result.status === "unavailable"
-    ? result.reason || "diff unavailable"
-    : `v${result.latestVersion ?? 0} · ${result.status} · ${String(result.currentHash ?? "").slice(0, 12)}…`;
-  heading.append(title, meta);
-  const list = document.createElement("ol");
-  list.className = "memory-source-diff";
-  const changes = Array.isArray(result.changes) ? result.changes : [];
-  if (!changes.length) {
-    const empty = document.createElement("li");
-    empty.textContent = result.status === "unavailable"
-      ? result.reason || "No previous governed intake artifact is recorded."
-      : "No line-level changes found.";
-    list.append(empty);
-  }
-  for (const change of changes) {
-    const item = document.createElement("li");
-    item.dataset.type = change.type;
-    const marker = document.createElement("strong");
-    marker.textContent = change.type === "added" ? "+" : "-";
-    const text = document.createElement("span");
-    text.textContent = `L${change.line}: ${change.text}`;
-    item.append(marker, text);
-    list.append(item);
-  }
-  if (result.truncated) {
-    const truncated = document.createElement("p");
-    truncated.className = "memory-status";
-    truncated.dataset.tone = "warning";
-    truncated.textContent = "Diff preview truncated. Use smaller files or inspect the source directly for full context.";
-    card.append(heading, list, truncated);
-    return card;
-  }
-  card.append(heading, list);
-  return card;
-}
-
-function sourceArtifactPreviewCard(result) {
-  const card = document.createElement("article");
-  card.className = "memory-review-preview";
-  const insights = artifactInsightsFromMarkdown(result.content || result.excerpt || "");
-  const heading = document.createElement("div");
-  heading.className = "memory-preview-heading";
-  const title = document.createElement("strong");
-  title.textContent = result.title || "Source intake artifact";
-  const path = document.createElement("code");
-  path.textContent = result.path || "INTAKE";
-  heading.append(title, path);
-  const meta = document.createElement("p");
-  meta.textContent = [
-    insights.sourceType || result.kind || "intake source",
-    insights.pageTitle || "",
-    insights.pageUrl || "",
-    insights.sourceStats || "",
-    insights.capturedAt ? `captured ${insights.capturedAt}` : ""
-  ].filter(Boolean).join(" · ");
-  const boundary = document.createElement("p");
-  boundary.className = "memory-status";
-  boundary.dataset.tone = "warning";
-  boundary.textContent = "This is preserved intake evidence. It can inform a draft, but it is not trusted AI Memory until verification and promotion complete.";
-  const content = document.createElement("pre");
-  content.textContent = result.content || "No source artifact content returned.";
-  card.append(heading, meta, boundary, content);
-  if (result.truncated) {
-    const truncated = document.createElement("p");
-    truncated.className = "memory-status";
-    truncated.dataset.tone = "warning";
-    truncated.textContent = "Source preview truncated for safety. The full artifact remains in Living Archive intake.";
-    card.append(truncated);
-  }
-  return card;
-}
-
-function wikiPagePreviewCard(result) {
-  const card = document.createElement("article");
-  card.className = "memory-review-preview";
-  const heading = document.createElement("div");
-  heading.className = "memory-preview-heading";
-  const title = document.createElement("strong");
-  title.textContent = result.title || "AI Memory page";
-  const path = document.createElement("code");
-  path.textContent = result.path || "AI_MEMORY/wiki";
-  heading.append(title, path);
-  const meta = document.createElement("p");
-  meta.textContent = [
-    result.modifiedAt ? `modified ${result.modifiedAt}` : "",
-    result.bytes ? `${formatCount(result.bytes)} bytes` : ""
-  ].filter(Boolean).join(" · ");
-  const boundary = document.createElement("p");
-  boundary.className = "memory-status";
-  boundary.dataset.tone = "success";
-  boundary.textContent = "This is trusted AI Memory after governed promotion. Compare it with the source artifact and review history before relying on it for important decisions.";
-  const content = document.createElement("pre");
-  content.textContent = result.content || "No AI Memory page content returned.";
-  card.append(heading, meta, boundary, content);
-  if (result.truncated) {
-    const truncated = document.createElement("p");
-    truncated.className = "memory-status";
-    truncated.dataset.tone = "warning";
-    truncated.textContent = "Page preview truncated for safety. The full page remains in AI_MEMORY/wiki.";
-    card.append(truncated);
-  }
-  return card;
-}
 
 function setStatus(node, text, tone = "neutral") {
   node.textContent = text;
   node.dataset.tone = tone;
 }
 
-export function renderLivingArchiveWorkspace({ container, bridgeRequest, initialQuery = "" }) {
+function reviewMatchesHandoff(request = {}, { initialReviewPath = "", initialArtifactPath = "" } = {}) {
+  const reviewPath = String(initialReviewPath ?? "").trim();
+  const artifactPath = String(initialArtifactPath ?? "").trim();
+  return Boolean(
+    (reviewPath && (request.path === reviewPath || request.reviewRequestPath === reviewPath)) ||
+    (artifactPath && request.artifactPath === artifactPath)
+  );
+}
+
+function promotionMatchesHandoff(entry = {}, { initialReviewPath = "", initialPromotedPage = "" } = {}) {
+  const reviewPath = String(initialReviewPath ?? "").trim();
+  const promotedPage = String(initialPromotedPage ?? "").trim();
+  return Boolean(
+    (promotedPage && entry.promotedPage === promotedPage) ||
+    (reviewPath && (entry.path === reviewPath || entry.reviewRequestPath === reviewPath))
+  );
+}
+
+export function renderLivingArchiveWorkspace({
+  container,
+  bridgeRequest,
+  initialQuery = "",
+  initialReviewPath = "",
+  initialArtifactPath = "",
+  initialPromotedPage = ""
+}) {
   const section = document.createElement("section");
   section.className = "memory-workspace";
   section.setAttribute("aria-label", "Living Archive workspace");
@@ -984,10 +251,16 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
   sourceHeader.className = "memory-review-top";
   const sourceLabel = document.createElement("label");
   sourceLabel.textContent = "Connected sources";
+  const sourceHeaderActions = document.createElement("div");
+  sourceHeaderActions.className = "memory-review-actions";
+  const runSourceSync = document.createElement("button");
+  runSourceSync.type = "button";
+  runSourceSync.textContent = "Run Sync Now";
   const refreshSources = document.createElement("button");
   refreshSources.type = "button";
   refreshSources.textContent = "Refresh";
-  sourceHeader.append(sourceLabel, refreshSources);
+  sourceHeaderActions.append(runSourceSync, refreshSources);
+  sourceHeader.append(sourceLabel, sourceHeaderActions);
   const sourceFilterBar = document.createElement("div");
   sourceFilterBar.className = "memory-source-filterbar memory-source-list-filterbar";
   const sourceStateFilter = document.createElement("select");
@@ -1006,11 +279,17 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
   sourceFilterBar.append(sourceStateFilter, sourceTextFilter, sourceFilterCount);
   const sourceStatus = document.createElement("p");
   sourceStatus.className = "memory-status";
+  const sourceSyncHistory = document.createElement("div");
+  sourceSyncHistory.className = "memory-source-sync-history-host";
+  const sourceRepairHistory = document.createElement("div");
+  sourceRepairHistory.className = "memory-source-repair-history-host";
+  const sourceMoveHistory = document.createElement("div");
+  sourceMoveHistory.className = "memory-source-move-history-host";
   const sourceList = document.createElement("div");
   sourceList.className = "memory-source-list";
   const sourcePreview = document.createElement("div");
   sourcePreview.className = "memory-source-preview";
-  sourcePanel.append(sourceHeader, sourceFilterBar, sourceStatus, sourceList, sourcePreview);
+  sourcePanel.append(sourceHeader, sourceFilterBar, sourceStatus, sourceSyncHistory, sourceRepairHistory, sourceMoveHistory, sourceList, sourcePreview);
 
   const advancedPanel = document.createElement("details");
   advancedPanel.className = "memory-advanced";
@@ -1085,15 +364,30 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
         setStatus(reviewStatus, "No pending review requests. Browser artifacts can request review from the Artifacts workspace.", "warning");
         return;
       }
+      const focusedRequest = requests.find((request) => reviewMatchesHandoff(request, { initialReviewPath, initialArtifactPath }));
       reviewList.append(...requests.map((request) => reviewRequestCard(
         request,
         transitionReviewRequest,
         draftReviewRequest,
         previewDraftArtifact,
         previewSourceArtifact,
-        previewReviewPromotedPage
+        previewReviewPromotedPage,
+        { focused: reviewMatchesHandoff(request, { initialReviewPath, initialArtifactPath }) }
       )));
-      setStatus(reviewStatus, `${requests.length} review request(s) waiting in ${result.root}.`, "success");
+      if (focusedRequest) {
+        setStatus(reviewStatus, `Focused review request: ${focusedRequest.path}. Inspect the preserved source, then draft, verify, and promote only if it belongs in AI Memory.`, "success");
+        queueMicrotask(async () => {
+          reviewList.querySelector('[data-focused="true"]')?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+          if (focusedRequest.artifactPath) {
+            await previewSourceArtifact(focusedRequest);
+            setStatus(reviewStatus, `Focused review request: ${focusedRequest.path}. Source preview loaded; draft only after checking the preserved evidence.`, "success");
+          }
+        });
+      } else if (initialReviewPath || initialArtifactPath) {
+        setStatus(reviewStatus, `Review queue loaded, but the requested handoff is not in the first ${requests.length} item(s). Use Refresh or search memory history if it was already processed.`, "warning");
+      } else {
+        setStatus(reviewStatus, `${requests.length} review request(s) waiting in ${result.root}.`, "success");
+      }
     } catch (error) {
       setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
     } finally {
@@ -1117,8 +411,22 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
         setStatus(promotionStatus, "No promoted wiki updates yet.", "warning");
         return;
       }
-      promotionList.append(...promotions.map((entry) => promotionCard(entry, restorePromotionBackup, previewPromotedPage)));
-      setStatus(promotionStatus, `${promotions.length} promoted wiki update(s) in ${result.root}.`, "success");
+      const focusedPromotion = promotions.find((entry) => promotionMatchesHandoff(entry, { initialReviewPath, initialPromotedPage }));
+      promotionList.append(...promotions.map((entry) => promotionCard(
+        entry,
+        restorePromotionBackup,
+        previewPromotedPage,
+        { focused: promotionMatchesHandoff(entry, { initialReviewPath, initialPromotedPage }) }
+      )));
+      if (focusedPromotion) {
+        setStatus(promotionStatus, `Focused promoted page: ${focusedPromotion.promotedPage}. Previewing trusted AI Memory below.`, "success");
+        queueMicrotask(async () => {
+          promotionList.querySelector('[data-focused="true"]')?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+          await previewPromotedPage(focusedPromotion, { handoff: true });
+        });
+      } else {
+        setStatus(promotionStatus, `${promotions.length} promoted wiki update(s) in ${result.root}.`, "success");
+      }
     } catch (error) {
       setStatus(promotionStatus, error instanceof Error ? error.message : String(error), "error");
     } finally {
@@ -1127,9 +435,15 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
   };
 
   let connectedSources = [];
+  let sourceSyncHistoryEntries = [];
+  let sourceRepairHistoryEntries = [];
+  let sourceMoveHistoryEntries = [];
 
   const renderSourceList = () => {
     sourceList.replaceChildren();
+    sourceSyncHistory.replaceChildren(sourceSyncHistoryPanel(sourceSyncHistoryEntries));
+    sourceRepairHistory.replaceChildren(sourceRepairHistoryPanel(sourceRepairHistoryEntries));
+    sourceMoveHistory.replaceChildren(sourceMoveHistoryPanel(sourceMoveHistoryEntries));
     const state = sourceStateFilter.value;
     const query = sourceTextFilter.value.trim().toLowerCase();
     const visible = connectedSources.filter((source) => {
@@ -1166,6 +480,9 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
     try {
       const result = await bridgeRequest("/memory/settings", { method: "GET" });
       connectedSources = result.settings?.sources ?? [];
+      sourceSyncHistoryEntries = result.syncHistory ?? [];
+      sourceRepairHistoryEntries = result.sourceRepairHistory ?? [];
+      sourceMoveHistoryEntries = result.sourceMoveHistory ?? [];
       renderSourceList();
     } catch (error) {
       setStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
@@ -1176,6 +493,47 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
 
   sourceStateFilter.addEventListener("change", renderSourceList);
   sourceTextFilter.addEventListener("input", renderSourceList);
+
+  runSourceSync.addEventListener("click", async () => {
+    runSourceSync.disabled = true;
+    refreshSources.disabled = true;
+    setStatus(sourceStatus, "Running governed source sync…");
+    try {
+      const result = await bridgeRequest("/memory/source/sync", {
+        method: "POST",
+        capability: "memory-source-file-intake",
+        body: { limit: 2_000 }
+      });
+      const settingsResult = await bridgeRequest("/memory/settings", { method: "GET" });
+      connectedSources = settingsResult.settings?.sources ?? connectedSources;
+      sourceSyncHistoryEntries = settingsResult.syncHistory ?? sourceSyncHistoryEntries;
+      sourceRepairHistoryEntries = settingsResult.sourceRepairHistory ?? sourceRepairHistoryEntries;
+      sourceMoveHistoryEntries = settingsResult.sourceMoveHistory ?? sourceMoveHistoryEntries;
+      renderSourceList();
+      if (result.status === "paused") {
+        setStatus(sourceStatus, "Memory source sync is paused. Change sync mode in Settings > Memory before running sync.", "warning");
+      } else if (result.autoIntake) {
+        setStatus(
+          sourceStatus,
+          `Sync reviewed ${formatCount(result.reviewedSources)} source(s), created ${formatCount(result.createdArtifacts)} intake artifact(s), and queued ${formatCount(result.reviewRequests)} review request(s).`,
+          "success"
+        );
+        await loadStatus();
+        await loadReviewQueue();
+      } else {
+        setStatus(
+          sourceStatus,
+          `Sync reviewed ${formatCount(result.reviewedSources)} source(s) and found ${formatCount(result.eligibleFiles)} new/changed file(s).`,
+          "success"
+        );
+      }
+    } catch (error) {
+      setStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
+    } finally {
+      runSourceSync.disabled = false;
+      refreshSources.disabled = false;
+    }
+  });
 
   const reviewSource = async (source) => {
     sourcePreview.replaceChildren();
@@ -1188,7 +546,7 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
       });
       sourcePreview.replaceChildren(sourceReviewCard(result, createSelectedFileIntake, (candidate) => {
         void previewSourceDiff(result.source, candidate);
-      }));
+      }, repairSourceVersions));
       setStatus(sourceStatus, `Source review ready: ${result.candidates?.length ?? 0} candidate file(s).`, "success");
     } catch (error) {
       setStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
@@ -1213,6 +571,46 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
       });
       sourcePreview.append(sourceDiffCard(result));
       setStatus(sourceStatus, `Diff ready for ${candidate.path}: ${result.status}.`, "success");
+    } catch (error) {
+      setStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
+    }
+  };
+
+  const repairSourceVersions = async (review) => {
+    if (!review.source?.id) {
+      setStatus(sourceStatus, "Source version repair requires a source id.", "error");
+      return;
+    }
+    setStatus(sourceStatus, "Repairing source version tracking…");
+    try {
+      const result = await bridgeRequest("/memory/source/versions/repair", {
+        method: "POST",
+        capability: "memory-source-manage",
+        body: {
+          sourceId: review.source.id,
+          confirmation: "REPAIR SOURCE VERSIONS"
+        }
+      });
+      const refreshedReview = await bridgeRequest("/memory/source/review", {
+        method: "POST",
+        capability: "memory-source-review",
+        body: { sourceId: review.source.id, limit: 2_000 }
+      });
+      sourcePreview.replaceChildren(sourceReviewCard(refreshedReview, createSelectedFileIntake, (candidate) => {
+        void previewSourceDiff(refreshedReview.source, candidate);
+      }, repairSourceVersions));
+      const settingsResult = await bridgeRequest("/memory/settings", { method: "GET" });
+      connectedSources = settingsResult.settings?.sources ?? connectedSources;
+      sourceSyncHistoryEntries = settingsResult.syncHistory ?? sourceSyncHistoryEntries;
+      sourceRepairHistoryEntries = settingsResult.sourceRepairHistory ?? sourceRepairHistoryEntries;
+      renderSourceList();
+      setStatus(
+        sourceStatus,
+        result.status === "repaired"
+          ? `Source version tracking repaired. Backup: ${result.backupPath}. Review refreshed before intake.`
+          : result.message || `Source version repair status: ${result.status}.`,
+        result.status === "healthy" || result.status === "not-needed" ? "warning" : "success"
+      );
     } catch (error) {
       setStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
     }
@@ -1264,6 +662,21 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
       );
       await loadStatus();
       await loadReviewQueue();
+      if (review.source?.id) {
+        const refreshedReview = await bridgeRequest("/memory/source/review", {
+          method: "POST",
+          capability: "memory-source-review",
+          body: { sourceId: review.source.id, limit: 2_000 }
+        });
+        sourcePreview.replaceChildren(sourceReviewCard(refreshedReview, createSelectedFileIntake, (candidate) => {
+          void previewSourceDiff(refreshedReview.source, candidate);
+        }, repairSourceVersions));
+        setStatus(
+          sourceStatus,
+          `Created ${result.created?.length ?? 0} selected file intake artifact(s); ${result.rejected?.length ?? 0} rejected. Source review refreshed.`,
+          "success"
+        );
+      }
     } catch (error) {
       setStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
     }
@@ -1319,7 +732,7 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
     }
   };
 
-  const previewPromotedPage = async (entry) => {
+  const previewPromotedPage = async (entry, { handoff = false } = {}) => {
     if (!entry.promotedPage) {
       setStatus(promotionStatus, "Promotion entry is missing its AI Memory page path.", "error");
       return;
@@ -1333,7 +746,13 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
       const previewCard = wikiPagePreviewCard(result);
       promotionPreview.hidden = false;
       promotionPreview.replaceChildren(...previewCard.childNodes);
-      setStatus(promotionStatus, `Previewing ${result.path}.`, "success");
+      setStatus(
+        promotionStatus,
+        handoff
+          ? `Focused promoted page: ${result.path}. Previewing trusted AI Memory below.`
+          : `Previewing ${result.path}.`,
+        "success"
+      );
     } catch (error) {
       setStatus(promotionStatus, error instanceof Error ? error.message : String(error), "error");
     }
@@ -1351,6 +770,8 @@ export function renderLivingArchiveWorkspace({ container, bridgeRequest, initial
         body: {
           path: request.path,
           status,
+          actor: "human",
+          actorType: "human",
           note: `Set from Living Archive workspace UI.`
         }
       });

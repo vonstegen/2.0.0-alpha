@@ -69,6 +69,20 @@ function clearButton(label) {
   return action;
 }
 
+function controlDisclosure(title, body, children = []) {
+  const details = document.createElement("details");
+  details.className = "settings-control-advanced";
+  const summary = document.createElement("summary");
+  summary.textContent = title;
+  const panel = document.createElement("div");
+  panel.className = "settings-control-advanced-body";
+  const copy = document.createElement("p");
+  copy.textContent = body;
+  panel.append(copy, ...children);
+  details.append(summary, panel);
+  return details;
+}
+
 function openBrowserTab(chromeApi, url) {
   return chromeApi?.tabs?.create?.({ url, active: true }).catch(() => undefined);
 }
@@ -143,36 +157,45 @@ export function renderBrowserControlSection(container, {
   settingsButton.addEventListener("click", () => void openBrowserTab(chromeApi, "chrome://settings"));
   nativeActions.append(downloadsButton, historyButton, bookmarksButton, extensionsButton, passwordsButton, permissionsButton, settingsButton);
 
+  const grantsSection = document.createElement("section");
+  grantsSection.className = "settings-control-primary";
+  const grantsHeading = document.createElement("div");
+  grantsHeading.className = "settings-memory-section-heading";
+  const grantsTitle = document.createElement("strong");
+  grantsTitle.textContent = "Agent permissions";
+  const grantsCopy = document.createElement("p");
+  grantsCopy.textContent = "Review the sites and task types where Augmentor has scoped permission beyond the default ask-before-action mode.";
+  grantsHeading.append(grantsTitle, grantsCopy);
+  grantsSection.append(grantsHeading, permissionsList);
+
+  const nativeDisclosure = controlDisclosure(
+    "Native browser tools",
+    "Open Chromium management pages when you need browser-level settings. These are separate from Augmentor's agent-control grants.",
+    [nativeActions]
+  );
+  const downloadsDisclosure = controlDisclosure(
+    "Recent downloads",
+    "Review files saved through the browser download path. Clearing history hides old entries here but does not delete files.",
+    [clearDownloads, downloadsList]
+  );
+  const jobsDisclosure = controlDisclosure(
+    "Browser job history",
+    "Review recent browser-control jobs. Clearing terminal jobs removes completed, blocked, cancelled, and failed history from the local monitor only.",
+    [jobsList, clearJobs]
+  );
+
   container.replaceChildren(
     settingsHeader({
       eyebrow: "Browser and Agent Control",
       title: "Agent Control Permissions",
-      body: "Manage how Augmentor may read, click, type, and run browser jobs. Wallet, login, payment, credential, signing, and public-submit boundaries remain approval-gated."
+      body: "Set how Augmentor may read, click, type, and run browser jobs. The default is ask-before-action. Wallet, login, payment, credential, signing, and public-submit boundaries remain approval-gated."
     }),
     statusNode,
     currentCard,
-    noteCard({
-      title: "Stored grants",
-      body: "Site permissions and trusted task-class consents are scoped. Reset or revoke them when a site or task should return to ask-before-action."
-    }),
-    permissionsList,
-    noteCard({
-      title: "Native browser surfaces",
-      body: "Open Chromium-native management pages for downloads, history, bookmarks, extensions, passwords, site permissions, and browser settings. These are browser-level settings, separate from Augmentor's agent-control grants."
-    }),
-    nativeActions,
-    noteCard({
-      title: "Recent downloads",
-      body: "Review the most recent files saved through the browser download path. Clearing history hides old entries here but does not delete files."
-    }),
-    clearDownloads,
-    downloadsList,
-    noteCard({
-      title: "Browser jobs",
-      body: "Review recent browser-control jobs. Clearing terminal jobs removes completed/blocked/cancelled history from the local monitor only."
-    }),
-    jobsList,
-    clearJobs
+    grantsSection,
+    nativeDisclosure,
+    downloadsDisclosure,
+    jobsDisclosure
   );
 
   const load = async () => {

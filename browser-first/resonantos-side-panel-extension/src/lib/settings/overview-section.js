@@ -34,6 +34,23 @@ function memorySummary(status) {
   };
 }
 
+function setupCard({ label, title, body, action, onClick }) {
+  const card = document.createElement("article");
+  card.className = "settings-setup-card";
+  const labelNode = document.createElement("span");
+  labelNode.textContent = label;
+  const titleNode = document.createElement("strong");
+  titleNode.textContent = title;
+  const bodyNode = document.createElement("p");
+  bodyNode.textContent = body;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = action;
+  button.addEventListener("click", onClick);
+  card.append(labelNode, titleNode, bodyNode, button);
+  return card;
+}
+
 export function renderOverviewSection(container, { bridgeRequest, onSelectSection }) {
   const statusNode = document.createElement("p");
   statusNode.className = "settings-status";
@@ -47,11 +64,41 @@ export function renderOverviewSection(container, { bridgeRequest, onSelectSectio
     metricCard({ label: "Browser bridge", value: "Ready", detail: "extension workspace is active", tone: "success" })
   );
 
+  const setupGrid = document.createElement("div");
+  setupGrid.className = "settings-setup-grid";
+  setupGrid.append(
+    setupCard({
+      label: "1",
+      title: "Profile",
+      body: "Set who the system is serving and how Augmentor should speak.",
+      action: "Edit profile",
+      onClick: () => onSelectSection?.("profile")
+    }),
+    setupCard({
+      label: "2",
+      title: "AI provider",
+      body: "Add model access, choose defaults, and keep fallback clear.",
+      action: "Set models",
+      onClick: () => onSelectSection?.("providers")
+    }),
+    setupCard({
+      label: "3",
+      title: "Memory",
+      body: "Connect the memory system and source folders Augmentor can use.",
+      action: "Open memory",
+      onClick: () => onSelectSection?.("memory")
+    })
+  );
+
   const actionCard = noteCard({
-    title: "Recommended next action",
-    body: "Use diagnostics when something looks missing or unknown. Recovery creates a governed Resonant Engineer task packet; it does not grant raw shell, wallet, provider, or memory-write authority."
+    title: "Advanced recovery",
+    body: "Use this only when something looks missing or broken. Recovery creates a governed Resonant Engineer task packet; it does not grant raw shell, wallet, provider, or memory-write authority."
   });
   actionCard.classList.add("settings-overview-actions");
+  const actionDetails = document.createElement("details");
+  actionDetails.className = "settings-advanced-disclosure";
+  const actionSummary = document.createElement("summary");
+  actionSummary.textContent = "Diagnostics and recovery";
   const actionButtons = document.createElement("div");
   actionButtons.className = "settings-overview-action-buttons";
   const openDiagnostics = document.createElement("button");
@@ -69,14 +116,16 @@ export function renderOverviewSection(container, { bridgeRequest, onSelectSectio
   actionStatus.className = "settings-status";
   actionStatus.textContent = "No action has been started.";
   actionButtons.append(openDiagnostics, exportReport, startRecovery);
-  actionCard.append(actionButtons, actionStatus);
+  actionDetails.append(actionSummary, actionButtons, actionStatus);
+  actionCard.append(actionDetails);
 
   container.replaceChildren(
     settingsHeader({
       eyebrow: "System settings",
-      title: "Overview & Health",
-      body: "Start here when you need to understand whether ResonantOS can think, browse, remember, and coordinate add-ons safely."
+      title: "Start Here",
+      body: "Set the essentials first: who you are, which AI models to use, and where memory lives."
     }),
+    setupGrid,
     statusNode,
     grid,
     actionCard

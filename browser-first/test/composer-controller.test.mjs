@@ -116,15 +116,18 @@ test("composer controller provides explicit clipboard fallback when browser clip
   assert.equal(harness.input.value, "gamma beta");
 });
 
-test("composer controller can opt into clipboard fallback for restricted runtimes", () => {
+test("composer controller can opt into clipboard fallback for restricted runtimes", async () => {
   let clipboardText = "";
   const dom = new JSDOM('<form id="form"><textarea id="input"></textarea></form>');
   globalThis.Event = dom.window.Event;
+  const writes = [];
   const input = dom.window.document.querySelector("#input");
   input.value = "alpha beta";
   input.setSelectionRange(6, 10);
   const controller = createComposerController({
-    commandForm: dom.window.document.querySelector("#form"),
+    commandForm: {
+      requestSubmit: () => writes.push(["submit"])
+    },
     commandInput: input,
     forceClipboardFallback: true,
     navigator: {
@@ -137,8 +140,34 @@ test("composer controller can opt into clipboard fallback for restricted runtime
     }
   });
 
-  const event = keyEvent("x", { metaKey: true });
-  controller.handleKeydown(event);
+  const copyEvent = keyEvent("c", { metaKey: true });
+  controller.handleKeydown(copyEvent);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(copyEvent.defaultPrevented, true);
+  assert.equal(clipboardText, "beta");
+  assert.equal(input.value, "alpha beta");
 
-  assert.equal(event.defaultPrevented, true);
+  input.setSelectionRange(0, 5);
+  const cutEvent = keyEvent("x", { metaKey: true });
+  controller.handleKeydown(cutEvent);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(cutEvent.defaultPrevented, true);
+  assert.equal(clipboardText, "alpha");
+  assert.equal(input.value, " beta");
+
+  clipboardText = "gamma";
+  input.setSelectionRange(1, 1);
+  const pasteEvent = keyEvent("v", { metaKey: true });
+  controller.handleKeydown(pasteEvent);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(pasteEvent.defaultPrevented, true);
+  assert.equal(input.value, " gammabeta");
+
+  controller.handleKeydown(keyEvent("Enter", { metaKey: true }));
+  controller.handleKeydown(keyEvent("Enter", { ctrlKey: true }));
+  controller.handleKeydown(keyEvent("Enter", { shiftKey: true }));
+  assert.deepEqual(writes, []);
+
+  controller.handleKeydown(keyEvent("Enter"));
+  assert.deepEqual(writes, [["submit"]]);
 });

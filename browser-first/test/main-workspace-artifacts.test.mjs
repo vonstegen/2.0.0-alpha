@@ -293,12 +293,12 @@ test("artifacts workspace extracts browser source-specific intake previews", () 
     "## Provenance",
     "- title: Example Report",
     "- url: https://example.com/report",
-    "- model: MiniMax 2.7",
+    "- model: MiniMax M3",
     "- fallback summary: no",
     "- visible words captured: 600"
   ].join("\n"));
   assert.equal(summary.sourceType, "AI page summary");
-  assert.equal(summary.summaryModel, "MiniMax 2.7");
+  assert.equal(summary.summaryModel, "MiniMax M3");
   assert.equal(summary.fallbackSummary, "no");
   assert.equal(summary.sourceStats, "600 visible word(s)");
 

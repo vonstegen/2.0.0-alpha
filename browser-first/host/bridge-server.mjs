@@ -67,6 +67,12 @@ function compileRoutes(routes) {
   ]));
 }
 
+function normalizeHeaders(headers = {}) {
+  return Object.fromEntries(
+    Object.entries(headers).map(([key, value]) => [String(key).toLowerCase(), value])
+  );
+}
+
 export async function writeBridgeConfig({ extensionRoot, bridgePort, bridgeToken, bridgeCapabilityTokens = {} }) {
   const configPath = path.join(extensionRoot, "src", "bridge-config.generated.js");
   const config = {
@@ -90,32 +96,56 @@ function isAuthorizedCapabilityRequest(request, bridgeCapabilityTokens, required
   return Boolean(expectedToken) && constantTimeEqual(request.headers[bridgeCapabilityHeader], expectedToken);
 }
 
+export async function evaluateBridgeRequestForSelfTest({
+  method = "GET",
+  url = "/",
+  headers = {},
+  body = {},
+  bridgeToken,
+  bridgeCapabilityTokens = {},
+  routes = [],
+} = {}) {
+  try {
+    const request = {
+      method,
+      url,
+      headers: normalizeHeaders(headers),
+    };
+    if (method === "OPTIONS") {
+      return { status: 204, payload: {} };
+    }
+    if (!isAuthorizedBridgeRequest(request, bridgeToken)) {
+      return { status: 401, payload: { ok: false, error: "Unauthorized browser-first bridge request." } };
+    }
+    const route = compileRoutes(routes).get(routeKey(method, url));
+    if (!route) {
+      return { status: 404, payload: { ok: false, error: "Unknown browser-first bridge route." } };
+    }
+    if (!isAuthorizedCapabilityRequest(request, bridgeCapabilityTokens, route.requiredCapability)) {
+      return { status: 403, payload: { ok: false, error: `Bridge route requires ${route.requiredCapability} capability.` } };
+    }
+    const payload = method === "POST" ? body : {};
+    const result = await route.handler(payload, request);
+    return { status: 200, payload: { ok: true, ...result } };
+  } catch (error) {
+    return { status: 500, payload: { ok: false, error: error instanceof Error ? error.message : String(error) } };
+  }
+}
+
 export async function startBridgeServer({ port, bridgeToken, bridgeCapabilityTokens = {}, extensionOrigin, routes }) {
-  const routeTable = compileRoutes(routes);
   const server = http.createServer(async (request, response) => {
     try {
-      if (request.method === "OPTIONS") {
-        writeJson(response, 204, {}, extensionOrigin);
-        return;
-      }
-      if (!isAuthorizedBridgeRequest(request, bridgeToken)) {
-        writeJson(response, 401, { ok: false, error: "Unauthorized browser-first bridge request." }, extensionOrigin);
-        return;
-      }
-
-      const route = routeTable.get(routeKey(request.method, request.url));
-      if (!route) {
-        writeJson(response, 404, { ok: false, error: "Unknown browser-first bridge route." }, extensionOrigin);
-        return;
-      }
-      if (!isAuthorizedCapabilityRequest(request, bridgeCapabilityTokens, route.requiredCapability)) {
-        writeJson(response, 403, { ok: false, error: `Bridge route requires ${route.requiredCapability} capability.` }, extensionOrigin);
-        return;
-      }
-
-      const payload = route.method === "POST" ? await readJsonBody(request) : {};
-      const result = await route.handler(payload, request);
-      writeJson(response, 200, { ok: true, ...result }, extensionOrigin);
+      const body = request.method === "POST" ? await readJsonBody(request) : {};
+      const result = await evaluateBridgeRequestForSelfTest({
+        method: request.method,
+        url: request.url,
+        headers: request.headers,
+        body,
+        bridgeToken,
+        bridgeCapabilityTokens,
+        routes,
+      });
+      writeJson(response, result.status, result.payload, extensionOrigin);
     } catch (error) {
       writeJson(response, 500, { ok: false, error: error instanceof Error ? error.message : String(error) }, extensionOrigin);
     }

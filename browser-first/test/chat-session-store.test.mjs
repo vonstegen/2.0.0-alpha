@@ -5,7 +5,7 @@ import { createChatSessionStore } from "../resonantos-side-panel-extension/src/l
 
 function createHarness(initial = {}) {
   const writes = [];
-  let model = "MiniMax-M2.7";
+  let model = "MiniMax-M3";
   let thinkingDepth = "high";
   const storage = {
     get: async () => initial,
@@ -34,7 +34,7 @@ function createHarness(initial = {}) {
     setThinkingDepth: (value) => {
       thinkingDepth = value;
     },
-    isAllowedModel: (value) => ["MiniMax-M2.7", "gpt-5.5"].includes(value),
+    isAllowedModel: (value) => ["MiniMax-M3", "gpt-5.5"].includes(value),
     isAllowedThinkingDepth: (value) => ["low", "high"].includes(value),
     now: () => "2026-05-26T00:00:00.000Z",
     createId: (() => {
@@ -299,6 +299,6 @@ test("chat session store manages attachments and persists selected provider sett
 
   await harness.store.clearAttachments();
   assert.equal(harness.store.getAttachments().length, 0);
-  assert.equal(harness.writes.at(-1).model, "MiniMax-M2.7");
+  assert.equal(harness.writes.at(-1).model, "MiniMax-M3");
   assert.equal(harness.writes.at(-1).thinkingDepth, "high");
 });

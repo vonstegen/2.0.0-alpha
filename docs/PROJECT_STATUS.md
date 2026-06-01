@@ -1,12 +1,16 @@
 # ResonantOS vNext Project Status
 
-Last updated: 2026-05-05
+Last updated: 2026-06-01
 
 This document is the operational checkpoint for what exists now, what is partially built, and what still needs to be done. It is intentionally shorter than the ADRs and backlog: use it to regain project state quickly before deciding the next work item.
 
+For the current human-readable product overview, detailed feature list, known limits, and recommended roadmap, start with [PRODUCT_GUIDE_BROWSER_FIRST.md](./PRODUCT_GUIDE_BROWSER_FIRST.md). This status file still contains older desktop vNext implementation detail that remains useful, but the active product direction is now browser-first.
+
 ## Current Product Direction
 
-ResonantOS vNext is a desktop-first modular operating system for human-AI collaboration. It is not an OpenClaw dashboard. OpenClaw, Hermes, Obsidian, OpenCode, Paperclip, Audio2TOL, Shield, Logician, and similar systems are add-ons.
+ResonantOS is now moving through the browser-first product path defined in `ADR-037`: a Chromium-family browser app that contains ResonantOS capabilities inside browser chrome. The earlier desktop-first vNext implementation remains a feature reservoir and reference, but the active product target is the browser-first ResonantOS app.
+
+ResonantOS is not an OpenClaw dashboard. OpenClaw, Hermes, Obsidian, OpenCode, Paperclip, Audio2TOL, Shield, Logician, and similar systems are add-ons.
 
 The core product direction is now the no-lock-in model from `ADR-026`.
 
@@ -189,11 +193,14 @@ Known limits for reviewers:
 - Ingest outputs that return useful structured fields but malformed `proposed_pages` are repaired into conservative source-summary pages, preventing the AI Memory build from dead-ending on model formatting drift.
 - Archive maintenance now attempts AI repair/reverification for repairable escalated artifacts before asking the human to review exceptions. Safe repaired artifacts can be approved and promoted through the normal trusted-wiki path.
 - Routine archive approval can be completed by a Strategist-owned AI verifier; human review is reserved for high-risk, doctrine-sensitive, low-confidence, destructive, or ambiguous cases.
+- Escalated or human-required archive review requests are host-gated: approve/reject transitions require an explicit human actor marker, while routine review can still be resolved by Strategist-owned verifier flows.
 - Ingest writer and verifier routes can use separate provider/model fields, allowing premium ingest and cheaper/local verification when configured.
 - Semantic lint never mutates trusted memory directly; findings become repair-source artifacts that re-enter the normal ingest/review/promote path.
+- Wiki lint writes durable review artifacts and appends to `AI_MEMORY/wiki/log.md` only when that log already exists; a missing log remains a visible health issue for schema/bootstrap repair instead of being silently created by lint.
 - Large text sources are chunk-staged with manifests recorded in review artifacts.
 - Non-text sources become conservative attachment stubs unless a specialist add-on pipeline emits text/structured intake bundles.
 - Promotion now performs section-aware markdown merge for existing pages and keeps superseded sections with provenance, reducing append-only drift.
+- Promotion now requires the verifier artifact to match the same draft artifact, review request, source artifact, and proposed wiki page before trusted AI Memory can be written.
 
 Current Living Archive status:
 
@@ -217,7 +224,16 @@ Current Living Archive status:
 - Folder/vault import exists through the `ArchiveLibraryImporter` module.
 - Copy import is the safe default.
 - Move-on-import is available only through the audited host flow: content-hash-backed preflight fingerprint approval, exact confirmation, stale-preflight rejection, move-time byte recheck, destination byte-hash verification, non-destructive source cleanup, managed Memory destination registration, fingerprinted manifest, rollback ledger, empty-directory/root preservation, conflict-reporting guarded rollback, and manifest-level rollback status.
-- The UI must not register `move-on-import` through ordinary settings saves; it must use the dedicated preflight/execute/rollback routes.
+- Neither the UI nor the host may register `move-on-import` through ordinary settings saves; they must use the dedicated preflight/execute/rollback routes.
+- The Settings UI keeps move execution disabled until the exact preflight confirmation phrase is entered, then hands execution to the scoped host route; rollback prompts explain that files are restored from managed Memory back to the original source path using the audited ledger.
+- Successful move-on-import completion must tell the user that the managed Memory copy is now canonical and offer a direct handoff into the Living Archive workspace for source review and AI Memory build.
+- Move rollback is single-use after full restoration: a fully restored move ledger must reject repeated rollback attempts so audit reports and source registration state cannot drift.
+- Failed move execution writes an automatic rollback status into the move manifest: `restored` when the source was fully recovered, `partial` when any file, directory, or root cleanup issue remains.
+- Move rollback now treats the ledger as scoped evidence, not arbitrary instructions: symlinked ledgers are rejected, every new ledger starts with a source/destination boundary record, and rollback entries must match either the manifest or the ledger boundary before any file restore is attempted.
+- Move-on-import bridge behavior now has an in-process deterministic smoke test that exercises scoped route capability rejection, ordinary-settings blocking, stale-preflight rejection, full move/rollback, partial rollback, and outside-ledger rejection without depending on sandbox-blocked localhost binding.
+- Selected source-file intake bridge behavior now has matching in-process smoke coverage for scoped route capability rejection, source registration, duplicate rejection, source-root escape rejection, batch-limit enforcement, content-addressed snapshot recording, and reservation rollback when artifact creation fails.
+- Hermes and OpenCode delegation bridge behavior now has in-process smoke coverage for packet creation, disabled-runtime gating, deterministic execution, artifact retrieval, list visibility, and completed status reporting without depending on sandbox-blocked localhost binding.
+- Add-on execution settings and enabled Hermes/OpenCode CLI adapters now have in-process smoke coverage for scoped settings writes, disabled write rejection, runtime mode updates, local fake CLI invocation, governed artifact creation, and completed delegation status without localhost binding.
 - Mixed-library classification review is host-owned.
 - Classification review artifacts must be inside imported-library metadata roots and linked from known import manifests.
 - Library import preflight is implemented and non-destructive: it reports supported/skipped files, noisy folders, skipped examples, Obsidian detection, estimated managed storage, and a recommended import plan before copy.
@@ -230,6 +246,7 @@ Current Living Archive status:
 - Single-file intake is available from the Living Archive workspace. Supported text-like files (`.md`, `.txt`, `.csv`, `.json`) become governed text intake; unsupported media/binary files become metadata-only attachment stubs with guidance to use a specialist add-on.
 - Imported-library cards now expose `Build AI Memory`, which starts a durable AI Memory build job. The job queues eligible managed text sources, runs a bounded provider-routed maintenance batch, promotes approved artifacts, persists job state, and reports progress/status back to the user. Imported sources remain raw evidence until processed, approved, and promoted; this keeps the LLM Wiki trust boundary intact while making the promotion path visible and usable.
 - The Start tab now reloads the latest persisted AI Memory job for the current library after restart and exposes `Repair AI Memory Build` when a prior job needs attention.
+- Promotion restore now rejects already-restored promotions instead of allowing repeated restore events against the same backup artifact.
 - Reorganisation plans can be generated as preview-only artifacts.
 - Reorganisation plans are explicitly marked `eligibleForExecution = false`.
 - Source reviews now surface version-tracking warnings and repair guidance when the source-version manifest is unreadable; blocked files cannot enter bulk or selected intake until source history is repaired.
@@ -237,6 +254,7 @@ Current Living Archive status:
 - Selected source-file intake also has a host bridge self-test for the real `/memory/source/file-intake` route: scoped capability gating, duplicate rejection, path traversal rejection, batch capping, and source-version rollback after artifact write failure. In this Codex sandbox the localhost bridge self-test is skipped because `127.0.0.1` binding is denied; it runs in normal local/CI environments.
 - Source review approval now makes the 200-file host batch limit explicit: large reviews show how many files will enter the current governed intake batch and how many eligible files remain deferred for the next batch.
 - Source-file version history now stores content-addressed immutable source snapshots under managed Memory and diff preview prefers those snapshots, so previous source versions do not depend on parsing generated intake artifacts. Snapshot writes reject claimed-hash mismatches and verify existing blob bytes before reuse.
+- Source-file versioning now rejects unsafe source-relative paths and only records finalized intake/snapshot paths under managed `INTAKE` and `CONFIG/source-file-history` roots.
 - Reorganisation file moves remain unimplemented and must not be added without separate audit, rollback, approval, and deterministic tests.
 
 ### Recovery And Resonant Engineer

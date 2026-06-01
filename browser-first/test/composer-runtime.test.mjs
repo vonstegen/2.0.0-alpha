@@ -12,7 +12,7 @@ import {
 } from "../resonantos-side-panel-extension/src/lib/composer-runtime.js";
 
 test("composer runtime hydrates model options from Provider Fabric accounts", async () => {
-  const dom = new JSDOM("<!doctype html><select id=\"model\"><option value=\"MiniMax-M2.7\">MiniMax 2.7</option></select>");
+  const dom = new JSDOM("<!doctype html><select id=\"model\"><option value=\"MiniMax-M3\">MiniMax M3</option></select>");
   globalThis.document = dom.window.document;
   const modelSelect = dom.window.document.querySelector("#model");
   const statuses = [];
@@ -78,7 +78,7 @@ test("composer runtime updates context meter title and label deterministically",
   const meter = dom.window.document.querySelector("#meter");
   updateContextMeterElement(meter, contextUsageSnapshot({
     messages: [{ content: "x".repeat(4000) }],
-    model: "MiniMax-M2.7"
+    model: "MiniMax-M3"
   }));
 
   assert.match(meter.querySelector(".context-meter-label").textContent, /%/);
@@ -94,7 +94,7 @@ test("composer runtime renders a vNext-style context popover without chat inject
   renderContextMemoryPopover(popover, contextUsageSnapshot({
     attachments: [{ content: "note" }],
     messages: [{ content: "conversation" }],
-    model: "MiniMax-M2.7",
+    model: "MiniMax-M3",
     pageSnapshot: { title: "Page", url: "https://example.com", text: "page text" }
   }), {
     notice: "Compact memory refreshed locally.",
@@ -119,7 +119,7 @@ test("composer runtime renders a vNext-style context popover without chat inject
 
 test("composer runtime exposes GPT thinking-depth capability only for GPT routes", () => {
   assert.equal(supportsThinkingDepth("gpt-5.5"), true);
-  assert.equal(supportsThinkingDepth("MiniMax-M2.7"), false);
+  assert.equal(supportsThinkingDepth("MiniMax-M3"), false);
   assert.equal(supportsThinkingDepth("__auto__"), false);
 });
 

@@ -27,7 +27,7 @@ const providerTypePresets = {
     providerType: "minimax",
     category: "Direct providers",
     apiBaseUrl: "https://api.minimax.io/v1",
-    models: ["MiniMax-M2.7-highspeed", "MiniMax-M2.7"],
+    models: ["MiniMax-M3"],
   },
   openai: {
     label: "OpenAI",
@@ -732,11 +732,11 @@ function providerCard({ provider, bridgeRequest, statusNode, reload, onSelectSec
   actions.className = "settings-provider-actions settings-provider-row-actions";
   const show = document.createElement("button");
   show.type = "button";
-  show.textContent = "Show";
+  show.textContent = "Details";
   show.dataset.action = "show-provider";
   show.addEventListener("click", () => {
     detailsPanel.hidden = !detailsPanel.hidden;
-    show.textContent = detailsPanel.hidden ? "Show" : "Hide";
+    show.textContent = detailsPanel.hidden ? "Details" : "Hide details";
   });
   actions.append(show);
   const edit = document.createElement("button");
@@ -748,6 +748,14 @@ function providerCard({ provider, bridgeRequest, statusNode, reload, onSelectSec
     edit.textContent = editPanel.hidden ? "Edit" : "Close edit";
   });
   actions.append(edit);
+
+  const moreTools = document.createElement("details");
+  moreTools.className = "settings-provider-more";
+  const moreSummary = document.createElement("summary");
+  moreSummary.textContent = "More";
+  const morePanel = document.createElement("div");
+  morePanel.className = "settings-provider-more-panel";
+
   const health = document.createElement("button");
   health.type = "button";
   health.textContent = "Check readiness";
@@ -767,7 +775,7 @@ function providerCard({ provider, bridgeRequest, statusNode, reload, onSelectSec
       health.disabled = false;
     }
   });
-  actions.append(health);
+  morePanel.append(health);
   const connectivity = document.createElement("button");
   connectivity.type = "button";
   connectivity.textContent = "Test connection";
@@ -789,7 +797,7 @@ function providerCard({ provider, bridgeRequest, statusNode, reload, onSelectSec
       connectivity.disabled = false;
     }
   });
-  actions.append(connectivity);
+  morePanel.append(connectivity);
   const routing = document.createElement("button");
   routing.type = "button";
   routing.textContent = "Open routing";
@@ -798,7 +806,9 @@ function providerCard({ provider, bridgeRequest, statusNode, reload, onSelectSec
       onSelectSection("routing");
     }
   });
-  actions.append(routing);
+  morePanel.append(routing);
+  moreTools.append(moreSummary, morePanel);
+  actions.append(moreTools);
 
   card.append(heading, actions, detailsPanel, editPanel);
   return card;
@@ -814,6 +824,18 @@ export function renderProvidersSection(container, { bridgeRequest, onSelectSecti
   const vaultGrid = document.createElement("div");
   vaultGrid.className = "settings-health-grid";
   const history = diagnosticsHistoryPanel();
+  const advanced = document.createElement("details");
+  advanced.className = "settings-provider-advanced";
+  const advancedSummary = document.createElement("summary");
+  advancedSummary.textContent = "Advanced provider diagnostics";
+  const advancedBody = document.createElement("div");
+  advancedBody.className = "settings-provider-advanced-body";
+  const securityNote = noteCard({
+    title: "Security boundary",
+    body: "Add-ons can request model access, but they do not receive raw provider credentials. The host resolves approved requests through scoped provider grants."
+  });
+  advancedBody.append(history.section, securityNote);
+  advanced.append(advancedSummary, advancedBody);
   const toolbar = document.createElement("div");
   toolbar.className = "settings-provider-toolbar";
   const addProvider = document.createElement("button");
@@ -832,11 +854,7 @@ export function renderProvidersSection(container, { bridgeRequest, onSelectSecti
     statusNode,
     vaultGrid,
     grid,
-    history.section,
-    noteCard({
-      title: "Security boundary",
-      body: "Add-ons can request model access, but they do not receive raw provider credentials. The host resolves approved requests through scoped provider grants."
-    })
+    advanced
   );
 
   addProvider.addEventListener("click", () => openProviderAccountModal({

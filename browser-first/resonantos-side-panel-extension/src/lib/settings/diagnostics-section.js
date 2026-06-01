@@ -35,12 +35,26 @@ function diagnosticsRow({ label, value, detail = "" }) {
   return row;
 }
 
+function diagnosticsDisclosure(title, body, children = []) {
+  const details = document.createElement("details");
+  details.className = "settings-diagnostics-advanced";
+  const summary = document.createElement("summary");
+  summary.textContent = title;
+  const panel = document.createElement("div");
+  panel.className = "settings-diagnostics-advanced-body";
+  const copy = document.createElement("p");
+  copy.textContent = body;
+  panel.append(copy, ...children);
+  details.append(summary, panel);
+  return details;
+}
+
 export function renderDiagnosticsSection(container, { bridgeRequest }) {
   const statusNode = document.createElement("p");
   statusNode.className = "settings-status";
   statusNode.textContent = "Checking diagnostics endpoints...";
   const grid = document.createElement("div");
-  grid.className = "settings-health-grid";
+  grid.className = "settings-health-grid settings-diagnostics-health";
   grid.append(
     metricCard({ label: "Bridge", value: "Checking", detail: "loading system status" }),
     metricCard({ label: "Providers", value: "Checking", detail: "loading provider status" }),
@@ -63,17 +77,27 @@ export function renderDiagnosticsSection(container, { bridgeRequest }) {
   exportStatus.className = "settings-status";
   exportStatus.textContent = "No report exported yet.";
   exportCard.append(exportButton, exportStatus);
+  const endpointDetails = diagnosticsDisclosure(
+    "Endpoint details",
+    "Open this when you need exact status counts for bridge, providers, add-ons, memory, and the native Chromium host.",
+    [details]
+  );
+  const exportDetails = diagnosticsDisclosure(
+    "Support report",
+    "Use this only when debugging or sharing a local report. The export path is local and the report is redacted before it is written.",
+    [exportCard]
+  );
 
   container.replaceChildren(
     settingsHeader({
       eyebrow: "Logs and diagnostics",
       title: "Diagnostics",
-      body: "Check the browser bridge, provider fabric, add-on registry, and memory-system status without exposing private credentials."
+      body: "Check whether ResonantOS is healthy. Detailed endpoint data and redacted report export are available when needed."
     }),
     statusNode,
     grid,
-    details,
-    exportCard
+    endpointDetails,
+    exportDetails
   );
 
   exportButton.addEventListener("click", async () => {

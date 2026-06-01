@@ -473,6 +473,7 @@ extern "C" const char* resonant_browser_native_click_json(int x, int y) {
   event.y = std::max(0, y);
   event.modifiers = 0;
   g_browser->GetHost()->SetFocus(true);
+  g_browser->GetHost()->SendMouseMoveEvent(event, false);
   g_browser->GetHost()->SendMouseClickEvent(event, MBT_LEFT, false, 1);
   g_browser->GetHost()->SendMouseClickEvent(event, MBT_LEFT, true, 1);
   return StoreJson("{\"status\":\"completed\",\"stage\":\"click\",\"x\":" + std::to_string(event.x) +

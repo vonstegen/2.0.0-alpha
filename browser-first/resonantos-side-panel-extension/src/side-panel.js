@@ -2,7 +2,7 @@ import { approvalBoundaryForStep } from "./lib/approval-policy.js";
 import { controlStepLabel } from "./lib/agent-control-planner.js";
 import { createAgentControlRunner } from "./lib/agent-control-runner.js";
 import { createAppCommandHandlers } from "./lib/app-command-handlers.js";
-import { normalizeBrowserUrl, normalizeSearchQuery, parseQuotedText } from "./lib/browser-command-parser.js";
+import { normalizeBrowserUrl } from "./lib/browser-command-parser.js";
 import { activateBrowserJobPage } from "./lib/browser-job-activation.js";
 import { createBrowserJobScheduler } from "./lib/browser-job-scheduler.js";
 import { createBrowserJobStore } from "./lib/browser-job-store.js";
@@ -11,19 +11,11 @@ import { createBridgeClient } from "./lib/bridge-client.js";
 import { createChatSessionStore } from "./lib/chat-session-store.js";
 import { createChatTurnController } from "./lib/chat-turn-controller.js";
 import {
-  contextUsageSnapshot,
   createDictationController,
   hydrateProviderModelOptions,
-  modelLabel,
-  renderContextMemoryPopover,
-  supportsThinkingDepth,
-  updateContextMeterElement
 } from "./lib/composer-runtime.js";
 import { createComposerController } from "./lib/composer-controller.js";
 import {
-  createControlPreflight,
-  formatControlPreflightMessage,
-  normalizeControlPreflight,
   shouldRequireControlPreflight
 } from "./lib/control-preflight.js";
 import { createControlPageObserver } from "./lib/control-page-observer.js";
@@ -33,9 +25,16 @@ import { createControlRunState } from "./lib/control-run-state.js";
 import { createControlStepExecutor } from "./lib/control-step-executor.js";
 import { createMessageActionController } from "./lib/message-action-controller.js";
 import { createMonitorRenderers } from "./lib/monitor-renderers.js";
+import { createSidePanelBrowserActionController } from "./lib/side-panel-browser-action-controller.js";
+import { createSidePanelBrowserJobController } from "./lib/side-panel-browser-job-controller.js";
 import { createSidePanelCommandRouter } from "./lib/side-panel-command-router.js";
+import { createSidePanelControlCommandController } from "./lib/side-panel-control-command-controller.js";
+import { createSidePanelControlPreflightController } from "./lib/side-panel-control-preflight-controller.js";
+import { createSidePanelLifecycleController } from "./lib/side-panel-lifecycle-controller.js";
 import { createSidePanelMessageRouter } from "./lib/side-panel-message-router.js";
 import { createSidePanelRenderers } from "./lib/side-panel-renderers.js";
+import { createSidePanelScheduledBrowserJobRunner } from "./lib/side-panel-scheduled-browser-job-runner.js";
+import { createSidePanelUiController } from "./lib/side-panel-ui-controller.js";
 import { readPersonalizationSettings } from "./lib/personalization-settings.js";
 import { createSitePermissionStore } from "./lib/site-permission-store.js";
 import { createTabContextController } from "./lib/tab-context-controller.js";
@@ -124,15 +123,12 @@ const STORAGE_KEYS = {
 let lastSnapshot = null;
 let statusLabel = "Ready";
 let turnBusy = false;
-let activityTimer = null;
 let currentControlRun = null;
 let pendingApproval = null;
 let pendingControlPreflight = null;
 let controlledTabId = null;
 let contextDockExpanded = false;
 let personalizationSettings = null;
-let contextPopoverOpen = false;
-let contextCompactNotice = "";
 let messageActions = null;
 let monitorRenderers = null;
 let nextControlPreflightDecision = null;
@@ -181,164 +177,64 @@ const browserJobStore = createBrowserJobStore({
 });
 
 const isReadableBrowserTab = (tab) => typeof tab?.url === "string" && /^https?:\/\//i.test(tab.url);
-const setStatus = (label) => {
-  statusLabel = label;
-  updateConnectionLine();
-};
+const sidePanelUi = createSidePanelUiController({
+  activityDetail,
+  activityLabel,
+  activityPanel,
+  chatSessionStore,
+  commandForm,
+  commandInput,
+  composerNotice,
+  connectionLine,
+  contextDock,
+  contextMeter,
+  contextPopover,
+  contextToggleButton,
+  controlMonitor,
+  controlPreflightBody,
+  controlPreflightCard,
+  controlPreflightTitle,
+  getContextDockExpanded: () => contextDockExpanded,
+  getLastSnapshot: () => lastSnapshot,
+  getPendingControlPreflight: () => pendingControlPreflight,
+  getStatusLabel: () => statusLabel,
+  getTurnBusy: () => turnBusy,
+  jobMonitor,
+  modelSelect,
+  permissionManagerPanel,
+  setStatusLabel: (label) => {
+    statusLabel = label;
+  },
+  setTurnBusyState: (busy) => {
+    turnBusy = busy;
+  },
+  sitePermissionPanel,
+  taskConsentPanel,
+  thinkingDepthSelect,
+  transcript,
+  window,
+});
 
-const scrollTranscriptToBottom = () => {
-  window.requestAnimationFrame(() => {
-    transcript.scrollTop = transcript.scrollHeight;
-  });
-};
-
-const updateContextDockVisibility = () => {
-  const hasVisiblePanel = [activityPanel, sitePermissionPanel, taskConsentPanel, permissionManagerPanel, controlPreflightCard, jobMonitor, controlMonitor]
-    .some((panel) => !panel.hidden);
-  contextDock.hidden = !hasVisiblePanel;
-  contextToggleButton.title = contextDockExpanded ? "Hide context usage and browser status" : "Show context usage and browser status";
-  contextToggleButton.setAttribute("aria-label", contextToggleButton.title);
-  contextToggleButton.setAttribute("aria-expanded", contextDockExpanded ? "true" : "false");
-  scrollTranscriptToBottom();
-};
+const {
+  clearActivitySoon,
+  renderControlPreflightCard,
+  runBusyUiAction,
+  scrollTranscriptToBottom,
+  setActivity,
+  setComposerNotice,
+  setContextMeter,
+  setStatus,
+  setTurnBusy,
+  toggleContextPopover,
+  updateConnectionLine,
+  updateContextDockVisibility,
+} = sidePanelUi;
 
 const persistContextDockExpanded = async () => {
   await chrome.storage?.local?.set?.({
     [STORAGE_KEYS.contextDockExpanded]: contextDockExpanded
   }).catch(() => undefined);
 };
-
-const setActivity = (phase, label, detail = "") => {
-  if (activityTimer) {
-    window.clearTimeout(activityTimer);
-    activityTimer = null;
-  }
-  activityPanel.hidden = false;
-  activityPanel.dataset.phase = phase;
-  activityLabel.textContent = label;
-  activityDetail.textContent = detail;
-  updateContextDockVisibility();
-};
-
-const clearActivity = () => {
-  activityPanel.hidden = true;
-  activityPanel.dataset.phase = "idle";
-  activityLabel.textContent = "Ready";
-  activityDetail.textContent = "";
-  updateContextDockVisibility();
-};
-
-const clearActivitySoon = (delay = 2200) => {
-  if (activityTimer) {
-    window.clearTimeout(activityTimer);
-  }
-  activityTimer = window.setTimeout(clearActivity, delay);
-};
-
-const renderControlPreflightCard = () => {
-  if (!pendingControlPreflight) {
-    controlPreflightCard.hidden = true;
-    updateContextDockVisibility();
-    return;
-  }
-  controlPreflightCard.hidden = false;
-  controlPreflightTitle.textContent = `${pendingControlPreflight.taskClass} control on ${pendingControlPreflight.siteKey}`;
-  controlPreflightBody.textContent = `${pendingControlPreflight.goal} · ${pendingControlPreflight.mode}. Augmentor may read, scroll, click safe controls, and type into editable fields. Wallet, login, credential, payment, signing, transfer, destructive, and public-submit boundaries remain human-gated.`;
-  updateContextDockVisibility();
-};
-
-const setTurnBusy = (busy) => {
-  turnBusy = busy;
-  commandInput.disabled = busy;
-  const sendButton = commandForm.querySelector(".send-button");
-  sendButton.disabled = false;
-  sendButton.classList.toggle("is-stop", busy);
-  sendButton.setAttribute("aria-label", busy ? "Stop response" : "Send message");
-  sendButton.title = busy ? "Stop response" : "Send message";
-  sendButton.innerHTML = busy
-    ? '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="8" height="8" rx="1.8"/></svg>'
-    : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>';
-};
-
-const runBusyUiAction = async (action) => {
-  if (turnBusy) return;
-  setTurnBusy(true);
-  try {
-    await action();
-  } finally {
-    setTurnBusy(false);
-    if (statusLabel === "Ready") {
-      clearActivitySoon();
-    }
-  }
-};
-
-const renderControlMonitor = () => {
-  monitorRenderers.renderControlMonitor();
-};
-
-const updateConnectionLine = () => {
-  const model = modelLabel(modelSelect.value);
-  thinkingDepthSelect.hidden = !supportsThinkingDepth(modelSelect.value);
-  connectionLine.title = `Connected to ${model} · ${statusLabel}`;
-  connectionLine.setAttribute("aria-label", connectionLine.title);
-  connectionLine.innerHTML = `
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h4l2-7 4 14 2-7h4"/></svg>
-  `;
-};
-
-function setComposerNotice(message = "") {
-  if (!composerNotice) return;
-  composerNotice.textContent = message;
-  composerNotice.hidden = !message;
-}
-
-const setContextMeter = (snapshot) => {
-  const usage = contextUsageSnapshot({
-    attachments: chatSessionStore.getAttachments(),
-    messages: chatSessionStore.getMessages(),
-    model: modelSelect.value,
-    pageSnapshot: snapshot ?? lastSnapshot
-  });
-  updateContextMeterElement(contextMeter, usage);
-  if (contextPopoverOpen) {
-    renderContextPopover(usage);
-  }
-};
-
-const compactContextLocally = () => {
-  const messages = chatSessionStore.getMessages();
-  const recent = messages.slice(-8);
-  contextCompactNotice = `Compact memory refreshed locally. ${recent.length}/${messages.length} recent turns are preserved for continuity; raw transcript remains intact.`;
-  renderContextPopover();
-};
-
-function renderContextPopover(snapshot = contextUsageSnapshot({
-  attachments: chatSessionStore.getAttachments(),
-  messages: chatSessionStore.getMessages(),
-  model: modelSelect.value,
-  pageSnapshot: lastSnapshot
-})) {
-  renderContextMemoryPopover(contextPopover, snapshot, {
-    notice: contextCompactNotice,
-    onClose: () => {
-      contextPopoverOpen = false;
-      contextPopover.hidden = true;
-      contextMeter.setAttribute("aria-expanded", "false");
-    },
-    onCompact: compactContextLocally
-  });
-}
-
-function toggleContextPopover() {
-  contextPopoverOpen = !contextPopoverOpen;
-  contextPopover.hidden = !contextPopoverOpen;
-  contextMeter.setAttribute("aria-expanded", contextPopoverOpen ? "true" : "false");
-  if (contextPopoverOpen) {
-    contextCompactNotice = "";
-    renderContextPopover();
-  }
-}
 
 const sitePermissionStore = createSitePermissionStore({
   storage: chrome.storage?.local,
@@ -354,6 +250,29 @@ const taskConsentStore = createTaskConsentStore({
   storage: chrome.storage?.local,
   taskConsentAuditStorageKey: STORAGE_KEYS.taskConsentAudit,
   taskConsentStorageKey: STORAGE_KEYS.taskConsents
+});
+
+const controlPreflightController = createSidePanelControlPreflightController({
+  addMessage: (...args) => addMessage(...args),
+  controlPreflightStorageKey: STORAGE_KEYS.controlPreflight,
+  getPendingControlPreflight: () => pendingControlPreflight,
+  renderControlPreflightCard,
+  renderPermissionManager: () => renderPermissionManager(),
+  renderSitePermissionPanel: (tab) => renderSitePermissionPanel(tab),
+  renderTaskConsentPanel: (tab) => renderTaskConsentPanel(tab),
+  runControlCommand: (goal, options) => runControlCommand(goal, options),
+  setActivity,
+  setContextDockExpanded: async (expanded) => {
+    contextDockExpanded = Boolean(expanded);
+    await persistContextDockExpanded();
+  },
+  setNextControlPreflightDecision: (decision) => setNextControlPreflightDecision(decision),
+  setPendingControlPreflight: (preflight) => {
+    pendingControlPreflight = preflight;
+  },
+  setStatus,
+  storage: chrome.storage?.local,
+  taskConsentStore
 });
 
 const renderSitePermissionPanel = async (tab = null) => {
@@ -372,79 +291,26 @@ const renderJobMonitor = () => {
   monitorRenderers.renderJobMonitor();
 };
 
-const loadBrowserJobs = async () => {
-  await browserJobStore.hydrate();
-  const recovered = await browserJobStore.recoverInterruptedJobs({
-    from: ["running", "approval"],
-    to: "paused",
-    reason: "Recovered after browser host reload. Use /resume <job> to continue from persisted step history."
-  });
-  renderJobMonitor();
-  if (recovered.length) {
-    await addMessage(
-      "system",
-      `Recovered ${recovered.length} interrupted browser job${recovered.length === 1 ? "" : "s"} after reload. Use /resume <job> to continue from persisted step history.`
-    );
+const browserJobController = createSidePanelBrowserJobController({
+  activateJobTab: (job) => activateJobTab(job),
+  addMessage: (...args) => addMessage(...args),
+  browserJobStore,
+  consumeNextControlPreflightDecision: () => consumeNextControlPreflightDecision(),
+  getCurrentControlRun: () => currentControlRun,
+  prepareBrowserJobPageLock: (request) => prepareBrowserJobPageLock(request),
+  renderControlMonitor: () => renderControlMonitor(),
+  renderJobMonitor,
+  setCurrentControlRun: (run) => {
+    currentControlRun = run;
+  },
+  setPendingApproval: (approval) => {
+    pendingApproval = approval;
   }
-};
-
-const createBrowserJob = async ({ existingJob = null, goal, planner = "observe-act-verify-loop", summary = "", status = "running" }) => {
-  const pageLock = await prepareBrowserJobPageLock({ goal, existingJob, status });
-  if (existingJob?.id) {
-    await browserJobStore.activateJob(existingJob.id);
-    const updated = await browserJobStore.updateJob(existingJob.id, {
-      allowHumanStopOverride: true,
-      status,
-      planner,
-      summary,
-      pageLock,
-      preflightDecision: consumeNextControlPreflightDecision() ?? existingJob.preflightDecision ?? null
-    });
-    renderJobMonitor();
-    return updated ?? existingJob;
-  }
-  const job = await browserJobStore.createJob({
-    activate: status !== "queued",
-    goal,
-    planner,
-    summary,
-    pageLock,
-    preflightDecision: consumeNextControlPreflightDecision(),
-    status
-  });
-  renderJobMonitor();
-  return job;
-};
-
-const updateBrowserJob = async (jobId, patch) => {
-  const updated = await browserJobStore.updateJob(jobId, patch);
-  renderJobMonitor();
-  return updated;
-};
-
-const focusBrowserJobRun = async (jobId) => {
-  const focusedJob = await browserJobStore.activateJob(jobId);
-  if (focusedJob) {
-    await activateJobTab(focusedJob);
-  }
-  currentControlRun = focusedJob ? {
-    artifacts: Array.isArray(focusedJob.artifacts) ? focusedJob.artifacts : [],
-    completedAt: focusedJob.completedAt ?? null,
-    goal: focusedJob.goal,
-    id: focusedJob.id,
-    pageLock: focusedJob.pageLock ?? null,
-    planner: focusedJob.planner,
-    startedAt: focusedJob.timing?.startedAt ?? focusedJob.createdAt,
-    status: focusedJob.status,
-    steps: Array.isArray(focusedJob.steps) ? focusedJob.steps : [],
-    summary: focusedJob.summary,
-    timing: focusedJob.timing ?? {}
-  } : currentControlRun;
-  pendingApproval = focusedJob?.pendingApproval ?? null;
-  renderControlMonitor();
-  renderJobMonitor();
-  return focusedJob;
-};
+});
+const createBrowserJob = browserJobController.createBrowserJob;
+const focusBrowserJobRun = browserJobController.focusBrowserJobRun;
+const loadBrowserJobs = browserJobController.loadBrowserJobs;
+const updateBrowserJob = browserJobController.updateBrowserJob;
 
 const persistChatState = () => chatSessionStore.persist();
 
@@ -686,42 +552,6 @@ const tabContextController = createTabContextController({
 });
 const bindMentionedTab = tabContextController.bindMentionedTab;
 
-const saveIntake = async (target = "page") => {
-  if (/trail|research/i.test(String(target))) {
-    return saveResearchTrailToArchive(target);
-  }
-  if (/summary|summari[sz]e|synthesis/i.test(String(target))) {
-    return summarizeCurrentPageToArchive();
-  }
-  if (/selection|selected/i.test(String(target))) {
-    return saveSelectionToArchive();
-  }
-  return saveCurrentPageToArchive();
-};
-
-const explainStructuredPageEditBoundary = async (instruction) => {
-  const response = lastSnapshot ? { ok: true, snapshot: lastSnapshot } : await readActivePage({ announce: false });
-  const snapshot = response?.snapshot;
-  const title = snapshot?.title || "the active page";
-  const url = snapshot?.url || "unknown URL";
-  setActivity("completed", "Checked active page", title);
-  setStatus("Needs precise edit target");
-  await addMessage(
-    "system",
-    [
-      `I can see the active page: ${title}`,
-      url,
-      "",
-      "I can read the page, click visible page controls, and type into focused or normal editable fields from the side-panel host.",
-      "This request is a structured document edit, so I need a precise editable target before I act. For Google Sheets/Docs, line/row edits are canvas/app-level interactions and should not be guessed from visible text.",
-      "",
-      `Requested change: ${instruction}`,
-      "",
-      "Give me a specific target such as a cell address, visible button/text to click, or ask me to type quoted text into the currently focused field. Example: click cell A17, then ask: type \"we need to add model selection and providers to ResonantOS browser\"."
-    ].join("\n")
-  );
-};
-
 const controlPlanningService = createControlPlanningService({
   bridgeRequest,
   getLastSnapshot: () => lastSnapshot,
@@ -855,223 +685,47 @@ const activateJobTab = async (job) => {
   });
 };
 
-const observeQueuedJobPage = async (job, { onSnapshot = null } = {}) => withBrowserActionLock(async () => {
-  await activateJobTab(job);
-  setActivity("reading", "Observing job page", job.goal);
-  const response = await readActivePage({ announce: false }).catch(() => null);
-  const snapshot = response?.snapshot ?? lastSnapshot;
-  const tabs = await chrome.tabs.query({}).catch(() => []);
-  if (snapshot && typeof onSnapshot === "function") {
-    onSnapshot(snapshot);
-  }
-  return snapshot ? {
-    ...snapshot,
-    tabs: tabs.filter(isReadableBrowserTab).slice(0, 30).map((tab) => ({
-      active: Boolean(tab.active),
-      controlled: tab.id === controlledTabId,
-      id: tab.id,
-      title: tab.title || "",
-      url: tab.url || ""
-    }))
-  } : null;
+const scheduledBrowserJobRunner = createSidePanelScheduledBrowserJobRunner({
+  activateJobTab: (job) => activateJobTab(job),
+  addMessage: (...args) => addMessage(...args),
+  approvalBoundaryForStep,
+  browserJobStore,
+  chromeApi: chrome,
+  controlStepLabel,
+  executeControlStep: (step) => executeControlStep(step),
+  getControlledTabId: () => controlledTabId,
+  getCurrentControlRun: () => currentControlRun,
+  getLastSnapshot: () => lastSnapshot,
+  isReadableBrowserTab,
+  readActivePage: (options) => readActivePage(options),
+  renderControlMonitor: () => renderControlMonitor(),
+  renderJobMonitor,
+  requestNextControlAction: (request) => requestNextControlAction(request),
+  saveBrowserJobReportToArchive: (job) => saveBrowserJobReportToArchive(job),
+  setActivity,
+  setControlledTabId: (tabId) => {
+    controlledTabId = tabId;
+  },
+  setCurrentControlRun: (run) => {
+    currentControlRun = run;
+  },
+  setLastSnapshot: (snapshot) => {
+    lastSnapshot = snapshot;
+  },
+  setPageControlOverlay: (active, label, phase) => setPageControlOverlay(active, label, phase),
+  setPendingApproval: (approval) => {
+    pendingApproval = approval;
+  },
+  setStatus,
+  sleep,
+  taskConsentStore,
+  updateBrowserJob: (jobId, patch) => updateBrowserJob(jobId, patch),
+  windowRef: window,
+  withBrowserActionLock
 });
+const runScheduledBrowserJob = scheduledBrowserJobRunner.runScheduledBrowserJob;
 
-const executeQueuedJobStep = async (job, step, { beforeExecute = null } = {}) => withBrowserActionLock(async () => {
-  const latestJob = browserJobStore.findJob(job?.id);
-  if (["paused", "cancelled"].includes(latestJob?.status)) {
-    throw new Error(`Browser job ${job.id} is ${latestJob.status}; scheduler stopped browser actions.`);
-  }
-  await activateJobTab(job);
-  if (typeof beforeExecute === "function") {
-    beforeExecute();
-  }
-  return executeControlStep(step);
-});
-
-const runScheduledBrowserJob = async (job) => {
-  const scopedNextActionOverride = typeof window.__resonantosNextActionOverride === "function"
-    ? window.__resonantosNextActionOverride
-    : null;
-  let localRun = {
-    id: job.id,
-    goal: job.goal,
-    planner: job.planner,
-    startedAt: new Date().toISOString(),
-    status: "running",
-    summary: job.summary,
-    artifacts: Array.isArray(job.artifacts) ? job.artifacts : [],
-    pageLock: job.pageLock,
-    steps: Array.isArray(job.steps) ? job.steps : []
-  };
-  let localLastSnapshot = null;
-  let localApproval = null;
-  const syncFocusedLocalRun = () => {
-    if (browserJobStore.getActiveJobId() === job.id) {
-      currentControlRun = localRun;
-      pendingApproval = localApproval;
-      renderControlMonitor();
-    }
-    renderJobMonitor();
-  };
-  const persistLocalRun = async (patch = {}) => {
-    const persisted = browserJobStore.findJob(job.id);
-    const requestedStatus = patch.status ?? localRun.status ?? "running";
-    const preservedHumanStopStatus = ["cancelled", "paused"].includes(persisted?.status) && !["cancelled", "paused"].includes(requestedStatus)
-      ? persisted.status
-      : "";
-    localRun = {
-      ...localRun,
-      ...patch,
-      status: preservedHumanStopStatus || requestedStatus
-    };
-    await updateBrowserJob(job.id, {
-      artifacts: localRun.artifacts,
-      planner: localRun.planner,
-      status: localRun.status ?? "running",
-      steps: localRun.steps,
-      summary: localRun.summary
-    });
-  };
-  const localRunner = createAgentControlRunner({
-    addMessage,
-    appendControlStep: (step) => {
-      const record = {
-        ...step,
-        state: "pending",
-        updatedAt: new Date().toISOString()
-      };
-      localRun = { ...localRun, steps: [...localRun.steps, record] };
-      void persistLocalRun();
-      syncFocusedLocalRun();
-      return localRun.steps.length - 1;
-    },
-    approvalBoundaryForStep,
-    controlStepLabel,
-    createBrowserJob: async () => job,
-    executeControlStep: (step) => executeQueuedJobStep(job, step, {
-      beforeExecute: () => {
-        controlledTabId = job.pageLock?.tabId ?? controlledTabId;
-        lastSnapshot = null;
-      }
-    }),
-    finishControlRun: (status, artifact = null) => {
-      localRun = {
-        ...localRun,
-        status,
-        completedAt: new Date().toISOString(),
-        artifacts: artifact ? [...localRun.artifacts, artifact] : localRun.artifacts
-      };
-      void persistLocalRun({
-        status,
-        artifacts: localRun.artifacts
-      });
-      if (browserJobStore.getActiveJobId() === job.id) {
-        void setPageControlOverlay(false, "", "returning");
-      }
-      syncFocusedLocalRun();
-    },
-    getActiveJobId: () => job.id,
-    getCurrentControlRun: () => localRun,
-    getLastSnapshot: () => localLastSnapshot,
-    observeControlPage: () => observeQueuedJobPage(job, {
-      onSnapshot: (snapshot) => {
-        localLastSnapshot = snapshot;
-      }
-    }),
-    renderControlMonitor: syncFocusedLocalRun,
-    requestNextControlAction: (request) => requestNextControlAction({
-      ...request,
-      override: scopedNextActionOverride
-    }),
-    saveControlReportToArchive: async (_results, status) => {
-      const latest = browserJobStore.findJob(job.id) ?? localRun;
-      return saveBrowserJobReportToArchive({ ...latest, status }) ?? null;
-    },
-    setActivity,
-    setPageControlOverlay: async (active, label, phase) => {
-      if (browserJobStore.getActiveJobId() === job.id) {
-        await setPageControlOverlay(active, label, phase);
-      }
-    },
-    setPendingApproval: (approval) => {
-      localApproval = approval;
-      void updateBrowserJob(job.id, { pendingApproval: approval, status: approval ? "approval" : localRun.status });
-      if (browserJobStore.getActiveJobId() === job.id) {
-        pendingApproval = approval;
-      }
-      syncFocusedLocalRun();
-    },
-    setStatus,
-    sleep,
-    startControlRun: ({ goal, plan }) => {
-      localRun = {
-        ...localRun,
-        goal,
-        planner: plan.source,
-        summary: plan.summary,
-        pageLock: plan.pageLock ?? localRun.pageLock,
-        artifacts: Array.isArray(plan.artifacts) ? plan.artifacts : localRun.artifacts,
-        steps: Array.isArray(plan.steps) ? plan.steps : localRun.steps
-      };
-      syncFocusedLocalRun();
-    },
-    taskConsentForStep: async ({ goal }) => taskConsentStore.consentFor({
-      siteKey: job.pageLock?.siteKey,
-      goal
-    }),
-    updateBrowserJob,
-    updateControlRunArtifacts: (artifacts) => {
-      localRun = { ...localRun, artifacts };
-      void persistLocalRun({ artifacts });
-      syncFocusedLocalRun();
-    },
-    updateControlStep: (index, state, note = "", details = {}) => {
-      const steps = [...localRun.steps];
-      if (!steps[index]) return;
-      steps[index] = {
-        ...steps[index],
-        details: { ...(steps[index].details ?? {}), ...details },
-        note,
-        state,
-        updatedAt: new Date().toISOString()
-      };
-      localRun = { ...localRun, steps };
-      void persistLocalRun({ steps });
-      syncFocusedLocalRun();
-    }
-  });
-  await addMessage("system", `Browser job ${job.id} started in the scheduler.\nGoal: ${job.goal}`);
-  const result = await localRunner.continueControlLoop({
-    goal: job.goal,
-    history: [],
-    results: [],
-    startIndex: 0,
-    maxSteps: 12
-  });
-  if (localApproval && browserJobStore.getActiveJobId() !== job.id) {
-    await addMessage("system", `Browser job ${job.id} needs approval. Focus the job in Browser Jobs to review the pending action.`);
-  }
-  return result;
-};
-
-const persistControlPreflight = async () => {
-  await chrome.storage?.local?.set?.({
-    [STORAGE_KEYS.controlPreflight]: pendingControlPreflight
-  }).catch(() => undefined);
-  renderControlPreflightCard();
-};
-
-const clearControlPreflight = async () => {
-  pendingControlPreflight = null;
-  await chrome.storage?.local?.remove?.(STORAGE_KEYS.controlPreflight).catch(() => undefined);
-  renderControlPreflightCard();
-};
-
-const hydrateControlPreflight = async () => {
-  const settings = await chrome.storage?.local?.get?.(STORAGE_KEYS.controlPreflight).catch(() => ({}));
-  pendingControlPreflight = normalizeControlPreflight(settings?.[STORAGE_KEYS.controlPreflight]);
-  renderControlPreflightCard();
-};
+const hydrateControlPreflight = controlPreflightController.hydrateControlPreflight;
 
 const setNextControlPreflightDecision = (decision) => {
   nextControlPreflightDecision = decision ? {
@@ -1093,232 +747,42 @@ const consumeNextControlPreflightDecision = () => {
   return decision;
 };
 
-const preflightDecisionFromPreflight = (preflight, { mode, reason }) => ({
-  id: preflight.id,
-  goal: preflight.goal,
-  siteKey: preflight.siteKey,
-  taskClass: preflight.taskClass,
-  mode,
-  permissionMode: preflight.mode,
-  decidedAt: new Date().toISOString(),
-  source: "control-preflight",
-  reason
+const controlCommandController = createSidePanelControlCommandController({
+  activeTab,
+  addMessage,
+  browserJobStore,
+  clearControlPreflight: () => controlPreflightController.clearControlPreflight(),
+  createBrowserJob,
+  getBrowserJobScheduler: () => browserJobScheduler,
+  getCurrentControlRun: () => currentControlRun,
+  permissionForUrl,
+  persistContextDockExpanded,
+  renderControlMonitor: () => renderControlMonitor(),
+  renderJobMonitor,
+  requestControlPreflight: (request) => controlPreflightController.requestControlPreflight(request),
+  setActivity,
+  setContextDockExpanded: (expanded) => {
+    contextDockExpanded = Boolean(expanded);
+  },
+  setCurrentControlRun: (run) => {
+    currentControlRun = run;
+  },
+  setNextControlPreflightDecision: (decision) => setNextControlPreflightDecision(decision),
+  setPendingApproval: (approval) => {
+    pendingApproval = approval;
+  },
+  setStatus,
+  shouldRequireControlPreflight,
+  siteKeyForUrl,
+  taskConsentStore,
+  updateBrowserJob
 });
+const prepareBrowserJobPageLock = controlCommandController.prepareBrowserJobPageLock;
+const runControlCommand = controlCommandController.runControlCommand;
 
-const pageLockForTab = (tab, reason = "Agent Control run") => ({
-  type: "tab",
-  tabId: tab?.id ?? null,
-  url: tab?.url ?? "",
-  siteKey: siteKeyForUrl(tab?.url),
-  acquiredAt: new Date().toISOString(),
-  reason
-});
-
-const TERMINAL_CONTROL_RUN_STATUSES = new Set(["completed", "blocked", "denied", "cancelled", "failed"]);
-
-const prepareBrowserJobPageLock = async ({ goal, existingJob = null, status = "running" } = {}) => {
-  const tab = await activeTab();
-  const pageLock = pageLockForTab(tab, existingJob?.id
-    ? `Resumed Agent Control job ${existingJob.id}`
-    : `Agent Control goal: ${String(goal ?? "").slice(0, 120)}`);
-  let conflict = browserJobStore.conflictingActiveJobForLock(pageLock, {
-    excludingJobId: existingJob?.id ?? ""
-  });
-  if (conflict && currentControlRun && conflict.id === currentControlRun.id && TERMINAL_CONTROL_RUN_STATUSES.has(currentControlRun.status)) {
-    await updateBrowserJob(conflict.id, {
-      status: currentControlRun.status,
-      pageLock: null,
-      artifacts: currentControlRun.artifacts,
-      summary: currentControlRun.summary,
-      planner: currentControlRun.planner,
-      steps: currentControlRun.steps
-    });
-    conflict = browserJobStore.conflictingActiveJobForLock(pageLock, {
-      excludingJobId: existingJob?.id ?? ""
-    });
-  }
-  if (conflict && status === "queued") {
-    return pageLock;
-  }
-  if (conflict?.status === "approval") {
-    if (currentControlRun?.id === conflict.id) {
-      pendingApproval = null;
-      currentControlRun = {
-        ...currentControlRun,
-        status: "cancelled",
-        completedAt: new Date().toISOString()
-      };
-      renderControlMonitor();
-    }
-    await updateBrowserJob(conflict.id, {
-      status: "cancelled",
-      pageLock: null,
-      artifacts: currentControlRun?.id === conflict.id ? currentControlRun.artifacts : conflict.artifacts,
-      summary: currentControlRun?.id === conflict.id ? currentControlRun.summary : conflict.summary,
-      planner: currentControlRun?.id === conflict.id ? currentControlRun.planner : conflict.planner,
-      steps: currentControlRun?.id === conflict.id ? currentControlRun.steps : conflict.steps
-    });
-    conflict = browserJobStore.conflictingActiveJobForLock(pageLock, {
-      excludingJobId: existingJob?.id ?? ""
-    });
-  }
-  if (conflict) {
-    throw new Error(`Cannot start Agent Control on ${pageLock.siteKey}: ${conflict.id} is already ${conflict.status} on this browser target. Focus, pause, cancel, or finish that job first.`);
-  }
-  return pageLock;
-};
-
-const runControlCommand = async (goal, options = {}) => {
-  const tab = await activeTab();
-  const mode = tab?.url ? await permissionForUrl(tab.url) : "ask-before-action";
-  if (mode === "blocked") {
-    await addMessage("system", `Agent Control is blocked on ${siteKeyForUrl(tab?.url)}. Change the current-site permission before asking Augmentor to operate this page.`);
-    setStatus("Control blocked");
-    return null;
-  }
-  const existingConsent = await taskConsentStore.consentFor({
-    siteKey: siteKeyForUrl(tab?.url),
-    goal
-  });
-  if (options.resumedFromJob) {
-    setNextControlPreflightDecision({
-      ...(options.resumedFromJob.preflightDecision ?? {}),
-      id: options.resumedFromJob.preflightDecision?.id ?? options.resumedFromJob.id,
-      goal,
-      siteKey: options.resumedFromJob.preflightDecision?.siteKey ?? siteKeyForUrl(tab?.url),
-      taskClass: options.resumedFromJob.preflightDecision?.taskClass ?? existingConsent?.taskClass ?? "general",
-      mode: "resumed",
-      permissionMode: mode,
-      source: "browser-job-store",
-      reason: `Resumed from browser job ${options.resumedFromJob.id}.`
-    });
-  }
-  if (shouldRequireControlPreflight({
-    goal,
-    mode,
-    existingConsent,
-    alreadyApproved: Boolean(options.preflightApproved),
-    resumedFromJob: Boolean(options.resumedFromJob)
-  })) {
-    pendingControlPreflight = createControlPreflight({
-      goal,
-      mode,
-      siteKey: siteKeyForUrl(tab?.url)
-    });
-    await persistControlPreflight();
-    contextDockExpanded = true;
-    await persistContextDockExpanded();
-    await renderSitePermissionPanel(tab);
-    await addMessage("system", formatControlPreflightMessage(pendingControlPreflight));
-    setStatus("Preflight required");
-    setActivity("approval", "Agent Control preflight required", pendingControlPreflight.taskClass);
-    return null;
-  }
-  if (!options.resumedFromJob && existingConsent?.mode === "allow-safe" && !options.preflightApproved) {
-    setNextControlPreflightDecision({
-      id: existingConsent.id ?? `${existingConsent.siteKey}::${existingConsent.taskClass}`,
-      goal,
-      siteKey: existingConsent.siteKey,
-      taskClass: existingConsent.taskClass,
-      mode: "skipped-by-consent",
-      permissionMode: mode,
-      decidedAt: new Date().toISOString(),
-      source: existingConsent.source || "task-consent-store",
-      reason: existingConsent.reason || "Stored safe task-class consent allowed preflight skip."
-    });
-  }
-  await clearControlPreflight();
-  try {
-    const queuedJob = await createBrowserJob({
-      existingJob: options.resumedFromJob ?? null,
-      goal,
-      planner: "observe-act-verify-loop",
-      summary: `${options.resumedFromJob?.id ? `Continuation of ${options.resumedFromJob.id}. ` : ""}Queued browser-agent loop. The scheduler observes the page, asks for one safe next action, executes it, then verifies before continuing.`,
-      status: "queued"
-    });
-    contextDockExpanded = true;
-    await persistContextDockExpanded();
-    await browserJobStore.setMonitorCollapsed(false);
-    await addMessage(
-      "system",
-      [
-        options.resumedFromJob ? "Agent Control job queued for continuation." : "Agent Control job queued.",
-        `Job: ${queuedJob.id}`,
-        `Goal: ${goal}`,
-        "Scheduler: will run when capacity and page-lock rules allow it."
-      ].join("\n")
-    );
-    renderJobMonitor();
-    await browserJobScheduler.tick();
-    return queuedJob;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error("Agent Control could not start.", error);
-    await addMessage("system", `Agent Control could not start.\n${message}`);
-    setStatus("Control blocked");
-    setActivity("failed", "Control could not start", message);
-    return null;
-  }
-};
-
-const resolvePreflightFromCommand = (body) => {
-  const requested = String(body ?? "").trim();
-  if (!pendingControlPreflight) return null;
-  if (!requested || requested === pendingControlPreflight.id) return pendingControlPreflight;
-  return null;
-};
-
-const approveControlPreflight = async (body) => {
-  const preflight = resolvePreflightFromCommand(body);
-  if (!preflight) {
-    await addMessage("system", "No matching Agent Control preflight is waiting. Start a browser-control task first, or use the exact preflight id.");
-    return;
-  }
-  setNextControlPreflightDecision(preflightDecisionFromPreflight(preflight, {
-    mode: "approved-once",
-    reason: "Human approved Agent Control preflight once."
-  }));
-  await clearControlPreflight();
-  await addMessage("system", `Approved Agent Control preflight for ${preflight.taskClass} on ${preflight.siteKey}. Starting governed browser control now.`);
-  setStatus("Taking control");
-  await runControlCommand(preflight.goal, { preflightApproved: true });
-};
-
-const denyControlPreflight = async (body) => {
-  const preflight = resolvePreflightFromCommand(body);
-  if (!preflight) {
-    await addMessage("system", "No matching Agent Control preflight is waiting.");
-    return;
-  }
-  await clearControlPreflight();
-  setStatus("Denied");
-  await addMessage("system", `Denied Agent Control preflight for ${preflight.taskClass} on ${preflight.siteKey}. No browser actions were taken.`);
-};
-
-const trustControlPreflightForSafeActions = async (body) => {
-  const preflight = resolvePreflightFromCommand(body);
-  if (!preflight) {
-    await addMessage("system", "No matching Agent Control preflight is waiting.");
-    return;
-  }
-  const consent = await taskConsentStore.setTaskConsent({
-    siteKey: preflight.siteKey,
-    taskClass: preflight.taskClass,
-    mode: "allow-safe",
-    reason: `Trusted from Agent Control preflight: ${preflight.goal}`,
-    source: "control-preflight"
-  });
-  setNextControlPreflightDecision(preflightDecisionFromPreflight(preflight, {
-    mode: "trusted-safe-actions",
-    reason: `Human trusted safe ${preflight.taskClass} actions for ${preflight.siteKey}.`
-  }));
-  await clearControlPreflight();
-  await renderTaskConsentPanel();
-  await renderPermissionManager();
-  await addMessage("system", `Trusted safe ${consent.taskClass} actions on ${consent.siteKey} and starting governed browser control now. Hard wallet, login, payment, credential, signing, transfer, destructive, and public-submit boundaries remain human-gated.`);
-  setStatus("Taking control");
-  await runControlCommand(preflight.goal, { preflightApproved: true });
-};
+const approveControlPreflight = controlPreflightController.approveControlPreflight;
+const denyControlPreflight = controlPreflightController.denyControlPreflight;
+const trustControlPreflightForSafeActions = controlPreflightController.trustControlPreflightForSafeActions;
 
 const approvePendingControlStep = async () => {
   if (!pendingApproval || !currentControlRun) return;
@@ -1361,60 +825,28 @@ const denyPendingControlStep = async () => {
   await agentControlRunner.denyPendingControlStep(pendingApproval);
 };
 
-const runBrowserCommand = async (body) => {
-  const match = /^(open|navigate|visit|go|search|find|news|research|read|context|click|type|write|scroll|forms|fields)\b\s*([\s\S]*)$/i.exec(body.trim());
-  const target = (match?.[2] ?? body).trim();
-  if (!target) {
-    const action = match?.[1]?.toLowerCase();
-    if (action === "read" || action === "context") {
-      await summarizeSnapshot();
-      return;
-    }
-    if (action === "scroll") {
-      await scrollActivePage({ direction: "down" });
-      return;
-    }
-    if (action === "forms" || action === "fields") {
-      await detectActivePageForms();
-      return;
-    }
-    await addMessage("system", "Use `/browser open <url>`, `/browser search <query>`, `/browser read`, `/browser click \"text\"`, `/browser type \"text\"`, `/browser scroll down`, or `/browser forms`.");
-    return;
-  }
-  const action = match?.[1]?.toLowerCase();
-  if (["search", "find", "news", "research"].includes(action)) {
-    await searchBrowser({ query: normalizeSearchQuery(target), action: action === "news" ? "news" : "search" });
-    return;
-  }
-  if (action === "read" || action === "context") {
-    await summarizeSnapshot();
-    return;
-  }
-  if (action === "click") {
-    const text = parseQuotedText(target) || target;
-    await clickActivePageText({ text });
-    return;
-  }
-  if (action === "type" || action === "write") {
-    const text = parseQuotedText(target) || target;
-    await typeIntoActivePage({ text, submit: /\b(submit|press enter|hit enter|search)\b/i.test(target) });
-    return;
-  }
-  if (action === "scroll") {
-    await scrollActivePage({ direction: /\b(up|top)\b/i.test(target) ? /\btop\b/i.test(target) ? "top" : "up" : /\b(bottom|end)\b/i.test(target) ? "bottom" : "down" });
-    return;
-  }
-  if (action === "forms" || action === "fields") {
-    await detectActivePageForms();
-    return;
-  }
-  await openBrowserUrl(target);
-};
-
-const handleWalletBoundary = async () => {
-  await addMessage("system", "Wallet actions are human-approval gated. I can discuss Phantom and browser context, but wallet connect, signing, seed phrases, private keys, and credential actions stay human-only.");
-  setStatus("Approval gated");
-};
+const browserActionController = createSidePanelBrowserActionController({
+  addMessage,
+  clickActivePageText,
+  detectActivePageForms,
+  getLastSnapshot: () => lastSnapshot,
+  openBrowserUrl,
+  readActivePage,
+  saveCurrentPageToArchive,
+  saveResearchTrailToArchive,
+  saveSelectionToArchive,
+  scrollActivePage,
+  searchBrowser,
+  setActivity,
+  setStatus,
+  summarizeCurrentPageToArchive,
+  summarizeSnapshot,
+  typeIntoActivePage
+});
+const explainStructuredPageEditBoundary = browserActionController.explainStructuredPageEditBoundary;
+const handleWalletBoundary = browserActionController.handleWalletBoundary;
+const runBrowserCommand = browserActionController.runBrowserCommand;
+const saveIntake = browserActionController.saveIntake;
 
 const chatTurnController = createChatTurnController({
   addMessage,
@@ -1576,107 +1008,76 @@ const hydrateChatSettings = async () => {
   setContextMeter(lastSnapshot);
 };
 
-const consumePendingSidebarPrompt = async () => {
-  const payload = await chrome.storage?.local?.get?.(STORAGE_KEYS.pendingSidebarPrompt).catch(() => ({}));
-  const pending = payload?.[STORAGE_KEYS.pendingSidebarPrompt];
-  const prompt = String(pending?.prompt ?? "").trim();
-  if (!prompt) return;
-  if (turnBusy) return;
-  await chrome.storage.local.remove(STORAGE_KEYS.pendingSidebarPrompt).catch(() => undefined);
-  setTurnBusy(true);
-  try {
-    await addMessage("user", prompt);
-    await respondToCommand(prompt);
-  } finally {
-    setTurnBusy(false);
-  }
-};
-
-chrome.storage?.onChanged?.addListener?.((changes, areaName) => {
-  if (areaName !== "local" || !changes[STORAGE_KEYS.pendingSidebarPrompt]?.newValue) {
-    return;
-  }
-  void consumePendingSidebarPrompt();
+const lifecycleController = createSidePanelLifecycleController({
+  activeTab,
+  addMessage,
+  approvalApproveButton,
+  approvalDelegateButton,
+  approvalDenyButton,
+  approvalTrustSiteButton,
+  approveControlPreflight,
+  approvePendingControlStep,
+  attachFileButton,
+  browserJobStore,
+  clearActivitySoon,
+  commandForm,
+  commandInput,
+  composerController,
+  contextMeter,
+  contextToggleButton,
+  controlPreflightApproveButton,
+  controlPreflightDenyButton,
+  controlPreflightTrustButton,
+  delegateControlIssue,
+  denyControlPreflight,
+  denyPendingControlStep,
+  dictateButton,
+  dictationController,
+  fileInput,
+  getLastSnapshot: () => lastSnapshot,
+  getPendingControlPreflight: () => pendingControlPreflight,
+  getStatusLabel: () => statusLabel,
+  getTurnBusy: () => turnBusy,
+  jobMonitorToggle,
+  messageActions,
+  modelSelect,
+  persistChatState,
+  persistContextDockExpanded,
+  readActivePage,
+  readButton,
+  renderJobMonitor,
+  renderSitePermissionPanel,
+  respondToCommand,
+  runBusyUiAction,
+  saveIntake,
+  saveIntakeButton,
+  saveSelectionButton,
+  setActivity,
+  setContextDockExpanded: (valueOrUpdater) => {
+    contextDockExpanded = typeof valueOrUpdater === "function"
+      ? Boolean(valueOrUpdater(contextDockExpanded))
+      : Boolean(valueOrUpdater);
+  },
+  setContextMeter,
+  setSitePermission,
+  setStatus,
+  setTurnBusy,
+  sitePermissionMode,
+  stopChatTurn,
+  storage: chrome.storage?.local,
+  storageOnChanged: chrome.storage?.onChanged,
+  storageKeys: STORAGE_KEYS,
+  tabContextController,
+  thinkingDepthSelect,
+  toggleContextPopover,
+  transcript,
+  trustControlPreflightForSafeActions,
+  trustCurrentTaskForSafeActions,
+  updateConnectionLine,
+  windowRef: window
 });
-
-transcript.addEventListener("resonantos:use-prompt", (event) => {
-  commandInput.value = event.detail?.prompt ?? "";
-  commandInput.dispatchEvent(new Event("input", { bubbles: true }));
-  commandInput.focus();
-});
-attachFileButton.addEventListener("click", () => fileInput.click());
-fileInput.addEventListener("change", () => void messageActions.attachFiles(fileInput.files));
-readButton.addEventListener("click", () => void readActivePage());
-saveIntakeButton.addEventListener("click", () => void saveIntake("page"));
-saveSelectionButton.addEventListener("click", () => void saveIntake("selection"));
-const toggleContextDock = () => {
-  contextDockExpanded = !contextDockExpanded;
-  void persistContextDockExpanded();
-  void renderSitePermissionPanel();
-  renderJobMonitor();
-};
-contextToggleButton.addEventListener("click", toggleContextDock);
-contextMeter.addEventListener("click", toggleContextPopover);
-approvalApproveButton.addEventListener("click", () => void runBusyUiAction(approvePendingControlStep));
-approvalTrustSiteButton.addEventListener("click", () => void runBusyUiAction(trustCurrentTaskForSafeActions));
-approvalDenyButton.addEventListener("click", () => void denyPendingControlStep());
-approvalDelegateButton.addEventListener("click", () => void runBusyUiAction(delegateControlIssue));
-controlPreflightApproveButton.addEventListener("click", () => void runBusyUiAction(() => approveControlPreflight(pendingControlPreflight?.id ?? "")));
-controlPreflightTrustButton.addEventListener("click", () => void runBusyUiAction(() => trustControlPreflightForSafeActions(pendingControlPreflight?.id ?? "")));
-controlPreflightDenyButton.addEventListener("click", () => void runBusyUiAction(() => denyControlPreflight(pendingControlPreflight?.id ?? "")));
-jobMonitorToggle.addEventListener("click", async () => {
-  await browserJobStore.toggleMonitorCollapsed();
-  renderJobMonitor();
-});
-sitePermissionMode.addEventListener("change", async () => {
-  const tab = await activeTab();
-  const result = await setSitePermission(tab?.url, sitePermissionMode.value, {
-    reason: "Changed from current-site permission selector",
-    source: "site-permission-panel"
-  });
-  await renderSitePermissionPanel(tab);
-  setStatus(`Site permission: ${result.mode}`);
-  setActivity("completed", "Site permission updated", `${result.key} · ${result.mode}`);
-  clearActivitySoon(1600);
-});
-tabContextController.bindBrowserListeners();
-modelSelect.addEventListener("change", () => void persistChatState().then(() => {
-  updateConnectionLine();
-  setContextMeter(lastSnapshot);
-}));
-thinkingDepthSelect.addEventListener("change", () => void persistChatState());
-dictateButton.addEventListener("click", () => dictationController.toggle());
-
-composerController.bind();
-
-commandForm.querySelector(".send-button").addEventListener("click", (event) => {
-  if (!turnBusy) return;
-  event.preventDefault();
-  stopChatTurn();
-});
-
-commandForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (turnBusy) {
-    return;
-  }
-  const value = commandInput.value.trim();
-  if (!value) {
-    return;
-  }
-  setTurnBusy(true);
-  try {
-    await addMessage("user", value);
-    commandInput.value = "";
-    composerController.resetUndoStack("");
-    await respondToCommand(value);
-  } finally {
-    setTurnBusy(false);
-    if (statusLabel === "Ready") {
-      clearActivitySoon();
-    }
-  }
-});
+const consumePendingSidebarPrompt = lifecycleController.consumePendingSidebarPrompt;
+lifecycleController.bindListeners();
 
 hydrateChatSettings().then(async () => {
   await loadBrowserJobs();
@@ -1684,5 +1085,5 @@ hydrateChatSettings().then(async () => {
   await consumePendingSidebarPrompt();
 }).catch((error) => {
   setStatus("Context failed");
-  void addMessage("system", `I could not read the active tab context: ${String(error)}`);
+  setComposerNotice(`Current page context unavailable: ${String(error)}`);
 });

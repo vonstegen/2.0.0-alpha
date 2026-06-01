@@ -47,7 +47,7 @@ function createHarness(overrides = {}) {
     },
     chrome,
     getControlledTabId: () => controlledTabId,
-    getModel: () => overrides.model ?? "MiniMax-M2.7",
+    getModel: () => overrides.model ?? "MiniMax-M3",
     getThinkingDepth: () => overrides.thinkingDepth ?? "minimal",
     getLastSnapshot: () => lastSnapshot,
     isReadableBrowserTab: (tab) => typeof tab?.url === "string" && /^https?:\/\//i.test(tab.url),
@@ -432,10 +432,10 @@ test("browser page actions summarize current page into reviewed archive intake",
     },
     bridgeRequest: async (route, options) => {
       if (route === "/augmentor/chat") {
-        assert.equal(options.body.model, "MiniMax-M2.7");
+        assert.equal(options.body.model, "MiniMax-M3");
         assert.equal(options.body.surface, "archive-intake");
         assert.match(options.body.pageContext, /Summary Page/);
-        return { reply: "## Summary\nThe page explains browser-first memory.", model: "MiniMax-M2.7" };
+        return { reply: "## Summary\nThe page explains browser-first memory.", model: "MiniMax-M3" };
       }
       if (route === "/archive/intake") return { path: "INTAKE/browser/summary.md", bytes: 120 };
       return { path: "REVIEW/requests/summary.md", status: "pending" };

@@ -291,6 +291,7 @@ test("move import executes into managed memory and rollback restores originals",
     assert.equal(existsSync(path.join(result.destinationRoot, "index.md")), true);
     assert.equal(existsSync(path.join(result.destinationRoot, "nested", "paper.txt")), true);
     const ledger = await readFile(result.ledgerPath, "utf8");
+    assert.match(ledger, /"action":"move-boundary"/);
     assert.match(ledger, /"status":"moved"/);
     assert.match(ledger, /"afterHash":/);
     assert.match(result.destinationRoot, /EXTERNAL_KNOWLEDGE/);
@@ -308,6 +309,43 @@ test("move import executes into managed memory and rollback restores originals",
     assert.equal(existsSync(path.join(source, "index.md")), true);
     assert.equal(existsSync(path.join(source, "nested", "paper.txt")), true);
     assert.equal(existsSync(path.join(result.destinationRoot, "index.md")), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("move rollback rejects a ledger that was already fully restored", async () => {
+  const root = await fixtureRoot("move-rollback-once");
+  const source = path.join(root, "Rollback Once");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(source, { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  await writeFile(path.join(source, "note.md"), "restore once\n");
+
+  try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
+    const result = await executeMoveImport({
+      sourcePath: source,
+      memoryRoot,
+      confirmation: preflight.confirmationPhrase,
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
+    });
+
+    const rollback = await rollbackMoveImport({
+      ledgerPath: result.ledgerPath,
+      confirmation: "ROLLBACK MOVE",
+    });
+    assert.equal(rollback.restoredCount, 1);
+    assert.equal(await readFile(path.join(source, "note.md"), "utf8"), "restore once\n");
+
+    await assert.rejects(
+      () => rollbackMoveImport({
+        ledgerPath: result.ledgerPath,
+        confirmation: "ROLLBACK MOVE",
+      }),
+      /already been fully restored/
+    );
+    assert.equal(await readFile(path.join(source, "note.md"), "utf8"), "restore once\n");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -474,10 +512,19 @@ test("move import automatically rolls back earlier files after a later move fail
     assert.equal(result.rollbackRestoredCount, 1);
     assert.equal(result.rollbackSourceRootRestored, true);
     assert.equal(result.rollbackSkippedRootCleanupCount, 0);
+    const manifest = JSON.parse(await readFile(result.manifestPath, "utf8"));
+    assert.equal(manifest.rollbackStatus, "restored");
     assert.equal(existsSync(path.join(source, "a.md")), true);
     assert.equal(existsSync(path.join(source, "b.md")), true);
     assert.equal(existsSync(path.join(result.destinationRoot, "a.md")), false);
     assert.equal(existsSync(result.destinationRoot), false);
+    await assert.rejects(
+      () => rollbackMoveImport({
+        ledgerPath: result.ledgerPath,
+        confirmation: "ROLLBACK MOVE",
+      }),
+      /already been fully restored/
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -514,6 +561,8 @@ test("move import automatic rollback reports destination root cleanup conflicts"
     assert.equal(result.status, "partial-failure-rolled-back");
     assert.equal(result.rollbackSourceRootRestored, true);
     assert.equal(result.rollbackSkippedRootCleanupCount, 1);
+    const manifest = JSON.parse(await readFile(result.manifestPath, "utf8"));
+    assert.equal(manifest.rollbackStatus, "partial");
     assert.equal(result.automaticRootRollback.skippedCleanup.reason, "destination-root-cleanup-failed");
     assert.equal(existsSync(path.join(result.destinationRoot, "unexpected-managed-leftover.md")), true);
   } finally {
@@ -583,6 +632,77 @@ test("move rollback refuses to restore corrupted destination bytes", async () =>
   }
 });
 
+test("move rollback rejects tampered ledger entries outside the move manifest boundary", async () => {
+  const root = await fixtureRoot("move-rollback-tamper");
+  const source = path.join(root, "Rollback Tamper");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(source, { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  await writeFile(path.join(source, "note.md"), "trusted bytes\n");
+  try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
+    const result = await executeMoveImport({
+      sourcePath: source,
+      memoryRoot,
+      confirmation: preflight.confirmationPhrase,
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
+    });
+    const lines = (await readFile(result.ledgerPath, "utf8")).trim().split(/\r?\n/);
+    const movedIndex = lines.findIndex((line) => JSON.parse(line).status === "moved");
+    const moved = JSON.parse(lines[movedIndex]);
+    moved.sourcePath = path.join(root, "outside.md");
+    lines[movedIndex] = JSON.stringify(moved);
+    await writeFile(result.ledgerPath, `${lines.join("\n")}\n`);
+
+    await assert.rejects(
+      () => rollbackMoveImport({
+        ledgerPath: result.ledgerPath,
+        confirmation: "ROLLBACK MOVE",
+      }),
+      /ledger entry escaped its manifest boundary/
+    );
+    assert.equal(existsSync(path.join(result.destinationRoot, "note.md")), true);
+    assert.equal(existsSync(path.join(root, "outside.md")), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("move rollback rejects symlinked ledgers before reading rollback instructions", async (t) => {
+  const root = await fixtureRoot("move-rollback-ledger-symlink");
+  const source = path.join(root, "Ledger Symlink");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(source, { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  await writeFile(path.join(source, "note.md"), "trusted bytes\n");
+  try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
+    const result = await executeMoveImport({
+      sourcePath: source,
+      memoryRoot,
+      confirmation: preflight.confirmationPhrase,
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
+    });
+    const symlinkPath = path.join(path.dirname(result.ledgerPath), "ledger-link.jsonl");
+    try {
+      await symlink(result.ledgerPath, symlinkPath);
+    } catch (error) {
+      t.skip(`symlink unavailable in this environment: ${error.message}`);
+      return;
+    }
+    await assert.rejects(
+      () => rollbackMoveImport({
+        ledgerPath: symlinkPath,
+        confirmation: "ROLLBACK MOVE",
+      }),
+      /ledger must be a regular file/
+    );
+    assert.equal(existsSync(path.join(result.destinationRoot, "note.md")), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("move rollback succeeds even when the move manifest is corrupt", async () => {
   const root = await fixtureRoot("move-rollback-corrupt-manifest");
   const source = path.join(root, "Corrupt Manifest");
@@ -605,9 +725,46 @@ test("move rollback succeeds even when the move manifest is corrupt", async () =
       confirmation: "ROLLBACK MOVE",
     });
     assert.equal(rollback.restoredCount, 1);
+    assert.equal(rollback.sourceRootRestored, true);
     assert.equal(await readFile(path.join(source, "note.md"), "utf8"), "restore me\n");
     assert.equal(await readFile(result.manifestPath, "utf8"), "{not-json\n");
     assert.equal(existsSync(path.join(path.dirname(result.ledgerPath), "rollback-report.json")), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("move rollback rejects corrupt manifests when the ledger has no boundary record", async () => {
+  const root = await fixtureRoot("move-rollback-no-boundary");
+  const source = path.join(root, "No Boundary");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(source, { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  await writeFile(path.join(source, "note.md"), "do not restore without boundary\n");
+  try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
+    const result = await executeMoveImport({
+      sourcePath: source,
+      memoryRoot,
+      confirmation: preflight.confirmationPhrase,
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
+    });
+    const lines = (await readFile(result.ledgerPath, "utf8"))
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .filter((line) => JSON.parse(line).action !== "move-boundary");
+    await writeFile(result.ledgerPath, `${lines.join("\n")}\n`);
+    await writeFile(result.manifestPath, "{not-json\n");
+
+    await assert.rejects(
+      () => rollbackMoveImport({
+        ledgerPath: result.ledgerPath,
+        confirmation: "ROLLBACK MOVE",
+      }),
+      /readable manifest or ledger boundary/
+    );
+    assert.equal(existsSync(path.join(result.destinationRoot, "note.md")), true);
+    assert.equal(existsSync(path.join(source, "note.md")), false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

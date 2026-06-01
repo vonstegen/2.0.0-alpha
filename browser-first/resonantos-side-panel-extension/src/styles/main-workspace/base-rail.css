@@ -1,0 +1,555 @@
+:root {
+  color-scheme: dark;
+  --bg: #070a08;
+  --rail: rgba(255, 255, 255, 0.045);
+  --panel: rgba(17, 22, 19, 0.86);
+  --line: rgba(148, 255, 198, 0.13);
+  --text: #eef7f0;
+  --muted: #909d95;
+  --accent: #24d18f;
+  --accent-strong: #18bd7d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  min-width: 920px;
+  min-height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(36, 209, 143, 0.15), transparent 24rem),
+    linear-gradient(160deg, #0b100d, var(--bg) 46%);
+  color: var(--text);
+  font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body[data-font-scale="small"] {
+  font-size: 12px;
+}
+
+body[data-font-scale="large"] {
+  font-size: 14.5px;
+}
+
+body[data-density="compact"] .workspace-rail,
+body[data-density="compact"] .chat-panel,
+body[data-density="compact"] .settings-workspace {
+  gap: 9px;
+}
+
+body[data-density="compact"] .rail-item,
+body[data-density="compact"] .project-row,
+body[data-density="compact"] .chat-message {
+  padding-block: 6px;
+}
+
+body[data-density="touch"] button,
+body[data-density="touch"] select,
+body[data-density="touch"] input,
+body[data-density="touch"] textarea {
+  min-height: 42px;
+}
+
+body[data-motion="reduced"] *,
+body[data-motion="reduced"] *::before,
+body[data-motion="reduced"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.001ms !important;
+}
+
+button,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.workspace-shell {
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  height: 100dvh;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+.workspace-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 32%),
+    rgba(14, 18, 16, 0.92);
+  padding: 14px 12px;
+  overflow: hidden;
+}
+
+.rail-header,
+.brand-lockup,
+.rail-section-row {
+  display: flex;
+  align-items: center;
+}
+
+.rail-header {
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 36px;
+}
+
+.brand-lockup {
+  gap: 10px;
+  min-width: 0;
+}
+
+.brand-lockup strong {
+  overflow: hidden;
+  color: rgba(247, 255, 249, 0.9);
+  font-size: 0.86rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(36, 209, 143, 0.26);
+  border-radius: 11px;
+  background: rgba(36, 209, 143, 0.1);
+  font-weight: 950;
+}
+
+.rail-icon-button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(207, 219, 210, 0.66);
+}
+
+.rail-action,
+.rail-item,
+.rail-project,
+.share-button,
+.topbar-tab {
+  border: 0;
+  background: transparent;
+  color: rgba(238, 247, 240, 0.72);
+}
+
+.rail-action {
+  border-radius: 999px;
+  background: rgba(36, 209, 143, 0.1);
+  color: var(--text);
+  font-weight: 900;
+  font-size: 0.82rem;
+  padding: 8px 11px;
+  text-align: left;
+}
+
+.rail-primary {
+  display: grid;
+  gap: 4px;
+}
+
+.rail-item {
+  display: grid;
+  grid-template-columns: 19px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border-radius: 12px;
+  font-size: 0.82rem;
+  font-weight: 780;
+  min-height: 34px;
+  padding: 7px 9px;
+  text-align: left;
+}
+
+.rail-section[aria-label="Tools"] .rail-project {
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.rail-item svg,
+.rail-project svg,
+.rail-icon-button svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.rail-item:hover,
+.rail-item.active,
+.rail-project:hover,
+.rail-project.active,
+.rail-project.drag-over,
+.rail-recents.drag-over,
+.rail-icon-button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.rail-project.drag-over,
+.rail-recents.drag-over {
+  outline: 1px solid rgba(36, 209, 143, 0.46);
+  outline-offset: 2px;
+}
+
+.rail-search-box input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 13px;
+  background: rgba(0, 0, 0, 0.18);
+  color: rgba(247, 255, 249, 0.92);
+  outline: none;
+  padding: 9px 11px;
+}
+
+.rail-section {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.rail-section h2 {
+  margin: 5px 8px 3px;
+  color: rgba(143, 159, 149, 0.76);
+  font-size: 0.76rem;
+  font-weight: 780;
+}
+
+.rail-section-row {
+  justify-content: space-between;
+}
+
+.rail-section-row button {
+  border: 0;
+  background: transparent;
+  color: rgba(36, 209, 143, 0.8);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.rail-project {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 1px;
+  min-height: 29px;
+  border-radius: 12px;
+  color: rgba(207, 219, 210, 0.72);
+  font-size: 0.82rem;
+  font-weight: 770;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.rail-project-top {
+  display: grid;
+  grid-template-columns: 16px 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rail-project-icon,
+.rail-avatar {
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(247, 255, 249, 0.86);
+  font-size: 0.7rem;
+  font-weight: 950;
+}
+
+.rail-project-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.rail-text,
+.rail-chat-title,
+.rail-user-card strong,
+.rail-user-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-project kbd {
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(207, 219, 210, 0.54);
+  font: 750 0.68rem/1 ui-sans-serif, system-ui, sans-serif;
+  padding: 4px 7px;
+}
+
+.rail-project-actions {
+  justify-self: start;
+}
+
+.rail-recents {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.rail-chat-list {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  padding: 0 0 8px;
+}
+
+.rail-project-list {
+  display: grid;
+  gap: 1px;
+  max-height: 280px;
+  margin: 0;
+  overflow: auto;
+  padding: 0;
+}
+
+.rail-chat-list li,
+.rail-project-list li,
+.rail-project-chat-list li {
+  min-width: 0;
+  list-style: none;
+}
+
+.rail-project-item {
+  display: grid;
+  gap: 1px;
+}
+
+.rail-project-chat-list {
+  display: grid;
+  gap: 1px;
+  margin: 0 0 2px 20px;
+  padding: 0;
+}
+
+.rail-chat-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 1px;
+  width: 100%;
+  min-height: 25px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(207, 219, 210, 0.72);
+  font-size: 0.76rem;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.rail-chat-body {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.rail-chat-top {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rail-chat-button.pinned {
+  background: rgba(36, 209, 143, 0.045);
+}
+
+.rail-chat-button[draggable="true"] {
+  cursor: grab;
+}
+
+.rail-chat-button[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.rail-chat-button:hover,
+.rail-chat-button.active {
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(247, 255, 249, 0.92);
+}
+
+.rail-chat-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: rgba(143, 159, 149, 0.58);
+  font-size: 0.67rem;
+  font-weight: 750;
+}
+
+.rail-chat-meta svg {
+  width: 11px;
+  height: 11px;
+  color: rgba(36, 209, 143, 0.9);
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.rail-unread-dot {
+  display: grid;
+  place-items: center;
+  width: 10px;
+  height: 10px;
+  color: rgba(36, 209, 143, 0.95);
+}
+
+.rail-unread-dot svg {
+  width: 9px;
+  height: 9px;
+  fill: currentColor;
+  stroke: none;
+}
+
+.rail-chat-actions {
+  display: inline-flex;
+  gap: 2px;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, max-height 120ms ease, transform 120ms ease;
+}
+
+.rail-action-line {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  padding-left: 18px;
+}
+
+.rail-chat-button:hover .rail-chat-actions,
+.rail-chat-button:focus-within .rail-chat-actions,
+.rail-chat-button.active .rail-chat-actions,
+.rail-project:hover .rail-chat-actions,
+.rail-project:focus-within .rail-chat-actions {
+  max-height: 22px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.rail-chat-action {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 20px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(207, 219, 210, 0.62);
+  padding: 0;
+}
+
+.rail-chat-action:hover {
+  background: rgba(255, 255, 255, 0.075);
+  color: rgba(247, 255, 249, 0.94);
+}
+
+.rail-chat-action svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.rail-empty {
+  color: rgba(143, 159, 149, 0.62);
+  font-size: 0.75rem;
+  padding: 7px 9px;
+}
+
+.rail-footer {
+  display: grid;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding-top: 7px;
+}
+
+.rail-user-card {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: rgba(238, 247, 240, 0.8);
+  padding: 7px;
+  text-align: left;
+}
+
+.rail-user-card:hover {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.rail-avatar {
+  width: 30px;
+  height: 30px;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(36, 209, 143, 0.8), transparent 34%),
+    rgba(255, 255, 255, 0.08);
+}
+
+.rail-user-card span:last-child {
+  display: grid;
+  min-width: 0;
+}
+
+.rail-user-card strong {
+  color: rgba(247, 255, 249, 0.88);
+  font-size: 0.78rem;
+}
+
+.rail-user-card small {
+  color: rgba(143, 159, 149, 0.72);
+  font-size: 0.68rem;
+}
+
+.rail-settings {
+  color: rgba(238, 247, 240, 0.82);
+}

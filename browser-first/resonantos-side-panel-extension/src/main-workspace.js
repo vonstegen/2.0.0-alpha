@@ -1,12 +1,5 @@
-import {
-  parseDraftAddonCommand,
-} from "./lib/app-command-handlers.js";
-import {
-  normalizeBrowserUrl,
-  parseAmazonShoppingTask,
-  parseNaturalBrowserIntent
-} from "./lib/browser-command-parser.js";
 import { createBrowserPageActions } from "./lib/browser-page-actions.js";
+import { normalizeBrowserUrl } from "./lib/browser-command-parser.js";
 import { createBridgeClient } from "./lib/bridge-client.js";
 import { createChatSessionStore } from "./lib/chat-session-store.js";
 import { createComposerController } from "./lib/composer-controller.js";
@@ -19,9 +12,6 @@ import {
   supportsThinkingDepth,
   updateContextMeterElement
 } from "./lib/composer-runtime.js";
-import { delegationTargetLabel, startDelegationLifecycle } from "./lib/delegation-lifecycle.js";
-import { buildDelegationStatusMessage } from "./lib/delegation-status.js";
-import { buildHermesRuntimeStatusMessage } from "./lib/addon-runtime-status.js";
 import { applyAppearancePreferences } from "./lib/settings/appearance-section.js";
 import { renderAddOnsWorkspace } from "./lib/main-workspace-addons.js";
 import { renderArtifactsWorkspace } from "./lib/main-workspace-artifacts.js";
@@ -35,17 +25,11 @@ import { renderLivingArchiveWorkspace } from "./lib/main-workspace-memory.js";
 import { renderOpenCodeWorkspace } from "./lib/main-workspace-opencode.js";
 import { readPersonalizationSettings } from "./lib/personalization-settings.js";
 import { runReviewableCapture } from "./lib/main-workspace-review-handoff.js";
+import { createMainWorkspaceActionController } from "./lib/main-workspace-action-controller.js";
+import { createMainWorkspaceRailController } from "./lib/main-workspace-rail-controller.js";
 import { railSearchMatchesProject, railSearchMatchesSession } from "./lib/main-workspace-rail.js";
-import {
-  parseDaoSlashCommand,
-  parseDraftSlashCommand,
-  parseHermesSlashCommand,
-  parseMemorySlashCommand,
-  parseOpenCodeSlashCommand,
-  planMainWorkspacePrompt
-} from "./lib/main-workspace-prompt-router.js";
 import { renderSettingsWorkspace } from "./lib/main-workspace-settings.js";
-import { fileLooksTextLike } from "./lib/message-action-controller.js";
+import { createMessageActionController } from "./lib/message-action-controller.js";
 import { createSitePermissionStore } from "./lib/site-permission-store.js";
 import { createSidePanelRenderers } from "./lib/side-panel-renderers.js";
 import { createTaskConsentStore } from "./lib/task-consent-store.js";
@@ -107,7 +91,6 @@ const connectionLine = document.querySelector("#connection-line");
 const sendButton = commandForm.querySelector(".send-button");
 const bridgeRequest = createBridgeClient();
 let busy = false;
-let activeChatAbortController = null;
 let activeWorkspace = "answer";
 let pendingWorkspaceAction = null;
 let controlledTabId = null;
@@ -118,7 +101,38 @@ let contextPopoverOpen = false;
 let contextCompactNotice = "";
 let personalizationSettings = null;
 let initialSettingsSection = "overview";
+let messageActions = null;
 const allowedWorkspaces = new Set(["answer", "artifacts", "addons", "memory", "hermes", "opencode", "settings"]);
+
+function parseWorkspaceDeepLink(hash = window.location.hash) {
+  const normalized = String(hash ?? "").replace(/^#/, "").trim();
+  if (!normalized) return null;
+  const [workspace, section] = normalized.split("/").map((part) => part.trim()).filter(Boolean);
+  if (workspace === "settings") {
+    return {
+      workspace: "settings",
+      settingsSection: section || "overview",
+    };
+  }
+  if (allowedWorkspaces.has(workspace)) {
+    return { workspace };
+  }
+  return null;
+}
+
+function updateWorkspaceDeepLink(workspaceId, { settingsSection = "" } = {}) {
+  const nextHash = workspaceId === "settings"
+    ? `#settings/${settingsSection || initialSettingsSection || "overview"}`
+    : workspaceId === "answer"
+      ? ""
+      : `#${workspaceId}`;
+  if (window.location.hash === nextHash) return;
+  if (!nextHash) {
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    return;
+  }
+  window.history.replaceState(null, "", nextHash);
+}
 
 function applyUserProfile(profile) {
   if (!profile) return;
@@ -151,12 +165,6 @@ const composerController = createComposerController({
   forceClipboardFallback: true,
   navigator
 });
-const assistantTextFromResponse = (response) => String(response?.content ?? response?.reply ?? "").trim();
-const providerMessagesFromHistory = (messages, limit = 18) => messages
-  .filter((message) => ["user", "assistant"].includes(message.role))
-  .slice(-limit)
-  .map((message) => ({ role: message.role, content: message.content }));
-
 const chatSessionStore = createChatSessionStore({
   storage: chrome.storage?.local,
   storageKeys: STORAGE_KEYS,
@@ -214,6 +222,31 @@ const browserPageActions = createBrowserPageActions({
   sleep: (ms) => new Promise((resolve) => window.setTimeout(resolve, ms))
 });
 
+const mainWorkspaceActions = createMainWorkspaceActionController({
+  addMessage,
+  bridgeRequest,
+  browserPageActions,
+  chatSessionStore,
+  chromeApi: chrome,
+  commandInput,
+  composerController,
+  composerNotice,
+  getBusy: () => busy,
+  getModel: () => modelSelect.value,
+  getPersonalizationSettings: () => personalizationSettings,
+  getThinkingDepth: () => thinkingDepthSelect.value,
+  openMemoryReviewQueue,
+  openSidebar,
+  persistActiveWorkspace,
+  renderAll,
+  setActiveWorkspace,
+  setComposerBusy,
+  setPendingWorkspaceAction: (action) => {
+    pendingWorkspaceAction = action;
+  },
+  updateConnectionLine
+});
+
 const mainBrowserJobController = createMainWorkspaceBrowserJobController({
   addSystemMessage: (content) => addMessage("system", content),
   afterChange: () => renderMainBrowserJobStatusFromStorage(),
@@ -257,13 +290,13 @@ const chatRenderers = createSidePanelRenderers({
     renderAttachments();
     updateConnectionLine("Attachment removed");
   },
-  onCopyMessage: (id) => void copyMessage(chatSessionStore.findMessage(id)),
-  onDeleteMessage: (id) => void deleteMessage(id),
-  onEditMessage: editMessage,
+  onCopyMessage: (id) => void messageActions?.copyMessage(id),
+  onDeleteMessage: (id) => void messageActions?.deleteMessage(id),
+  onEditMessage: (id) => messageActions?.editMessage(id),
   onForkMessage: (id) => void forkFromMessage(id),
-  onRegenerateMessage: (id) => void regenerateFromMessage(id),
-  onSaveMessageToArchive: (id) => void saveMessageToArchive(id),
-  onShowMessageStats: (id) => void showMessageStats(id),
+  onRegenerateMessage: (id) => void messageActions?.regenerateFromMessage(id),
+  onSaveMessageToArchive: (id) => void messageActions?.saveMessageToArchive(id),
+  onShowMessageStats: (id) => void messageActions?.showMessageStats(id),
   renderEmptyState: (container) => {
     container.append(emptyHero());
   },
@@ -273,6 +306,22 @@ const chatRenderers = createSidePanelRenderers({
     });
   },
   window
+});
+
+messageActions = createMessageActionController({
+  addMessage,
+  bridgeRequest,
+  chatSessionStore,
+  commandInput,
+  composerController,
+  fileInput,
+  flashCopied: (id) => chatRenderers.flashCopied(id),
+  getLastSnapshot: () => lastSnapshot,
+  getRespondToCommand: () => mainWorkspaceActions.regenerate,
+  navigator,
+  renderAttachments,
+  renderMessages,
+  setStatus: updateConnectionLine
 });
 
 function updateConnectionLine(status = "Ready") {
@@ -292,7 +341,13 @@ function setComposerNotice(message = "") {
   composerNotice.hidden = !message;
 }
 
-function openMemoryReviewQueue() {
+function openMemoryReviewQueue(handoff = {}) {
+  pendingWorkspaceAction = {
+    workspace: "memory",
+    reviewRequestPath: handoff.reviewRequestPath || handoff.path || "",
+    artifactPath: handoff.path || handoff.artifactPath || "",
+    promotedPage: handoff.promotedPage || handoff.pagePath || ""
+  };
   setActiveWorkspace("memory", { persist: true });
   renderAll();
 }
@@ -344,373 +399,33 @@ function toggleContextPopover() {
   }
 }
 
-function relativeTime(value) {
-  const time = new Date(value).getTime();
-  if (!Number.isFinite(time)) return "";
-  const seconds = Math.max(0, Math.round((Date.now() - time) / 1000));
-  if (seconds < 60) return "now";
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.round(hours / 24);
-  if (days < 30) return `${days}d`;
-  return `${Math.round(days / 30)}mo`;
-}
+const railController = createMainWorkspaceRailController({
+  allowedWorkspaces,
+  chatSessionStore,
+  document,
+  getActiveWorkspace: () => activeWorkspace,
+  getRailSearchQuery: () => railSearchQuery,
+  persistActiveWorkspace,
+  railChatList,
+  railClearSearch,
+  railProjectList,
+  railSearchMatchesProject,
+  railSearchMatchesSession,
+  renderAll,
+  setActiveWorkspaceId: (workspaceId) => {
+    activeWorkspace = workspaceId;
+  },
+  updateConnectionLine,
+  window,
+  workspaceButtons,
+});
 
-function iconSvg(kind) {
-  const paths = {
-    archive: `<path d="M4 7h16v13H4z"/><path d="M4 7l2-4h12l2 4"/><path d="M9 12h6"/>`,
-    chevronDown: `<path d="m7 10 5 5 5-5"/>`,
-    chevronRight: `<path d="m10 7 5 5-5 5"/>`,
-    delete: `<path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 14h10l1-14"/><path d="M9 7V4h6v3"/>`,
-    dot: `<circle cx="12" cy="12" r="4"/>`,
-    fork: `<path d="M7 6v5a3 3 0 0 0 3 3h7"/><path d="M14 10l4 4-4 4"/><path d="M7 6h4"/>`,
-    folder: `<path d="M4 6h6l2 2h8v10H4z"/>`,
-    pin: `<path d="m14 4 6 6"/><path d="m5 19 6-6"/><path d="m9 15-2-2 8-8 4 4-8 8-2-2Z"/>`,
-    rename: `<path d="M4 20h4l10-10-4-4L4 16v4Z"/><path d="m13 7 4 4"/>`,
-    unpin: `<path d="m3 3 18 18"/><path d="m14 4 6 6"/><path d="m5 19 6-6"/><path d="m9 15-2-2 8-8 4 4"/>`
-  };
-  return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[kind] ?? ""}</svg>`;
-}
-
-function orderedRailItems(items) {
-  return [...items].sort((left, right) => {
-    if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
-    return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
-  });
-}
-
-async function switchToSession(sessionId) {
-  const next = await chatSessionStore.switchSession(sessionId);
-  activeWorkspace = allowedWorkspaces.has(next?.workspaceId) ? next.workspaceId : "answer";
-  await persistActiveWorkspace();
-  renderAll();
-}
-
-async function toggleSessionPinned(sessionId) {
-  const session = chatSessionStore.getSessions().find((item) => item.id === sessionId);
-  if (!session) return;
-  await chatSessionStore.setSessionPinned(sessionId, !session.pinned);
-  renderAll();
-}
-
-async function forkSessionFromRail(sessionId) {
-  const fork = await chatSessionStore.forkSession(sessionId);
-  if (!fork) return;
-  activeWorkspace = "answer";
-  await persistActiveWorkspace();
-  renderAll();
-}
-
-async function deleteSessionFromRail(sessionId) {
-  const session = chatSessionStore.getSessions().find((item) => item.id === sessionId);
-  if (!session) return;
-  if (!window.confirm(`Delete chat "${session.title}"? This cannot be undone.`)) return;
-  await chatSessionStore.deleteSession(sessionId);
-  activeWorkspace = "answer";
-  await persistActiveWorkspace();
-  renderAll();
-}
-
-async function archiveSessionFromRail(sessionId) {
-  const session = chatSessionStore.getSessions().find((item) => item.id === sessionId);
-  if (!session) return;
-  await chatSessionStore.setSessionArchived(sessionId, true);
-  updateConnectionLine(`Archived chat: ${session.title}`);
-  activeWorkspace = "answer";
-  await persistActiveWorkspace();
-  renderAll();
-}
-
-async function renameSessionFromRail(sessionId) {
-  const session = chatSessionStore.getSessions().find((item) => item.id === sessionId);
-  if (!session) return;
-  const title = window.prompt("Rename chat", session.title);
-  if (!title?.trim()) return;
-  await chatSessionStore.renameSession(sessionId, title);
-  renderAll();
-}
-
-async function createProjectFromRail() {
-  const name = window.prompt("Project name");
-  if (!name?.trim()) return;
-  const project = await chatSessionStore.createProject(name);
-  updateConnectionLine(`Created project: ${project.name}`);
-  renderAll();
-}
-
-async function assignSessionProject(sessionId, projectId = "") {
-  const session = await chatSessionStore.setSessionProject(sessionId, projectId);
-  if (!session) return;
-  const project = chatSessionStore.getProjects().find((item) => item.id === projectId);
-  updateConnectionLine(projectId ? `Moved to ${project?.name ?? "project"}` : "Moved out of project");
-  renderAll();
-}
-
-async function toggleProjectExpanded(projectId) {
-  const project = chatSessionStore.getProjects().find((item) => item.id === projectId);
-  if (!project) return;
-  await chatSessionStore.setProjectExpanded(projectId, !project.expanded);
-  renderAll();
-}
-
-async function toggleProjectPinned(projectId) {
-  const project = chatSessionStore.getProjects().find((item) => item.id === projectId);
-  if (!project) return;
-  await chatSessionStore.setProjectPinned(projectId, !project.pinned);
-  renderAll();
-}
-
-async function renameProjectFromRail(projectId) {
-  const project = chatSessionStore.getProjects().find((item) => item.id === projectId);
-  if (!project) return;
-  const name = window.prompt("Rename project", project.name);
-  if (!name?.trim()) return;
-  await chatSessionStore.renameProject(projectId, name);
-  renderAll();
-}
-
-async function archiveProjectFromRail(projectId) {
-  const project = chatSessionStore.getProjects().find((item) => item.id === projectId);
-  if (!project) return;
-  await chatSessionStore.setProjectArchived(projectId, true);
-  updateConnectionLine(`Archived project: ${project.name}`);
-  renderAll();
-}
-
-function railActionButton({ action, icon, label, onClick }) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "rail-chat-action";
-  button.dataset.action = action;
-  button.title = label;
-  button.setAttribute("aria-label", label);
-  button.innerHTML = iconSvg(icon);
-  button.addEventListener("click", (event) => {
-    event.stopPropagation();
-    void onClick();
-  });
-  return button;
-}
-
-function railSessionActions(session) {
-  const actions = document.createElement("span");
-  actions.className = "rail-chat-actions";
-  actions.append(
-    railActionButton({
-      action: session.pinned ? "unpin" : "pin",
-      icon: session.pinned ? "unpin" : "pin",
-      label: session.pinned ? "Unpin chat" : "Pin chat",
-      onClick: () => toggleSessionPinned(session.id)
-    }),
-    railActionButton({
-      action: "rename",
-      icon: "rename",
-      label: "Rename chat",
-      onClick: () => renameSessionFromRail(session.id)
-    }),
-    railActionButton({
-      action: "fork",
-      icon: "fork",
-      label: "Fork chat",
-      onClick: () => forkSessionFromRail(session.id)
-    }),
-    railActionButton({
-      action: "archive",
-      icon: "archive",
-      label: "Archive chat",
-      onClick: () => archiveSessionFromRail(session.id)
-    }),
-    railActionButton({
-      action: "delete",
-      icon: "delete",
-      label: "Delete chat",
-      onClick: () => deleteSessionFromRail(session.id)
-    })
-  );
-  return actions;
-}
-
-function railProjectActions(project) {
-  const actions = document.createElement("span");
-  actions.className = "rail-chat-actions rail-project-actions";
-  actions.append(
-    railActionButton({
-      action: project.pinned ? "unpin-project" : "pin-project",
-      icon: project.pinned ? "unpin" : "pin",
-      label: project.pinned ? "Unpin project" : "Pin project",
-      onClick: () => toggleProjectPinned(project.id)
-    }),
-    railActionButton({
-      action: "rename-project",
-      icon: "rename",
-      label: "Rename project",
-      onClick: () => renameProjectFromRail(project.id)
-    }),
-    railActionButton({
-      action: "archive-project",
-      icon: "archive",
-      label: "Archive project",
-      onClick: () => archiveProjectFromRail(project.id)
-    }),
-    railActionButton({
-      action: "delete-project",
-      icon: "delete",
-      label: "Delete project",
-      onClick: async () => {
-        if (!window.confirm(`Delete project "${project.name}"? Chats will move back to the main chat list.`)) return;
-        await chatSessionStore.deleteProject(project.id);
-        renderAll();
-      }
-    })
-  );
-  return actions;
-}
-
-function railChatButton(session, projectLabelById) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "rail-chat-button";
-  button.draggable = true;
-  button.dataset.sessionId = session.id;
-  button.classList.toggle("active", session.id === chatSessionStore.getActiveSessionId());
-  button.classList.toggle("pinned", Boolean(session.pinned));
-  button.classList.toggle("unread", Boolean(session.unread));
-  button.title = `${session.title}${session.projectId ? ` · ${projectLabelById[session.projectId] ?? "Project"}` : ""}`;
-  button.setAttribute("aria-label", `Open chat: ${button.title}`);
-  if (session.id === chatSessionStore.getActiveSessionId()) {
-    button.setAttribute("aria-current", "true");
-  }
-  const unread = document.createElement("span");
-  unread.className = "rail-unread-dot";
-  unread.innerHTML = session.unread ? iconSvg("dot") : "";
-  const title = document.createElement("span");
-  title.className = "rail-chat-title";
-  title.textContent = session.title || "New chat";
-  const meta = document.createElement("span");
-  meta.className = "rail-chat-meta";
-  meta.innerHTML = `${session.pinned ? iconSvg("pin") : ""}<span>${relativeTime(session.updatedAt)}</span>`;
-  const body = document.createElement("span");
-  body.className = "rail-chat-body";
-  const top = document.createElement("span");
-  top.className = "rail-chat-top";
-  top.append(unread, title, meta);
-  const actionLine = document.createElement("span");
-  actionLine.className = "rail-action-line";
-  actionLine.append(railSessionActions(session));
-  body.append(top, actionLine);
-  button.append(body);
-  button.addEventListener("click", async () => {
-    await switchToSession(session.id);
-  });
-  button.addEventListener("dragstart", (event) => {
-    event.dataTransfer.setData("text/plain", session.id);
-    event.dataTransfer.effectAllowed = "move";
-  });
-  return button;
-}
-
-function renderRailNavigation() {
-  workspaceButtons.forEach((button) => {
-    const active = button.dataset.workspace === activeWorkspace;
-    button.classList.toggle("active", active);
-    if (active) {
-      button.setAttribute("aria-current", "page");
-    } else {
-      button.removeAttribute("aria-current");
-    }
-  });
-  railClearSearch.hidden = !railSearchQuery;
-  const allSessions = chatSessionStore.getSessions().filter((session) => !session.archivedAt);
-  const projectEntries = orderedRailItems(chatSessionStore.getProjects().filter((project) => !project.archivedAt))
-    .map((project) => ({
-      project,
-      projectSessions: orderedRailItems(allSessions.filter((session) => session.projectId === project.id))
-    }))
-    .filter(({ project, projectSessions }) => railSearchMatchesProject(project, projectSessions, railSearchQuery));
-  const projects = projectEntries.map(({ project }) => project);
-  const projectLabelById = Object.fromEntries(chatSessionStore.getProjects().filter((project) => !project.archivedAt).map((project) => [project.id, project.name]));
-  railProjectList.replaceChildren();
-  if (!projectEntries.length) {
-    const empty = document.createElement("li");
-    empty.className = "rail-empty";
-    empty.textContent = railSearchQuery ? "No projects found." : "Create a project folder for chats, artifacts, and code.";
-    railProjectList.append(empty);
-  }
-  for (const { project, projectSessions } of projectEntries) {
-    const row = document.createElement("li");
-    row.className = "rail-project-item";
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "rail-project";
-    button.dataset.projectId = project.id;
-    button.classList.toggle("pinned", Boolean(project.pinned));
-    button.setAttribute("aria-expanded", String(Boolean(project.expanded)));
-    button.setAttribute("aria-label", `${project.expanded ? "Collapse" : "Expand"} project: ${project.name}. ${projectSessions.length} chat${projectSessions.length === 1 ? "" : "s"}.`);
-    const top = document.createElement("span");
-    top.className = "rail-project-top";
-    top.innerHTML = `
-      <span class="rail-project-expand">${iconSvg(project.expanded ? "chevronDown" : "chevronRight")}</span>
-      ${iconSvg("folder")}
-      <span class="rail-text">${project.name}</span>
-      <kbd>${projectSessions.length}</kbd>
-    `;
-    const actionLine = document.createElement("span");
-    actionLine.className = "rail-action-line";
-    actionLine.append(railProjectActions(project));
-    button.append(top, actionLine);
-    button.addEventListener("click", () => void toggleProjectExpanded(project.id));
-    button.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      button.classList.add("drag-over");
-      event.dataTransfer.dropEffect = "move";
-    });
-    button.addEventListener("dragleave", () => {
-      button.classList.remove("drag-over");
-    });
-    button.addEventListener("drop", (event) => {
-      event.preventDefault();
-      button.classList.remove("drag-over");
-      const sessionId = event.dataTransfer.getData("text/plain");
-      void assignSessionProject(sessionId, project.id);
-    });
-    row.append(button);
-    if (project.expanded) {
-      const list = document.createElement("ol");
-      list.className = "rail-project-chat-list";
-      for (const session of projectSessions) {
-        const sessionRow = document.createElement("li");
-        sessionRow.append(railChatButton(session, projectLabelById));
-        list.append(sessionRow);
-      }
-      if (!projectSessions.length) {
-        const emptyProject = document.createElement("li");
-        emptyProject.className = "rail-empty rail-project-empty";
-        emptyProject.textContent = "Drop chats here.";
-        list.append(emptyProject);
-      }
-      row.append(list);
-    }
-    railProjectList.append(row);
-  }
-  const sessions = orderedRailItems(allSessions)
-    .filter((session) => !session.projectId && railSearchMatchesSession(session, railSearchQuery))
-    .slice(0, 28);
-  railChatList.replaceChildren();
-  if (!sessions.length) {
-    const empty = document.createElement("li");
-    empty.className = "rail-empty";
-    empty.textContent = railSearchQuery ? "No chats found." : "No recent chats yet.";
-    railChatList.append(empty);
-    return;
-  }
-  for (const session of sessions) {
-    const row = document.createElement("li");
-    row.append(railChatButton(session, projectLabelById));
-    railChatList.append(row);
-  }
-}
+const {
+  assignSessionProject,
+  createProjectFromRail,
+  renderRailNavigation,
+  switchToSession,
+} = railController;
 
 function setActiveWorkspace(workspaceId, { persist = false } = {}) {
   activeWorkspace = allowedWorkspaces.has(workspaceId) ? workspaceId : "answer";
@@ -729,6 +444,14 @@ async function persistActiveWorkspace() {
 }
 
 async function hydrateActiveWorkspace() {
+  const deepLink = parseWorkspaceDeepLink();
+  if (deepLink?.workspace) {
+    activeWorkspace = deepLink.workspace;
+    if (deepLink.settingsSection) {
+      initialSettingsSection = deepLink.settingsSection;
+    }
+    return;
+  }
   const settings = await chrome.storage?.local?.get?.([STORAGE_KEYS.activeWorkspace]).catch(() => ({}));
   activeWorkspace = allowedWorkspaces.has(settings?.[STORAGE_KEYS.activeWorkspace])
     ? settings[STORAGE_KEYS.activeWorkspace]
@@ -845,8 +568,11 @@ function renderMessages() {
   }
   if (activeWorkspace === "memory") {
     const initialQuery = pendingWorkspaceAction?.workspace === "memory" ? pendingWorkspaceAction.query : "";
+    const initialReviewPath = pendingWorkspaceAction?.workspace === "memory" ? pendingWorkspaceAction.reviewRequestPath : "";
+    const initialArtifactPath = pendingWorkspaceAction?.workspace === "memory" ? pendingWorkspaceAction.artifactPath : "";
+    const initialPromotedPage = pendingWorkspaceAction?.workspace === "memory" ? pendingWorkspaceAction.promotedPage : "";
     pendingWorkspaceAction = null;
-    renderLivingArchiveWorkspace({ container: transcript, bridgeRequest, initialQuery });
+    renderLivingArchiveWorkspace({ container: transcript, bridgeRequest, initialQuery, initialReviewPath, initialArtifactPath, initialPromotedPage });
     return;
   }
   if (activeWorkspace === "artifacts") {
@@ -909,93 +635,11 @@ function renderMessages() {
   chatRenderers.renderMessages();
 }
 
-async function copyMessage(message) {
-  const text = String(message?.content ?? "");
-  if (!text) return;
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      chatRenderers.flashCopied(message.id);
-      return;
-    }
-  } catch {
-    // Fall through to the extension background fallback.
-  }
-  await chrome.runtime.sendMessage({
-    channel: "resonantos.browser_first",
-    type: "copy_text",
-    text
-  }).catch(() => undefined);
-  chatRenderers.flashCopied(message.id);
-}
-
-function editMessage(messageId) {
-  const message = chatSessionStore.findMessage(messageId);
-  if (!message || message.role !== "user") return;
-  commandInput.value = message.content;
-  composerController.resetUndoStack(message.content);
-  commandInput.focus();
-  updateConnectionLine("Editing");
-}
-
-async function saveMessageToArchive(messageId) {
-  const message = chatSessionStore.findMessage(messageId);
-  if (!message) return;
-  updateConnectionLine("Saving");
-  try {
-    const result = await bridgeRequest("/archive/intake", {
-      method: "POST",
-      body: {
-        title: `Augmentor main workspace message ${new Date(message.createdAt).toLocaleString()}`,
-        content: message.content,
-        sourceMessageId: message.id,
-        url: null
-      }
-    });
-    await addMessage("system", `Saved to Living Archive intake: ${result.path}`);
-    updateConnectionLine("Ready");
-  } catch (error) {
-    updateConnectionLine("Archive failed");
-    await addMessage("system", error instanceof Error ? error.message : String(error));
-  }
-}
-
-async function showMessageStats(messageId) {
-  const message = chatSessionStore.findMessage(messageId);
-  await addMessage(
-    "system",
-    message?.usage
-      ? `Generation stats:\n${JSON.stringify(message.usage, null, 2)}`
-      : "No generation telemetry is available for this message."
-  );
-}
-
 async function forkFromMessage(messageId) {
-  await chatSessionStore.forkFromMessage(messageId);
+  await messageActions?.forkFromMessage(messageId);
   activeWorkspace = "answer";
   await persistActiveWorkspace();
   renderAll();
-}
-
-async function deleteMessage(messageId) {
-  await chatSessionStore.deleteMessage(messageId);
-  renderAll();
-}
-
-async function regenerateFromMessage(messageId) {
-  if (busy) return;
-  const userMessage = await chatSessionStore.trimToPreviousUserMessage(messageId);
-  if (!userMessage) return;
-  setComposerBusy(true);
-  renderAll();
-  try {
-    await runChatTurn(userMessage.content);
-  } catch (error) {
-    await addMessage("system", `Regeneration failed: ${error instanceof Error ? error.message : String(error)}`);
-    updateConnectionLine("Failed");
-  } finally {
-    setComposerBusy(false);
-  }
 }
 
 function renderAll() {
@@ -1076,19 +720,6 @@ async function openSidebar() {
   }).catch(() => undefined);
 }
 
-async function handoffSidebarPrompt(prompt, message) {
-  await chrome.storage.local.set({
-    [STORAGE_KEYS.pendingSidebarPrompt]: {
-      prompt,
-      createdAt: new Date().toISOString()
-    }
-  });
-  if (message) {
-    await addMessage("system", message);
-  }
-  await openSidebar();
-}
-
 async function continueFromArtifact(artifact) {
   await chrome.storage.local.set({
     [STORAGE_KEYS.pendingSidebarPrompt]: {
@@ -1102,255 +733,7 @@ async function continueFromArtifact(artifact) {
   await openSidebar();
 }
 
-async function handoffToBrowserControl(prompt) {
-  const amazon = parseAmazonShoppingTask(prompt);
-  const browserIntent = parseNaturalBrowserIntent(prompt);
-  const target = amazon?.url || browserIntent?.target || "";
-  await chrome.storage.local.set({
-    [STORAGE_KEYS.pendingSidebarPrompt]: {
-      prompt: `/control ${prompt}`,
-      createdAt: new Date().toISOString()
-    }
-  });
-  await addMessage("system", "Moving this task into browser control mode. Augmentor will continue from the sidebar while the page stays in the main browser workspace.");
-  if (target) {
-    await chrome.tabs.update({ url: normalizeBrowserUrl(target) }).catch(() => undefined);
-  }
-  await openSidebar();
-}
-
-async function runChatTurn(prompt) {
-  activeChatAbortController = new AbortController();
-  updateConnectionLine("Thinking");
-  try {
-    const response = await bridgeRequest("/augmentor/chat", {
-      method: "POST",
-      signal: activeChatAbortController.signal,
-      body: {
-        model: modelSelect.value,
-        surface: "main-workspace",
-        workload: "augmentor-chat",
-        thinkingDepth: thinkingDepthSelect.value,
-        systemPrompt: personalizationSettings?.augmentor?.systemPrompt ?? "",
-        messages: providerMessagesFromHistory(chatSessionStore.getMessages())
-      }
-    });
-    await addMessage("assistant", assistantTextFromResponse(response) || "No response was returned.", {
-      usage: response?.usage ?? null
-    });
-    updateConnectionLine("Ready");
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      updateConnectionLine("Stopped");
-      await addMessage("system", "Response stopped by the human before a reply was returned.");
-      return;
-    }
-    throw error;
-  } finally {
-    activeChatAbortController = null;
-  }
-}
-
-async function runHermesDelegation(prompt) {
-  const mission = parseHermesSlashCommand(prompt);
-  if (/^(?:status|health|runtime)$/i.test(mission)) {
-    updateConnectionLine("Checking Hermes");
-    await addMessage("system", await buildHermesRuntimeStatusMessage({ bridgeRequest }));
-    updateConnectionLine("Ready");
-    return;
-  }
-  if (!mission) {
-    setActiveWorkspace("hermes", { persist: true });
-    renderAll();
-    await addMessage("system", "Opened Hermes workspace. Use `/hermes <mission>` when you want Augmentor to create a governed delegation packet.");
-    return;
-  }
-  if (mission.length < 8) {
-    await addMessage("system", "Use `/hermes <mission>` with a clear mission to create a governed Hermes delegation packet.");
-    return;
-  }
-  updateConnectionLine("Delegating");
-  const result = await bridgeRequest("/addons/delegate", {
-    method: "POST",
-    body: { target: "hermes", mission }
-  });
-  const lifecycle = await startDelegationIfPossible(result);
-  await addMessage("system", `Delegation queued for Hermes: ${result.id}\n${result.path}${lifecycle}`);
-  updateConnectionLine("Ready");
-}
-
-async function startDelegationIfPossible(result) {
-  return startDelegationLifecycle(result, { bridgeRequest });
-}
-
-async function runNaturalDelegation(intent) {
-  if (!intent || intent.missingTarget) {
-    await addMessage(
-      "system",
-      "I can delegate through the ResonantOS agent control layer. Choose Hermes for general agent work, OpenCode for coding, or Resonant Engineer for system repair."
-    );
-    return;
-  }
-  if (intent.mission.length < 8) {
-    await addMessage("system", `Give ${delegationTargetLabel(intent.target)} a concrete mission before I create the delegation packet.`);
-    return;
-  }
-  updateConnectionLine(`Delegating to ${delegationTargetLabel(intent.target)}`);
-  const result = await bridgeRequest("/addons/delegate", {
-    method: "POST",
-    body: { target: intent.target, mission: intent.mission }
-  });
-  const lifecycle = await startDelegationIfPossible(result);
-  await addMessage(
-    "system",
-    [
-      `Delegation queued for ${delegationTargetLabel(result.target)}: ${result.id}`,
-      result.path,
-      "Boundary: the add-on receives a governed task packet. ResonantOS keeps provider secrets, wallet actions, and trusted memory writes mediated.",
-      lifecycle
-    ].join("\n")
-  );
-  updateConnectionLine("Ready");
-}
-
-async function runDelegationsCommand(filter = "") {
-  updateConnectionLine("Checking delegations");
-  const message = await buildDelegationStatusMessage({ bridgeRequest, filter, limit: 6 });
-  await addMessage("system", message);
-  updateConnectionLine("Ready");
-}
-
-async function runMemoryCommand(prompt) {
-  const query = parseMemorySlashCommand(prompt);
-  setActiveWorkspace("memory", { persist: true });
-  pendingWorkspaceAction = query ? { workspace: "memory", query } : null;
-  renderAll();
-  await chatSessionStore.addMessage(
-    "system",
-    query
-      ? `Opened Living Archive and searched AI Memory for: ${query}`
-      : "Opened Living Archive workspace. Use `/memory <query>` to search AI Memory directly.",
-    { persist: true }
-  );
-}
-
-async function runOpenCodeCommand(prompt) {
-  const mission = parseOpenCodeSlashCommand(prompt);
-  setActiveWorkspace("opencode", { persist: true });
-  pendingWorkspaceAction = mission ? { workspace: "opencode", mission } : null;
-  renderAll();
-  await chatSessionStore.addMessage(
-    "system",
-    mission
-      ? `Opened OpenCode and created a governed delegation for: ${mission}`
-      : "Opened OpenCode workspace. Use `/opencode <mission>` to create a governed coding handoff.",
-    { persist: true }
-  );
-}
-
-async function runDraftAddonCommand(prompt) {
-  const command = parseDraftSlashCommand(prompt);
-  if (!command) return false;
-  const draft = parseDraftAddonCommand(command.target, command.body);
-  if (!draft) {
-    await addMessage(
-      "system",
-      `Use \`/${command.target} <intent> | body: <draft text>\`. ${command.target === "email" ? "Sending" : "Scheduling"} remains human-approval gated.`
-    );
-    return true;
-  }
-  updateConnectionLine("Drafting");
-  const result = await bridgeRequest("/addons/draft", {
-    method: "POST",
-    body: draft
-  });
-  await addMessage(
-    "system",
-    `${draft.target === "email" ? "Email" : "Calendar"} draft created: ${result.id}\n${result.path}\n${draft.target === "email" ? "Sending email" : "Scheduling calendar events"} is not automated from chat. Review and approve through the add-on approval flow.`
-  );
-  updateConnectionLine("Ready");
-  return true;
-}
-
-async function runWalletStatusCommand() {
-  const result = await browserPageActions.detectWalletState({ announce: true });
-  if (!result?.ok) {
-    updateConnectionLine("Wallet status unavailable");
-  }
-}
-
-async function runDaoWorkflowCommand(prompt) {
-  const command = parseDaoSlashCommand(prompt);
-  if (command?.action === "audit") {
-    await browserPageActions.saveWalletDaoAuditToArchive(command.goal);
-    return;
-  }
-  await browserPageActions.prepareDaoWorkflowGuidance(command?.goal ?? "");
-}
-
-async function runIntakeCommand(command) {
-  const reviewOptions = { noticeContainer: composerNotice, onOpenReviewQueue: openMemoryReviewQueue };
-  if (command?.action === "selection") {
-    await runReviewableCapture(() => browserPageActions.saveSelectionToArchive(), reviewOptions);
-    return;
-  }
-  if (command?.action === "summary") {
-    await runReviewableCapture(() => browserPageActions.summarizeCurrentPageToArchive(), reviewOptions);
-    return;
-  }
-  if (command?.action === "trail") {
-    await runReviewableCapture(() => browserPageActions.saveResearchTrailToArchive(command.body), reviewOptions);
-    return;
-  }
-  await runReviewableCapture(() => browserPageActions.saveCurrentPageToArchive(), reviewOptions);
-}
-
-commandForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (busy) return;
-  const prompt = commandInput.value.trim();
-  if (!prompt) return;
-  setComposerBusy(true);
-  try {
-    await addMessage("user", prompt);
-    commandInput.value = "";
-    composerController.resetUndoStack("");
-    const promptPlan = planMainWorkspacePrompt(prompt);
-    if (promptPlan.action === "memory") {
-      await runMemoryCommand(prompt);
-    } else if (promptPlan.action === "opencode") {
-      await runOpenCodeCommand(prompt);
-    } else if (promptPlan.action === "hermes") {
-      await runHermesDelegation(prompt);
-    } else if (promptPlan.action === "delegate") {
-      await runNaturalDelegation(promptPlan.intent);
-    } else if (promptPlan.action === "delegations") {
-      await runDelegationsCommand(promptPlan.filter);
-    } else if (promptPlan.action === "wallet") {
-      const command = promptPlan.command;
-      if (command?.action === "audit") {
-        await browserPageActions.saveWalletDaoAuditToArchive(command.goal);
-      } else {
-        await runWalletStatusCommand();
-      }
-    } else if (promptPlan.action === "dao") {
-      await runDaoWorkflowCommand(prompt);
-    } else if (promptPlan.action === "intake") {
-      await runIntakeCommand(promptPlan.command);
-    } else if (promptPlan.action === "draft" && await runDraftAddonCommand(prompt)) {
-      // Draft-only communication/scheduling packets are handled locally.
-    } else if (promptPlan.action === "control") {
-      await handoffToBrowserControl(prompt);
-    } else {
-      await runChatTurn(prompt);
-    }
-  } catch (error) {
-    await addMessage("system", `Main workspace request failed: ${error instanceof Error ? error.message : String(error)}`);
-    updateConnectionLine("Failed");
-  } finally {
-    setComposerBusy(false);
-  }
-});
+commandForm.addEventListener("submit", mainWorkspaceActions.handleSubmit);
 
 composerController.bind();
 
@@ -1419,6 +802,7 @@ workspaceButtons.forEach((button) => {
       initialSettingsSection = button.dataset.settingsSection || "overview";
     }
     setActiveWorkspace(button.dataset.workspace, { persist: true });
+    updateWorkspaceDeepLink(activeWorkspace, { settingsSection: initialSettingsSection });
     renderAll();
     if (button.dataset.prompt) {
       commandInput.value = button.dataset.prompt;
@@ -1431,24 +815,8 @@ workspaceButtons.forEach((button) => {
 });
 attachFileButton.addEventListener("click", () => fileInput.click());
 fileInput.addEventListener("change", async () => {
-  const attachments = [];
-  for (const [index, file] of Array.from(fileInput.files ?? []).entries()) {
-    let content = "";
-    if (fileLooksTextLike(file) && file.size <= 64 * 1024) {
-      content = (await file.text()).slice(0, 12000);
-    }
-    attachments.push({
-      id: `${file.name}-${file.size}-${Date.now()}-${index}`,
-      name: file.name,
-      type: file.type,
-      size: file.size,
-      summary: `${Math.round(file.size / 1024)} KB${content ? " · embedded text" : " · metadata only"}`,
-      content
-    });
-  }
-  await chatSessionStore.addAttachments(attachments);
-  renderAll();
-  fileInput.value = "";
+  await messageActions?.attachFiles(fileInput.files);
+  renderAttachments();
 });
 modelSelect.addEventListener("change", () => void chatSessionStore.persist().then(() => {
   updateConnectionLine();
@@ -1461,13 +829,22 @@ dictateButton.addEventListener("click", () => {
 sendButton.addEventListener("click", (event) => {
   if (!busy) return;
   event.preventDefault();
-  activeChatAbortController?.abort();
+  mainWorkspaceActions.abortActiveChat();
 });
 chrome.storage?.onChanged?.addListener?.((changes, areaName) => {
   if (areaName !== "local") return;
   if (changes[STORAGE_KEYS.browserJobs] || changes[STORAGE_KEYS.activeBrowserJob]) {
     void renderMainBrowserJobStatusFromStorage();
   }
+});
+window.addEventListener("hashchange", () => {
+  const deepLink = parseWorkspaceDeepLink();
+  if (!deepLink?.workspace) return;
+  activeWorkspace = deepLink.workspace;
+  if (deepLink.settingsSection) {
+    initialSettingsSection = deepLink.settingsSection;
+  }
+  renderAll();
 });
 
 await hydrateProviderModelOptions({
@@ -1484,7 +861,10 @@ await Promise.all([
   hydrateActiveWorkspace()
 ]);
 await suppressSidebarChatForMainWorkspace();
-await chatSessionStore.ensureFreshSession({ workspaceId: "answer" });
-activeWorkspace = "answer";
+const requestedDeepLink = parseWorkspaceDeepLink();
+if (!requestedDeepLink) {
+  await chatSessionStore.ensureFreshSession({ workspaceId: "answer" });
+  activeWorkspace = "answer";
+}
 await persistActiveWorkspace();
 renderAll();

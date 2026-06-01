@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -61,14 +62,16 @@ export async function runWikiLint({ memoryRoot, actor = "resonantos-browser-firs
   const artifactPath = path.join(lintRoot, `wiki-lint-${timestampSlug(now)}.md`);
   const content = lintMarkdown({ health, actor, reason, now });
   await writeFile(artifactPath, content, { mode: 0o600 });
-  if (health.exists) {
-    const logPath = path.join(wikiRoot, "log.md");
+  const logPath = path.join(wikiRoot, "log.md");
+  const logAppended = health.exists && health.log?.exists === true && existsSync(logPath);
+  if (logAppended) {
     await appendFile(logPath, `\n## [${now}] lint | Wiki health\n- score: ${health.score}/100\n- artifact: REVIEW/lint/${path.basename(artifactPath)}\n`, { mode: 0o600 });
   }
   return {
     ok: true,
     artifactPath,
     relativeArtifactPath: path.relative(root, artifactPath).replace(/\\/g, "/"),
+    logAppended,
     health,
   };
 }

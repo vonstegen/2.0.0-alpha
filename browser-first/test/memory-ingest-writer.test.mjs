@@ -67,7 +67,7 @@ test("archive ingest writer accepts structurally complete provider wiki drafts",
       apiBaseUrl: "https://provider.test/v1",
       providerId: "shared-minimax",
       providerType: "minimax",
-      wireModel: "MiniMax-M2.7",
+      wireModel: "MiniMax-M3",
     },
     credential: "test-token",
     fetchImpl: async () => ({
@@ -96,7 +96,7 @@ test("archive ingest writer falls back when provider draft is malformed", async 
       apiBaseUrl: "https://provider.test/v1",
       providerId: "shared-minimax",
       providerType: "minimax",
-      wireModel: "MiniMax-M2.7",
+      wireModel: "MiniMax-M3",
     },
     credential: "test-token",
     fetchImpl: async () => ({
