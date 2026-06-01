@@ -133,10 +133,21 @@ function movePreflightFingerprint({ sourcePath, destinationRoot, kind, ownership
       size: file.size,
       modifiedAt: file.modifiedAt,
       hidden: Boolean(file.hidden),
+      contentHash: file.contentHash,
     })),
     directories: directories.map((directory) => path.relative(source, directory).replace(/\\/g, "/")).sort(),
   };
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+}
+
+async function attachPreflightContentHashes(files, blocked) {
+  for (const file of files) {
+    try {
+      file.contentHash = contentHash(await readFile(file.absolutePath));
+    } catch (error) {
+      blocked.push({ path: file.relativePath, reason: `hash-read-failed: ${error.message}` });
+    }
+  }
 }
 
 async function verifiedFileHash(filePath, expectedHash, message) {
@@ -228,9 +239,10 @@ export async function buildMoveImportPreflight({ sourcePath, memoryRoot, kind = 
     throw new Error("Move import destination cannot be inside the source folder.");
   }
   const { files, directories, blocked: traversalBlocked } = await listMoveEntries(source);
+  const blocked = [...traversalBlocked];
+  await attachPreflightContentHashes(files, blocked);
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
   const hiddenFiles = files.filter((file) => file.hidden).length;
-  const blocked = [...traversalBlocked];
   if (existsSync(destinationRoot)) {
     blocked.push({ path: destinationRoot, reason: "destination-already-exists" });
   }

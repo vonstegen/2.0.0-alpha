@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -295,6 +295,34 @@ test("move import rejects stale preflight fingerprints before moving files", asy
     );
     assert.equal(existsSync(path.join(source, "note.md")), true);
     assert.equal(existsSync(path.join(source, "added-after-preflight.md")), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("move import fingerprints source content, not only path size and mtime", async () => {
+  const root = await fixtureRoot("move-content-fingerprint");
+  const source = path.join(root, "Same Metadata");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(source, { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  const notePath = path.join(source, "note.md");
+  await writeFile(notePath, "alpha\n");
+  try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
+    const originalTimes = await stat(notePath);
+    await writeFile(notePath, "bravo\n");
+    await utimes(notePath, originalTimes.atime, originalTimes.mtime);
+    await assert.rejects(
+      () => executeMoveImport({
+        sourcePath: source,
+        memoryRoot,
+        confirmation: preflight.confirmationPhrase,
+        expectedPreflightFingerprint: preflight.preflightFingerprint,
+      }),
+      /source changed after preflight/i
+    );
+    assert.equal(await readFile(notePath, "utf8"), "bravo\n");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
