@@ -74,19 +74,13 @@ export const providerProfiles: ProviderProfile[] = [
     authMethod: "subscription",
     authTier: "experimental",
     apiBaseUrl: "https://api.minimax.io/v1",
-    allowedModels: ["MiniMax-M2.7", "MiniMax-M2.7-highspeed"],
-    primaryModel: "MiniMax-M2.7-highspeed",
-    fallbackModel: "MiniMax-M2.7",
+    allowedModels: ["MiniMax-M3"],
+    primaryModel: "MiniMax-M3",
+    fallbackModel: undefined,
     modelContext: [
       {
-        model: "MiniMax-M2.7",
-        maxContextTokens: 64_000,
-        tokenEstimateMethod: "provider-metadata",
-        source: "provider-default",
-      },
-      {
-        model: "MiniMax-M2.7-highspeed",
-        maxContextTokens: 64_000,
+        model: "MiniMax-M3",
+        maxContextTokens: 1_000_000,
         tokenEstimateMethod: "provider-metadata",
         source: "provider-default",
       },
@@ -184,7 +178,7 @@ export const runtimeNodes: ProviderRuntimeNode[] = [
     kind: "cloud",
     locality: "cloud",
     endpoint: "https://api.minimax.io/v1",
-    supportedModels: ["MiniMax-M2.7", "MiniMax-M2.7-highspeed"],
+    supportedModels: ["MiniMax-M3"],
     authTier: "experimental",
     healthState: "ready",
     deployableOnDemand: false,
@@ -399,7 +393,7 @@ export const modelStrategy: ModelStrategyState = {
       label: "Core Fast Chain",
       rule: "Try the main fast route first, then premium cloud, then remote or local fallback.",
       orderedRoutes: [
-        { providerProfileId: "shared-minimax", runtimeNodeId: "node-minimax-cloud", model: "MiniMax-M2.7-highspeed", costPosture: "subscription", note: "Default fast route for Augmentor and the Engineer Agent." },
+        { providerProfileId: "shared-minimax", runtimeNodeId: "node-minimax-cloud", model: "MiniMax-M3", costPosture: "subscription", note: "Default fast route for Augmentor and the Engineer Agent." },
         { providerProfileId: "gx10-local-llama", runtimeNodeId: "node-gx10-qwen", model: "Qwen3.6-35B-A3B-Q4_K_M.gguf", costPosture: "free-local", note: "Verified local-owned GX10 route for private LAN inference." },
         { providerProfileId: "shared-openai", runtimeNodeId: "node-openai-cloud", model: "gpt-5.5", costPosture: "subscription", note: "Premium fallback for demanding moments." },
       ],
@@ -416,7 +410,7 @@ export const modelStrategy: ModelStrategyState = {
       label: "Routine Economical Chain",
       rule: "Prefer economical or sunk-cost routes for routine work before escalating.",
       orderedRoutes: [
-        { providerProfileId: "shared-minimax", runtimeNodeId: "node-minimax-cloud", model: "MiniMax-M2.7-highspeed", costPosture: "subscription", note: "Routine and cron-style work." },
+        { providerProfileId: "shared-minimax", runtimeNodeId: "node-minimax-cloud", model: "MiniMax-M3", costPosture: "subscription", note: "Routine and cron-style work." },
       ],
       lastResortRoute: {
         providerProfileId: "shared-local",
@@ -432,7 +426,7 @@ export const modelStrategy: ModelStrategyState = {
       rule: "Archive interpretation should stay premium-first and hard-stop before dropping below acceptable quality.",
       orderedRoutes: [
         { providerProfileId: "shared-openai", runtimeNodeId: "node-openai-cloud", model: "gpt-5.5", costPosture: "subscription", note: "Preferred ingest quality route." },
-        { providerProfileId: "shared-minimax", runtimeNodeId: "node-minimax-cloud", model: "MiniMax-M2.7", costPosture: "subscription", note: "Temporary fallback if premium route is unavailable." },
+        { providerProfileId: "shared-minimax", runtimeNodeId: "node-minimax-cloud", model: "MiniMax-M3", costPosture: "subscription", note: "Temporary fallback if premium route is unavailable." },
       ],
     },
   ],
@@ -443,7 +437,7 @@ export const modelStrategy: ModelStrategyState = {
       workloadClass: "primary-chat",
       ownerType: "agent",
       ownerId: "strategist.core",
-      primaryRoute: { providerProfileId: "shared-minimax", runtimeNodeId: "node-minimax-cloud", model: "MiniMax-M2.7-highspeed", costPosture: "subscription" },
+      primaryRoute: { providerProfileId: "shared-minimax", runtimeNodeId: "node-minimax-cloud", model: "MiniMax-M3", costPosture: "subscription" },
       fallbackChainId: "chain-core-fast",
       hardStopWhenNoFallback: false,
       notes: ["Primary trusted conversation should stay on the fast subscription route when possible."],
@@ -476,7 +470,7 @@ export const modelStrategy: ModelStrategyState = {
       workloadClass: "routine",
       ownerType: "workload",
       ownerId: "routine",
-      primaryRoute: { providerProfileId: "shared-minimax", runtimeNodeId: "node-minimax-cloud", model: "MiniMax-M2.7-highspeed", costPosture: "subscription" },
+      primaryRoute: { providerProfileId: "shared-minimax", runtimeNodeId: "node-minimax-cloud", model: "MiniMax-M3", costPosture: "subscription" },
       fallbackChainId: "chain-routine-economical",
       hardStopWhenNoFallback: false,
       notes: ["Cron, heartbeat, and routine delegated work should prefer economical routes."],
@@ -485,7 +479,7 @@ export const modelStrategy: ModelStrategyState = {
   emergencyPolicy: {
     preferBestAvailable: true,
     orderedPromotionTargets: [
-      { providerProfileId: "shared-minimax", runtimeNodeId: "node-minimax-cloud", model: "MiniMax-M2.7-highspeed", costPosture: "subscription", note: "Promote to the high-speed cloud route first." },
+      { providerProfileId: "shared-minimax", runtimeNodeId: "node-minimax-cloud", model: "MiniMax-M3", costPosture: "subscription", note: "Promote to the MiniMax M3 cloud route first." },
       { providerProfileId: "shared-openai", runtimeNodeId: "node-openai-cloud", model: "gpt-5.5", costPosture: "subscription", note: "Premium fallback when the fast route is unavailable." },
     ],
     hardFloorRoute: {

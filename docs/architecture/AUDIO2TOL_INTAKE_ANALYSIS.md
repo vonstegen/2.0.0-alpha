@@ -220,7 +220,7 @@ Minimum bundle fields:
     "transcriber": "whisper.cpp",
     "whisperModel": "large-v3",
     "analysisProvider": "MiniMax",
-    "analysisModel": "MiniMax-M2.7",
+    "analysisModel": "MiniMax-M3",
     "protocolPath": "TOL - SYSTEM INJECTION.rtf",
     "templatePath": "TOL_Analysis_Template.md"
   },

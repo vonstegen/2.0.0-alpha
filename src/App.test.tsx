@@ -125,7 +125,7 @@ const {
   const browserToolRunMock = vi.fn();
   return {
   hydrateStateMock: vi.fn(),
-  requestProviderServiceChatCompletionMock: vi.fn(async (_input?: unknown) => "This is a live Strategist test reply from MiniMax-M2.7-highspeed."),
+  requestProviderServiceChatCompletionMock: vi.fn(async (_input?: unknown) => "This is a live Strategist test reply from MiniMax-M3."),
   requestProviderServiceChatCompletionStreamMock: vi.fn(async (_input, onEvent) => {
     const reply = await requestProviderServiceChatCompletionMock(_input);
     onEvent({ runId: _input.runId, type: "chunk", content: reply });
@@ -212,7 +212,7 @@ const {
       providerPolicy: {
         preferredProviderProfileIds: ["shared-local", "shared-minimax"],
         preferredRuntimeNodeIds: ["node-local-resurrect", "node-minimax-cloud"],
-        preferredModels: ["batiai/gemma4-e2b:q4", "MiniMax-M2.7-highspeed"],
+        preferredModels: ["batiai/gemma4-e2b:q4", "MiniMax-M3"],
         allowedRuntimeKinds: ["local", "cloud"],
         fallbackPolicyId: "recovery-default",
       } as never,
@@ -1257,7 +1257,7 @@ const {
       runtimeNodeId: "node-minimax-cloud",
       runtimeNodeLabel: "MiniMax Cloud Runtime",
       runtimeKind: "cloud",
-      model: "MiniMax-M2.7-highspeed",
+      model: "MiniMax-M3",
       credentialConfigured: true,
       reachable: true,
       promotable: true,
@@ -1277,8 +1277,8 @@ const {
       status: "healthy",
       summary: "Provider credentials are configured and at least one runtime route is reachable.",
       checkedAt: "unix:1",
-      primaryModel: "MiniMax-M2.7-highspeed",
-      fallbackModel: "MiniMax-M2.7-highspeed",
+      primaryModel: "MiniMax-M3",
+      fallbackModel: "MiniMax-M3",
       runtimeDiagnostics: [
         {
           runtimeNodeId: "node-minimax-cloud",
@@ -1317,12 +1317,12 @@ const {
   ]),
   requestProviderSmokeTestMock: vi.fn(async () => ({
     providerId: "shared-minimax",
-    model: "MiniMax-M2.7-highspeed",
+    model: "MiniMax-M3",
     ok: true,
     replyPreview: "provider smoke ok",
     usage: {
       providerId: "shared-minimax",
-      model: "MiniMax-M2.7-highspeed",
+      model: "MiniMax-M3",
       source: "provider",
       promptTokens: 42,
       completionTokens: 8,
@@ -1556,7 +1556,7 @@ describe("App boot flow", () => {
     hydrateStateMock.mockReset();
     hydrateStateMock.mockResolvedValue(buildDefaultState(manifests));
     requestProviderServiceChatCompletionMock.mockReset();
-    requestProviderServiceChatCompletionMock.mockResolvedValue("This is a live Strategist test reply from MiniMax-M2.7-highspeed.");
+    requestProviderServiceChatCompletionMock.mockResolvedValue("This is a live Strategist test reply from MiniMax-M3.");
     requestProviderServiceChatCompletionStreamMock.mockReset();
     requestProviderServiceChatCompletionStreamMock.mockImplementation(async (input, onEvent) => {
       const reply = await requestProviderServiceChatCompletionMock(input);
@@ -1648,7 +1648,7 @@ describe("App boot flow", () => {
         providerPolicy: {
           preferredProviderProfileIds: ["shared-local", "shared-minimax"],
           preferredRuntimeNodeIds: ["node-local-resurrect", "node-minimax-cloud"],
-          preferredModels: ["batiai/gemma4-e2b:q4", "MiniMax-M2.7-highspeed"],
+          preferredModels: ["batiai/gemma4-e2b:q4", "MiniMax-M3"],
           allowedRuntimeKinds: ["local", "cloud"],
           fallbackPolicyId: "recovery-default",
         },
@@ -2792,7 +2792,7 @@ describe("App boot flow", () => {
         runtimeNodeId: "node-minimax-cloud",
         runtimeNodeLabel: "MiniMax Cloud Runtime",
         runtimeKind: "cloud",
-        model: "MiniMax-M2.7-highspeed",
+        model: "MiniMax-M3",
         credentialConfigured: true,
         reachable: true,
         promotable: true,
@@ -2813,8 +2813,8 @@ describe("App boot flow", () => {
         status: "healthy",
         summary: "Provider credentials are configured and at least one runtime route is reachable.",
         checkedAt: "unix:1",
-        primaryModel: "MiniMax-M2.7-highspeed",
-        fallbackModel: "MiniMax-M2.7-highspeed",
+        primaryModel: "MiniMax-M3",
+        fallbackModel: "MiniMax-M3",
         runtimeDiagnostics: [
           {
             runtimeNodeId: "node-minimax-cloud",
@@ -2854,12 +2854,12 @@ describe("App boot flow", () => {
     requestProviderSmokeTestMock.mockReset();
     requestProviderSmokeTestMock.mockResolvedValue({
       providerId: "shared-minimax",
-      model: "MiniMax-M2.7-highspeed",
+      model: "MiniMax-M3",
       ok: true,
       replyPreview: "provider smoke ok",
       usage: {
         providerId: "shared-minimax",
-        model: "MiniMax-M2.7-highspeed",
+        model: "MiniMax-M3",
         source: "provider",
         promptTokens: 42,
         completionTokens: 8,
@@ -2935,7 +2935,7 @@ describe("App boot flow", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Send message" })[0]);
 
     expect(screen.getByText("What model are you using?")).toBeTruthy();
-    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M2.7-highspeed.")).toBeTruthy();
+    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M3.")).toBeTruthy();
   });
 
   it("swaps the main workspace and chat rail while keeping the app dock fixed", async () => {
@@ -3946,7 +3946,7 @@ describe("App boot flow", () => {
     });
     fireEvent.click(screen.getAllByRole("button", { name: "Send message" })[0]);
 
-    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M2.7-highspeed.")).toBeTruthy();
+    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M3.")).toBeTruthy();
     expect(requestProviderServiceChatCompletionStreamMock).not.toHaveBeenCalled();
     expect(requestProviderServiceChatCompletionMock).toHaveBeenCalledTimes(1);
   });
@@ -4000,7 +4000,7 @@ describe("App boot flow", () => {
     });
     fireEvent.click(screen.getAllByRole("button", { name: "Send message" })[0]);
 
-    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M2.7-highspeed.")).toBeTruthy();
+    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M3.")).toBeTruthy();
     expect(requestArchiveSearchMock).toHaveBeenCalledWith("What does the archive say about provider fabric", 6);
     expect(requestArchiveDocumentMock).toHaveBeenCalledWith("WIKI/concepts/provider-fabric.md");
     expect(requestProviderServiceChatCompletionStreamMock).toHaveBeenCalledWith(
@@ -4029,7 +4029,7 @@ describe("App boot flow", () => {
     });
     fireEvent.click(screen.getAllByRole("button", { name: "Send message" })[0]);
 
-    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M2.7-highspeed.")).toBeTruthy();
+    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M3.")).toBeTruthy();
     const saveButtons = await screen.findAllByRole("button", { name: "Save message to Living Archive" });
     fireEvent.click(saveButtons[saveButtons.length - 1]);
 
@@ -4038,7 +4038,7 @@ describe("App boot flow", () => {
       expect.objectContaining({
         actorId: "strategist.core",
         bucket: "chat-insights",
-        content: expect.stringContaining("This is a live Strategist test reply from MiniMax-M2.7-highspeed."),
+        content: expect.stringContaining("This is a live Strategist test reply from MiniMax-M3."),
       }),
     );
     expect(requestArchiveIntakeWriteMock).toHaveBeenCalledWith(
@@ -4068,7 +4068,7 @@ describe("App boot flow", () => {
     });
     fireEvent.click(screen.getAllByRole("button", { name: "Send message" })[0]);
 
-    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M2.7-highspeed.")).toBeTruthy();
+    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M3.")).toBeTruthy();
     expect(scrollIntoViewMock).toHaveBeenCalled();
 
     scrollIntoViewMock.mockRestore();
@@ -4107,12 +4107,12 @@ describe("App boot flow", () => {
     });
     fireEvent.click(screen.getAllByRole("button", { name: "Send message" })[0]);
 
-    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M2.7-highspeed.")).toBeTruthy();
+    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M3.")).toBeTruthy();
     const copyButtons = screen.getAllByRole("button", { name: "Copy message" });
     fireEvent.click(copyButtons[copyButtons.length - 1]);
 
     await waitFor(() =>
-      expect(writeText).toHaveBeenCalledWith("This is a live Strategist test reply from MiniMax-M2.7-highspeed."),
+      expect(writeText).toHaveBeenCalledWith("This is a live Strategist test reply from MiniMax-M3."),
     );
     expect(await screen.findByRole("button", { name: "Message copied" })).toBeTruthy();
   });
@@ -4231,7 +4231,7 @@ describe("App boot flow", () => {
     });
     fireEvent.click(screen.getAllByRole("button", { name: "Send message" })[0]);
 
-    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M2.7-highspeed.")).toBeTruthy();
+    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M3.")).toBeTruthy();
     const providerCall = providerStreamInputs().at(-1);
     expect(providerCall?.systemPrompt).toContain("ResonantOS compacted conversation memory:");
     expect(providerCall?.systemPrompt).toContain("Edited why: preserve the user's intent across compaction.");
@@ -4279,7 +4279,7 @@ describe("App boot flow", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Send message" })[0]);
 
     expect(await screen.findByText(/automatic compaction threshold/i)).toBeTruthy();
-    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M2.7-highspeed.")).toBeTruthy();
+    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M3.")).toBeTruthy();
     const providerCall = providerStreamInputs().at(-1);
     expect(providerCall?.systemPrompt).toContain("ResonantOS compacted conversation memory:");
     expect(providerCall?.systemPrompt).toContain("automatic compaction protects long chat continuity");
@@ -4327,7 +4327,7 @@ describe("App boot flow", () => {
     });
     fireEvent.click(screen.getAllByRole("button", { name: "Send message" })[0]);
 
-    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M2.7-highspeed.")).toBeTruthy();
+    expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M3.")).toBeTruthy();
     const providerCall = providerStreamInputs().at(-1);
     expect(providerCall?.systemPrompt).toContain("ResonantOS compacted conversation memory:");
     expect(providerCall?.systemPrompt).toContain("avoid amnesia when exploring alternatives");
@@ -4393,12 +4393,12 @@ describe("App boot flow", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Test" })[0]);
 
     expect((await screen.findAllByText("Provider smoke test passed.")).length).toBeGreaterThan(0);
-    expect(screen.getByText(/MiniMax-M2.7-highspeed · 50 tokens/i)).toBeTruthy();
+    expect(screen.getByText(/MiniMax-M3 · 50 tokens/i)).toBeTruthy();
     expect(screen.getByText("provider smoke ok")).toBeTruthy();
     expect(requestProviderSmokeTestMock).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: "shared-minimax",
-        model: "MiniMax-M2.7-highspeed",
+        model: "MiniMax-M3",
       }),
     );
   });
@@ -6028,7 +6028,7 @@ describe("App boot flow", () => {
     expect(screen.getByText(/Engineer tools used:/i)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Promote" }));
-    expect(screen.getByText("Promoted recovery to Shared MiniMax on MiniMax-M2.7-highspeed.")).toBeTruthy();
+    expect(screen.getByText("Promoted recovery to Shared MiniMax on MiniMax-M3.")).toBeTruthy();
 
     fireEvent.change(screen.getAllByPlaceholderText("Message Resonant Engineer Agent")[0], {
       target: { value: "Run the next phase on the stronger route" },
@@ -6040,7 +6040,7 @@ describe("App boot flow", () => {
         expect.objectContaining({
           providerId: "shared-minimax",
           runtimeNodeKind: "cloud",
-          model: "MiniMax-M2.7-highspeed",
+          model: "MiniMax-M3",
         }),
       );
     });

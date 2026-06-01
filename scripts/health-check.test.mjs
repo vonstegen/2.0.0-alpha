@@ -101,11 +101,11 @@ test("extractProviderUrls returns empty array for no URLs", () => {
 // ---------------------------------------------------------------------------
 test("extractModelIdentifiers finds known models", () => {
   const sample = `
-    allowedModels: ["MiniMax-M2.7", "gpt-5.5"],
+    allowedModels: ["MiniMax-M3", "gpt-5.5"],
     primaryModel: "batiai/gemma4-e2b:q4",
   `;
   const models = extractModelIdentifiers(sample);
-  assert.ok(models.includes("MiniMax-M2.7"));
+  assert.ok(models.includes("MiniMax-M3"));
   assert.ok(models.includes("gpt-5.5"));
   assert.ok(models.includes("batiai/gemma4-e2b:q4"));
 });

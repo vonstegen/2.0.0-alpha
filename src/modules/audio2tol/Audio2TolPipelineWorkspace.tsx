@@ -203,7 +203,7 @@ const defaultSettings: Settings = {
   mainProviderProfileId: "shared-minimax",
   mainRuntimeNodeId: "node-minimax-cloud",
   llmProvider: "MiniMax",
-  llmModel: "MiniMax-M2.7",
+  llmModel: "MiniMax-M3",
   localEndpoint: "https://api.minimax.io/v1",
   apiKeyReference: "",
   fallbackProviderProfileId: "gx10-local-llama",
@@ -259,7 +259,7 @@ function mergeSettingsWithDefaults(settings: Partial<Settings>): Settings {
       mainProviderProfileId: "shared-minimax",
       mainRuntimeNodeId: "node-minimax-cloud",
       llmProvider: "MiniMax",
-      llmModel: "MiniMax-M2.7",
+      llmModel: "MiniMax-M3",
       localEndpoint: "https://api.minimax.io/v1",
       fallbackProviderProfileId: "gx10-local-llama",
       fallbackRuntimeNodeId: "node-gx10-qwen",
@@ -306,7 +306,7 @@ function normalizeSettings(settings: Settings): Settings {
       settings.localEndpoint.trim().replace(/\/$/, "") === "https://api.minimax.io"
         ? "https://api.minimax.io/v1"
         : settings.localEndpoint,
-    llmModel: settings.llmModel === "provider-default" ? "MiniMax-M2.7" : settings.llmModel
+    llmModel: settings.llmModel === "provider-default" ? "MiniMax-M3" : settings.llmModel
   };
 }
 

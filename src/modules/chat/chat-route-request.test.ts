@@ -39,14 +39,14 @@ describe("buildProviderChatRouteRequest", () => {
       state,
       threadId: "thread-main-desktop",
       agentId: "strategist.core",
-      selectedModel: "MiniMax-M2.7-highspeed",
+      selectedModel: "MiniMax-M3",
     });
 
     expect(request.provider.id).toBe("shared-minimax");
     expect(request.runtimeNode.id).toBe("node-minimax-cloud");
-    expect(request.routedModel).toBe("MiniMax-M2.7-highspeed");
+    expect(request.routedModel).toBe("MiniMax-M3");
     expect(request.providerMessages.map((item) => item.id)).toEqual(["thread-main-desktop:m1"]);
-    expect(request.contextBudget.modelId).toBe("MiniMax-M2.7-highspeed");
+    expect(request.contextBudget.modelId).toBe("MiniMax-M3");
   });
 
   it("ignores stale compact memory instead of building an empty provider request", () => {
@@ -87,7 +87,7 @@ describe("buildProviderChatRouteRequest", () => {
       state,
       threadId: "thread-main-desktop",
       agentId: "strategist.core",
-      selectedModel: "MiniMax-M2.7",
+      selectedModel: "MiniMax-M3",
     });
 
     expect(request.providerMessages.map((item) => item.id)).toEqual(["thread-main-desktop:m2"]);
@@ -111,7 +111,7 @@ describe("buildProviderChatRouteRequest", () => {
         state,
         threadId: "thread-main-desktop",
         agentId: "strategist.core",
-        selectedModel: "MiniMax-M2.7",
+        selectedModel: "MiniMax-M3",
       }),
     ).toThrow(/no non-empty provider prompt messages/i);
   });

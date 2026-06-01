@@ -1875,6 +1875,7 @@ const mergeById = <T extends { id: string }>(persisted: T[] | undefined, default
 };
 
 const RETIRED_RUNTIME_NODE_IDS = new Set(["node-gx10-gemma"]);
+const LEGACY_MINIMAX_MODELS = new Set(["MiniMax-M2.7", "MiniMax-M2.7-highspeed"]);
 const GX10_QWEN35_MODEL = "Qwen3.6-35B-A3B-Q4_K_M.gguf";
 const GX10_QWEN35_ENDPOINT = "http://192.168.1.77:30004/v1";
 
@@ -1900,7 +1901,7 @@ const normalizeProviders = (
       return profile;
     }
     const primaryModel =
-      profile.id === "shared-minimax" && current.primaryModel === "MiniMax-M2.7"
+      profile.id === "shared-minimax" && LEGACY_MINIMAX_MODELS.has(current.primaryModel)
         ? profile.primaryModel
         : profile.allowedModels.includes(current.primaryModel)
           ? current.primaryModel
@@ -2134,7 +2135,7 @@ const normalizeModelStrategy = (
       return strategy;
     }
     if (
-      (strategy.id === "strategy-augmentor-primary" && strategy.primaryRoute.model === "MiniMax-M2.7") ||
+      (strategy.id === "strategy-augmentor-primary" && LEGACY_MINIMAX_MODELS.has(strategy.primaryRoute.model)) ||
       (strategy.id === "strategy-archive-ingest" && strategy.primaryRoute.model === "gpt-5.4")
     ) {
       return {

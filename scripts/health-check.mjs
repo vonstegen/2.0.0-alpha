@@ -24,8 +24,7 @@ const DEFAULTS_PATH = join(REPO_ROOT, "src", "core", "defaults.ts");
 // ---------------------------------------------------------------------------
 
 const KNOWN_MODELS = [
-  "MiniMax-M2.7",
-  "MiniMax-M2.7-highspeed",
+  "MiniMax-M3",
   "gpt-5.5",
   "gpt-5.4-mini",
   "batiai/gemma4-e2b:q4",

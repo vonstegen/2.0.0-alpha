@@ -49,7 +49,7 @@
   "providerRequirements": {
     "sharedProfiles": ["shared-minimax", "gx10-local-llama", "shared-openai", "shared-local"],
     "supportsPrivateCredentials": false,
-    "recommendedPrimaryModel": "MiniMax-M2.7",
+    "recommendedPrimaryModel": "MiniMax-M3",
     "recommendedFallbackModel": "gpt-5.5"
   },
   "archiveIntegration": {

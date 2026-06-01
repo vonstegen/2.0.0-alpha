@@ -14,7 +14,7 @@ describe("model strategy planner", () => {
     const state = buildDefaultState([]);
     const options = buildStrategyRouteOptions(state);
 
-    expect(options.some((option) => option.key === "shared-minimax::node-minimax-cloud::MiniMax-M2.7")).toBe(true);
+    expect(options.some((option) => option.key === "shared-minimax::node-minimax-cloud::MiniMax-M3")).toBe(true);
     expect(options.find((option) => option.runtimeNodeId === "node-local-resurrect")?.costPosture).toBe("emergency-only");
     expect(options.some((option) => option.key === "gx10-local-llama::node-gx10-qwen::Qwen3.6-35B-A3B-Q4_K_M.gguf")).toBe(true);
     expect(costPostureLabel("subscription")).toBe("Subscription");

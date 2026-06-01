@@ -52,7 +52,7 @@ const basePacket = (overrides: Partial<DelegationPacket> = {}): DelegationPacket
   providerPolicy: {
     preferredProviderProfileIds: ["shared-minimax"],
     preferredRuntimeNodeIds: ["node-minimax-cloud"],
-    preferredModels: ["MiniMax-M2.7"],
+    preferredModels: ["MiniMax-M3"],
     allowedRuntimeKinds: ["cloud", "local"],
     fallbackPolicyId: "core-default",
   },

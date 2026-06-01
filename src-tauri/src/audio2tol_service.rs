@@ -1307,7 +1307,7 @@ fn run_openai_compatible_chat(
         format!("{base}/chat/completions")
     };
     let selected_model = if model.trim().is_empty() || model == "provider-default" {
-        "MiniMax-M2.7"
+        "MiniMax-M3"
     } else {
         model
     };

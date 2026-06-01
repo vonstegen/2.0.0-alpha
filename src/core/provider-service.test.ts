@@ -16,7 +16,7 @@ describe("strategist provider service routing", () => {
     expect(resolved.provider?.id).toBe("shared-minimax");
     expect(resolved.runtimeNode?.id).toBe("node-minimax-cloud");
     expect(resolved.decision.executionAdapterId).toBe("cloud-minimax-compatible");
-    expect(resolved.model).toBe("MiniMax-M2.7-highspeed");
+    expect(resolved.model).toBe("MiniMax-M3");
     expect(resolved.executionAdapter?.supportsStreaming).toBe(true);
     expect(resolved.executionAdapter?.supportsAbort).toBe(true);
     expect(resolved.decision.resolutionReason).toBe("primary-healthy");
@@ -50,8 +50,7 @@ describe("strategist provider service routing", () => {
     const state = buildDefaultState([]);
 
     expect(selectableAgentChatModels(state, "strategist.core")).toEqual([
-      "MiniMax-M2.7-highspeed",
-      "MiniMax-M2.7",
+      "MiniMax-M3",
       "gpt-5.5",
       "gpt-5.4-mini",
       "batiai/gemma4-e2b:q4",
@@ -220,6 +219,6 @@ describe("workload strategy routing", () => {
     expect(resolved.provider?.id).toBe("shared-minimax");
     expect(resolved.runtimeNode?.id).toBe("node-minimax-cloud");
     expect(resolved.decision.executionAdapterId).toBe("cloud-minimax-compatible");
-    expect(resolved.model).toBe("MiniMax-M2.7-highspeed");
+    expect(resolved.model).toBe("MiniMax-M3");
   });
 });

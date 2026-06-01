@@ -35,12 +35,12 @@ describe("context memory budget estimation", () => {
       attachments: [],
       provider,
       runtimeNode,
-      modelId: "MiniMax-M2.7",
+      modelId: "MiniMax-M3",
     });
 
     expect(budget.providerId).toBe("shared-minimax");
-    expect(budget.modelId).toBe("MiniMax-M2.7");
-    expect(budget.maxContextTokens).toBe(64_000);
+    expect(budget.modelId).toBe("MiniMax-M3");
+    expect(budget.maxContextTokens).toBe(1_000_000);
     expect(budget.estimateQuality).toBe("provider");
     expect(budget.usedInputTokens).toBeGreaterThan(0);
     expect(usableContextTokens(budget)).toBeLessThan(budget.maxContextTokens);

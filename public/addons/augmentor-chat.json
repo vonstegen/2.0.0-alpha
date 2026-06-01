@@ -122,7 +122,7 @@
   "providerRequirements": {
     "sharedProfiles": ["shared-minimax", "gx10-local-llama", "shared-openai", "shared-local"],
     "supportsPrivateCredentials": true,
-    "recommendedPrimaryModel": "MiniMax-M2.7",
+    "recommendedPrimaryModel": "MiniMax-M3",
     "recommendedFallbackModel": "gpt-5.5",
     "preferredRuntimeKinds": ["cloud", "remote-user-owned", "local"],
     "allowExperimentalAuth": true,

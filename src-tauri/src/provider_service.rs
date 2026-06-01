@@ -237,7 +237,7 @@ fn execute_codex_subscription_chat_with_usage(
 
 fn provider_wire_model(provider_type: &str, model: &str) -> String {
     match (provider_type, model) {
-        ("minimax", "MiniMax-M2.7-highspeed") => "MiniMax-M2.7".to_string(),
+        ("minimax", "MiniMax-M3") => "MiniMax-M3".to_string(),
         _ => model.to_string(),
     }
 }
@@ -2970,10 +2970,10 @@ mod tests {
                 "total_tokens": 150
             }
         });
-        let usage = extract_cloud_usage("shared-minimax", "MiniMax-M2.7", &payload)
+        let usage = extract_cloud_usage("shared-minimax", "MiniMax-M3", &payload)
             .expect("cloud usage should parse");
         assert_eq!(usage.provider_id, "shared-minimax");
-        assert_eq!(usage.model, "MiniMax-M2.7");
+        assert_eq!(usage.model, "MiniMax-M3");
         assert_eq!(usage.source, "provider");
         assert_eq!(usage.prompt_tokens, Some(120));
         assert_eq!(usage.completion_tokens, Some(30));

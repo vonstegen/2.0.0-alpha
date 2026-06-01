@@ -38,8 +38,7 @@ import { formatBytes } from "./utils";
 
 const modelLabel = (model: string): string => {
   const labels: Record<string, string> = {
-    "MiniMax-M2.7-highspeed": "MiniMax 2.7 High Speed",
-    "MiniMax-M2.7": "MiniMax 2.7",
+    "MiniMax-M3": "MiniMax M3",
     "gpt-5.5": "GPT 5.5",
     "gpt-5.4-mini": "GPT 5.4 Mini",
     "batiai/gemma4-e2b:q4": "Gemma 4 2B (Mac Mini)",

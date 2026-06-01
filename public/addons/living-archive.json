@@ -116,7 +116,7 @@
     "sharedProfiles": ["shared-openai", "gx10-local-llama", "shared-minimax", "shared-local"],
     "supportsPrivateCredentials": true,
     "recommendedPrimaryModel": "gpt-5.5",
-    "recommendedFallbackModel": "MiniMax-M2.7",
+    "recommendedFallbackModel": "MiniMax-M3",
     "preferredRuntimeKinds": ["cloud", "remote-user-owned", "local"],
     "allowExperimentalAuth": true,
     "fallbackPolicyId": "chain-archive-premium"

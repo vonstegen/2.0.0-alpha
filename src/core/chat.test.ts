@@ -58,7 +58,7 @@ describe("chat transcript ledger", () => {
     const next = appendAssistantMessage(base, "thread-main-desktop", "Usage measured.", {
       providerUsage: {
         providerId: "shared-minimax",
-        model: "MiniMax-M2.7",
+        model: "MiniMax-M3",
         source: "provider",
         promptTokens: 120,
         completionTokens: 30,
@@ -78,7 +78,7 @@ describe("chat transcript ledger", () => {
     });
     expect(next.transcriptLedger.at(-1)?.payload).toMatchObject({
       providerUsage: expect.objectContaining({
-        model: "MiniMax-M2.7",
+        model: "MiniMax-M3",
         completionTokens: 30,
         tokensPerSecond: 13.6,
       }),

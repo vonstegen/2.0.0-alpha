@@ -52,7 +52,7 @@ const artifact = (status: ArchiveReviewArtifact["decision"]["status"]): ArchiveR
   sourceType: "md",
   intent: "review-and-ingest",
   providerId: "shared-minimax",
-  model: "MiniMax-M2.7",
+  model: "MiniMax-M3",
   summary: "Summary.",
   confidence: "high",
   doctrineSensitivity: "low",

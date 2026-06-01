@@ -311,7 +311,7 @@ export const createEngineerDelegationPacket = (
     providerPolicy: {
       preferredProviderProfileIds: ["shared-local", "shared-minimax", "shared-openai"],
       preferredRuntimeNodeIds: ["node-local-resurrect", "node-minimax-cloud", "node-openai-cloud"],
-      preferredModels: ["batiai/gemma4-e2b:q4", "MiniMax-M2.7-highspeed", "gpt-5.5"],
+      preferredModels: ["batiai/gemma4-e2b:q4", "MiniMax-M3", "gpt-5.5"],
       allowedRuntimeKinds: ["local", "cloud", "remote-user-owned"],
       fallbackPolicyId: "recovery-default",
     },
@@ -411,7 +411,7 @@ export const createHermesDelegationPacket = (
     providerPolicy: {
       preferredProviderProfileIds: ["shared-minimax", "shared-local", "shared-openai"],
       preferredRuntimeNodeIds: ["node-minimax-cloud", "node-local-resurrect", "node-openai-cloud"],
-      preferredModels: ["MiniMax-M2.7-highspeed", "batiai/gemma4-e2b:q4", "gpt-5.5"],
+      preferredModels: ["MiniMax-M3", "batiai/gemma4-e2b:q4", "gpt-5.5"],
       allowedRuntimeKinds: ["local", "cloud", "remote-user-owned"],
       fallbackPolicyId: "routine-default",
     },
@@ -521,7 +521,7 @@ export const createOpenCodeDelegationPacket = (
     providerPolicy: {
       preferredProviderProfileIds: ["shared-local", "shared-minimax", "gx10-local-llama"],
       preferredRuntimeNodeIds: ["node-local-resurrect", "node-minimax-cloud", "node-gx10-local"],
-      preferredModels: ["Qwen 3.6 27B", "MiniMax-M2.7", "batiai/gemma4-e2b:q4"],
+      preferredModels: ["Qwen 3.6 27B", "MiniMax-M3", "batiai/gemma4-e2b:q4"],
       allowedRuntimeKinds: ["local", "remote-user-owned", "cloud"],
       fallbackPolicyId: "coding-default",
     },

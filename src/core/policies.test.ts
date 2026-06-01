@@ -84,14 +84,14 @@ describe("provider routing", () => {
       consumerId: "strategist.core",
       primaryProviderProfileId: "shared-minimax",
       fallbackProviderProfileId: "shared-openai",
-      preferredModels: ["MiniMax-M2.7"],
+      preferredModels: ["MiniMax-M3"],
       fallbackPolicyId: "core-default",
     });
 
     expect(resolved.providerProfileId).toBe("shared-minimax");
     expect(resolved.runtimeNodeId).toBe("node-minimax-cloud");
     expect(resolved.executionAdapterId).toBe("cloud-minimax-compatible");
-    expect(resolved.model).toBe("MiniMax-M2.7");
+    expect(resolved.model).toBe("MiniMax-M3");
     expect(resolved.resolutionReason).toBe("primary-healthy");
   });
 
@@ -173,7 +173,7 @@ describe("provider defaults", () => {
     const strategist = state.agents.find((agent) => agent.id === "strategist.core");
     expect(strategist?.providerProfileId).toBe("shared-minimax");
     expect(strategist?.fallbackProviderProfileId).toBe("shared-openai");
-    expect(state.providers[0]?.primaryModel).toBe("MiniMax-M2.7-highspeed");
+    expect(state.providers[0]?.primaryModel).toBe("MiniMax-M3");
   });
 
   it("maps live provider diagnostics back into routing health", () => {
@@ -190,8 +190,8 @@ describe("provider defaults", () => {
         status: "offline",
         summary: "Provider is offline.",
         checkedAt: "unix:1",
-        primaryModel: "MiniMax-M2.7",
-        fallbackModel: "MiniMax-M2.7-highspeed",
+        primaryModel: "MiniMax-M3",
+        fallbackModel: "MiniMax-M3",
         runtimeDiagnostics: [
           {
             runtimeNodeId: "node-minimax-cloud",
