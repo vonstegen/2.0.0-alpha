@@ -337,6 +337,8 @@ export async function executeMoveImport({
     fileCount: files.length,
     directoryCount: directories.length,
     totalBytes: files.reduce((sum, file) => sum + file.size, 0),
+    preflightFingerprint: preflight.preflightFingerprint,
+    approvedPreflightFingerprint: String(expectedPreflightFingerprint),
     ledgerPath,
     status: "running",
   };

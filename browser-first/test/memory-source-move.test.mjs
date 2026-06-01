@@ -147,6 +147,10 @@ test("move import supports verified copy-unlink relocation", async () => {
     assert.equal(existsSync(source), false);
     assert.equal(existsSync(path.join(result.destinationRoot, "note.md")), true);
     assert.match(await readFile(result.ledgerPath, "utf8"), /"moveMethod":"copy-unlink"/);
+    const manifest = JSON.parse(await readFile(result.manifestPath, "utf8"));
+    assert.equal(manifest.preflightFingerprint, preflight.preflightFingerprint);
+    assert.equal(manifest.approvedPreflightFingerprint, preflight.preflightFingerprint);
+    assert.equal(manifest.status, "moved");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -123,7 +123,7 @@ Required behavior:
 - Maintain a governed intake/review/draft/verify/promote pipeline.
 - Connected folders and Obsidian vaults can be registered as memory sources.
 - Source scan classifies files before intake.
-- Move-on-import must never silently destroy source data: it requires explicit confirmation, binds execution to the approved content-hash-backed preflight fingerprint, rechecks source bytes immediately before each file move, writes a manifest/ledger, verifies destination hashes before registration, automatically rolls back earlier moved files after partial failure, and only registers a source when the host move status is fully `moved`.
+- Move-on-import must never silently destroy source data: it requires explicit confirmation, binds execution to the approved content-hash-backed preflight fingerprint, rechecks source bytes immediately before each file move, writes a fingerprinted manifest and ledger, verifies destination hashes before registration, automatically rolls back earlier moved files after partial failure, and only registers a source when the host move status is fully `moved`.
 - Compatible text/markdown/json/csv files can become governed intake artifacts.
 - Raw audio/media stays classified but is not directly ingested by the base system.
 - AI Memory wiki promotion remains controlled by the Living Archive pipeline, not arbitrary add-on writes.
