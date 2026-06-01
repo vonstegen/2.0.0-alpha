@@ -379,6 +379,14 @@ export async function executeMoveImport({
       failed.push(ledgerEntry);
       if (existsSync(destination) && existsSync(file.absolutePath)) {
         await rm(destination, { force: true }).catch(() => undefined);
+      } else if (existsSync(destination) && !existsSync(file.absolutePath)) {
+        const restore = await restoreMovedEntry(ledgerEntry);
+        if (restore.restored) {
+          ledgerEntry.failureRestore = "restored-source";
+        } else {
+          ledgerEntry.failureRestore = "skipped";
+          ledgerEntry.failureRestoreReason = restore.skipped?.reason;
+        }
       }
     }
     await appendFile(ledgerPath, `${JSON.stringify(ledgerEntry)}\n`, { mode: 0o600 });

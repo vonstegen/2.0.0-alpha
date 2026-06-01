@@ -224,6 +224,38 @@ test("move import automatically rolls back earlier files after a later move fail
   }
 });
 
+test("move import restores the current file when a failed move already removed the source", async () => {
+  const root = await fixtureRoot("move-current-failure-restore");
+  const source = path.join(root, "Current Failure");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(source, { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  await writeFile(path.join(source, "note.md"), "must restore\n");
+  try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
+    const result = await executeMoveImport({
+      sourcePath: source,
+      memoryRoot,
+      confirmation: preflight.confirmationPhrase,
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
+      moveFile: async (sourcePath, destinationPath) => {
+        const bytes = await readFile(sourcePath);
+        await writeFile(destinationPath, bytes);
+        await rm(sourcePath, { force: true });
+        throw new Error("simulated failure after source removal");
+      },
+    });
+    assert.equal(result.status, "partial-failure-rolled-back");
+    assert.equal(result.failedCount, 1);
+    assert.equal(await readFile(path.join(source, "note.md"), "utf8"), "must restore\n");
+    assert.equal(existsSync(path.join(result.destinationRoot, "note.md")), false);
+    const ledger = await readFile(result.ledgerPath, "utf8");
+    assert.match(ledger, /"failureRestore":"restored-source"/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("move rollback refuses to restore corrupted destination bytes", async () => {
   const root = await fixtureRoot("move-rollback-hash");
   const source = path.join(root, "Rollback Hash");
