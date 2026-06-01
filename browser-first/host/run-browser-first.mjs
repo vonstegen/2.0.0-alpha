@@ -5719,6 +5719,7 @@ if (args.get("memory-source-move-self-test") === "true") {
   process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT = path.join(tempRoot, "ResonantOS_User");
   const source = path.join(tempRoot, "Human Vault");
   const staleSource = path.join(tempRoot, "Changing Vault");
+  const partialRollbackSource = path.join(tempRoot, "Partial Rollback Vault");
   const bridgeCapabilityToken = bridgeCapabilityTokens["memory-source-move"];
   let server = null;
   let exitCode = 1;
@@ -5728,6 +5729,8 @@ if (args.get("memory-source-move-self-test") === "true") {
     await writeFile(path.join(source, ".obsidian", "app.json"), "{}\n");
     await mkdir(staleSource, { recursive: true });
     await writeFile(path.join(staleSource, "first.md"), "# First version\n");
+    await mkdir(partialRollbackSource, { recursive: true });
+    await writeFile(path.join(partialRollbackSource, "partial.md"), "# Partial rollback\n");
     server = await startBridgeServer({
       port: Number(args.get("bridge-port") ?? 0),
       bridgeToken,
@@ -5786,6 +5789,26 @@ if (args.get("memory-source-move-self-test") === "true") {
       confirmation: "ROLLBACK MOVE",
     });
     const rollback = await rollbackResponse.json();
+    const partialPreflightResponse = await post("/memory/source/move-preflight", {
+      path: partialRollbackSource,
+      kind: "folder",
+      ownership: "mixed-library",
+    });
+    const partialPreflight = await partialPreflightResponse.json();
+    const partialExecuteResponse = await post("/memory/source/move-execute", {
+      path: partialRollbackSource,
+      kind: "folder",
+      ownership: "mixed-library",
+      confirmation: partialPreflight.confirmationPhrase,
+      preflightFingerprint: partialPreflight.preflightFingerprint,
+    });
+    const partialExecuted = await partialExecuteResponse.json();
+    await writeFile(path.join(partialExecuted.destinationRoot ?? "", "partial.md"), "# Tampered after move\n");
+    const partialRollbackResponse = await post("/memory/source/move-rollback", {
+      ledgerPath: partialExecuted.ledgerPath,
+      confirmation: "ROLLBACK MOVE",
+    });
+    const partialRollback = await partialRollbackResponse.json();
     const outsideLedger = path.join(tempRoot, "outside-ledger.jsonl");
     await writeFile(outsideLedger, "");
     const outsideRollbackResponse = await post("/memory/source/move-rollback", {
@@ -5814,9 +5837,18 @@ if (args.get("memory-source-move-self-test") === "true") {
       rollbackResponse.ok &&
       rollback.ok &&
       rollback.restoredCount === 2 &&
+      partialPreflightResponse.ok &&
+      partialPreflight.okToMove === true &&
+      partialExecuteResponse.ok &&
+      partialExecuted.ok &&
+      partialRollbackResponse.ok &&
+      partialRollback.ok &&
+      partialRollback.restoredCount === 0 &&
+      partialRollback.skippedCount === 1 &&
       outsideRollbackResponse.status === 500 &&
       restoredNoteExists &&
-      !settings.sources?.some((sourceEntry) => path.resolve(sourceEntry.ledgerPath ?? "") === path.resolve(executed.ledgerPath));
+      !settings.sources?.some((sourceEntry) => path.resolve(sourceEntry.ledgerPath ?? "") === path.resolve(executed.ledgerPath)) &&
+      settings.sources?.some((sourceEntry) => path.resolve(sourceEntry.ledgerPath ?? "") === path.resolve(partialExecuted.ledgerPath));
     console.log(JSON.stringify({
       ok,
       unauthorizedCapabilityStatus: unauthorizedCapability.status,
@@ -5846,6 +5878,14 @@ if (args.get("memory-source-move-self-test") === "true") {
         restoredCount: rollback.restoredCount,
         restoredNoteExists,
         outsideLedgerStatus: outsideRollbackResponse.status,
+      },
+      partialRollback: {
+        ok: partialRollback.ok,
+        restoredCount: partialRollback.restoredCount,
+        skippedCount: partialRollback.skippedCount,
+        sourceStillRegistered: settings.sources?.some((sourceEntry) =>
+          path.resolve(sourceEntry.ledgerPath ?? "") === path.resolve(partialExecuted.ledgerPath)
+        ) ?? false,
       },
     }, null, 2));
     exitCode = ok ? 0 : 1;

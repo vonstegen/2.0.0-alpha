@@ -1431,6 +1431,10 @@ test("browser-first bridge executes move-on-import through scoped routes", (t) =
   assert.equal(payload.rollback.ok, true);
   assert.equal(payload.rollback.restoredCount, 2);
   assert.equal(payload.rollback.restoredNoteExists, true);
+  assert.equal(payload.partialRollback.ok, true);
+  assert.equal(payload.partialRollback.restoredCount, 0);
+  assert.equal(payload.partialRollback.skippedCount, 1);
+  assert.equal(payload.partialRollback.sourceStillRegistered, true);
 });
 
 test("browser-first bridge hardens selected Living Archive source file intake", (t) => {
