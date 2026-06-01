@@ -291,7 +291,7 @@ Current Living Archive status:
 
 The latest hardening/refactor pass is present in the worktree:
 
-- host routes move imports only through audited content-hash-backed preflight, exact confirmation, stale-preflight rejection, verified execution, non-destructive source cleanup, ledger, rollback, and manifest-level rollback status
+- host routes move imports only through audited content-hash-backed preflight, exact confirmation, stale-preflight rejection, verified execution, non-destructive source cleanup, ledger, rollback, manifest-level rollback status, and source deregistration only after zero-skipped rollback
 - UI blocks ordinary settings-save move registration and uses the dedicated move preflight/execute/rollback path
 - duplicate frontend-only classification approval block was removed
 - `ArchiveLibraryImporter` was extracted from `ArchiveWorkspace`
