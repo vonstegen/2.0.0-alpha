@@ -5922,7 +5922,7 @@ if (args.get("memory-source-file-intake-self-test") === "true") {
       rejectedCount: intake.rejected.length,
       snapshotRecorded: firstSnapshotPath.startsWith("CONFIG/source-file-history/blobs/"),
       duplicateRejected: intake.rejected.some((entry) => entry.sourceFile === "note-000.md" && /duplicate/.test(entry.reason)),
-      escapeRejected: intake.rejected.some((entry) => entry.sourceFile === "../outside.md" && /outside source root|parent traversal|escapes/i.test(entry.reason)),
+      escapeRejected: intake.rejected.some((entry) => entry.sourceFile === "../outside.md" && /must stay inside|outside source root|parent traversal|escapes/i.test(entry.reason)),
       overflowRejected: intake.rejected.filter((entry) => /batch limit/.test(entry.reason)).length,
       failureStatus: failureResponse.status,
       rollbackReservedVersions: failVersions.length,
