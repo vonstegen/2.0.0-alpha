@@ -5805,6 +5805,7 @@ if (args.get("memory-source-move-self-test") === "true") {
       executeResponse.ok &&
       executed.ok &&
       executed.status === "moved" &&
+      executed.sourceCleanupStatus === "removed" &&
       movedNoteExists &&
       sourceRemoved &&
       rollbackResponse.ok &&
@@ -5833,6 +5834,7 @@ if (args.get("memory-source-move-self-test") === "true") {
         ok: executed.ok,
         status: executed.status,
         movedCount: executed.movedCount,
+        sourceCleanupStatus: executed.sourceCleanupStatus,
         sourceRemoved,
         movedNoteExists,
       },

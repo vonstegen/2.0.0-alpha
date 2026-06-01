@@ -1425,6 +1425,7 @@ test("browser-first bridge executes move-on-import through scoped routes", (t) =
   assert.equal(payload.execute.ok, true);
   assert.equal(payload.execute.status, "moved");
   assert.equal(payload.execute.movedCount, 2);
+  assert.equal(payload.execute.sourceCleanupStatus, "removed");
   assert.equal(payload.execute.sourceRemoved, true);
   assert.equal(payload.execute.movedNoteExists, true);
   assert.equal(payload.rollback.ok, true);
