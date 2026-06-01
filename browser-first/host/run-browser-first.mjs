@@ -38,6 +38,7 @@ import {
 import {
   assertResolvedSourceFileInsideSource,
   assertSourceRootDirectory,
+  normalizeSourceRelativeFile,
   resolveSourceRelativeFile,
 } from "./memory-source-paths.mjs";
 import {
@@ -2384,10 +2385,22 @@ async function executeMemorySourceIntake(payload = {}) {
 async function executeMemorySourceFileIntake(payload = {}) {
   const sourceId = String(payload.sourceId ?? "").trim();
   const requestedFiles = Array.isArray(payload.files)
-    ? payload.files.map((file) => String(file ?? "").replace(/\\/g, "/")).filter(Boolean)
+    ? payload.files.map((file) => String(file ?? "").replace(/\\/g, "/").trim()).filter(Boolean)
     : [];
-  const uniqueFiles = [...new Set(requestedFiles)];
-  const duplicateFiles = requestedFiles.filter((file, index) => requestedFiles.indexOf(file) !== index);
+  const invalidRequestedFiles = [];
+  const normalizedRequestedFiles = [];
+  for (const requestedFile of requestedFiles) {
+    try {
+      normalizedRequestedFiles.push(normalizeSourceRelativeFile(requestedFile));
+    } catch (error) {
+      invalidRequestedFiles.push({
+        sourceFile: requestedFile,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  const uniqueFiles = [...new Set(normalizedRequestedFiles)];
+  const duplicateFiles = normalizedRequestedFiles.filter((file, index) => normalizedRequestedFiles.indexOf(file) !== index);
   const selectedFiles = uniqueFiles.slice(0, sourceFileIntakeLimit);
   if (!sourceId) {
     throw new Error("Selected file intake requires a source id.");
@@ -2414,6 +2427,7 @@ async function executeMemorySourceFileIntake(payload = {}) {
   }
   const created = [];
   const rejected = [
+    ...invalidRequestedFiles,
     ...duplicateFiles.map((sourceFile) => ({
       sourceFile,
       reason: "duplicate request entry ignored",
@@ -2425,7 +2439,8 @@ async function executeMemorySourceFileIntake(payload = {}) {
   ];
   for (const relativeFile of selectedFiles) {
     try {
-      const sourceFile = resolveSourceRelativeFile(sourcePath, relativeFile);
+      const normalizedRelativeFile = relativeFile;
+      const sourceFile = resolveSourceRelativeFile(sourcePath, normalizedRelativeFile);
       if (!existsSync(sourceFile)) {
         throw new Error("file missing");
       }
@@ -2446,7 +2461,7 @@ async function executeMemorySourceFileIntake(payload = {}) {
       const version = await reserveSourceFileVersion({
         manifestPath: memorySourceFileManifestPath(),
         sourceId: source.id,
-        relativeFile,
+        relativeFile: normalizedRelativeFile,
         contentHash,
         sourceModifiedAt: details.mtime.toISOString(),
       });
@@ -2454,7 +2469,7 @@ async function executeMemorySourceFileIntake(payload = {}) {
         throw new Error(`unchanged since imported version ${version.version}`);
       }
       const title = markdownTitle(sourceContent, path.basename(sourceFile, path.extname(sourceFile)));
-      const intakeFile = `${now.toISOString().replace(/[:.]/g, "-")}-${safeFileSlug(relativeFile)}.md`;
+      const intakeFile = `${now.toISOString().replace(/[:.]/g, "-")}-${safeFileSlug(normalizedRelativeFile)}.md`;
       const intakePath = path.join(intakeDir, intakeFile);
       const body = [
         "---",
@@ -2465,7 +2480,7 @@ async function executeMemorySourceFileIntake(payload = {}) {
         `createdAt: ${JSON.stringify(now.toISOString())}`,
         `sourceId: ${JSON.stringify(source.id)}`,
         `sourcePath: ${JSON.stringify(source.path)}`,
-        `sourceFile: ${JSON.stringify(String(relativeFile).replace(/\\/g, "/"))}`,
+        `sourceFile: ${JSON.stringify(normalizedRelativeFile)}`,
         `ownership: ${JSON.stringify(source.ownership)}`,
         `importMode: ${JSON.stringify(source.importMode)}`,
         `sourceModifiedAt: ${JSON.stringify(details.mtime.toISOString())}`,
@@ -2481,7 +2496,7 @@ async function executeMemorySourceFileIntake(payload = {}) {
         "",
         "## Source File",
         `- source: ${source.path}`,
-        `- file: ${String(relativeFile).replace(/\\/g, "/")}`,
+        `- file: ${normalizedRelativeFile}`,
         `- bytes: ${details.size}`,
         "",
         "## Content",
@@ -2500,7 +2515,7 @@ async function executeMemorySourceFileIntake(payload = {}) {
         await recordSourceFileIntakeArtifact({
           manifestPath: memorySourceFileManifestPath(),
           sourceId: source.id,
-          relativeFile,
+          relativeFile: normalizedRelativeFile,
           version: version.version,
           intakePath: relativeIntakePath,
           snapshotPath: snapshot.path,
@@ -2510,7 +2525,7 @@ async function executeMemorySourceFileIntake(payload = {}) {
         await rollbackSourceFileVersionReservation({
           manifestPath: memorySourceFileManifestPath(),
           sourceId: source.id,
-          relativeFile,
+          relativeFile: normalizedRelativeFile,
           version: version.version,
           contentHash: version.contentHash,
         }).catch(() => undefined);
@@ -2518,7 +2533,7 @@ async function executeMemorySourceFileIntake(payload = {}) {
       }
       created.push({
         path: relativeIntakePath,
-        sourceFile: String(relativeFile).replace(/\\/g, "/"),
+        sourceFile: normalizedRelativeFile,
         bytes: Buffer.byteLength(body, "utf8"),
         title,
         sourceContentHash: version.contentHash,
@@ -2594,7 +2609,8 @@ async function executeMemorySourceDiff(payload = {}) {
   }
   const sourcePath = expandUserPath(source.path);
   await assertSourceRootDirectory(sourcePath);
-  const sourceFile = resolveSourceRelativeFile(sourcePath, relativeFile);
+  const normalizedRelativeFile = normalizeSourceRelativeFile(relativeFile);
+  const sourceFile = resolveSourceRelativeFile(sourcePath, normalizedRelativeFile);
   if (!existsSync(sourceFile)) {
     throw new Error("Source file does not exist.");
   }
@@ -2609,11 +2625,11 @@ async function executeMemorySourceDiff(payload = {}) {
     sourceId,
     limit: 500,
   });
-  const versionEntry = versions.entries.find((entry) => entry.sourceFile === relativeFile);
+  const versionEntry = versions.entries.find((entry) => entry.sourceFile === normalizedRelativeFile);
   if (!versionEntry?.latestIntakePath && !versionEntry?.latestSnapshotPath) {
     return {
       sourceId,
-      sourceFile: relativeFile,
+      sourceFile: normalizedRelativeFile,
       status: "unavailable",
       reason: "No previous governed intake artifact is recorded for this source file.",
       changes: [],
@@ -2635,7 +2651,7 @@ async function executeMemorySourceDiff(payload = {}) {
   const currentHash = sourceContentHash(currentContent);
   return {
     sourceId,
-    sourceFile: relativeFile,
+    sourceFile: normalizedRelativeFile,
     status: currentHash === versionEntry.latestHash ? "unchanged" : "changed",
     latestVersion: versionEntry.latestVersion,
     latestIntakePath: versionEntry.latestIntakePath,

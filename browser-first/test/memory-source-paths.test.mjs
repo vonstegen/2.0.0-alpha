@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   assertResolvedSourceFileInsideSource,
   assertSourceRootDirectory,
+  normalizeSourceRelativeFile,
   resolveSourceRelativeFile,
 } from "../host/memory-source-paths.mjs";
 
@@ -22,6 +23,8 @@ test("source path helpers keep selected files inside the source root", async () 
     await writeFile(note, "# Identity\n");
     await writeFile(external, "secret\n");
 
+    assert.equal(normalizeSourceRelativeFile(" notes/./identity.md "), "notes/identity.md");
+    assert.equal(normalizeSourceRelativeFile("notes//identity.md"), "notes/identity.md");
     assert.equal(resolveSourceRelativeFile(source, "notes/identity.md"), note);
     assert.throws(
       () => resolveSourceRelativeFile(source, "."),

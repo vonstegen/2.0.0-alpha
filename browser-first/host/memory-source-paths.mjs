@@ -9,8 +9,20 @@ function ensureInside(child, parent, message) {
 }
 
 export function resolveSourceRelativeFile(sourcePath, relativePath) {
-  const normalized = String(relativePath ?? "").replace(/\\/g, "/");
+  const normalized = normalizeSourceRelativeFile(relativePath);
+  const resolved = path.resolve(sourcePath, normalized);
+  const root = path.resolve(sourcePath);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+    throw new Error("Selected source file path escapes the connected source.");
+  }
+  return resolved;
+}
+
+export function normalizeSourceRelativeFile(relativePath) {
+  const raw = String(relativePath ?? "").replace(/\\/g, "/").trim();
+  const normalized = path.posix.normalize(raw);
   if (
+    !raw ||
     !normalized ||
     normalized === "." ||
     normalized.includes("\0") ||
@@ -20,12 +32,7 @@ export function resolveSourceRelativeFile(sourcePath, relativePath) {
   ) {
     throw new Error("Selected source file path must stay inside the connected source.");
   }
-  const resolved = path.resolve(sourcePath, normalized);
-  const root = path.resolve(sourcePath);
-  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    throw new Error("Selected source file path escapes the connected source.");
-  }
-  return resolved;
+  return normalized;
 }
 
 export async function assertSourceRootDirectory(sourcePath) {
