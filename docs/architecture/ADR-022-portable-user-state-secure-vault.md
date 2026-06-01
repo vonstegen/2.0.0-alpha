@@ -151,7 +151,7 @@ When importing a folder or vault:
 - noisy technical folders are flagged before import
 - the user sees supported/skipped file counts and estimated storage cost
 - copy-on-import remains the safe default
-- move-on-import remains disabled until audited execution exists
+- browser-first move-on-import is available only through audited host preflight, exact human confirmation, content-hash verification, ledgered rollback, empty-directory/root preservation, and guarded source deregistration
 - the managed copy lands under the Portable User State Root
 - the original path is preserved as provenance
 - the original folder is not considered the active memory source unless explicitly linked as a watched external source

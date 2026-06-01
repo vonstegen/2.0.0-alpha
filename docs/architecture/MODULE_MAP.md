@@ -115,7 +115,12 @@ This map defines which folder owns which feature area so contributors do not kee
   - managed library imports into Human Knowledge, External Knowledge, AI Memory, or Mixed Library
   - imported-library manifests and classification-review artifacts
   - plan-only mixed-library reorganisation artifacts with rollback and audit paths
-  - explicit rejection of destructive move-on-import until audited execution exists
+  - Tauri-era rejection of destructive move-on-import; browser-first move execution now lives in `browser-first/host/memory-source-move.mjs`
+
+- `browser-first/host/memory-source-move.mjs`
+  - audited browser-first move-on-import preflight, exact confirmation, content-hash validation, destination verification, JSONL ledgering, and rollback
+  - preservation of empty directories, Obsidian dotfolders, and completely empty source roots
+  - guarded source deregistration only after file, directory, and root rollback complete without skipped work
 
 - `src-tauri/src/archive_service/archive_tol_bundles.rs`
   - optional Audio2TOL add-on bridge for TOL session discovery
