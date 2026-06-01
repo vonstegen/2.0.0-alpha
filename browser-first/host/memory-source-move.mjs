@@ -486,10 +486,12 @@ export async function executeMoveImport({
 
   let automaticRollback = { restored: [], skipped: [] };
   let automaticDirectoryRollback = { restored: [], skipped: [] };
+  let automaticRootRollback = { restored: false, skippedCleanup: null };
   let sourceCleanupStatus = "not-run";
   if (failed.length) {
     automaticRollback = await rollbackMovedEntries(moved);
     automaticDirectoryRollback = await rollbackCreatedDirectories(createdDirectories);
+    automaticRootRollback = await rollbackMoveRoot(manifest);
     sourceCleanupStatus = "rolled-back";
   } else {
     if (typeof beforeSourceCleanup === "function") {
@@ -509,6 +511,8 @@ export async function executeMoveImport({
     rollbackSkippedCount: automaticRollback.skipped.length,
     rollbackRestoredDirectoryCount: automaticDirectoryRollback.restored.length,
     rollbackSkippedDirectoryCount: automaticDirectoryRollback.skipped.length,
+    rollbackSourceRootRestored: automaticRootRollback.restored,
+    rollbackSkippedRootCleanupCount: automaticRootRollback.skippedCleanup ? 1 : 0,
     sourceCleanupStatus,
     status: failed.length ? "partial-failure-rolled-back" : "moved",
   };
@@ -530,6 +534,7 @@ export async function executeMoveImport({
     failures: failed.map((entry) => ({ relativePath: entry.relativePath, error: entry.error })),
     automaticRollback,
     automaticDirectoryRollback,
+    automaticRootRollback,
   };
 }
 

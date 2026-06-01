@@ -430,9 +430,50 @@ test("move import automatically rolls back earlier files after a later move fail
     assert.equal(result.movedCount, 1);
     assert.equal(result.failedCount, 1);
     assert.equal(result.rollbackRestoredCount, 1);
+    assert.equal(result.rollbackSourceRootRestored, true);
+    assert.equal(result.rollbackSkippedRootCleanupCount, 0);
     assert.equal(existsSync(path.join(source, "a.md")), true);
     assert.equal(existsSync(path.join(source, "b.md")), true);
     assert.equal(existsSync(path.join(result.destinationRoot, "a.md")), false);
+    assert.equal(existsSync(result.destinationRoot), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("move import automatic rollback reports destination root cleanup conflicts", async () => {
+  const root = await fixtureRoot("move-auto-root-conflict");
+  const source = path.join(root, "Root Conflict");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(source, { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  await writeFile(path.join(source, "a.md"), "first\n");
+  await writeFile(path.join(source, "b.md"), "second\n");
+  let calls = 0;
+  try {
+    const preflight = await buildMoveImportPreflight({ sourcePath: source, memoryRoot });
+    const result = await executeMoveImport({
+      sourcePath: source,
+      memoryRoot,
+      confirmation: preflight.confirmationPhrase,
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
+      moveFile: async (sourcePath, destinationPath) => {
+        calls += 1;
+        if (calls === 2) {
+          await writeFile(path.join(path.dirname(destinationPath), "unexpected-managed-leftover.md"), "leftover\n");
+          throw new Error("simulated move failure after managed leftover");
+        }
+        const bytes = await readFile(sourcePath);
+        await writeFile(destinationPath, bytes);
+        await rm(sourcePath, { force: true });
+        return "test-move";
+      },
+    });
+    assert.equal(result.status, "partial-failure-rolled-back");
+    assert.equal(result.rollbackSourceRootRestored, true);
+    assert.equal(result.rollbackSkippedRootCleanupCount, 1);
+    assert.equal(result.automaticRootRollback.skippedCleanup.reason, "destination-root-cleanup-failed");
+    assert.equal(existsSync(path.join(result.destinationRoot, "unexpected-managed-leftover.md")), true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
