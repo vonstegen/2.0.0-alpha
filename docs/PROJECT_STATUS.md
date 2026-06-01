@@ -216,7 +216,7 @@ Current Living Archive status:
 
 - Folder/vault import exists through the `ArchiveLibraryImporter` module.
 - Copy import is the safe default.
-- Move-on-import is available only through the audited host flow: content-hash-backed preflight fingerprint approval, exact confirmation, stale-preflight rejection, move-time byte recheck, destination byte-hash verification, non-destructive source cleanup, managed Memory destination registration, fingerprinted manifest, rollback ledger, and guarded rollback.
+- Move-on-import is available only through the audited host flow: content-hash-backed preflight fingerprint approval, exact confirmation, stale-preflight rejection, move-time byte recheck, destination byte-hash verification, non-destructive source cleanup, managed Memory destination registration, fingerprinted manifest, rollback ledger, guarded rollback, and manifest-level rollback status.
 - The UI must not register `move-on-import` through ordinary settings saves; it must use the dedicated preflight/execute/rollback routes.
 - Mixed-library classification review is host-owned.
 - Classification review artifacts must be inside imported-library metadata roots and linked from known import manifests.
@@ -291,7 +291,7 @@ Current Living Archive status:
 
 The latest hardening/refactor pass is present in the worktree:
 
-- host routes move imports only through audited content-hash-backed preflight, exact confirmation, stale-preflight rejection, verified execution, non-destructive source cleanup, ledger, and rollback
+- host routes move imports only through audited content-hash-backed preflight, exact confirmation, stale-preflight rejection, verified execution, non-destructive source cleanup, ledger, rollback, and manifest-level rollback status
 - UI blocks ordinary settings-save move registration and uses the dedicated move preflight/execute/rollback path
 - duplicate frontend-only classification approval block was removed
 - `ArchiveLibraryImporter` was extracted from `ArchiveWorkspace`
