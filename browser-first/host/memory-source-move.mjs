@@ -206,10 +206,19 @@ async function rollbackCreatedDirectories(directories) {
   for (const entry of ordered) {
     try {
       await mkdir(entry.sourcePath, { recursive: true });
-      await rmdir(entry.destinationPath).catch(() => undefined);
-      restored.push({ relativePath: entry.relativePath, sourcePath: entry.sourcePath });
     } catch (error) {
       skipped.push({ relativePath: entry.relativePath, reason: "directory-restore-failed", error: error.message });
+      continue;
+    }
+    try {
+      await rmdir(entry.destinationPath);
+      restored.push({ relativePath: entry.relativePath, sourcePath: entry.sourcePath });
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        restored.push({ relativePath: entry.relativePath, sourcePath: entry.sourcePath });
+        continue;
+      }
+      skipped.push({ relativePath: entry.relativePath, reason: "directory-destination-cleanup-failed", error: error.message });
     }
   }
   return { restored, skipped };

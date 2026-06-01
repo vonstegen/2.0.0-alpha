@@ -159,6 +159,44 @@ test("move import can roll back a completely empty source folder", async () => {
   }
 });
 
+test("move rollback reports managed directory cleanup conflicts", async () => {
+  const root = await fixtureRoot("move-dir-cleanup-conflict");
+  const source = path.join(root, "Directory Cleanup Vault");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(path.join(source, "Empty Branch"), { recursive: true });
+  await mkdir(memoryRoot, { recursive: true });
+  try {
+    const preflight = await buildMoveImportPreflight({
+      sourcePath: source,
+      memoryRoot,
+      kind: "folder",
+      ownership: "human-knowledge",
+    });
+    const result = await executeMoveImport({
+      sourcePath: source,
+      memoryRoot,
+      kind: "folder",
+      ownership: "human-knowledge",
+      confirmation: "MOVE Directory Cleanup Vault",
+      expectedPreflightFingerprint: preflight.preflightFingerprint,
+    });
+    await writeFile(path.join(result.source.path, "Empty Branch", "new-managed-file.md"), "# New managed file\n");
+
+    const rollback = await rollbackMoveImport({
+      ledgerPath: result.ledgerPath,
+      confirmation: "ROLLBACK MOVE",
+    });
+    assert.equal(rollback.sourceRootRestored, true);
+    assert.equal(rollback.skippedDirectoryCount, 1);
+    assert.equal(rollback.skippedDirectories[0].reason, "directory-destination-cleanup-failed");
+    assert.equal(shouldDeregisterMovedSourceAfterRollback(rollback), false);
+    assert.equal(existsSync(path.join(source, "Empty Branch")), true);
+    assert.equal(existsSync(path.join(result.source.path, "Empty Branch", "new-managed-file.md")), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("move import preflight blocks symlinked content", async (t) => {
   const root = await fixtureRoot("move-symlink");
   const source = path.join(root, "Vault");
