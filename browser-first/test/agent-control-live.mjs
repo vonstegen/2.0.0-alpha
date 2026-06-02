@@ -1079,16 +1079,18 @@ try {
   })()`, "public-submit approval job");
   const blockedState = (await evaluate(page, `({ submitted: window.__submitted, status: document.querySelector("#status").textContent })`)).result.value;
   assert(!blockedState.submitted, `Approval gate failed before approval: ${JSON.stringify(blockedState)}`);
-  const publicSubmitApprovalState = (await evaluate(panel, `({
+  const publicSubmitApprovalState = (await evaluate(panel, `(async () => ({
     jobApprovalVisible: /Approve once[\\s\\S]*Deny/.test(document.body.innerText),
     pendingApprovalJobs: ((await chrome.storage.local.get("augmentorBrowserJobs")).augmentorBrowserJobs ?? [])
       .filter((job) => job.status === "approval" && job.pendingApproval)
       .map((job) => ({ goal: job.goal, stepText: job.pendingApproval?.step?.text ?? "", reason: job.pendingApproval?.reason ?? "" }))
-  })`)).result.value;
+  }))()`)).result.value;
   assert(publicSubmitApprovalState.jobApprovalVisible, `Public-submit job approval is not visible: ${JSON.stringify(publicSubmitApprovalState)}`);
   assert(publicSubmitApprovalState.pendingApprovalJobs.some((job) => /Submit public form/i.test(job.stepText)), `Public-submit pending approval missing: ${JSON.stringify(publicSubmitApprovalState)}`);
   await evaluate(panel, `(() => {
-    const deny = [...document.querySelectorAll("button")].find((button) => button.textContent === "Deny");
+    const deny = [...document.querySelectorAll("button")].find((button) =>
+      button.textContent === "Deny" && /click "Submit public form"/i.test(button.title || "")
+    );
     if (!deny) throw new Error("No per-job Deny button found.");
     deny.click();
   })()`);

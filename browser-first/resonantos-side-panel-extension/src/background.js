@@ -48,7 +48,11 @@ const syncSidePanelForTab = async (tab) => {
   if (tab?.id === undefined || typeof tab.url !== "string") {
     return;
   }
-  await setSidePanelEnabledForTab(tab.id, !isMainWorkspaceUrl(tab.url));
+  // Intent citation: docs/architecture/ADR-037-browser-first-chromium-resonantos.md
+  // Augmentor is the browser-contained ResonantOS side surface. It must stay
+  // available on the main workspace and normal webpages; humans hide it by
+  // closing the browser side panel and reopen it from the topbar/extension.
+  await setSidePanelEnabledForTab(tab.id, true);
 };
 
 const syncSidePanelForActiveTab = async (windowId) => {
@@ -61,10 +65,6 @@ const openResonantSidePanel = async (windowId, { force = false } = {}) => {
   }
   const tab = await activeTabForWindow(windowId);
   if (tab?.id === undefined) {
-    return false;
-  }
-  if (isMainWorkspaceUrl(tab.url) && !force) {
-    await setSidePanelEnabledForTab(tab.id, false);
     return false;
   }
   await setSidePanelEnabledForTab(tab.id, true);
@@ -96,7 +96,7 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.action.onClicked.addListener(async (tab) => {
-  await openResonantSidePanel(tab.windowId);
+  await openResonantSidePanel(tab.windowId, { force: true });
 });
 
 chrome.commands.onCommand.addListener((command) => {
@@ -164,24 +164,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       senderTab: sender.tab,
       targetUrl: typeof message.targetUrl === "string" ? message.targetUrl : ""
     }).then(sendResponse);
-    return true;
-  }
-
-  if (message.type === "suppress_side_panel_on_main_workspace") {
-    const windowId = sender.tab?.windowId;
-    const suppress = async (tab) => {
-      if (tab?.id === undefined || !isMainWorkspaceUrl(tab.url)) {
-        sendResponse({ ok: false, suppressed: false });
-        return;
-      }
-      await chrome.sidePanel?.setOptions?.({ tabId: tab.id, enabled: false })?.catch?.(() => undefined);
-      sendResponse({ ok: true, suppressed: true });
-    };
-    if (sender.tab) {
-      void suppress(sender.tab);
-      return true;
-    }
-    void activeTabForWindow(windowId).then(suppress);
     return true;
   }
 

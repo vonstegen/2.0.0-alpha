@@ -152,9 +152,11 @@ const betaServer = http.createServer((_request, response) => {
     <title>Beta Browser Job Fixture</title>
     <h1>Beta Browser Job Fixture</h1>
     <button id="beta-finish">Beta Finish</button>
+    <p id="beta-status">Beta idle</p>
     <script>
       document.querySelector("#beta-finish").addEventListener("click", () => {
         document.body.dataset.beta = "finished";
+        document.querySelector("#beta-status").textContent = "Beta finished";
       });
     </script>`);
 });

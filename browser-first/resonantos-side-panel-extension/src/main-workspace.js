@@ -60,6 +60,7 @@ const STORAGE_KEYS = {
 const transcript = document.querySelector("#transcript");
 const workspaceButtons = [...document.querySelectorAll("[data-workspace]")];
 const newChatButton = document.querySelector("#new-chat");
+const openSidebarButton = document.querySelector("#open-sidebar");
 const mainBrowserJobs = document.querySelector("#main-browser-jobs");
 const railNewChatButton = document.querySelector("#rail-new-chat");
 const railSearchToggle = document.querySelector("#rail-search-toggle");
@@ -271,13 +272,6 @@ async function renderMainBrowserJobStatusFromStorage() {
     onOpenMonitor: mainBrowserJobController.openMonitor,
     onPauseFocused: mainBrowserJobController.pauseJob
   });
-}
-
-async function suppressSidebarChatForMainWorkspace() {
-  await chrome.runtime.sendMessage({
-    channel: "resonantos.browser_first",
-    type: "suppress_side_panel_on_main_workspace"
-  }).catch(() => undefined);
 }
 
 const chatRenderers = createSidePanelRenderers({
@@ -751,6 +745,7 @@ async function createNewChat() {
 }
 
 newChatButton?.addEventListener("click", createNewChat);
+openSidebarButton?.addEventListener("click", () => void openSidebar());
 railNewChatButton?.addEventListener("click", createNewChat);
 railSearchToggle?.addEventListener("click", () => {
   railSearchBox.hidden = !railSearchBox.hidden;
@@ -863,7 +858,6 @@ await Promise.all([
   hydrateStarterPromptPreference(),
   hydrateActiveWorkspace()
 ]);
-await suppressSidebarChatForMainWorkspace();
 const requestedDeepLink = parseWorkspaceDeepLink();
 if (!requestedDeepLink) {
   await chatSessionStore.ensureFreshSession({ workspaceId: "answer" });

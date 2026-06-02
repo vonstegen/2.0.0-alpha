@@ -184,7 +184,8 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   }
   assert.doesNotMatch(workspace, /mode-select/);
   assert.doesNotMatch(workspace, /Open Sidebar/);
-  assert.doesNotMatch(workspace, /id="open-sidebar"/);
+  assert.match(workspace, /id="open-sidebar"/);
+  assert.match(workspace, /Show Augmentor sidebar/);
   assert.match(workspace, /main-workspace\.js/);
   assert.match(workspaceStyles, /body:not\(\[data-workspace="answer"\]\):not\(\[data-workspace="hermes"\]\) \.answer-thread/);
   assert.match(workspaceStyles, /grid-template-columns: repeat\(auto-fit, minmax\(170px, 1fr\)\)/);
@@ -262,9 +263,9 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(workspaceActionController, /targetUrl/);
   assert.match(workspaceScript, /open_side_panel/);
   assert.match(workspaceScript, /type: "open_side_panel",\s*force: true/);
-  assert.match(workspaceScript, /suppressSidebarChatForMainWorkspace/);
-  assert.match(workspaceScript, /suppress_side_panel_on_main_workspace/);
-  assert.doesNotMatch(workspaceScript, /openSidebarButton/);
+  assert.match(workspaceScript, /openSidebarButton\?\.addEventListener\("click", \(\) => void openSidebar\(\)\)/);
+  assert.doesNotMatch(workspaceScript, /suppressSidebarChatForMainWorkspace/);
+  assert.doesNotMatch(workspaceScript, /suppress_side_panel_on_main_workspace/);
   assert.match(workspaceActionController, /chromeApi\.tabs\.update/);
   assert.match(workspaceScript, /composerController\.bind\(\)/);
   assert.match(workspaceScript, /connectionLine\.innerHTML/);
@@ -548,9 +549,9 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.doesNotMatch(contentScript, /bridge-config\.generated/);
   assert.doesNotMatch(JSON.stringify(manifest), /web_accessible_resources/);
   assert.doesNotMatch(JSON.stringify(manifest), /content-dock/);
-  assert.match(background, /suppress_side_panel_on_main_workspace/);
+  assert.doesNotMatch(background, /suppress_side_panel_on_main_workspace/);
   assert.match(background, /openResonantSidePanel\(windowId, \{ force: Boolean\(message\.force\) \}\)/);
-  assert.match(background, /setSidePanelEnabledForTab\(tab\.id, false\)/);
+  assert.match(background, /setSidePanelEnabledForTab\(tab\.id, true\)/);
   assert.match(sidePanel, /consumePendingSidebarPrompt/);
   assert.match(sidePanel, /createSidePanelLifecycleController/);
   assert.doesNotMatch(background, /onInstalled[\s\S]*setTimeout/);
@@ -665,8 +666,9 @@ test("browser layer exposes Augmentor chat as the side-panel surface without ste
   assert.match(background, /syncSidePanelForTab/);
   assert.match(background, /chrome\.tabs\.onActivated/);
   assert.match(background, /chrome\.tabs\.onUpdated/);
-  assert.match(background, /isMainWorkspaceUrl\(tab\.url\) && !force/);
-  assert.match(background, /setSidePanelEnabledForTab\(tab\.id, false\)/);
+  assert.doesNotMatch(background, /isMainWorkspaceUrl\(tab\.url\) && !force/);
+  assert.match(background, /openResonantSidePanel\(tab\.windowId, \{ force: true \}\)/);
+  assert.doesNotMatch(background, /setSidePanelEnabledForTab\(tab\.id, false\)/);
   assert.match(script, /isReadableBrowserTab/);
   assert.match(pageActions, /currentWindow: true/);
   assert.match(pageActions, /summarizeSnapshot/);

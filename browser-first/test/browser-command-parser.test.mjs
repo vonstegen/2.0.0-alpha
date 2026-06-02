@@ -83,5 +83,6 @@ test("browser command parser handles quoted text and Amazon shopping tasks", () 
   });
   assert.equal(parseAmazonShoppingTask("add the visible item on this page to the cart"), null);
   assert.equal(inferControlNavigationTarget('read this page, click "Safe Details", type "find resonantos", scroll down'), null);
+  assert.equal(inferControlNavigationTarget("research alpha fixture public submit @Alpha."), null);
   assert.equal(normalizeSearchQuery("can you find some news on the internet?"), "top stories");
 });
