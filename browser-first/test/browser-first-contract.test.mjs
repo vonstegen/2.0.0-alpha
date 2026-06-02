@@ -1007,6 +1007,7 @@ test("browser layer can read active tab context without raw privileged access", 
   const contentControlRefs = await readText(path.join(extensionRoot, "src", "lib", "content-control-refs.js"));
   const panel = await readText(path.join(extensionRoot, "src", "side-panel.js"));
   const pageActions = await readText(path.join(extensionRoot, "src", "lib", "browser-page-actions.js"));
+  const walletDaoAuditMarkdown = await readText(path.join(extensionRoot, "src", "lib", "wallet-dao-audit-markdown.js"));
   const pageControlScripts = `${controlOverlay}\n${contentFieldSafety}\n${contentInlineActions}\n${contentControlRefs}\n${content}`;
 
   assert.match(pageControlScripts, /read_page/);
@@ -1073,8 +1074,8 @@ test("browser layer can read active tab context without raw privileged access", 
   assert.match(content, /phantomSolana/);
   assert.match(pageActions, /phantomEthereum/);
   assert.match(pageActions, /phantomSolana/);
-  assert.match(pageActions, /Wallet \/ DAO Audit/);
-  assert.match(pageActions, /ResonantOS did not request wallet connection/);
+  assert.match(walletDaoAuditMarkdown, /Wallet \/ DAO Audit/);
+  assert.match(walletDaoAuditMarkdown, /ResonantOS did not request wallet connection/);
   assert.doesNotMatch(pageActions, /\.connect\(/);
   assert.doesNotMatch(pageActions, /signMessage|signTransaction|signAndSendTransaction/);
   assert.match(pageActions, /chrome\.tabs\.sendMessage/);
