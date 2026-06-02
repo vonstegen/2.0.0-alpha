@@ -26,6 +26,7 @@ import { createControlStepExecutor } from "./lib/control-step-executor.js";
 import { createMessageActionController } from "./lib/message-action-controller.js";
 import { createMonitorRenderers } from "./lib/monitor-renderers.js";
 import { createSidePanelBrowserActionController } from "./lib/side-panel-browser-action-controller.js";
+import { createBrowserActionLock } from "./lib/side-panel-browser-action-lock.js";
 import { createSidePanelBrowserJobController } from "./lib/side-panel-browser-job-controller.js";
 import { createSidePanelCommandRouter } from "./lib/side-panel-command-router.js";
 import { createSidePanelControlCommandController } from "./lib/side-panel-control-command-controller.js";
@@ -117,24 +118,10 @@ let personalizationSettings = null;
 let messageActions = null;
 let monitorRenderers = null;
 let nextControlPreflightDecision = null;
-let browserActionQueue = Promise.resolve();
 let browserJobScheduler = null;
 
 const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
-
-const withBrowserActionLock = async (task) => {
-  const previous = browserActionQueue.catch(() => undefined);
-  let release;
-  browserActionQueue = new Promise((resolve) => {
-    release = resolve;
-  });
-  await previous;
-  try {
-    return await task();
-  } finally {
-    release();
-  }
-};
+const { withBrowserActionLock } = createBrowserActionLock();
 const composerController = createComposerController({
   commandForm,
   commandInput,
