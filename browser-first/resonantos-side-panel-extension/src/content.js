@@ -542,23 +542,7 @@ const inlineStyles = `
   #${inlineAssistantId} .ros-inline-result { white-space: pre-wrap; color:#dce9df; font: 12px/1.45 ui-sans-serif, system-ui; background: rgba(255,255,255,.045); border-radius: 12px; padding: 10px; }
 `;
 
-const inlineActionList = [
-  { action: "custom", label: "Ask", shortcut: "A" },
-  { action: "summarize", label: "Summarize", shortcut: "S" },
-  { action: "explain", label: "Explain", shortcut: "E" },
-  { action: "fact-check", label: "Fact-check", shortcut: "F" },
-  { action: "translate", label: "Translate", shortcut: "T" },
-  { action: "rewrite", label: "Rewrite", shortcut: "R" },
-  { action: "send", label: "Send to side panel", shortcut: "P" },
-  { action: "insert", label: "Insert", shortcut: "I" }
-];
-
-const inlineActionByShortcut = (key) =>
-  inlineActionList.find((item) => item.shortcut.toLowerCase() === String(key ?? "").toLowerCase())?.action ?? "";
-
-const renderInlineActions = () => inlineActionList
-  .map((item) => `<button type="button" data-action="${item.action}" title="${item.label} (${item.shortcut})">${item.label}<kbd>${item.shortcut}</kbd></button>`)
-  .join("");
+const { inlineActionByShortcut, renderInlineActions } = window.ResonantOSInlineActions;
 
 const ensureInlineAssistantUi = () => {
   if (!document.getElementById("resonantos-inline-styles")) {

@@ -28,6 +28,14 @@ const fieldSafetyScriptPath = path.join(
   "lib",
   "content-field-safety.js",
 );
+const inlineActionsScriptPath = path.join(
+  repoRoot,
+  "browser-first",
+  "resonantos-side-panel-extension",
+  "src",
+  "lib",
+  "content-inline-actions.js",
+);
 
 async function loadContentScript(html) {
   const dom = new JSDOM(html, {
@@ -53,10 +61,28 @@ async function loadContentScript(html) {
   dom.window.HTMLElement.prototype.scrollIntoView = function scrollIntoView() {};
   dom.window.eval(await readFile(controlOverlayScriptPath, "utf8"));
   dom.window.eval(await readFile(fieldSafetyScriptPath, "utf8"));
+  dom.window.eval(await readFile(inlineActionsScriptPath, "utf8"));
   dom.window.eval(await readFile(contentScriptPath, "utf8"));
   assert.equal(typeof listener, "function");
   return { dom, listener };
 }
+
+test("content inline actions expose stable shortcuts and button markup", async () => {
+  const dom = new JSDOM("<!doctype html>", { runScripts: "outside-only" });
+  dom.window.eval(await readFile(inlineActionsScriptPath, "utf8"));
+  const {
+    inlineActionByShortcut,
+    inlineActionList,
+    renderInlineActions,
+  } = dom.window.ResonantOSInlineActions;
+
+  assert.equal(inlineActionByShortcut("s"), "summarize");
+  assert.equal(inlineActionByShortcut("P"), "send");
+  assert.equal(inlineActionByShortcut("x"), "");
+  assert.equal(inlineActionList.length, 8);
+  assert.match(renderInlineActions(), /data-action="summarize"/);
+  assert.match(renderInlineActions(), /<kbd>S<\/kbd>/);
+});
 
 test("content field safety policy classifies high-risk editable fields before automation", async () => {
   const dom = new JSDOM(`
