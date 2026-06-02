@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  isRailVisibleChatSession,
   normalizedRailQuery,
   railSearchMatchesProject,
   railSearchMatchesSession
@@ -32,4 +33,11 @@ test("main workspace rail search keeps projects visible when project name or chi
   assert.equal(railSearchMatchesProject(project, [], "cosmo"), true);
   assert.equal(railSearchMatchesProject(project, [session], "membership"), true);
   assert.equal(railSearchMatchesProject(project, [session], "unrelated"), false);
+});
+
+test("main workspace rail hides blank draft sessions from chat history", () => {
+  assert.equal(isRailVisibleChatSession({ title: "New chat", messages: [] }), false);
+  assert.equal(isRailVisibleChatSession({ title: "Settings", workspaceId: "settings", messages: [] }), false);
+  assert.equal(isRailVisibleChatSession({ title: "Real chat", messages: [{ role: "user", content: "hello" }] }), true);
+  assert.equal(isRailVisibleChatSession({ title: "Archived", archivedAt: "2026-06-02T00:00:00.000Z", messages: [{ role: "user", content: "hello" }] }), false);
 });

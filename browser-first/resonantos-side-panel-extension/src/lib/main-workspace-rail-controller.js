@@ -5,6 +5,7 @@ export function createMainWorkspaceRailController(dependencies) {
     document,
     getActiveWorkspace,
     getRailSearchQuery,
+    isRailVisibleChatSession = (session) => Boolean(session) && !session.archivedAt,
     persistActiveWorkspace,
     railChatList,
     railClearSearch,
@@ -296,7 +297,7 @@ export function createMainWorkspaceRailController(dependencies) {
       }
     });
     railClearSearch.hidden = !getRailSearchQuery();
-    const allSessions = chatSessionStore.getSessions().filter((session) => !session.archivedAt);
+    const allSessions = chatSessionStore.getSessions().filter(isRailVisibleChatSession);
     const projectEntries = orderedRailItems(chatSessionStore.getProjects().filter((project) => !project.archivedAt))
       .map((project) => ({
         project,

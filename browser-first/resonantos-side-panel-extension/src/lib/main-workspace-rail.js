@@ -13,6 +13,17 @@ export function railSearchMatchesSession(session, query) {
   return haystack.includes(normalized);
 }
 
+export function isRailVisibleChatSession(session) {
+  // Intent citation: docs/architecture/ADR-037-browser-first-chromium-resonantos.md
+  // The rail is chat history, not a navigation log. A blank draft exists so the
+  // composer has a target, but it should not appear as a real chat until the
+  // human or an AI agent has actually written into it.
+  return Boolean(session) &&
+    !session.archivedAt &&
+    Array.isArray(session.messages) &&
+    session.messages.length > 0;
+}
+
 export function railSearchMatchesProject(project, projectSessions = [], query = "") {
   const normalized = normalizedRailQuery(query);
   if (!normalized) return true;

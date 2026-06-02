@@ -27,7 +27,7 @@ import { readPersonalizationSettings } from "./lib/personalization-settings.js";
 import { runReviewableCapture } from "./lib/main-workspace-review-handoff.js";
 import { createMainWorkspaceActionController } from "./lib/main-workspace-action-controller.js";
 import { createMainWorkspaceRailController } from "./lib/main-workspace-rail-controller.js";
-import { railSearchMatchesProject, railSearchMatchesSession } from "./lib/main-workspace-rail.js";
+import { isRailVisibleChatSession, railSearchMatchesProject, railSearchMatchesSession } from "./lib/main-workspace-rail.js";
 import { renderSettingsWorkspace } from "./lib/main-workspace-settings.js";
 import { createMessageActionController } from "./lib/message-action-controller.js";
 import { createSitePermissionStore } from "./lib/site-permission-store.js";
@@ -411,6 +411,7 @@ const railController = createMainWorkspaceRailController({
   railProjectList,
   railSearchMatchesProject,
   railSearchMatchesSession,
+  isRailVisibleChatSession,
   renderAll,
   setActiveWorkspaceId: (workspaceId) => {
     activeWorkspace = workspaceId;
@@ -427,13 +428,15 @@ const {
   switchToSession,
 } = railController;
 
-function setActiveWorkspace(workspaceId, { persist = false } = {}) {
+function setActiveWorkspace(workspaceId, { bindSession = false, persist = false } = {}) {
   activeWorkspace = allowedWorkspaces.has(workspaceId) ? workspaceId : "answer";
   document.body.dataset.workspace = activeWorkspace;
   commandForm.hidden = activeWorkspace !== "answer";
   if (persist) {
     void persistActiveWorkspace();
-    void chatSessionStore.setActiveSessionWorkspace(activeWorkspace);
+    if (bindSession) {
+      void chatSessionStore.setActiveSessionWorkspace(activeWorkspace);
+    }
   }
 }
 
