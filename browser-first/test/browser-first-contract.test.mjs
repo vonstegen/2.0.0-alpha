@@ -538,6 +538,11 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(background, /open_side_panel/);
   assert.match(background, /browser_control_handoff/);
   assert.match(background, /handoffToResonantSidePanel/);
+  assert.doesNotMatch(JSON.stringify(manifest), /web_accessible_resources/);
+  assert.doesNotMatch(JSON.stringify(manifest), /content-dock/);
+  assert.doesNotMatch(background, /content_dock_/);
+  assert.doesNotMatch(background, /browser-content-dock/);
+  assert.doesNotMatch(background, /openContentDockForTab/);
   assert.match(background, /suppress_side_panel_on_main_workspace/);
   assert.match(background, /openResonantSidePanel\(windowId, \{ force: Boolean\(message\.force\) \}\)/);
   assert.match(background, /setSidePanelEnabledForTab\(tab\.id, false\)/);
@@ -1032,6 +1037,9 @@ test("browser layer can read active tab context without raw privileged access", 
   assert.match(content, /resonantos-inline-assistant/);
   assert.match(content, /ros-inline-prompt/);
   assert.match(content, /inline_assistant_request/);
+  assert.match(content, /lastInlineSelectionDetails/);
+  assert.match(content, /currentSelectionDetails\(\) \?\? lastInlineSelectionDetails/);
+  assert.match(content, /Summary:\\n/);
   assert.doesNotMatch(content, /127\.0\.0\.1:47773/);
   assert.match(contentInlineActions, /inlineActionList/);
   assert.match(contentInlineActions, /inlineActionByShortcut/);

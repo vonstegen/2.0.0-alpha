@@ -5,6 +5,7 @@ const controlBubbleClass = "resonantos-control-bubble";
 const controlToastId = "resonantos-control-toast";
 const controlStatusTextClass = "ros-control-status-text";
 const controlStopButtonClass = "ros-control-stop-button";
+let lastInlineSelectionDetails = null;
 
 const isTopWindow = () => window.top === window;
 const classifyEditableField = (element) =>
@@ -669,6 +670,7 @@ const positionInlineButton = () => {
       button.style.display = "none";
       return;
     }
+    lastInlineSelectionDetails = details;
     button.style.left = `${Math.min(window.innerWidth - 112, Math.max(8, details.rect.left))}px`;
     button.style.top = `${Math.min(window.innerHeight - 42, Math.max(8, details.rect.bottom + 8))}px`;
     button.style.display = "block";
@@ -682,13 +684,14 @@ const positionInlineButtonSync = () => {
     button.style.display = "none";
     return;
   }
+  lastInlineSelectionDetails = details;
   button.style.left = `${Math.min(window.innerWidth - 112, Math.max(8, details.rect.left))}px`;
   button.style.top = `${Math.min(window.innerHeight - 42, Math.max(8, details.rect.bottom + 8))}px`;
   button.style.display = "block";
 };
 
 const showInlinePanel = (initialAction = "summarize") => {
-  const details = currentSelectionDetails();
+  const details = currentSelectionDetails() ?? lastInlineSelectionDetails;
   const { panel, button } = ensureInlineAssistantUi();
   if (!details) return;
   panel.dataset.selection = details.text;
@@ -786,7 +789,12 @@ const runInlineAction = async (action) => {
         pageContext: `${document.title}\n${location.href}\n${document.body?.innerText?.slice(0, 3000) ?? ""}`
       }
     });
-    result.textContent = payload?.ok && payload?.reply ? payload.reply : localInlineResult(action, selection);
+    const reply = payload?.ok && payload?.reply ? String(payload.reply) : "";
+    result.textContent = reply
+      ? /^(summary|summarize)$/i.test(action) && !/^summary\b/i.test(reply.trim())
+        ? `Summary:\n${reply}`
+        : reply
+      : localInlineResult(action, selection);
   } catch {
     result.textContent = localInlineResult(action, selection);
   }
