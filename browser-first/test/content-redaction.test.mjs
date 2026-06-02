@@ -20,6 +20,14 @@ const controlOverlayScriptPath = path.join(
   "lib",
   "control-overlay.js",
 );
+const fieldSafetyScriptPath = path.join(
+  repoRoot,
+  "browser-first",
+  "resonantos-side-panel-extension",
+  "src",
+  "lib",
+  "content-field-safety.js",
+);
 
 async function loadContentScript(html) {
   const dom = new JSDOM(html, {
@@ -44,10 +52,39 @@ async function loadContentScript(html) {
   };
   dom.window.HTMLElement.prototype.scrollIntoView = function scrollIntoView() {};
   dom.window.eval(await readFile(controlOverlayScriptPath, "utf8"));
+  dom.window.eval(await readFile(fieldSafetyScriptPath, "utf8"));
   dom.window.eval(await readFile(contentScriptPath, "utf8"));
   assert.equal(typeof listener, "function");
   return { dom, listener };
 }
+
+test("content field safety policy classifies high-risk editable fields before automation", async () => {
+  const dom = new JSDOM(`
+    <!doctype html>
+    <form role="search"><input id="search" type="text" name="q"></form>
+    <input id="password" type="password" name="password">
+    <input id="card" type="text" name="card-number">
+    <input id="login" type="text" name="username">
+    <input id="email" type="email" name="email">
+    <textarea id="draft"></textarea>
+    <input id="generic" type="text" name="topic">
+  `, { runScripts: "outside-only", url: "https://example.test/" });
+  dom.window.eval(await readFile(fieldSafetyScriptPath, "utf8"));
+  const classify = (selector) => dom.window.ResonantOSContentFieldSafety.classifyEditableField(dom.window.document.querySelector(selector));
+
+  const searchSafety = classify("#search");
+  assert.equal(searchSafety.kind, "search-query");
+  assert.equal(searchSafety.safeToType, true);
+  assert.equal(searchSafety.safeToSubmit, true);
+  assert.equal(searchSafety.reason, "Search/query fields may be typed and submitted by Agent Control.");
+  assert.equal(classify("#password").kind, "credential");
+  assert.equal(classify("#card").kind, "payment");
+  assert.equal(classify("#login").kind, "login");
+  assert.equal(classify("#email").kind, "personal-contact");
+  assert.equal(classify("#draft").kind, "document-edit");
+  assert.equal(classify("#generic").kind, "generic-text");
+  assert.equal(classify("#generic").safeToSubmit, false);
+});
 
 test("content page snapshots redact sensitive and ambiguous editable values", async () => {
   const { listener } = await loadContentScript(`

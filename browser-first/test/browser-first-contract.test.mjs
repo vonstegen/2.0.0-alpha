@@ -77,6 +77,7 @@ test("ResonantOS browser layer is packaged as a Chromium side-panel extension", 
   assert.ok(manifest.permissions.includes("tabs"));
   assert.ok(manifest.permissions.includes("webNavigation"));
   assert.equal(manifest.content_scripts[0].all_frames, true);
+  assert.deepEqual(manifest.content_scripts[0].js, ["src/lib/control-overlay.js", "src/lib/content-field-safety.js", "src/content.js"]);
   assert.equal(manifest.side_panel.default_path, "src/side-panel.html");
   assert.equal(manifest.chrome_url_overrides.newtab, "src/main-workspace.html");
   assert.equal(manifest.background.type, "module");
@@ -978,9 +979,10 @@ test("main workspace and side-panel chat composers expose the same core controls
 test("browser layer can read active tab context without raw privileged access", async () => {
   const content = await readText(path.join(extensionRoot, "src", "content.js"));
   const controlOverlay = await readText(path.join(extensionRoot, "src", "lib", "control-overlay.js"));
+  const contentFieldSafety = await readText(path.join(extensionRoot, "src", "lib", "content-field-safety.js"));
   const panel = await readText(path.join(extensionRoot, "src", "side-panel.js"));
   const pageActions = await readText(path.join(extensionRoot, "src", "lib", "browser-page-actions.js"));
-  const pageControlScripts = `${controlOverlay}\n${content}`;
+  const pageControlScripts = `${controlOverlay}\n${contentFieldSafety}\n${content}`;
 
   assert.match(pageControlScripts, /read_page/);
   assert.match(pageControlScripts, /click_text/);
@@ -1026,12 +1028,12 @@ test("browser layer can read active tab context without raw privileged access", 
   assert.match(content, /ensureControlRef/);
   assert.match(content, /clickControlRef/);
   assert.match(content, /classifyEditableField/);
-  assert.match(content, /search-query/);
-  assert.match(content, /document-edit/);
-  assert.match(content, /personal-contact/);
-  assert.match(content, /Credential fields are human-only/);
-  assert.match(content, /Payment and wallet fields are human-only/);
-  assert.match(content, /safeToSubmit/);
+  assert.match(contentFieldSafety, /search-query/);
+  assert.match(contentFieldSafety, /document-edit/);
+  assert.match(contentFieldSafety, /personal-contact/);
+  assert.match(contentFieldSafety, /Credential fields are human-only/);
+  assert.match(contentFieldSafety, /Payment and wallet fields are human-only/);
+  assert.match(contentFieldSafety, /safeToSubmit/);
   assert.match(content, /querySelectorAllDeep/);
   assert.match(content, /openShadowHosts/);
   assert.match(content, /fields: querySelectorAllDeep/);
