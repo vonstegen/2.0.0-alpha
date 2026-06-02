@@ -19,117 +19,17 @@ import {
   reviewRequestCard,
   reviewRequestNextAction
 } from "./memory-review-renderers.js";
+import {
+  formatCount,
+  memoryMetric,
+  memoryResultCard,
+  promotionMatchesHandoff,
+  reviewMatchesHandoff,
+  setMemoryStatus,
+  wikiHealthCard
+} from "./main-workspace-memory-dom.js";
 
 export { reviewRequestNextAction } from "./memory-review-renderers.js";
-
-const formatCount = (value) => Number(value ?? 0).toLocaleString();
-
-function metric(label, value, meta = "") {
-  const node = document.createElement("div");
-  node.className = "memory-metric";
-  const labelNode = document.createElement("span");
-  labelNode.textContent = label;
-  const valueNode = document.createElement("strong");
-  valueNode.textContent = value;
-  const metaNode = document.createElement("small");
-  metaNode.textContent = meta;
-  node.append(labelNode, valueNode, metaNode);
-  return node;
-}
-
-function resultCard(match) {
-  const card = document.createElement("article");
-  card.className = "memory-result";
-  const title = document.createElement("strong");
-  title.textContent = match.title || "Untitled memory page";
-  const path = document.createElement("code");
-  path.textContent = match.path || "AI_MEMORY";
-  const excerpt = document.createElement("p");
-  excerpt.textContent = match.excerpt || "No excerpt returned.";
-  card.append(title, path, excerpt);
-  return card;
-}
-
-function wikiHealthCard(health, onRefresh, onRunLint) {
-  const card = document.createElement("section");
-  card.className = "memory-card memory-wiki-health";
-  const top = document.createElement("div");
-  top.className = "memory-review-top";
-  const label = document.createElement("label");
-  label.textContent = "Wiki Health";
-  const refresh = document.createElement("button");
-  refresh.type = "button";
-  refresh.textContent = "Refresh";
-  refresh.addEventListener("click", onRefresh);
-  const lint = document.createElement("button");
-  lint.type = "button";
-  lint.textContent = "Run Lint";
-  lint.addEventListener("click", onRunLint);
-  top.append(label, refresh, lint);
-
-  const score = document.createElement("p");
-  score.className = "memory-status";
-  const issueCount = Array.isArray(health?.issues) ? health.issues.length : 0;
-  score.dataset.tone = !health?.exists ? "error" : issueCount ? "warning" : "success";
-  score.textContent = health?.exists
-    ? `Health ${health.score ?? 0}/100 · ${formatCount(health.pages)} page(s) · ${issueCount} issue(s).`
-    : "AI_MEMORY/wiki is missing.";
-
-  const summary = document.createElement("div");
-  summary.className = "memory-health-summary";
-  summary.append(
-    metric("Index", health?.index?.exists ? "Present" : "Missing", `${formatCount(health?.index?.entries)} linked entries`),
-    metric("Log", health?.log?.exists ? "Present" : "Missing", health?.log?.modifiedAt || "no timestamp"),
-    metric("Broken links", formatCount(health?.brokenLinks?.length), "sampled"),
-    metric("Orphans", formatCount(health?.orphanPages?.length), "sampled")
-  );
-
-  const list = document.createElement("ol");
-  list.className = "memory-health-issues";
-  const issues = Array.isArray(health?.issues) ? health.issues : [];
-  if (!issues.length && health?.exists) {
-    const item = document.createElement("li");
-    item.textContent = "No wiki structure issues found in this scan.";
-    list.append(item);
-  } else {
-    for (const issue of issues.slice(0, 8)) {
-      const item = document.createElement("li");
-      const title = document.createElement("strong");
-      title.textContent = issue.type || issue.severity || "issue";
-      const body = document.createElement("span");
-      body.textContent = issue.message || "Review this wiki health issue.";
-      item.append(title, body);
-      list.append(item);
-    }
-  }
-
-  card.append(top, score, summary, list);
-  return card;
-}
-
-
-function setStatus(node, text, tone = "neutral") {
-  node.textContent = text;
-  node.dataset.tone = tone;
-}
-
-function reviewMatchesHandoff(request = {}, { initialReviewPath = "", initialArtifactPath = "" } = {}) {
-  const reviewPath = String(initialReviewPath ?? "").trim();
-  const artifactPath = String(initialArtifactPath ?? "").trim();
-  return Boolean(
-    (reviewPath && (request.path === reviewPath || request.reviewRequestPath === reviewPath)) ||
-    (artifactPath && request.artifactPath === artifactPath)
-  );
-}
-
-function promotionMatchesHandoff(entry = {}, { initialReviewPath = "", initialPromotedPage = "" } = {}) {
-  const reviewPath = String(initialReviewPath ?? "").trim();
-  const promotedPage = String(initialPromotedPage ?? "").trim();
-  return Boolean(
-    (promotedPage && entry.promotedPage === promotedPage) ||
-    (reviewPath && (entry.path === reviewPath || entry.reviewRequestPath === reviewPath))
-  );
-}
 
 export function renderLivingArchiveWorkspace({
   container,
@@ -157,9 +57,9 @@ export function renderLivingArchiveWorkspace({
   const metrics = document.createElement("div");
   metrics.className = "memory-metrics";
   metrics.append(
-    metric("Memory pages", "…", "organized AI pages"),
-    metric("Saved sources", "…", "notes and files"),
-    metric("To review", "…", "before trusted memory")
+    memoryMetric("Memory pages", "…", "organized AI pages"),
+    memoryMetric("Saved sources", "…", "notes and files"),
+    memoryMetric("To review", "…", "before trusted memory")
   );
 
   const wikiHealthPanel = document.createElement("section");
@@ -315,7 +215,7 @@ export function renderLivingArchiveWorkspace({
       intakeMeta.textContent = status.exists ? "source vault active" : "memory root missing";
       reviewMeta.textContent = `${formatCount(status.review?.requests)} requests · ${formatCount(status.review?.artifacts)} drafts`;
     } catch (error) {
-      metrics.append(metric("Status", "Unavailable", error instanceof Error ? error.message : String(error)));
+      metrics.append(memoryMetric("Status", "Unavailable", error instanceof Error ? error.message : String(error)));
     }
   };
 
@@ -353,7 +253,7 @@ export function renderLivingArchiveWorkspace({
   const loadReviewQueue = async () => {
     refreshReview.disabled = true;
     reviewList.replaceChildren();
-    setStatus(reviewStatus, "Loading review queue…");
+    setMemoryStatus(reviewStatus, "Loading review queue…");
     try {
       const result = await bridgeRequest("/archive/review/list", {
         method: "POST",
@@ -361,7 +261,7 @@ export function renderLivingArchiveWorkspace({
       });
       const requests = Array.isArray(result.requests) ? result.requests : [];
       if (!requests.length) {
-        setStatus(reviewStatus, "No pending review requests. Browser artifacts can request review from the Artifacts workspace.", "warning");
+        setMemoryStatus(reviewStatus, "No pending review requests. Browser artifacts can request review from the Artifacts workspace.", "warning");
         return;
       }
       const focusedRequest = requests.find((request) => reviewMatchesHandoff(request, { initialReviewPath, initialArtifactPath }));
@@ -375,21 +275,21 @@ export function renderLivingArchiveWorkspace({
         { focused: reviewMatchesHandoff(request, { initialReviewPath, initialArtifactPath }) }
       )));
       if (focusedRequest) {
-        setStatus(reviewStatus, `Focused review request: ${focusedRequest.path}. Inspect the preserved source, then draft, verify, and promote only if it belongs in AI Memory.`, "success");
+        setMemoryStatus(reviewStatus, `Focused review request: ${focusedRequest.path}. Inspect the preserved source, then draft, verify, and promote only if it belongs in AI Memory.`, "success");
         queueMicrotask(async () => {
           reviewList.querySelector('[data-focused="true"]')?.scrollIntoView?.({ block: "center", behavior: "smooth" });
           if (focusedRequest.artifactPath) {
             await previewSourceArtifact(focusedRequest);
-            setStatus(reviewStatus, `Focused review request: ${focusedRequest.path}. Source preview loaded; draft only after checking the preserved evidence.`, "success");
+            setMemoryStatus(reviewStatus, `Focused review request: ${focusedRequest.path}. Source preview loaded; draft only after checking the preserved evidence.`, "success");
           }
         });
       } else if (initialReviewPath || initialArtifactPath) {
-        setStatus(reviewStatus, `Review queue loaded, but the requested handoff is not in the first ${requests.length} item(s). Use Refresh or search memory history if it was already processed.`, "warning");
+        setMemoryStatus(reviewStatus, `Review queue loaded, but the requested handoff is not in the first ${requests.length} item(s). Use Refresh or search memory history if it was already processed.`, "warning");
       } else {
-        setStatus(reviewStatus, `${requests.length} review request(s) waiting in ${result.root}.`, "success");
+        setMemoryStatus(reviewStatus, `${requests.length} review request(s) waiting in ${result.root}.`, "success");
       }
     } catch (error) {
-      setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
     } finally {
       refreshReview.disabled = false;
     }
@@ -400,7 +300,7 @@ export function renderLivingArchiveWorkspace({
     promotionList.replaceChildren();
     promotionPreview.hidden = true;
     promotionPreview.replaceChildren();
-    setStatus(promotionStatus, "Loading promotion history…");
+    setMemoryStatus(promotionStatus, "Loading promotion history…");
     try {
       const result = await bridgeRequest("/archive/review/promotions/list", {
         method: "POST",
@@ -408,7 +308,7 @@ export function renderLivingArchiveWorkspace({
       });
       const promotions = Array.isArray(result.promotions) ? result.promotions : [];
       if (!promotions.length) {
-        setStatus(promotionStatus, "No promoted wiki updates yet.", "warning");
+        setMemoryStatus(promotionStatus, "No promoted wiki updates yet.", "warning");
         return;
       }
       const focusedPromotion = promotions.find((entry) => promotionMatchesHandoff(entry, { initialReviewPath, initialPromotedPage }));
@@ -419,16 +319,16 @@ export function renderLivingArchiveWorkspace({
         { focused: promotionMatchesHandoff(entry, { initialReviewPath, initialPromotedPage }) }
       )));
       if (focusedPromotion) {
-        setStatus(promotionStatus, `Focused promoted page: ${focusedPromotion.promotedPage}. Previewing trusted AI Memory below.`, "success");
+        setMemoryStatus(promotionStatus, `Focused promoted page: ${focusedPromotion.promotedPage}. Previewing trusted AI Memory below.`, "success");
         queueMicrotask(async () => {
           promotionList.querySelector('[data-focused="true"]')?.scrollIntoView?.({ block: "center", behavior: "smooth" });
           await previewPromotedPage(focusedPromotion, { handoff: true });
         });
       } else {
-        setStatus(promotionStatus, `${promotions.length} promoted wiki update(s) in ${result.root}.`, "success");
+        setMemoryStatus(promotionStatus, `${promotions.length} promoted wiki update(s) in ${result.root}.`, "success");
       }
     } catch (error) {
-      setStatus(promotionStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(promotionStatus, error instanceof Error ? error.message : String(error), "error");
     } finally {
       refreshPromotions.disabled = false;
     }
@@ -463,7 +363,7 @@ export function renderLivingArchiveWorkspace({
       sourceList.append(...visible.map((source) => sourceCard(source, reviewSource, createSourceIntake, showSourceVersions)));
     }
     sourceFilterCount.textContent = `${visible.length}/${connectedSources.length} source(s) visible`;
-    setStatus(
+    setMemoryStatus(
       sourceStatus,
       connectedSources.length
         ? `${visible.length}/${connectedSources.length} connected source(s) visible. Review before creating governed intake.`
@@ -476,7 +376,7 @@ export function renderLivingArchiveWorkspace({
     refreshSources.disabled = true;
     sourceList.replaceChildren();
     sourcePreview.replaceChildren();
-    setStatus(sourceStatus, "Loading connected sources…");
+    setMemoryStatus(sourceStatus, "Loading connected sources…");
     try {
       const result = await bridgeRequest("/memory/settings", { method: "GET" });
       connectedSources = result.settings?.sources ?? [];
@@ -485,7 +385,7 @@ export function renderLivingArchiveWorkspace({
       sourceMoveHistoryEntries = result.sourceMoveHistory ?? [];
       renderSourceList();
     } catch (error) {
-      setStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
     } finally {
       refreshSources.disabled = false;
     }
@@ -497,7 +397,7 @@ export function renderLivingArchiveWorkspace({
   runSourceSync.addEventListener("click", async () => {
     runSourceSync.disabled = true;
     refreshSources.disabled = true;
-    setStatus(sourceStatus, "Running governed source sync…");
+    setMemoryStatus(sourceStatus, "Running governed source sync…");
     try {
       const result = await bridgeRequest("/memory/source/sync", {
         method: "POST",
@@ -511,9 +411,9 @@ export function renderLivingArchiveWorkspace({
       sourceMoveHistoryEntries = settingsResult.sourceMoveHistory ?? sourceMoveHistoryEntries;
       renderSourceList();
       if (result.status === "paused") {
-        setStatus(sourceStatus, "Memory source sync is paused. Change sync mode in Settings > Memory before running sync.", "warning");
+        setMemoryStatus(sourceStatus, "Memory source sync is paused. Change sync mode in Settings > Memory before running sync.", "warning");
       } else if (result.autoIntake) {
-        setStatus(
+        setMemoryStatus(
           sourceStatus,
           `Sync reviewed ${formatCount(result.reviewedSources)} source(s), created ${formatCount(result.createdArtifacts)} intake artifact(s), and queued ${formatCount(result.reviewRequests)} review request(s).`,
           "success"
@@ -521,14 +421,14 @@ export function renderLivingArchiveWorkspace({
         await loadStatus();
         await loadReviewQueue();
       } else {
-        setStatus(
+        setMemoryStatus(
           sourceStatus,
           `Sync reviewed ${formatCount(result.reviewedSources)} source(s) and found ${formatCount(result.eligibleFiles)} new/changed file(s).`,
           "success"
         );
       }
     } catch (error) {
-      setStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
     } finally {
       runSourceSync.disabled = false;
       refreshSources.disabled = false;
@@ -537,7 +437,7 @@ export function renderLivingArchiveWorkspace({
 
   const reviewSource = async (source) => {
     sourcePreview.replaceChildren();
-    setStatus(sourceStatus, `Reviewing ${source.path || source.id}…`);
+    setMemoryStatus(sourceStatus, `Reviewing ${source.path || source.id}…`);
     try {
       const result = await bridgeRequest("/memory/source/review", {
         method: "POST",
@@ -547,18 +447,18 @@ export function renderLivingArchiveWorkspace({
       sourcePreview.replaceChildren(sourceReviewCard(result, createSelectedFileIntake, (candidate) => {
         void previewSourceDiff(result.source, candidate);
       }, repairSourceVersions));
-      setStatus(sourceStatus, `Source review ready: ${result.candidates?.length ?? 0} candidate file(s).`, "success");
+      setMemoryStatus(sourceStatus, `Source review ready: ${result.candidates?.length ?? 0} candidate file(s).`, "success");
     } catch (error) {
-      setStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const previewSourceDiff = async (source, candidate) => {
     if (!source?.id || !candidate?.path) {
-      setStatus(sourceStatus, "Source diff requires a source and candidate file.", "error");
+      setMemoryStatus(sourceStatus, "Source diff requires a source and candidate file.", "error");
       return;
     }
-    setStatus(sourceStatus, `Loading diff for ${candidate.path}…`);
+    setMemoryStatus(sourceStatus, `Loading diff for ${candidate.path}…`);
     try {
       const result = await bridgeRequest("/memory/source/diff", {
         method: "POST",
@@ -570,18 +470,18 @@ export function renderLivingArchiveWorkspace({
         }
       });
       sourcePreview.append(sourceDiffCard(result));
-      setStatus(sourceStatus, `Diff ready for ${candidate.path}: ${result.status}.`, "success");
+      setMemoryStatus(sourceStatus, `Diff ready for ${candidate.path}: ${result.status}.`, "success");
     } catch (error) {
-      setStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const repairSourceVersions = async (review) => {
     if (!review.source?.id) {
-      setStatus(sourceStatus, "Source version repair requires a source id.", "error");
+      setMemoryStatus(sourceStatus, "Source version repair requires a source id.", "error");
       return;
     }
-    setStatus(sourceStatus, "Repairing source version tracking…");
+    setMemoryStatus(sourceStatus, "Repairing source version tracking…");
     try {
       const result = await bridgeRequest("/memory/source/versions/repair", {
         method: "POST",
@@ -604,7 +504,7 @@ export function renderLivingArchiveWorkspace({
       sourceSyncHistoryEntries = settingsResult.syncHistory ?? sourceSyncHistoryEntries;
       sourceRepairHistoryEntries = settingsResult.sourceRepairHistory ?? sourceRepairHistoryEntries;
       renderSourceList();
-      setStatus(
+      setMemoryStatus(
         sourceStatus,
         result.status === "repaired"
           ? `Source version tracking repaired. Backup: ${result.backupPath}. Review refreshed before intake.`
@@ -612,31 +512,31 @@ export function renderLivingArchiveWorkspace({
         result.status === "healthy" || result.status === "not-needed" ? "warning" : "success"
       );
     } catch (error) {
-      setStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const showSourceVersions = async (source) => {
     sourcePreview.replaceChildren();
-    setStatus(sourceStatus, `Loading source versions for ${source.path || source.id}…`);
+    setMemoryStatus(sourceStatus, `Loading source versions for ${source.path || source.id}…`);
     try {
       const result = await bridgeRequest("/memory/source/versions", {
         method: "POST",
         body: { sourceId: source.id, limit: 100 }
       });
       sourcePreview.replaceChildren(sourceVersionsCard(source, result));
-      setStatus(sourceStatus, `${result.entries?.length ?? 0} imported source-file version record(s).`, "success");
+      setMemoryStatus(sourceStatus, `${result.entries?.length ?? 0} imported source-file version record(s).`, "success");
     } catch (error) {
-      setStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const createSelectedFileIntake = async (review, files) => {
     if (!files.length) {
-      setStatus(sourceStatus, "Select one or more compatible source files first.", "warning");
+      setMemoryStatus(sourceStatus, "Select one or more compatible source files first.", "warning");
       return;
     }
-    setStatus(sourceStatus, `Creating governed intake from ${files.length} selected file(s)…`);
+    setMemoryStatus(sourceStatus, `Creating governed intake from ${files.length} selected file(s)…`);
     try {
       const result = await bridgeRequest("/memory/source/file-intake", {
         method: "POST",
@@ -655,7 +555,7 @@ export function renderLivingArchiveWorkspace({
           }
         });
       }
-      setStatus(
+      setMemoryStatus(
         sourceStatus,
         `Created ${result.created?.length ?? 0} selected file intake artifact(s); ${result.rejected?.length ?? 0} rejected.`,
         "success"
@@ -671,19 +571,19 @@ export function renderLivingArchiveWorkspace({
         sourcePreview.replaceChildren(sourceReviewCard(refreshedReview, createSelectedFileIntake, (candidate) => {
           void previewSourceDiff(refreshedReview.source, candidate);
         }, repairSourceVersions));
-        setStatus(
+        setMemoryStatus(
           sourceStatus,
           `Created ${result.created?.length ?? 0} selected file intake artifact(s); ${result.rejected?.length ?? 0} rejected. Source review refreshed.`,
           "success"
         );
       }
     } catch (error) {
-      setStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const createSourceIntake = async (source) => {
-    setStatus(sourceStatus, `Creating governed intake summary for ${source.path || source.id}…`);
+    setMemoryStatus(sourceStatus, `Creating governed intake summary for ${source.path || source.id}…`);
     try {
       const result = await bridgeRequest("/memory/source/intake", {
         method: "POST",
@@ -697,7 +597,7 @@ export function renderLivingArchiveWorkspace({
           reason: "Review this connected source intake summary for possible Living Archive promotion."
         }
       });
-      setStatus(
+      setMemoryStatus(
         sourceStatus,
         `Source intake created: ${result.path} (${result.candidates} candidate files). Review request: ${reviewRequest.path}.`,
         "success"
@@ -705,20 +605,20 @@ export function renderLivingArchiveWorkspace({
       await loadStatus();
       await loadReviewQueue();
     } catch (error) {
-      setStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(sourceStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const restorePromotionBackup = async (entry) => {
     if (!entry.path) {
-      setStatus(promotionStatus, "Promotion entry is missing its review artifact path.", "error");
+      setMemoryStatus(promotionStatus, "Promotion entry is missing its review artifact path.", "error");
       return;
     }
     if (!entry.backupPath) {
-      setStatus(promotionStatus, "This promotion has no backup to restore.", "warning");
+      setMemoryStatus(promotionStatus, "This promotion has no backup to restore.", "warning");
       return;
     }
-    setStatus(promotionStatus, `Restoring ${entry.promotedPage || "wiki page"} from backup…`);
+    setMemoryStatus(promotionStatus, `Restoring ${entry.promotedPage || "wiki page"} from backup…`);
     try {
       const result = await bridgeRequest("/archive/review/promotions/restore", {
         method: "POST",
@@ -726,18 +626,18 @@ export function renderLivingArchiveWorkspace({
       });
       await loadStatus();
       await loadPromotionHistory();
-      setStatus(promotionStatus, `Restored ${result.promotedPage} from ${result.backupPath}.`, "success");
+      setMemoryStatus(promotionStatus, `Restored ${result.promotedPage} from ${result.backupPath}.`, "success");
     } catch (error) {
-      setStatus(promotionStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(promotionStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const previewPromotedPage = async (entry, { handoff = false } = {}) => {
     if (!entry.promotedPage) {
-      setStatus(promotionStatus, "Promotion entry is missing its AI Memory page path.", "error");
+      setMemoryStatus(promotionStatus, "Promotion entry is missing its AI Memory page path.", "error");
       return;
     }
-    setStatus(promotionStatus, `Loading ${entry.promotedPage}…`);
+    setMemoryStatus(promotionStatus, `Loading ${entry.promotedPage}…`);
     try {
       const result = await bridgeRequest("/memory/wiki/page/read", {
         method: "POST",
@@ -746,7 +646,7 @@ export function renderLivingArchiveWorkspace({
       const previewCard = wikiPagePreviewCard(result);
       promotionPreview.hidden = false;
       promotionPreview.replaceChildren(...previewCard.childNodes);
-      setStatus(
+      setMemoryStatus(
         promotionStatus,
         handoff
           ? `Focused promoted page: ${result.path}. Previewing trusted AI Memory below.`
@@ -754,16 +654,16 @@ export function renderLivingArchiveWorkspace({
         "success"
       );
     } catch (error) {
-      setStatus(promotionStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(promotionStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const transitionReviewRequest = async (request, status) => {
     if (!request.path) {
-      setStatus(reviewStatus, "Review request is missing its path.", "error");
+      setMemoryStatus(reviewStatus, "Review request is missing its path.", "error");
       return;
     }
-    setStatus(reviewStatus, `Updating review request to ${status}…`);
+    setMemoryStatus(reviewStatus, `Updating review request to ${status}…`);
     try {
       const result = await bridgeRequest("/archive/review/transition", {
         method: "POST",
@@ -775,39 +675,39 @@ export function renderLivingArchiveWorkspace({
           note: `Set from Living Archive workspace UI.`
         }
       });
-      setStatus(reviewStatus, `Updated ${result.path} to ${result.status}.`, "success");
+      setMemoryStatus(reviewStatus, `Updated ${result.path} to ${result.status}.`, "success");
       await loadStatus();
       await loadReviewQueue();
     } catch (error) {
-      setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const draftReviewRequest = async (request) => {
     if (!request.path) {
-      setStatus(reviewStatus, "Review request is missing its path.", "error");
+      setMemoryStatus(reviewStatus, "Review request is missing its path.", "error");
       return;
     }
-    setStatus(reviewStatus, "Generating draft wiki update artifact…");
+    setMemoryStatus(reviewStatus, "Generating draft wiki update artifact…");
     try {
       const result = await bridgeRequest("/archive/review/draft", {
         method: "POST",
         body: { path: request.path }
       });
-      setStatus(reviewStatus, `Draft artifact ready: ${result.path}.`, "success");
+      setMemoryStatus(reviewStatus, `Draft artifact ready: ${result.path}.`, "success");
       await loadStatus();
       await loadReviewQueue();
     } catch (error) {
-      setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const previewSourceArtifact = async (request) => {
     if (!request.artifactPath) {
-      setStatus(reviewStatus, "Review request has no source artifact to inspect.", "warning");
+      setMemoryStatus(reviewStatus, "Review request has no source artifact to inspect.", "warning");
       return;
     }
-    setStatus(reviewStatus, "Loading source intake artifact…");
+    setMemoryStatus(reviewStatus, "Loading source intake artifact…");
     draftPreview.hidden = true;
     draftPreview.replaceChildren();
     try {
@@ -817,18 +717,18 @@ export function renderLivingArchiveWorkspace({
       });
       draftPreview.replaceChildren(sourceArtifactPreviewCard(result));
       draftPreview.hidden = false;
-      setStatus(reviewStatus, result.truncated ? "Source preview loaded and truncated for safety." : "Source preview loaded.", "success");
+      setMemoryStatus(reviewStatus, result.truncated ? "Source preview loaded and truncated for safety." : "Source preview loaded.", "success");
     } catch (error) {
-      setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const previewReviewPromotedPage = async (request) => {
     if (!request.promotedPage) {
-      setStatus(reviewStatus, "Review request has no promoted AI Memory page yet.", "warning");
+      setMemoryStatus(reviewStatus, "Review request has no promoted AI Memory page yet.", "warning");
       return;
     }
-    setStatus(reviewStatus, `Loading promoted page ${request.promotedPage}…`);
+    setMemoryStatus(reviewStatus, `Loading promoted page ${request.promotedPage}…`);
     draftPreview.hidden = true;
     draftPreview.replaceChildren();
     try {
@@ -838,18 +738,18 @@ export function renderLivingArchiveWorkspace({
       });
       draftPreview.replaceChildren(wikiPagePreviewCard(result));
       draftPreview.hidden = false;
-      setStatus(reviewStatus, `Previewing promoted page ${result.path}.`, "success");
+      setMemoryStatus(reviewStatus, `Previewing promoted page ${result.path}.`, "success");
     } catch (error) {
-      setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const previewDraftArtifact = async (request) => {
     if (!request.draftArtifactPath) {
-      setStatus(reviewStatus, "Review request has no draft artifact yet.", "warning");
+      setMemoryStatus(reviewStatus, "Review request has no draft artifact yet.", "warning");
       return;
     }
-    setStatus(reviewStatus, "Loading draft artifact preview…");
+    setMemoryStatus(reviewStatus, "Loading draft artifact preview…");
     draftPreview.hidden = true;
     draftPreview.replaceChildren();
     try {
@@ -907,18 +807,18 @@ export function renderLivingArchiveWorkspace({
       actions.append(verifyButton, verifierPreviewButton, reviseButton, promoteButton);
       draftPreview.append(heading, meta, content, actions);
       draftPreview.hidden = false;
-      setStatus(reviewStatus, result.truncated ? "Draft preview loaded and truncated for safety." : "Draft preview loaded.", "success");
+      setMemoryStatus(reviewStatus, result.truncated ? "Draft preview loaded and truncated for safety." : "Draft preview loaded.", "success");
     } catch (error) {
-      setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const previewVerificationArtifact = async (path) => {
     if (!path) {
-      setStatus(reviewStatus, "Draft artifact has no verifier artifact yet.", "warning");
+      setMemoryStatus(reviewStatus, "Draft artifact has no verifier artifact yet.", "warning");
       return;
     }
-    setStatus(reviewStatus, "Loading verifier artifact preview…");
+    setMemoryStatus(reviewStatus, "Loading verifier artifact preview…");
     try {
       const result = await bridgeRequest("/archive/review/verification/read", {
         method: "POST",
@@ -937,18 +837,18 @@ export function renderLivingArchiveWorkspace({
       content.textContent = result.content || "";
       draftPreview.replaceChildren(heading, meta, content);
       draftPreview.hidden = false;
-      setStatus(reviewStatus, result.truncated ? "Verifier preview loaded and truncated for safety." : "Verifier preview loaded.", "success");
+      setMemoryStatus(reviewStatus, result.truncated ? "Verifier preview loaded and truncated for safety." : "Verifier preview loaded.", "success");
     } catch (error) {
-      setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const verifyDraftArtifact = async (path) => {
     if (!path) {
-      setStatus(reviewStatus, "Draft artifact is missing its path.", "error");
+      setMemoryStatus(reviewStatus, "Draft artifact is missing its path.", "error");
       return;
     }
-    setStatus(reviewStatus, "Verifying draft wiki update…");
+    setMemoryStatus(reviewStatus, "Verifying draft wiki update…");
     try {
       const result = await bridgeRequest("/archive/review/artifact/verify", {
         method: "POST",
@@ -956,7 +856,7 @@ export function renderLivingArchiveWorkspace({
       });
       await loadStatus();
       await loadReviewQueue();
-      setStatus(
+      setMemoryStatus(
         reviewStatus,
         result.status === "verified"
           ? `Verified draft: ${result.verifierArtifactPath} (${result.semanticVerifierStatus || "semantic unavailable"}).`
@@ -966,16 +866,16 @@ export function renderLivingArchiveWorkspace({
       draftPreview.hidden = true;
       draftPreview.replaceChildren();
     } catch (error) {
-      setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const reviseDraftArtifact = async (path) => {
     if (!path) {
-      setStatus(reviewStatus, "Draft artifact is missing its path.", "error");
+      setMemoryStatus(reviewStatus, "Draft artifact is missing its path.", "error");
       return;
     }
-    setStatus(reviewStatus, "Revising draft from verifier findings…");
+    setMemoryStatus(reviewStatus, "Revising draft from verifier findings…");
     try {
       const result = await bridgeRequest("/archive/review/artifact/revise", {
         method: "POST",
@@ -983,20 +883,20 @@ export function renderLivingArchiveWorkspace({
       });
       await loadStatus();
       await loadReviewQueue();
-      setStatus(reviewStatus, `Revised draft ready: ${result.path}.`, "success");
+      setMemoryStatus(reviewStatus, `Revised draft ready: ${result.path}.`, "success");
       draftPreview.hidden = true;
       draftPreview.replaceChildren();
     } catch (error) {
-      setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
   const promoteDraftArtifact = async (path) => {
     if (!path) {
-      setStatus(reviewStatus, "Draft artifact is missing its path.", "error");
+      setMemoryStatus(reviewStatus, "Draft artifact is missing its path.", "error");
       return;
     }
-    setStatus(reviewStatus, "Promoting draft into trusted AI Memory…");
+    setMemoryStatus(reviewStatus, "Promoting draft into trusted AI Memory…");
     try {
       const result = await bridgeRequest("/archive/review/artifact/promote", {
         method: "POST",
@@ -1005,9 +905,9 @@ export function renderLivingArchiveWorkspace({
       await loadStatus();
       await loadReviewQueue();
       await loadPromotionHistory();
-      setStatus(reviewStatus, `Promoted ${result.promotedPage}.`, "success");
+      setMemoryStatus(reviewStatus, `Promoted ${result.promotedPage}.`, "success");
     } catch (error) {
-      setStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(reviewStatus, error instanceof Error ? error.message : String(error), "error");
     }
   };
 
@@ -1025,11 +925,11 @@ export function renderLivingArchiveWorkspace({
     event.preventDefault();
     const query = searchInput.value.trim();
     if (query.length < 2) {
-      setStatus(searchStatus, "Search requires at least two characters.", "warning");
+      setMemoryStatus(searchStatus, "Search requires at least two characters.", "warning");
       return;
     }
     searchButton.disabled = true;
-    setStatus(searchStatus, "Searching AI Memory…");
+    setMemoryStatus(searchStatus, "Searching AI Memory…");
     searchResults.replaceChildren();
     try {
       const result = await bridgeRequest("/memory/search", {
@@ -1037,13 +937,13 @@ export function renderLivingArchiveWorkspace({
         body: { query, limit: 8 }
       });
       if (!result.matches?.length) {
-        setStatus(searchStatus, "No matches found in AI Memory.", "warning");
+        setMemoryStatus(searchStatus, "No matches found in AI Memory.", "warning");
         return;
       }
-      setStatus(searchStatus, `${result.matches.length} match(es) found.`, "success");
-      searchResults.append(...result.matches.map(resultCard));
+      setMemoryStatus(searchStatus, `${result.matches.length} match(es) found.`, "success");
+      searchResults.append(...result.matches.map(memoryResultCard));
     } catch (error) {
-      setStatus(searchStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(searchStatus, error instanceof Error ? error.message : String(error), "error");
     } finally {
       searchButton.disabled = false;
     }
@@ -1058,28 +958,28 @@ export function renderLivingArchiveWorkspace({
       try {
         content = await singleFileIntakeContent(file);
       } catch (error) {
-        setStatus(intakeStatus, error instanceof Error ? error.message : String(error), "warning");
+        setMemoryStatus(intakeStatus, error instanceof Error ? error.message : String(error), "warning");
         return;
       }
     }
     if (!content) {
-      setStatus(intakeStatus, "Write content or choose a supported file before saving intake.", "warning");
+      setMemoryStatus(intakeStatus, "Write content or choose a supported file before saving intake.", "warning");
       return;
     }
     intakeButton.disabled = true;
-    setStatus(intakeStatus, "Saving governed intake…");
+    setMemoryStatus(intakeStatus, "Saving governed intake…");
     try {
       const result = await bridgeRequest("/archive/intake", {
         method: "POST",
         body: { title, content, origin: "main-workspace" }
       });
-      setStatus(intakeStatus, `Saved to ${result.path} (${formatCount(result.bytes)} bytes).`, "success");
+      setMemoryStatus(intakeStatus, `Saved to ${result.path} (${formatCount(result.bytes)} bytes).`, "success");
       contentInput.value = "";
       fileInput.value = "";
       await loadStatus();
       await loadReviewQueue();
     } catch (error) {
-      setStatus(intakeStatus, error instanceof Error ? error.message : String(error), "error");
+      setMemoryStatus(intakeStatus, error instanceof Error ? error.message : String(error), "error");
     } finally {
       intakeButton.disabled = false;
     }
