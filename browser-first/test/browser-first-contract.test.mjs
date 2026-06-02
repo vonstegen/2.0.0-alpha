@@ -81,6 +81,7 @@ test("ResonantOS browser layer is packaged as a Chromium side-panel extension", 
     "src/lib/control-overlay.js",
     "src/lib/content-field-safety.js",
     "src/lib/content-inline-actions.js",
+    "src/lib/content-control-refs.js",
     "src/content.js",
   ]);
   assert.equal(manifest.side_panel.default_path, "src/side-panel.html");
@@ -986,9 +987,10 @@ test("browser layer can read active tab context without raw privileged access", 
   const controlOverlay = await readText(path.join(extensionRoot, "src", "lib", "control-overlay.js"));
   const contentFieldSafety = await readText(path.join(extensionRoot, "src", "lib", "content-field-safety.js"));
   const contentInlineActions = await readText(path.join(extensionRoot, "src", "lib", "content-inline-actions.js"));
+  const contentControlRefs = await readText(path.join(extensionRoot, "src", "lib", "content-control-refs.js"));
   const panel = await readText(path.join(extensionRoot, "src", "side-panel.js"));
   const pageActions = await readText(path.join(extensionRoot, "src", "lib", "browser-page-actions.js"));
-  const pageControlScripts = `${controlOverlay}\n${contentFieldSafety}\n${contentInlineActions}\n${content}`;
+  const pageControlScripts = `${controlOverlay}\n${contentFieldSafety}\n${contentInlineActions}\n${contentControlRefs}\n${content}`;
 
   assert.match(pageControlScripts, /read_page/);
   assert.match(pageControlScripts, /click_text/);
@@ -1019,7 +1021,7 @@ test("browser layer can read active tab context without raw privileged access", 
   assert.match(content, /scrollPage/);
   assert.match(content, /describeForms/);
   assert.match(content, /controls: candidateClickElements/);
-  assert.match(content, /data-resonantos-control-ref/);
+  assert.match(contentControlRefs, /data-resonantos-control-ref/);
   assert.match(content, /resonantos-inline-assistant/);
   assert.match(content, /ros-inline-prompt/);
   assert.match(content, /inline_assistant_request/);
@@ -1034,6 +1036,7 @@ test("browser layer can read active tab context without raw privileged access", 
   assert.match(content, /augmentorInlineDraft/);
   assert.match(content, /ensureControlRef/);
   assert.match(content, /clickControlRef/);
+  assert.match(contentControlRefs, /createControlRefStore/);
   assert.match(content, /classifyEditableField/);
   assert.match(contentFieldSafety, /search-query/);
   assert.match(contentFieldSafety, /document-edit/);

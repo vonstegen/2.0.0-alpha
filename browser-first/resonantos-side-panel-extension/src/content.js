@@ -1,4 +1,3 @@
-const controlRefAttribute = "data-resonantos-control-ref";
 const inlineAssistantId = "resonantos-inline-assistant";
 const inlineButtonId = "resonantos-inline-button";
 const controlOverlayId = "resonantos-control-overlay";
@@ -6,28 +5,10 @@ const controlBubbleClass = "resonantos-control-bubble";
 const controlToastId = "resonantos-control-toast";
 const controlStatusTextClass = "ros-control-status-text";
 const controlStopButtonClass = "ros-control-stop-button";
-let nextControlRef = 1;
 
 const isTopWindow = () => window.top === window;
 const classifyEditableField = (element) =>
   window.ResonantOSContentFieldSafety.classifyEditableField(element, { relatedLabelText });
-
-const ensureControlRef = (element) => {
-  if (!element?.getAttribute) return "";
-  const existing = element.getAttribute(controlRefAttribute);
-  if (existing) return existing;
-  const ref = `r${nextControlRef}`;
-  nextControlRef += 1;
-  element.setAttribute(controlRefAttribute, ref);
-  return ref;
-};
-
-const elementByControlRef = (ref) => {
-  const normalized = String(ref ?? "").trim();
-  if (!normalized) return null;
-  const escaped = globalThis.CSS?.escape?.(normalized) ?? normalized.replace(/["\\]/g, "\\$&");
-  return querySelectorAllDeep(`[${controlRefAttribute}="${escaped}"]`)[0] ?? null;
-};
 
 const querySelectorAllDeep = (selector, { root = document, limit = 600 } = {}) => {
   const results = [];
@@ -60,6 +41,10 @@ const querySelectorAllDeep = (selector, { root = document, limit = 600 } = {}) =
 
 const openShadowHosts = () => querySelectorAllDeep("*")
   .filter((element) => element.shadowRoot);
+
+const { ensureControlRef, elementByControlRef } = window.ResonantOSContentControlRefs.createControlRefStore({
+  querySelectorAllDeep,
+});
 
 const visiblePageText = () => [
   document.body?.innerText ?? document.body?.textContent ?? "",

@@ -36,6 +36,14 @@ const inlineActionsScriptPath = path.join(
   "lib",
   "content-inline-actions.js",
 );
+const controlRefsScriptPath = path.join(
+  repoRoot,
+  "browser-first",
+  "resonantos-side-panel-extension",
+  "src",
+  "lib",
+  "content-control-refs.js",
+);
 
 async function loadContentScript(html) {
   const dom = new JSDOM(html, {
@@ -62,6 +70,7 @@ async function loadContentScript(html) {
   dom.window.eval(await readFile(controlOverlayScriptPath, "utf8"));
   dom.window.eval(await readFile(fieldSafetyScriptPath, "utf8"));
   dom.window.eval(await readFile(inlineActionsScriptPath, "utf8"));
+  dom.window.eval(await readFile(controlRefsScriptPath, "utf8"));
   dom.window.eval(await readFile(contentScriptPath, "utf8"));
   assert.equal(typeof listener, "function");
   return { dom, listener };
@@ -82,6 +91,26 @@ test("content inline actions expose stable shortcuts and button markup", async (
   assert.equal(inlineActionList.length, 8);
   assert.match(renderInlineActions(), /data-action="summarize"/);
   assert.match(renderInlineActions(), /<kbd>S<\/kbd>/);
+});
+
+test("content control refs preserve existing refs and find escaped values", async () => {
+  const dom = new JSDOM(`
+    <!doctype html>
+    <button id="first">First</button>
+    <button id="escaped" data-resonantos-control-ref='x"y'>Escaped</button>
+  `, { runScripts: "outside-only" });
+  dom.window.eval(await readFile(controlRefsScriptPath, "utf8"));
+  const store = dom.window.ResonantOSContentControlRefs.createControlRefStore({
+    querySelectorAllDeep: (selector) => Array.from(dom.window.document.querySelectorAll(selector)),
+  });
+
+  const first = dom.window.document.querySelector("#first");
+  assert.equal(store.attribute, "data-resonantos-control-ref");
+  assert.equal(store.ensureControlRef(first), "r1");
+  assert.equal(store.ensureControlRef(first), "r1");
+  assert.equal(store.elementByControlRef("r1"), first);
+  assert.equal(store.elementByControlRef('x"y')?.id, "escaped");
+  assert.equal(store.elementByControlRef(""), null);
 });
 
 test("content field safety policy classifies high-risk editable fields before automation", async () => {
