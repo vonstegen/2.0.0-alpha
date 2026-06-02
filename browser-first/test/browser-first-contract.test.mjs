@@ -117,6 +117,7 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   const archiveReviewService = await readText(path.join(browserFirstRoot, "host", "archive-review-service.mjs"));
   const archiveMerge = await readText(path.join(browserFirstRoot, "host", "archive-merge.mjs"));
   const background = await readText(path.join(extensionRoot, "src", "background.js"));
+  const contentScript = await readText(path.join(extensionRoot, "src", "content.js"));
   const sidePanel = await readText(path.join(extensionRoot, "src", "side-panel.js"));
   const commandRouter = await readText(path.join(extensionRoot, "src", "lib", "side-panel-command-router.js"));
   const appCommandHandlers = await readText(path.join(extensionRoot, "src", "lib", "app-command-handlers.js"));
@@ -538,11 +539,15 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(background, /open_side_panel/);
   assert.match(background, /browser_control_handoff/);
   assert.match(background, /handoffToResonantSidePanel/);
+  assert.doesNotMatch(background, /openContentDockForTab/);
+  assert.doesNotMatch(background, /content_dock/);
+  assert.doesNotMatch(background, /browser-content-dock/);
+  assert.doesNotMatch(contentScript, /open_resonantos_dock/);
+  assert.doesNotMatch(contentScript, /resonantos-content-dock/);
+  assert.doesNotMatch(contentScript, /content_dock/);
+  assert.doesNotMatch(contentScript, /bridge-config\.generated/);
   assert.doesNotMatch(JSON.stringify(manifest), /web_accessible_resources/);
   assert.doesNotMatch(JSON.stringify(manifest), /content-dock/);
-  assert.doesNotMatch(background, /content_dock_/);
-  assert.doesNotMatch(background, /browser-content-dock/);
-  assert.doesNotMatch(background, /openContentDockForTab/);
   assert.match(background, /suppress_side_panel_on_main_workspace/);
   assert.match(background, /openResonantSidePanel\(windowId, \{ force: Boolean\(message\.force\) \}\)/);
   assert.match(background, /setSidePanelEnabledForTab\(tab\.id, false\)/);

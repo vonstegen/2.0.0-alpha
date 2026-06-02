@@ -586,7 +586,7 @@ try {
   await waitForDebugPort(() => hostLogs);
   const panelTarget = await openExtensionPanel();
   const fixtureTarget = await waitForBrowserTarget(
-    (target) => target.url.startsWith(`http://127.0.0.1:${fixturePort}/`),
+    (target) => target.url === `http://127.0.0.1:${fixturePort}/`,
     "Fixture page target"
   );
 
@@ -933,7 +933,7 @@ try {
       doneSummary: "Added the visible item to cart."
     };
   }; return true; })()`);
-  await submitControlCommand(panel, `go to amazon and find me some pringles then add them to the cart`);
+  await submitControlCommand(panel, `add the visible item on this page to the cart`);
   let cartState = null;
   for (let index = 0; index < 80; index += 1) {
     cartState = (await evaluate(page, `({
@@ -943,9 +943,17 @@ try {
     if (cartState.cart === "added") break;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  assert(cartState.cart === "added", `Amazon-style cart prompt failed: ${JSON.stringify(cartState)}`);
-  await waitForComposerReady(panel, "amazon cart prompt");
-  await waitForBrowserJobTerminal(panel, /go to amazon and find me some pringles/i, "amazon cart prompt");
+  if (cartState.cart !== "added") {
+    const cartDebug = {
+      cartState,
+      pageUrl: (await evaluate(page, `location.href`)).result.value,
+      panelText: (await evaluate(panel, `document.body.innerText`)).result.value,
+      jobs: (await evaluate(panel, `(async () => (await chrome.storage.local.get("augmentorBrowserJobs")).augmentorBrowserJobs ?? [])()`)).result.value
+    };
+    assert(false, `Current-page cart prompt failed: ${JSON.stringify(cartDebug, null, 2)}`);
+  }
+  await waitForComposerReady(panel, "current-page cart prompt");
+  await waitForBrowserJobTerminal(panel, /add the visible item on this page/i, "current-page cart prompt");
 
   await evaluate(panel, `(() => { globalThis.__resonantosNextActionOverride = async ({ snapshot, history }) => {
     const safeRef = snapshot?.controls?.find((control) => control.text === "Safe Details")?.ref;

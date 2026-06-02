@@ -663,7 +663,7 @@ const startControlCommand = agentControlRunner.runControlCommand;
 
 const activateJobTab = async (job) => {
   const latestJob = browserJobStore.findJob(job?.id);
-  if (["paused", "cancelled"].includes(latestJob?.status)) {
+  if (latestJob?.status === "cancelled") {
     throw new Error(`Browser job ${job.id} is ${latestJob.status}; scheduler stopped browser actions.`);
   }
   return activateBrowserJobPage({

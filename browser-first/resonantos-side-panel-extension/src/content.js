@@ -633,6 +633,22 @@ const editableSelectionDetails = (element) => {
   };
 };
 
+const firstUsefulRangeRect = (range) => {
+  const rects = Array.from(range?.getClientRects?.() ?? []);
+  const usefulRect = rects.find((rect) => rect.width > 0 && rect.height > 0);
+  if (usefulRect) return usefulRect;
+  const fallbackRect = range?.getBoundingClientRect?.();
+  if (fallbackRect?.width > 0 || fallbackRect?.height > 0) return fallbackRect;
+  return {
+    bottom: Math.min(window.innerHeight - 42, Math.max(8, window.innerHeight / 2)),
+    height: 1,
+    left: Math.min(window.innerWidth - 112, Math.max(8, window.innerWidth / 2)),
+    right: Math.min(window.innerWidth - 8, Math.max(8, window.innerWidth / 2 + 1)),
+    top: Math.min(window.innerHeight - 42, Math.max(8, window.innerHeight / 2 - 1)),
+    width: 1
+  };
+};
+
 const currentSelectionDetails = () => {
   const editableDetails = editableSelectionDetails(editableRootForSelection());
   if (editableDetails) return editableDetails;
@@ -640,7 +656,7 @@ const currentSelectionDetails = () => {
   const text = selection?.toString?.().trim() ?? "";
   if (!text || !selection.rangeCount) return null;
   const range = selection.getRangeAt(0);
-  const rect = range.getBoundingClientRect();
+  const rect = firstUsefulRangeRect(range);
   const active = document.activeElement;
   return {
     text,
@@ -652,8 +668,13 @@ const currentSelectionDetails = () => {
 
 const currentSitePermission = async () => {
   const key = location.hostname.replace(/^www\./, "");
-  const stored = await chrome.storage?.local?.get?.("augmentorSitePermissions").catch(() => ({}));
-  return stored?.augmentorSitePermissions?.[key] ?? "ask-before-action";
+  if (!key) return "ask-before-action";
+  try {
+    const stored = await chrome.storage?.local?.get?.("augmentorSitePermissions");
+    return stored?.augmentorSitePermissions?.[key] ?? "ask-before-action";
+  } catch {
+    return "ask-before-action";
+  }
 };
 
 const positionInlineButton = () => {
@@ -674,6 +695,9 @@ const positionInlineButton = () => {
     button.style.left = `${Math.min(window.innerWidth - 112, Math.max(8, details.rect.left))}px`;
     button.style.top = `${Math.min(window.innerHeight - 42, Math.max(8, details.rect.bottom + 8))}px`;
     button.style.display = "block";
+  }).catch(() => {
+    const { button } = ensureInlineAssistantUi();
+    button.style.display = "none";
   });
 };
 

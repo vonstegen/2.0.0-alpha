@@ -80,5 +80,6 @@ test("browser command parser handles quoted text and Amazon shopping tasks", () 
     wantsCart: true,
     url: "https://www.amazon.it/s?k=pringles",
   });
+  assert.equal(parseAmazonShoppingTask("add the visible item on this page to the cart"), null);
   assert.equal(normalizeSearchQuery("can you find some news on the internet?"), "top stories");
 });

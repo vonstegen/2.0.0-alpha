@@ -187,7 +187,7 @@ export function parseNaturalSearchIntent(message) {
 
 export function parseAmazonShoppingTask(message) {
   const normalized = String(message ?? "").trim();
-  if (!/\b(amazon|amazon\.it|cart|chart|basket|carrello)\b/i.test(normalized)) {
+  if (!/\bamazon(?:\.it)?\b/i.test(normalized)) {
     return null;
   }
   let query = normalized
