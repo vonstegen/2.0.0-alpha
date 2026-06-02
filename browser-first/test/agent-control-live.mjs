@@ -732,15 +732,18 @@ try {
   await evaluate(panel, `document.querySelector("#command-input").value = ""; document.querySelector("#transcript").replaceChildren();`);
   await evaluate(panel, `document.querySelector("#read-page").click()`);
   await waitForPanelText(panel, /Page context attached:/, "initial content script attachment");
-  await evaluate(page, `(() => {
-    const paragraph = document.querySelector("p");
-    const range = document.createRange();
-    range.selectNodeContents(paragraph);
-    const selection = getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-    document.dispatchEvent(new Event("selectionchange"));
-    return true;
+  await evaluate(panel, `(async () => {
+    const tabs = await chrome.tabs.query({});
+    const tab = tabs.find((candidate) => candidate.url === ${JSON.stringify(`http://127.0.0.1:${fixturePort}/`)});
+    if (!tab?.id) throw new Error("Root fixture tab not found for inline assistant.");
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      channel: "resonantos.browser_first.content",
+      type: "show_inline_assistant_for_text",
+      text: "This page verifies safe browser control, document-style typing, and approval gates.",
+      rect: { left: 44, right: 520, top: 92, bottom: 116, width: 476, height: 24 }
+    });
+    if (!response?.ok) throw new Error(response?.error || "Inline assistant trigger failed.");
+    return response;
   })()`);
   await waitForPageCondition(page, `document.querySelector("#resonantos-inline-button")?.style.display === "block"`, "inline assistant button");
   await evaluate(page, `document.querySelector("#resonantos-inline-button").click()`);
@@ -954,27 +957,33 @@ try {
   }
   await waitForComposerReady(panel, "current-page cart prompt");
   await waitForBrowserJobTerminal(panel, /add the visible item on this page/i, "current-page cart prompt");
+  await evaluate(panel, `(async () => {
+    const tabs = await chrome.tabs.query({});
+    const tab = tabs.find((candidate) => candidate.url === ${JSON.stringify(`http://127.0.0.1:${fixturePort}/`)});
+    if (!tab?.id) throw new Error("Root fixture tab not found before safe control checks.");
+    await chrome.tabs.update(tab.id, { active: true });
+    return tab.id;
+  })()`);
 
   await evaluate(panel, `(() => { globalThis.__resonantosNextActionOverride = async ({ snapshot, history }) => {
     const safeRef = snapshot?.controls?.find((control) => control.text === "Safe Details")?.ref;
-    const searchRef = snapshot?.fields?.find((field) => field.label === "Search field")?.ref;
     const actions = [
       { type: "read" },
       { type: "click", ref: safeRef, text: "Safe Details" },
-      { type: "type", ref: searchRef, text: "find resonantos", submit: false },
+      { type: "type", field: "Search field", text: "find resonantos", submit: false },
       { type: "scroll", direction: "down" }
     ];
     const action = actions[history.length] ?? null;
     return {
       source: "test-next-action",
       thought: action ? "Execute next safe fixture action." : "Safe fixture actions are complete.",
-      status: action && (action.type !== "click" || action.ref) && (action.type !== "type" || action.ref) ? "continue" : action ? "blocked" : "done",
+      status: action && (action.type !== "click" || action.ref) ? "continue" : action ? "blocked" : "done",
       action,
       approvalReason: action ? "Required element ref was not present in the observation." : null,
       doneSummary: action ? null : "Read, clicked, typed, and scrolled safely."
     };
   }; return true; })()`);
-  await submitControlCommand(panel, `/control read this page, click "Safe Details", type "find resonantos", scroll down`);
+  await submitControlCommand(panel, `/control read this page, click "Safe Details", type "find resonantos", scroll down @ResonantOS Agent Fixture`);
   let safeState = null;
   for (let index = 0; index < 100; index += 1) {
     safeState = (await evaluate(page, `({
@@ -1064,20 +1073,26 @@ try {
   }); return true; })()`);
   await submitControlCommand(panel, `/control click "Submit public form"`);
   await waitForPanelText(panel, /Agent Control Mode blocked at action|submit\/public action|requires human approval/i, "approval boundary");
-  await waitForPageCondition(panel, `!document.querySelector("#approval-card").hidden && /Public-submit boundary|Submit public form/i.test(document.querySelector("#approval-card").innerText)`, "public-submit approval card");
+  await waitForPageCondition(panel, `(async () => {
+    const jobs = (await chrome.storage.local.get("augmentorBrowserJobs")).augmentorBrowserJobs ?? [];
+    return jobs.some((job) => job.status === "approval" && /Submit public form/i.test(job.pendingApproval?.step?.text ?? ""));
+  })()`, "public-submit approval job");
   const blockedState = (await evaluate(page, `({ submitted: window.__submitted, status: document.querySelector("#status").textContent })`)).result.value;
   assert(!blockedState.submitted, `Approval gate failed before approval: ${JSON.stringify(blockedState)}`);
   const publicSubmitApprovalState = (await evaluate(panel, `({
-    cardVisible: !document.querySelector("#approval-card").hidden,
-    approveDisabled: document.querySelector("#approval-approve").disabled,
-    trustDisabled: document.querySelector("#approval-trust-site").disabled,
-    reason: document.querySelector("#approval-reason").textContent
+    jobApprovalVisible: /Approve once[\\s\\S]*Deny/.test(document.body.innerText),
+    pendingApprovalJobs: ((await chrome.storage.local.get("augmentorBrowserJobs")).augmentorBrowserJobs ?? [])
+      .filter((job) => job.status === "approval" && job.pendingApproval)
+      .map((job) => ({ goal: job.goal, stepText: job.pendingApproval?.step?.text ?? "", reason: job.pendingApproval?.reason ?? "" }))
   })`)).result.value;
-  assert(publicSubmitApprovalState.cardVisible, "Public-submit approval card is not visible.");
-  assert(!publicSubmitApprovalState.approveDisabled, "Approve-once should remain available for reviewed public-submit actions.");
-  assert(publicSubmitApprovalState.trustDisabled, `Site trust must not bypass public submit: ${JSON.stringify(publicSubmitApprovalState)}`);
-  await evaluate(panel, `document.querySelector("#approval-deny").click()`);
-  await waitForPanelText(panel, /Denied browser action/, "deny public submit approval");
+  assert(publicSubmitApprovalState.jobApprovalVisible, `Public-submit job approval is not visible: ${JSON.stringify(publicSubmitApprovalState)}`);
+  assert(publicSubmitApprovalState.pendingApprovalJobs.some((job) => /Submit public form/i.test(job.stepText)), `Public-submit pending approval missing: ${JSON.stringify(publicSubmitApprovalState)}`);
+  await evaluate(panel, `(() => {
+    const deny = [...document.querySelectorAll("button")].find((button) => button.textContent === "Deny");
+    if (!deny) throw new Error("No per-job Deny button found.");
+    deny.click();
+  })()`);
+  await waitForPanelText(panel, /Denied browser action|denied/i, "deny public submit approval");
 
   await evaluate(panel, `(() => { globalThis.__resonantosNextActionOverride = async () => ({
     source: "test-next-action",

@@ -230,6 +230,17 @@ export function inferControlNavigationTarget(message) {
     };
   }
 
+  const hasDirectPageActions = Boolean(
+    parseClickIntent(normalized) ||
+    parseTypeIntent(normalized) ||
+    parseScrollIntent(normalized) ||
+    parseFormsIntent(normalized) ||
+    parseReadPageIntent(normalized)
+  );
+  if (hasDirectPageActions) {
+    return null;
+  }
+
   const naturalSearchIntent = parseNaturalSearchIntent(normalized);
   if (naturalSearchIntent?.query) {
     const url = naturalSearchIntent.action === "news"

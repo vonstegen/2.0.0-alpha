@@ -740,6 +740,10 @@ const localInlineResult = (action, text) => {
   return `Summary:\n${clipped}`;
 };
 
+const timeoutAfter = (ms, errorMessage) => new Promise((_, reject) => {
+  window.setTimeout(() => reject(new Error(errorMessage)), ms);
+});
+
 const runInlineAction = async (action) => {
   const { panel } = ensureInlineAssistantUi();
   const result = panel.querySelector(".ros-inline-result");
@@ -803,7 +807,8 @@ const runInlineAction = async (action) => {
   result.textContent = "Thinking...";
   try {
     const prompt = panel.querySelector(".ros-inline-prompt")?.value?.trim() ?? "";
-    const payload = await chrome.runtime?.sendMessage?.({
+    const payload = await Promise.race([
+      chrome.runtime?.sendMessage?.({
       channel: "resonantos.browser_first",
       type: "inline_assistant_request",
       body: {
@@ -812,7 +817,9 @@ const runInlineAction = async (action) => {
         selection,
         pageContext: `${document.title}\n${location.href}\n${document.body?.innerText?.slice(0, 3000) ?? ""}`
       }
-    });
+      }),
+      timeoutAfter(5000, "Inline assistant provider timed out.")
+    ]);
     const reply = payload?.ok && payload?.reply ? String(payload.reply) : "";
     result.textContent = reply
       ? /^(summary|summarize)$/i.test(action) && !/^summary\b/i.test(reply.trim())
@@ -877,6 +884,29 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === "get_selection") {
     sendResponse({ ok: true, selection: currentSelectionDetails(), title: document.title, url: location.href });
+    return true;
+  }
+
+  if (message.type === "show_inline_assistant_for_text") {
+    const text = String(message.text ?? "").trim().slice(0, 8000);
+    if (!text) {
+      sendResponse({ ok: false, error: "No selected text was provided." });
+      return true;
+    }
+    const { button } = ensureInlineAssistantUi();
+    const rect = {
+      bottom: Number(message.rect?.bottom ?? 96),
+      height: Number(message.rect?.height ?? 1),
+      left: Number(message.rect?.left ?? 24),
+      right: Number(message.rect?.right ?? 240),
+      top: Number(message.rect?.top ?? 72),
+      width: Number(message.rect?.width ?? 216),
+    };
+    lastInlineSelectionDetails = { activeRef: "", editable: false, rect, text };
+    button.style.left = `${Math.min(window.innerWidth - 112, Math.max(8, rect.left))}px`;
+    button.style.top = `${Math.min(window.innerHeight - 42, Math.max(8, rect.bottom + 8))}px`;
+    button.style.display = "block";
+    sendResponse({ ok: true, textLength: text.length });
     return true;
   }
 

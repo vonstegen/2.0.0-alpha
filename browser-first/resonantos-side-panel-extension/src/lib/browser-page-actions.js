@@ -429,14 +429,41 @@ export function createBrowserPageActions(deps) {
   }
 
   async function prepareDaoWorkflowGuidance(goal = "") {
+    const cachedSnapshotBeforeRead = deps.getLastSnapshot();
     const response = await readActivePage({ announce: false }).catch(() => null) ??
-      (deps.getLastSnapshot() ? { ok: true, snapshot: deps.getLastSnapshot() } : null);
-    const snapshot = response?.snapshot;
+      (cachedSnapshotBeforeRead ? { ok: true, snapshot: cachedSnapshotBeforeRead } : null);
+    let snapshot = response?.snapshot;
     if (!snapshot) {
       await addMessage("system", "I cannot prepare a DAO workflow yet. Open the DAO page first, then run `/dao <what you want to do>`.");
       return { ok: false, error: "No readable DAO page context available." };
     }
-    const { fields, visibleControls } = daoAffordances(snapshot, { controlLimit: 12, fieldLimit: 8 });
+    let { fields, visibleControls } = daoAffordances(snapshot, { controlLimit: 12, fieldLimit: 8 });
+    if (!fields.length && !visibleControls.length) {
+      const cachedSnapshot = cachedSnapshotBeforeRead;
+      const cachedAffordances = daoAffordances(cachedSnapshot, { controlLimit: 12, fieldLimit: 8 });
+      if (cachedAffordances.fields.length || cachedAffordances.visibleControls.length) {
+        snapshot = cachedSnapshot;
+        fields = cachedAffordances.fields;
+        visibleControls = cachedAffordances.visibleControls;
+      }
+    }
+    if (!fields.length && !visibleControls.length) {
+      const tabs = await chrome.tabs.query({ currentWindow: true }).catch(() => []);
+      for (const tab of tabs.filter(isReadableBrowserTab)) {
+        if (tab.id === response?.tab?.id) continue;
+        const candidate = await readSpecificTabPage(tab, { includeBlocked: true }).catch(() => null);
+        const candidateSnapshot = candidate?.snapshot;
+        if (!candidateSnapshot) continue;
+        const candidateAffordances = daoAffordances(candidateSnapshot, { controlLimit: 12, fieldLimit: 8 });
+        if (candidateAffordances.fields.length || candidateAffordances.visibleControls.length) {
+          snapshot = candidateSnapshot;
+          fields = candidateAffordances.fields;
+          visibleControls = candidateAffordances.visibleControls;
+          setLastSnapshot(snapshot);
+          break;
+        }
+      }
+    }
     await addMessage(
       "system",
       [
