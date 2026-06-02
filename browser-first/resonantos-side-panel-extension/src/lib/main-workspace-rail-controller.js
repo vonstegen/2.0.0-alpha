@@ -287,6 +287,7 @@ export function createMainWorkspaceRailController(dependencies) {
   }
 
   function renderRailNavigation() {
+    const activeWorkspace = getActiveWorkspace();
     workspaceButtons.forEach((button) => {
       const active = button.dataset.workspace === activeWorkspace;
       button.classList.toggle("active", active);
