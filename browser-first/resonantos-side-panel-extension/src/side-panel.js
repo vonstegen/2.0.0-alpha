@@ -31,6 +31,7 @@ import { createMonitorRenderers } from "./lib/monitor-renderers.js";
 import { createSidePanelBrowserActionController } from "./lib/side-panel-browser-action-controller.js";
 import { createBrowserActionLock } from "./lib/side-panel-browser-action-lock.js";
 import { createSidePanelBrowserJobController } from "./lib/side-panel-browser-job-controller.js";
+import { createSidePanelChatHydration } from "./lib/side-panel-chat-hydration.js";
 import { createSidePanelCommandRouter } from "./lib/side-panel-command-router.js";
 import { createSidePanelControlCommandController } from "./lib/side-panel-control-command-controller.js";
 import { createSidePanelControlPreflightController } from "./lib/side-panel-control-preflight-controller.js";
@@ -943,24 +944,30 @@ chrome.runtime?.onMessage?.addListener?.(createSidePanelMessageRouter({
   getActiveBrowserJobId: () => currentControlRun?.id ?? browserJobStore.getActiveJobId() ?? ""
 }));
 
-const hydrateChatSettings = async () => {
-  await hydrateProviderModelOptions({
+const chatHydration = createSidePanelChatHydration({
+  chatSessionStore,
+  hydrateControlPreflight,
+  hydrateProviderModelOptions: () => hydrateProviderModelOptions({
     bridgeRequest,
     getPreferredModel: () => modelSelect.value,
     modelSelect,
     setStatus
-  });
-  await chatSessionStore.hydrate();
-  personalizationSettings = await readPersonalizationSettings(chrome.storage?.local, STORAGE_KEYS);
-  const settings = await chrome.storage?.local?.get?.([STORAGE_KEYS.contextDockExpanded]).catch(() => ({}));
-  contextDockExpanded = Boolean(settings?.[STORAGE_KEYS.contextDockExpanded]);
-  await hydrateControlPreflight();
-  await chatSessionStore.ensureFreshSession();
-  renderMessages();
-  renderAttachments();
-  updateConnectionLine();
-  setContextMeter(lastSnapshot);
-};
+  }),
+  readPersonalizationSettings,
+  renderAttachments,
+  renderMessages,
+  setContextDockExpanded: (expanded) => {
+    contextDockExpanded = Boolean(expanded);
+  },
+  setContextMeter: () => setContextMeter(lastSnapshot),
+  setPersonalizationSettings: (settings) => {
+    personalizationSettings = settings;
+  },
+  storage: chrome.storage?.local,
+  storageKeys: STORAGE_KEYS,
+  updateConnectionLine
+});
+const hydrateChatSettings = chatHydration.hydrateChatSettings;
 
 const lifecycleController = createSidePanelLifecycleController({
   activeTab,
