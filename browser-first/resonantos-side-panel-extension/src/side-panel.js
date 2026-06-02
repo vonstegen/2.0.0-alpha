@@ -23,6 +23,7 @@ import { createControlPlanningService } from "./lib/control-planning-service.js"
 import { createControlReportingService } from "./lib/control-reporting-service.js";
 import { createControlRunState } from "./lib/control-run-state.js";
 import { createControlStepExecutor } from "./lib/control-step-executor.js";
+import { createControlTabTargets } from "./lib/control-tab-targets.js";
 import { createMessageActionController } from "./lib/message-action-controller.js";
 import { createMonitorRenderers } from "./lib/monitor-renderers.js";
 import { createSidePanelBrowserActionController } from "./lib/side-panel-browser-action-controller.js";
@@ -401,50 +402,18 @@ const {
   typeIntoActivePage
 } = browserPageActions;
 
-const currentReadableControlTab = async () => {
-  if (controlledTabId) {
-    const controlled = await chrome.tabs.get(controlledTabId).catch(() => null);
-    if (isReadableBrowserTab(controlled)) {
-      return controlled;
-    }
-    controlledTabId = null;
-  }
-  const currentWindowTabs = await chrome.tabs.query({ currentWindow: true }).catch(() => []);
-  const activeReadable = currentWindowTabs.find((tab) => tab.active && isReadableBrowserTab(tab));
-  if (activeReadable) {
-    controlledTabId = activeReadable.id;
-    return activeReadable;
-  }
-  const readableInWindow = currentWindowTabs.filter(isReadableBrowserTab).at(-1);
-  if (readableInWindow) {
-    controlledTabId = readableInWindow.id;
-    return readableInWindow;
-  }
-  const allTabs = await chrome.tabs.query({}).catch(() => []);
-  const readableTab = allTabs.find((tab) => tab.active && isReadableBrowserTab(tab)) ??
-    allTabs.filter(isReadableBrowserTab).at(-1) ??
-    null;
-  if (readableTab) {
-    controlledTabId = readableTab.id;
-  }
-  return readableTab;
-};
-
-const ensureControlTabForUrl = async (url) => {
-  const existingTab = await currentReadableControlTab();
-  if (existingTab?.id) {
-    const updated = await chrome.tabs.update(existingTab.id, { url, active: true }).catch(() => null);
-    controlledTabId = existingTab.id;
+const { currentReadableControlTab, ensureControlTabForUrl } = createControlTabTargets({
+  chromeApi: chrome,
+  clearPageSnapshot: () => {
     lastSnapshot = null;
     setContextMeter(null);
-    return updated ?? { ...existingTab, url };
-  }
-  const created = await chrome.tabs.create({ url, active: true });
-  controlledTabId = created.id;
-  lastSnapshot = null;
-  setContextMeter(null);
-  return created;
-};
+  },
+  getControlledTabId: () => controlledTabId,
+  isReadableBrowserTab,
+  setControlledTabId: (tabId) => {
+    controlledTabId = tabId;
+  },
+});
 
 monitorRenderers = createMonitorRenderers({
   activeTab,
