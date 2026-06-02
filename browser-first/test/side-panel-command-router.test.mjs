@@ -152,6 +152,7 @@ test("side panel command router dispatches natural browser intents before chat",
   await harness.router.respondToCommand("find latest AI news on the internet");
   await harness.router.respondToCommand("hey what's the most inportant new in the world today?");
   await harness.router.respondToCommand("go to amazon.it and find me a rtx5090");
+  await harness.router.respondToCommand("add the visible item on this page to the cart");
 
   assert.deepEqual(harness.calls.filter((call) => call[0] !== "bind").map((call) => call[0]), [
     "control",
@@ -166,9 +167,12 @@ test("side panel command router dispatches natural browser intents before chat",
     "open",
     "search",
     "search",
+    "control",
     "control"
   ]);
-  assert.deepEqual(harness.calls.at(-1), ["control", "go to amazon.it and find me a rtx5090"]);
+  const dispatched = harness.calls.filter((call) => call[0] !== "bind");
+  assert.deepEqual(dispatched.at(-2), ["control", "go to amazon.it and find me a rtx5090"]);
+  assert.deepEqual(dispatched.at(-1), ["control", "add the visible item on this page to the cart"]);
 });
 
 test("side panel command router dispatches natural delegation before chat", async () => {

@@ -74,14 +74,14 @@ export function createSidePanelCommandRouter(handlers) {
     const formsIntent = parseFormsIntent(value);
     if (formsIntent) return handlers.detectActivePageForms();
 
-    const structuredEditIntent = parseStructuredPageEditIntent(value);
-    if (structuredEditIntent) return handlers.explainStructuredPageEditBoundary(structuredEditIntent.instruction);
-
     const searchIntent = parseNaturalSearchIntent(value);
     if (searchIntent) return handlers.searchBrowser(searchIntent);
 
     const autonomousBrowserActionIntent = parseAutonomousBrowserActionIntent(value);
     if (autonomousBrowserActionIntent) return handlers.runControlCommand(autonomousBrowserActionIntent.goal);
+
+    const structuredEditIntent = parseStructuredPageEditIntent(value);
+    if (structuredEditIntent) return handlers.explainStructuredPageEditBoundary(structuredEditIntent.instruction);
 
     const browserIntent = parseNaturalBrowserIntent(value);
     if (browserIntent) return handlers.openBrowserUrl(browserIntent.target);

@@ -1,5 +1,7 @@
 import { normalizeWalletProviderState, walletStateMarkdown, walletStateSummary } from "./wallet-state.js";
 
+import { isReadableSubframeTab, rankedReadableBrowserTabs } from "./readable-tab-ranking.js";
+
 export function createBrowserPageActions(deps) {
   const {
     addMessage,
@@ -28,25 +30,25 @@ export function createBrowserPageActions(deps) {
     if (controlledTabId) {
       const controlled = await chrome.tabs.get(controlledTabId).catch(() => null);
       if (isReadableBrowserTab(controlled)) {
-        return controlled;
+        if (!chrome.webNavigation?.getAllFrames) {
+          return controlled;
+        }
+        const tabs = await chrome.tabs.query({ currentWindow: true }).catch(() => []);
+        if (!await isReadableSubframeTab(chrome, controlled, tabs, isReadableBrowserTab)) {
+          return controlled;
+        }
       }
       setControlledTabId(null);
     }
     const tabs = await chrome.tabs.query({ currentWindow: true });
-    const activeReadable = tabs.find((tab) => tab.active && isReadableBrowserTab(tab));
-    if (activeReadable) {
-      setControlledTabId(activeReadable.id);
-      return activeReadable;
-    }
-    const readableTabs = tabs.filter(isReadableBrowserTab);
+    const readableTabs = await rankedReadableBrowserTabs(chrome, tabs, isReadableBrowserTab);
     if (readableTabs.length) {
-      const tab = readableTabs.at(-1);
+      const tab = readableTabs.at(0);
       setControlledTabId(tab.id);
       return tab;
     }
     const allTabs = await chrome.tabs.query({});
-    const fallback = allTabs.find((tab) => tab.active && isReadableBrowserTab(tab)) ??
-      allTabs.filter(isReadableBrowserTab).at(-1) ??
+    const fallback = (await rankedReadableBrowserTabs(chrome, allTabs, isReadableBrowserTab)).at(0) ??
       tabs.find((tab) => tab.active);
     if (isReadableBrowserTab(fallback)) {
       setControlledTabId(fallback.id);

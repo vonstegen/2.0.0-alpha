@@ -7,6 +7,7 @@ function createHarness({
   allTabs = [],
   controlledTabId = null,
   currentWindowTabs = [],
+  framesByTabId = {},
   getTab = () => null,
   updateTab = null,
 } = {}) {
@@ -32,6 +33,12 @@ function createHarness({
         return updateTab ? updateTab(tabId, payload) : { id: tabId, url: payload.url, active: Boolean(payload.active) };
       },
     },
+    webNavigation: {
+      getAllFrames: async ({ tabId }) => {
+        events.push(["frames", tabId]);
+        return framesByTabId[tabId] ?? [{ frameId: 0, url: `https://tab-${tabId}.test/` }];
+      }
+    }
   };
   const targets = createControlTabTargets({
     chromeApi,
@@ -63,7 +70,10 @@ test("control tab targets prefer the existing readable controlled tab", async ()
 
   assert.equal(tab.id, 7);
   assert.equal(harness.getControlledTabId(), 7);
-  assert.deepEqual(harness.events, [["get", 7]]);
+  assert.deepEqual(harness.events, [
+    ["get", 7],
+    ["query", { currentWindow: true }]
+  ]);
 });
 
 test("control tab targets clear stale controlled tabs and select active readable window tab", async () => {
@@ -86,6 +96,31 @@ test("control tab targets clear stale controlled tabs and select active readable
     ["query", { currentWindow: true }],
     ["set-controlled", 2],
   ]);
+});
+
+test("control tab targets replace controlled subframe tabs with the main readable page", async () => {
+  const harness = createHarness({
+    controlledTabId: 7,
+    currentWindowTabs: [
+      { id: 7, url: "https://calendar.example/frame", active: true },
+      { id: 8, url: "https://booking.example/", active: false },
+    ],
+    framesByTabId: {
+      7: [{ frameId: 0, url: "https://calendar.example/frame" }],
+      8: [
+        { frameId: 0, url: "https://booking.example/" },
+        { frameId: 5, url: "https://calendar.example/frame" }
+      ]
+    },
+    getTab: () => ({ id: 7, url: "https://calendar.example/frame", active: true }),
+  });
+
+  const tab = await harness.targets.currentReadableControlTab();
+
+  assert.equal(tab.id, 8);
+  assert.equal(harness.getControlledTabId(), 8);
+  assert.ok(harness.events.some((event) => event[0] === "set-controlled" && event[1] === null));
+  assert.ok(harness.events.some((event) => event[0] === "set-controlled" && event[1] === 8));
 });
 
 test("control tab targets update an existing readable tab when navigation is requested", async () => {

@@ -1,3 +1,5 @@
+import { isReadableSubframeTab, rankedReadableBrowserTabs } from "./readable-tab-ranking.js";
+
 export function createControlTabTargets({
   chromeApi,
   clearPageSnapshot = () => undefined,
@@ -14,28 +16,28 @@ export function createControlTabTargets({
     if (controlledTabId) {
       const controlled = await chromeApi.tabs.get(controlledTabId).catch(() => null);
       if (isReadableBrowserTab(controlled)) {
-        return controlled;
+        if (!chromeApi.webNavigation?.getAllFrames) {
+          return controlled;
+        }
+        const currentWindowTabs = await chromeApi.tabs.query({ currentWindow: true }).catch(() => []);
+        if (!await isReadableSubframeTab(chromeApi, controlled, currentWindowTabs, isReadableBrowserTab)) {
+          return controlled;
+        }
       }
       setControlledTabId(null);
     }
 
     const currentWindowTabs = await chromeApi.tabs.query({ currentWindow: true }).catch(() => []);
-    const activeReadable = currentWindowTabs.find((tab) => tab.active && isReadableBrowserTab(tab));
-    if (activeReadable) {
-      setControlledTabId(activeReadable.id);
-      return activeReadable;
-    }
-
-    const readableInWindow = currentWindowTabs.filter(isReadableBrowserTab).at(-1);
+    const rankedCurrentWindowTabs = await rankedReadableBrowserTabs(chromeApi, currentWindowTabs, isReadableBrowserTab);
+    const readableInWindow = rankedCurrentWindowTabs.at(0);
     if (readableInWindow) {
       setControlledTabId(readableInWindow.id);
       return readableInWindow;
     }
 
     const allTabs = await chromeApi.tabs.query({}).catch(() => []);
-    const readableTab = allTabs.find((tab) => tab.active && isReadableBrowserTab(tab)) ??
-      allTabs.filter(isReadableBrowserTab).at(-1) ??
-      null;
+    const rankedAllTabs = await rankedReadableBrowserTabs(chromeApi, allTabs, isReadableBrowserTab);
+    const readableTab = rankedAllTabs.at(0) ?? null;
     if (readableTab) {
       setControlledTabId(readableTab.id);
     }
