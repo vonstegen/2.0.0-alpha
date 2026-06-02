@@ -61,8 +61,17 @@ export function createMainWorkspaceActionController({
       }
     });
     await addMessage("system", "Moving this task into browser control mode. Augmentor will continue from the sidebar while the page stays in the main browser workspace.");
-    if (target) {
-      await chromeApi.tabs.update({ url: normalizeBrowserUrl(target) }).catch(() => undefined);
+    const targetUrl = target ? normalizeBrowserUrl(target) : "";
+    const handoff = await chromeApi.runtime?.sendMessage?.({
+      channel: "resonantos.browser_first",
+      type: "browser_control_handoff",
+      targetUrl
+    }).catch(() => null);
+    if (handoff?.ok) {
+      return;
+    }
+    if (targetUrl) {
+      await chromeApi.tabs.update({ url: targetUrl }).catch(() => undefined);
     }
     await openSidebar();
   }

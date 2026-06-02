@@ -1,3 +1,5 @@
+import { inferControlNavigationTarget } from "./browser-command-parser.js";
+
 const TERMINAL_CONTROL_RUN_STATUSES = new Set(["completed", "blocked", "denied", "cancelled", "failed"]);
 
 export function createSidePanelControlCommandController({
@@ -8,6 +10,8 @@ export function createSidePanelControlCommandController({
   createBrowserJob = async () => null,
   getBrowserJobScheduler = () => null,
   getCurrentControlRun = () => null,
+  currentReadableControlTab = activeTab,
+  ensureControlTabForUrl = async () => null,
   permissionForUrl = async () => "ask-before-action",
   persistContextDockExpanded = async () => undefined,
   renderControlMonitor = () => undefined,
@@ -40,8 +44,37 @@ export function createSidePanelControlCommandController({
     reason
   });
 
+  const navigationTargetForGoal = (goal) => inferControlNavigationTarget(goal);
+
+  const targetContextForGoal = async (goal, { mutate = false } = {}) => {
+    const navigationTarget = navigationTargetForGoal(goal);
+    if (navigationTarget?.url) {
+      const tab = mutate
+        ? await ensureControlTabForUrl(navigationTarget.url)
+        : { id: null, url: navigationTarget.url, title: navigationTarget.source };
+      return {
+        kind: "navigation",
+        tab,
+        targetUrl: navigationTarget.url,
+        siteKey: siteKeyForUrl(navigationTarget.url)
+      };
+    }
+
+    const tab = await currentReadableControlTab();
+    if (!tab?.url) {
+      throw new Error("Agent Control needs a normal web page target. Open or select a webpage first, or ask Augmentor to navigate to a site before operating the browser.");
+    }
+    return {
+      kind: "current-page",
+      tab,
+      targetUrl: tab.url,
+      siteKey: siteKeyForUrl(tab.url)
+    };
+  };
+
   const prepareBrowserJobPageLock = async ({ goal, existingJob = null, status = "running" } = {}) => {
-    const tab = await activeTab();
+    const targetContext = await targetContextForGoal(goal, { mutate: true });
+    const tab = targetContext.tab;
     const pageLock = pageLockForTab(tab, existingJob?.id
       ? `Resumed Agent Control job ${existingJob.id}`
       : `Agent Control goal: ${String(goal ?? "").slice(0, 120)}`);
@@ -94,15 +127,27 @@ export function createSidePanelControlCommandController({
   };
 
   const runControlCommand = async (goal, options = {}) => {
-    const tab = await activeTab();
-    const mode = tab?.url ? await permissionForUrl(tab.url) : "ask-before-action";
+    let targetContext;
+    try {
+      targetContext = await targetContextForGoal(goal, { mutate: false });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await addMessage("system", message);
+      setStatus("Control target unavailable");
+      setActivity("failed", "No browser target", message);
+      return null;
+    }
+    const tab = targetContext.tab;
+    const targetUrl = targetContext.targetUrl;
+    const targetSiteKey = targetContext.siteKey;
+    const mode = targetUrl ? await permissionForUrl(targetUrl) : "ask-before-action";
     if (mode === "blocked") {
-      await addMessage("system", `Agent Control is blocked on ${siteKeyForUrl(tab?.url)}. Change the current-site permission before asking Augmentor to operate this page.`);
+      await addMessage("system", `Agent Control is blocked on ${targetSiteKey}. Change the current-site permission before asking Augmentor to operate this page.`);
       setStatus("Control blocked");
       return null;
     }
     const existingConsent = await taskConsentStore.consentFor({
-      siteKey: siteKeyForUrl(tab?.url),
+      siteKey: targetSiteKey,
       goal
     });
     if (options.resumedFromJob) {
@@ -110,7 +155,7 @@ export function createSidePanelControlCommandController({
         ...(options.resumedFromJob.preflightDecision ?? {}),
         id: options.resumedFromJob.preflightDecision?.id ?? options.resumedFromJob.id,
         goal,
-        siteKey: options.resumedFromJob.preflightDecision?.siteKey ?? siteKeyForUrl(tab?.url),
+        siteKey: options.resumedFromJob.preflightDecision?.siteKey ?? targetSiteKey,
         taskClass: options.resumedFromJob.preflightDecision?.taskClass ?? existingConsent?.taskClass ?? "general",
         mode: "resumed",
         permissionMode: mode,
@@ -128,7 +173,7 @@ export function createSidePanelControlCommandController({
       await requestControlPreflight({
         goal,
         mode,
-        siteKey: siteKeyForUrl(tab?.url),
+        siteKey: targetSiteKey,
         tab
       });
       return null;
@@ -183,6 +228,7 @@ export function createSidePanelControlCommandController({
   return {
     pageLockForTab,
     prepareBrowserJobPageLock,
-    runControlCommand
+    runControlCommand,
+    targetContextForGoal
   };
 }

@@ -71,6 +71,12 @@ function createHarness(overrides = {}) {
           set: async (payload) => events.push(["storage-set", payload])
         }
       },
+      runtime: {
+        sendMessage: async (message) => {
+          events.push(["runtime-message", message]);
+          return overrides.runtimeHandoffResponse ?? { ok: true };
+        }
+      },
       tabs: {
         update: async (payload) => events.push(["tab-update", payload])
       }
@@ -125,6 +131,20 @@ test("main workspace action controller routes browser work into sidebar control 
   await harness.controller.handleSubmit({ preventDefault() {} });
 
   assert.ok(harness.events.some((event) => event[0] === "storage-set" && event[1].augmentorPendingSidebarPrompt.prompt.includes("/control")));
+  assert.ok(harness.events.some((event) => event[0] === "runtime-message" && event[1].type === "browser_control_handoff" && event[1].targetUrl === "https://resonantos.com/"));
+  assert.equal(harness.events.some((event) => event[0] === "tab-update"), false);
+  assert.equal(harness.events.some((event) => event[0] === "open-sidebar"), false);
+});
+
+test("main workspace action controller falls back when atomic browser handoff is unavailable", async () => {
+  const harness = createHarness({
+    prompt: "go to https://resonantos.com and summarize it",
+    runtimeHandoffResponse: { ok: false }
+  });
+
+  await harness.controller.handleSubmit({ preventDefault() {} });
+
+  assert.ok(harness.events.some((event) => event[0] === "runtime-message" && event[1].type === "browser_control_handoff"));
   assert.ok(harness.events.some((event) => event[0] === "tab-update" && event[1].url === "https://resonantos.com/"));
   assert.ok(harness.events.some((event) => event[0] === "open-sidebar"));
 });

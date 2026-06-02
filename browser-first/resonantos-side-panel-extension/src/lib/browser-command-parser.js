@@ -209,3 +209,38 @@ export function parseAmazonShoppingTask(message) {
     url: query ? `${base}/s?k=${encodeURIComponent(query)}` : base
   };
 }
+
+export function inferControlNavigationTarget(message) {
+  const normalized = String(message ?? "").trim();
+  const amazonTask = parseAmazonShoppingTask(normalized);
+  if (amazonTask?.url) {
+    return {
+      kind: "navigation",
+      source: "amazon-task",
+      url: amazonTask.url
+    };
+  }
+
+  const naturalBrowserIntent = parseNaturalBrowserIntent(normalized);
+  if (naturalBrowserIntent?.target) {
+    return {
+      kind: "navigation",
+      source: "browser-target",
+      url: normalizeBrowserUrl(naturalBrowserIntent.target)
+    };
+  }
+
+  const naturalSearchIntent = parseNaturalSearchIntent(normalized);
+  if (naturalSearchIntent?.query) {
+    const url = naturalSearchIntent.action === "news"
+      ? `https://www.bing.com/news/search?q=${encodeURIComponent(naturalSearchIntent.query)}&setlang=en-US`
+      : `https://www.google.com/search?q=${encodeURIComponent(naturalSearchIntent.query)}`;
+    return {
+      kind: "navigation",
+      source: naturalSearchIntent.action === "news" ? "news-search" : "web-search",
+      url
+    };
+  }
+
+  return null;
+}

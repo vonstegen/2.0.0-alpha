@@ -401,6 +401,51 @@ const {
   typeIntoActivePage
 } = browserPageActions;
 
+const currentReadableControlTab = async () => {
+  if (controlledTabId) {
+    const controlled = await chrome.tabs.get(controlledTabId).catch(() => null);
+    if (isReadableBrowserTab(controlled)) {
+      return controlled;
+    }
+    controlledTabId = null;
+  }
+  const currentWindowTabs = await chrome.tabs.query({ currentWindow: true }).catch(() => []);
+  const activeReadable = currentWindowTabs.find((tab) => tab.active && isReadableBrowserTab(tab));
+  if (activeReadable) {
+    controlledTabId = activeReadable.id;
+    return activeReadable;
+  }
+  const readableInWindow = currentWindowTabs.filter(isReadableBrowserTab).at(-1);
+  if (readableInWindow) {
+    controlledTabId = readableInWindow.id;
+    return readableInWindow;
+  }
+  const allTabs = await chrome.tabs.query({}).catch(() => []);
+  const readableTab = allTabs.find((tab) => tab.active && isReadableBrowserTab(tab)) ??
+    allTabs.filter(isReadableBrowserTab).at(-1) ??
+    null;
+  if (readableTab) {
+    controlledTabId = readableTab.id;
+  }
+  return readableTab;
+};
+
+const ensureControlTabForUrl = async (url) => {
+  const existingTab = await currentReadableControlTab();
+  if (existingTab?.id) {
+    const updated = await chrome.tabs.update(existingTab.id, { url, active: true }).catch(() => null);
+    controlledTabId = existingTab.id;
+    lastSnapshot = null;
+    setContextMeter(null);
+    return updated ?? { ...existingTab, url };
+  }
+  const created = await chrome.tabs.create({ url, active: true });
+  controlledTabId = created.id;
+  lastSnapshot = null;
+  setContextMeter(null);
+  return created;
+};
+
 monitorRenderers = createMonitorRenderers({
   activeTab,
   approvalBoundaryForStep,
@@ -725,6 +770,8 @@ const controlCommandController = createSidePanelControlCommandController({
   browserJobStore,
   clearControlPreflight: () => controlPreflightController.clearControlPreflight(),
   createBrowserJob,
+  currentReadableControlTab,
+  ensureControlTabForUrl,
   getBrowserJobScheduler: () => browserJobScheduler,
   getCurrentControlRun: () => currentControlRun,
   permissionForUrl,

@@ -36,7 +36,7 @@ const setSidePanelEnabledForTab = async (tabId, enabled) => {
   if (tabId === undefined) {
     return;
   }
-  await chrome.sidePanel.setOptions({ tabId, enabled }).catch(() => undefined);
+  await chrome.sidePanel.setOptions({ tabId, path: "src/side-panel.html", enabled }).catch(() => undefined);
 };
 
 const setSidePanelEnabledForActiveTab = async (windowId, enabled) => {
@@ -70,6 +70,25 @@ const openResonantSidePanel = async (windowId, { force = false } = {}) => {
   await setSidePanelEnabledForTab(tab.id, true);
   await chrome.sidePanel.open({ windowId }).catch(() => undefined);
   return true;
+};
+
+const handoffToResonantSidePanel = async ({ senderTab, targetUrl = "" } = {}) => {
+  const tab = senderTab?.id === undefined
+    ? await activeTabForWindow(senderTab?.windowId)
+    : senderTab;
+  if (tab?.id === undefined || tab.windowId === undefined) {
+    return { ok: false, opened: false, navigated: false, error: "No active tab available for browser-control handoff." };
+  }
+  // Intent citation: docs/architecture/ADR-037-browser-first-chromium-resonantos.md
+  // Browser-control handoff must keep the human on the target webpage while
+  // Augmentor moves into the side panel. Enabling/opening the panel before
+  // navigation avoids losing the sender page during tab URL changes.
+  await setSidePanelEnabledForTab(tab.id, true);
+  await chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => undefined);
+  if (targetUrl) {
+    await chrome.tabs.update(tab.id, { url: targetUrl }).catch(() => undefined);
+  }
+  return { ok: true, opened: true, navigated: Boolean(targetUrl), tabId: tab.id };
 };
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -137,6 +156,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.windows.getCurrent((window) => {
       void openResonantSidePanel(window?.id, { force: Boolean(message.force) }).then((opened) => sendResponse({ ok: true, opened }));
     });
+    return true;
+  }
+
+  if (message.type === "browser_control_handoff") {
+    void handoffToResonantSidePanel({
+      senderTab: sender.tab,
+      targetUrl: typeof message.targetUrl === "string" ? message.targetUrl : ""
+    }).then(sendResponse);
     return true;
   }
 

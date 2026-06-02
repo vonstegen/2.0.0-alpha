@@ -257,6 +257,8 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(promptRouter, /parseNaturalBrowserIntent/);
   assert.match(promptRouter, /parseNaturalDelegationIntent/);
   assert.match(workspaceActionController, /augmentorPendingSidebarPrompt/);
+  assert.match(workspaceActionController, /browser_control_handoff/);
+  assert.match(workspaceActionController, /targetUrl/);
   assert.match(workspaceScript, /open_side_panel/);
   assert.match(workspaceScript, /type: "open_side_panel",\s*force: true/);
   assert.match(workspaceScript, /suppressSidebarChatForMainWorkspace/);
@@ -534,6 +536,8 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(hostUtils, /Hermes dashboard can only bind to localhost/);
   assert.match(launcher, /main-workspace\.html/);
   assert.match(background, /open_side_panel/);
+  assert.match(background, /browser_control_handoff/);
+  assert.match(background, /handoffToResonantSidePanel/);
   assert.match(background, /suppress_side_panel_on_main_workspace/);
   assert.match(background, /openResonantSidePanel\(windowId, \{ force: Boolean\(message\.force\) \}\)/);
   assert.match(background, /setSidePanelEnabledForTab\(tab\.id, false\)/);
@@ -586,6 +590,8 @@ test("browser layer exposes Augmentor chat as the side-panel surface without ste
   const sidePanelLifecycleController = await readText(path.join(extensionRoot, "src", "lib", "side-panel-lifecycle-controller.js"));
   const sidePanelScheduledBrowserJobRunner = await readText(path.join(extensionRoot, "src", "lib", "side-panel-scheduled-browser-job-runner.js"));
   const monitorRenderers = await readText(path.join(extensionRoot, "src", "lib", "monitor-renderers.js"));
+  const monitorProgress = await readText(path.join(extensionRoot, "src", "lib", "monitor-progress.js"));
+  const monitorSurface = `${monitorRenderers}\n${monitorProgress}`;
   const commandRouter = await readText(path.join(extensionRoot, "src", "lib", "side-panel-command-router.js"));
   const walletState = await readText(path.join(extensionRoot, "src", "lib", "wallet-state.js"));
   const sitePermissionStore = await readText(path.join(extensionRoot, "src", "lib", "site-permission-store.js"));
@@ -643,6 +649,7 @@ test("browser layer exposes Augmentor chat as the side-panel surface without ste
   assert.match(composerController, /\["x", "c", "v"\]/);
   assert.match(background, /openPanelOnActionClick/);
   assert.match(background, /openResonantSidePanel/);
+  assert.match(background, /handoffToResonantSidePanel/);
   assert.match(background, /open-augmentor-side-panel/);
   assert.doesNotMatch(background, /chrome\.tabs\.create/);
   assert.match(background, /syncSidePanelForTab/);
@@ -741,16 +748,16 @@ test("browser layer exposes Augmentor chat as the side-panel surface without ste
   assert.match(monitorRenderers, /onResetSitePermission/);
   assert.match(monitorRenderers, /onRevokeTaskConsent/);
   assert.match(script, /createMonitorRenderers/);
-  assert.match(monitorRenderers, /sitePermissionDescription/);
-  assert.match(monitorRenderers, /Can see\/do now/);
+  assert.match(monitorSurface, /sitePermissionDescription/);
+  assert.match(monitorSurface, /Can see\/do now/);
   assert.match(monitorRenderers, /renderSitePermissionPanel/);
   assert.match(monitorRenderers, /renderJobMonitor/);
   assert.match(monitorRenderers, /getBrowserJobSchedulerState/);
   assert.match(monitorRenderers, /job-scheduler-state/);
   assert.match(monitorRenderers, /renderControlMonitor/);
-  assert.match(monitorRenderers, /controlActionStateLabel/);
-  assert.match(monitorRenderers, /controlRunPhase/);
-  assert.match(monitorRenderers, /controlRunProgressSummary/);
+  assert.match(monitorSurface, /controlActionStateLabel/);
+  assert.match(monitorSurface, /controlRunPhase/);
+  assert.match(monitorSurface, /controlRunProgressSummary/);
   assert.match(monitorRenderers, /control-phase-meta/);
   assert.match(monitorRenderers, /control-progress-track/);
   assert.match(monitorRenderers, /jobNextHumanAction/);

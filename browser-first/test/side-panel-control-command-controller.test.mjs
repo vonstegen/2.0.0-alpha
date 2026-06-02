@@ -8,6 +8,8 @@ function createHarness({
   conflict = null,
   consent = null,
   currentControlRun = null,
+  currentReadableControlTab = undefined,
+  ensureControlTabForUrl = undefined,
   permissionMode = "ask-before-action",
   shouldPreflight = false
 } = {}) {
@@ -35,6 +37,12 @@ function createHarness({
       events.push(["create-job", job]);
       return job;
     },
+    currentReadableControlTab: currentReadableControlTab !== undefined
+      ? async () => currentReadableControlTab
+      : async () => activeTab,
+    ensureControlTabForUrl: ensureControlTabForUrl !== undefined
+      ? async (url) => ensureControlTabForUrl(url)
+      : async (url) => ({ id: 77, url }),
     getBrowserJobScheduler: () => ({
       tick: async () => {
         schedulerTicks += 1;
@@ -97,7 +105,59 @@ test("control command controller requests preflight without queueing autonomous 
   const result = await harness.controller.runControlCommand("research current AI browser news");
 
   assert.equal(result, null);
-  assert.ok(harness.events.some((event) => event[0] === "preflight" && event[1].siteKey === "example.com"));
+  assert.ok(harness.events.some((event) => event[0] === "preflight" && event[1].siteKey === "www.bing.com"));
+  assert.equal(harness.events.some((event) => event[0] === "create-job"), false);
+});
+
+test("control command controller preflights navigation goals against the intended web target, not the active extension page", async () => {
+  const harness = createHarness({
+    activeTab: { id: 9, url: "chrome-extension://resonantos/src/side-panel.html" },
+    currentReadableControlTab: null,
+    shouldPreflight: true
+  });
+
+  const result = await harness.controller.runControlCommand("go to amazon and find me a mini pc");
+
+  assert.equal(result, null);
+  const preflight = harness.events.find((event) => event[0] === "preflight")?.[1];
+  assert.equal(preflight.siteKey, "www.amazon.it");
+  assert.equal(preflight.tab.url, "https://www.amazon.it/s?k=a%20mini%20pc");
+  assert.equal(harness.events.some((event) => event[0] === "create-job"), false);
+});
+
+test("control command controller creates a real web tab page lock for navigation goals after approval", async () => {
+  const opened = [];
+  const harness = createHarness({
+    activeTab: { id: 9, url: "chrome-extension://resonantos/src/side-panel.html" },
+    currentReadableControlTab: null,
+    ensureControlTabForUrl: (url) => {
+      opened.push(url);
+      return { id: 88, url, title: "Amazon search" };
+    }
+  });
+
+  const lock = await harness.controller.prepareBrowserJobPageLock({
+    goal: "go to amazon and find me a mini pc",
+    status: "queued"
+  });
+
+  assert.deepEqual(opened, ["https://www.amazon.it/s?k=a%20mini%20pc"]);
+  assert.equal(lock.tabId, 88);
+  assert.equal(lock.siteKey, "www.amazon.it");
+  assert.equal(lock.url, "https://www.amazon.it/s?k=a%20mini%20pc");
+});
+
+test("control command controller refuses current-page jobs when only ResonantOS extension pages are active", async () => {
+  const harness = createHarness({
+    activeTab: { id: 9, url: "chrome-extension://resonantos/src/side-panel.html" },
+    currentReadableControlTab: null
+  });
+
+  const result = await harness.controller.runControlCommand("click the Add button on this page");
+
+  assert.equal(result, null);
+  assert.ok(harness.events.some((event) => event[0] === "status" && event[1] === "Control target unavailable"));
+  assert.ok(harness.events.some((event) => event[0] === "message" && /normal web page target/.test(event[2])));
   assert.equal(harness.events.some((event) => event[0] === "create-job"), false);
 });
 
