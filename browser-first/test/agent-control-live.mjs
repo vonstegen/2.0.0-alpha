@@ -603,6 +603,29 @@ try {
     if (document.readyState === "complete") done();
     else addEventListener("load", done, { once: true });
   })`);
+  const sidePanelReady = (await evaluate(panel, `new Promise((resolve) => {
+    const startedAt = Date.now();
+    const check = () => {
+      if (window.__resonantosSidePanelReady && document.querySelector("#command-input")) {
+        resolve({ ready: true });
+        return;
+      }
+      if (Date.now() - startedAt > 5000) {
+        resolve({
+          ready: false,
+          documentReadyState: document.readyState,
+          hasInput: Boolean(document.querySelector("#command-input")),
+          marker: window.__resonantosSidePanelReady,
+          error: window.__resonantosSidePanelReadyError || null,
+          scripts: [...document.scripts].map((script) => script.src)
+        });
+        return;
+      }
+      setTimeout(check, 25);
+    };
+    check();
+  })`)).result.value;
+  assert(sidePanelReady.ready, `Side panel did not finish binding listeners: ${JSON.stringify(sidePanelReady)}`);
 
   await evaluate(panel, `chrome.storage.local.clear(); document.querySelector("#transcript").replaceChildren();`);
   await evaluate(panel, `chrome.storage.local.set({
