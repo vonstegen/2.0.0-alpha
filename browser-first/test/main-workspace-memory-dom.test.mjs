@@ -11,6 +11,7 @@ import {
   setMemoryStatus,
   wikiHealthCard
 } from "../resonantos-side-panel-extension/src/lib/main-workspace-memory-dom.js";
+import { createLivingArchiveLayout } from "../resonantos-side-panel-extension/src/lib/main-workspace-memory-layout.js";
 
 function setupDom() {
   const dom = new JSDOM("<!doctype html><main id=\"root\"></main>", { url: "https://resonantos.local/" });
@@ -73,6 +74,35 @@ test("wiki health card renders actionable lint and refresh controls", () => {
     assert.equal(linted, true);
   } finally {
     cleanup();
+  }
+});
+
+test("Living Archive layout exposes the required workspace controls", () => {
+  const dom = new JSDOM("<!doctype html><main id=\"root\"></main>", { url: "https://resonantos.local/" });
+  const root = dom.window.document.querySelector("#root");
+  globalThis.document = dom.window.document;
+  const layout = createLivingArchiveLayout({
+    container: root,
+    documentRef: dom.window.document,
+  });
+
+  try {
+    assert.equal(root.querySelector(".memory-workspace")?.getAttribute("aria-label"), "Living Archive workspace");
+    assert.match(root.textContent, /Your AI memory, organized from your sources/);
+    assert.equal(layout.metrics.querySelectorAll(".memory-metric").length, 3);
+    assert.equal(layout.searchInput.type, "search");
+    assert.equal(layout.searchButton.type, "submit");
+    assert.equal(layout.intakeButton.type, "submit");
+    assert.equal(layout.intakeForm.querySelector("button[type='submit']")?.textContent, "Save to intake");
+    assert.equal(layout.fileInput.getAttribute("aria-label"), "Choose a file for governed intake");
+    assert.equal(layout.refreshReview.type, "button");
+    assert.equal(layout.refreshPromotions.type, "button");
+    assert.equal(layout.refreshSources.type, "button");
+    assert.equal(layout.runSourceSync.textContent, "Run Sync Now");
+    assert.deepEqual([...layout.sourceStateFilter.options].map((option) => option.value), ["all", "active", "disabled", "missing"]);
+    assert.equal(root.querySelector(".memory-advanced summary")?.textContent, "Advanced memory tools");
+  } finally {
+    delete globalThis.document;
   }
 });
 

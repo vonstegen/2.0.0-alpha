@@ -3,7 +3,6 @@
 
 import { singleFileIntakeContent } from "./memory-single-file-intake.js";
 import {
-  optionNode,
   sourceArtifactPreviewCard,
   sourceCard,
   sourceDiffCard,
@@ -21,13 +20,13 @@ import {
 } from "./memory-review-renderers.js";
 import {
   formatCount,
-  memoryMetric,
   memoryResultCard,
   promotionMatchesHandoff,
   reviewMatchesHandoff,
   setMemoryStatus,
   wikiHealthCard
 } from "./main-workspace-memory-dom.js";
+import { createLivingArchiveLayout } from "./main-workspace-memory-layout.js";
 
 export { reviewRequestNextAction } from "./memory-review-renderers.js";
 
@@ -39,169 +38,40 @@ export function renderLivingArchiveWorkspace({
   initialArtifactPath = "",
   initialPromotedPage = ""
 }) {
-  const section = document.createElement("section");
-  section.className = "memory-workspace";
-  section.setAttribute("aria-label", "Living Archive workspace");
-
-  const header = document.createElement("header");
-  header.className = "memory-hero";
-  const eyebrow = document.createElement("span");
-  eyebrow.className = "module-eyebrow";
-  eyebrow.textContent = "Living Archive";
-  const title = document.createElement("h1");
-  title.textContent = "Your AI memory, organized from your sources.";
-  const body = document.createElement("p");
-  body.textContent = "Search what Augmentor already knows, add notes or files, and review items before they become AI Memory.";
-  header.append(eyebrow, title, body);
-
-  const metrics = document.createElement("div");
-  metrics.className = "memory-metrics";
-  metrics.append(
-    memoryMetric("Memory pages", "…", "organized AI pages"),
-    memoryMetric("Saved sources", "…", "notes and files"),
-    memoryMetric("To review", "…", "before trusted memory")
-  );
-
-  const wikiHealthPanel = document.createElement("section");
-  wikiHealthPanel.className = "memory-card memory-wiki-health";
-  wikiHealthPanel.textContent = "Loading wiki health…";
-
-  const searchForm = document.createElement("form");
-  searchForm.className = "memory-card memory-search";
-  const searchLabel = document.createElement("label");
-  searchLabel.textContent = "Search memory";
-  const searchRow = document.createElement("div");
-  searchRow.className = "memory-row";
-  const searchInput = document.createElement("input");
-  searchInput.type = "search";
-  searchInput.placeholder = "Search concepts, people, projects, claims…";
-  searchInput.minLength = 2;
-  const searchButton = document.createElement("button");
-  searchButton.type = "submit";
-  searchButton.textContent = "Search";
-  searchRow.append(searchInput, searchButton);
-  const searchStatus = document.createElement("p");
-  searchStatus.className = "memory-status";
-  const searchResults = document.createElement("div");
-  searchResults.className = "memory-results";
-  searchForm.append(searchLabel, searchRow, searchStatus, searchResults);
-
-  const intakeForm = document.createElement("form");
-  intakeForm.className = "memory-card memory-intake";
-  const intakeLabel = document.createElement("label");
-  intakeLabel.textContent = "Add note or file";
-  const titleInput = document.createElement("input");
-  titleInput.type = "text";
-  titleInput.placeholder = "Note or file title";
-  const contentInput = document.createElement("textarea");
-  contentInput.rows = 5;
-  contentInput.placeholder = "Paste/write a note, or choose a supported text file. It is saved as intake, not directly promoted into trusted AI Memory.";
-  const fileInput = document.createElement("input");
-  fileInput.type = "file";
-  fileInput.accept = ".md,.markdown,.txt,.csv,.json,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.mp3,.wav,.m4a,.mp4,text/*,application/json,application/pdf,image/*,audio/*,video/*";
-  fileInput.setAttribute("aria-label", "Choose a file for governed intake");
-  const intakeButton = document.createElement("button");
-  intakeButton.type = "submit";
-  intakeButton.textContent = "Save to intake";
-  const intakeStatus = document.createElement("p");
-  intakeStatus.className = "memory-status";
-  intakeForm.append(intakeLabel, titleInput, contentInput, fileInput, intakeButton, intakeStatus);
-
-  const reviewPanel = document.createElement("section");
-  reviewPanel.className = "memory-card memory-review-queue";
-  const reviewHeader = document.createElement("div");
-  reviewHeader.className = "memory-review-top";
-  const reviewLabel = document.createElement("label");
-  reviewLabel.textContent = "Items to review";
-  const refreshReview = document.createElement("button");
-  refreshReview.type = "button";
-  refreshReview.textContent = "Refresh";
-  reviewHeader.append(reviewLabel, refreshReview);
-  const reviewStatus = document.createElement("p");
-  reviewStatus.className = "memory-status";
-  const reviewList = document.createElement("div");
-  reviewList.className = "memory-review-list";
-  const draftPreview = document.createElement("article");
-  draftPreview.className = "memory-review-preview";
-  draftPreview.hidden = true;
-  reviewPanel.append(reviewHeader, reviewStatus, reviewList, draftPreview);
-
-  const promotionPanel = document.createElement("section");
-  promotionPanel.className = "memory-card memory-promotion-history";
-  const promotionHeader = document.createElement("div");
-  promotionHeader.className = "memory-review-top";
-  const promotionLabel = document.createElement("label");
-  promotionLabel.textContent = "Memory history";
-  const refreshPromotions = document.createElement("button");
-  refreshPromotions.type = "button";
-  refreshPromotions.textContent = "Refresh";
-  promotionHeader.append(promotionLabel, refreshPromotions);
-  const promotionStatus = document.createElement("p");
-  promotionStatus.className = "memory-status";
-  const promotionList = document.createElement("div");
-  promotionList.className = "memory-promotion-list";
-  const promotionPreview = document.createElement("article");
-  promotionPreview.className = "memory-review-preview";
-  promotionPreview.hidden = true;
-  promotionPanel.append(promotionHeader, promotionStatus, promotionList, promotionPreview);
-
-  const sourcePanel = document.createElement("section");
-  sourcePanel.className = "memory-card memory-source-review";
-  const sourceHeader = document.createElement("div");
-  sourceHeader.className = "memory-review-top";
-  const sourceLabel = document.createElement("label");
-  sourceLabel.textContent = "Connected sources";
-  const sourceHeaderActions = document.createElement("div");
-  sourceHeaderActions.className = "memory-review-actions";
-  const runSourceSync = document.createElement("button");
-  runSourceSync.type = "button";
-  runSourceSync.textContent = "Run Sync Now";
-  const refreshSources = document.createElement("button");
-  refreshSources.type = "button";
-  refreshSources.textContent = "Refresh";
-  sourceHeaderActions.append(runSourceSync, refreshSources);
-  sourceHeader.append(sourceLabel, sourceHeaderActions);
-  const sourceFilterBar = document.createElement("div");
-  sourceFilterBar.className = "memory-source-filterbar memory-source-list-filterbar";
-  const sourceStateFilter = document.createElement("select");
-  sourceStateFilter.setAttribute("aria-label", "Filter connected sources by state");
-  sourceStateFilter.append(
-    optionNode("all", "All sources"),
-    optionNode("active", "Active"),
-    optionNode("disabled", "Disabled"),
-    optionNode("missing", "Missing")
-  );
-  const sourceTextFilter = document.createElement("input");
-  sourceTextFilter.type = "search";
-  sourceTextFilter.placeholder = "Filter connected sources";
-  sourceTextFilter.setAttribute("aria-label", "Filter connected sources by text");
-  const sourceFilterCount = document.createElement("small");
-  sourceFilterBar.append(sourceStateFilter, sourceTextFilter, sourceFilterCount);
-  const sourceStatus = document.createElement("p");
-  sourceStatus.className = "memory-status";
-  const sourceSyncHistory = document.createElement("div");
-  sourceSyncHistory.className = "memory-source-sync-history-host";
-  const sourceRepairHistory = document.createElement("div");
-  sourceRepairHistory.className = "memory-source-repair-history-host";
-  const sourceMoveHistory = document.createElement("div");
-  sourceMoveHistory.className = "memory-source-move-history-host";
-  const sourceList = document.createElement("div");
-  sourceList.className = "memory-source-list";
-  const sourcePreview = document.createElement("div");
-  sourcePreview.className = "memory-source-preview";
-  sourcePanel.append(sourceHeader, sourceFilterBar, sourceStatus, sourceSyncHistory, sourceRepairHistory, sourceMoveHistory, sourceList, sourcePreview);
-
-  const advancedPanel = document.createElement("details");
-  advancedPanel.className = "memory-advanced";
-  const advancedSummary = document.createElement("summary");
-  advancedSummary.textContent = "Advanced memory tools";
-  const advancedBody = document.createElement("div");
-  advancedBody.className = "memory-advanced-body";
-  advancedBody.append(sourcePanel, promotionPanel, wikiHealthPanel);
-  advancedPanel.append(advancedSummary, advancedBody);
-
-  section.append(header, metrics, searchForm, intakeForm, reviewPanel, advancedPanel);
-  container.append(section);
+  const {
+    contentInput,
+    draftPreview,
+    fileInput,
+    intakeButton,
+    intakeForm,
+    intakeStatus,
+    metrics,
+    promotionList,
+    promotionPreview,
+    promotionStatus,
+    refreshPromotions,
+    refreshReview,
+    refreshSources,
+    reviewList,
+    reviewStatus,
+    runSourceSync,
+    searchForm,
+    searchButton,
+    searchInput,
+    searchResults,
+    searchStatus,
+    sourceFilterCount,
+    sourceList,
+    sourceMoveHistory,
+    sourcePreview,
+    sourceRepairHistory,
+    sourceStateFilter,
+    sourceStatus,
+    sourceSyncHistory,
+    sourceTextFilter,
+    titleInput,
+    wikiHealthPanel,
+  } = createLivingArchiveLayout({ container });
 
   const loadStatus = async () => {
     try {
