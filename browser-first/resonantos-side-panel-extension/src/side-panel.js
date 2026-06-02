@@ -30,6 +30,10 @@ import { createSidePanelBrowserJobController } from "./lib/side-panel-browser-jo
 import { createSidePanelCommandRouter } from "./lib/side-panel-command-router.js";
 import { createSidePanelControlCommandController } from "./lib/side-panel-control-command-controller.js";
 import { createSidePanelControlPreflightController } from "./lib/side-panel-control-preflight-controller.js";
+import {
+  getSidePanelElements,
+  SIDE_PANEL_STORAGE_KEYS
+} from "./lib/side-panel-dom.js";
 import { createSidePanelLifecycleController } from "./lib/side-panel-lifecycle-controller.js";
 import { createSidePanelMessageRouter } from "./lib/side-panel-message-router.js";
 import { createSidePanelRenderers } from "./lib/side-panel-renderers.js";
@@ -40,86 +44,67 @@ import { createSitePermissionStore } from "./lib/site-permission-store.js";
 import { createTabContextController } from "./lib/tab-context-controller.js";
 import { createTaskConsentStore } from "./lib/task-consent-store.js";
 
-const readButton = document.querySelector("#read-page");
-const attachFileButton = document.querySelector("#attach-file");
-const fileInput = document.querySelector("#file-input");
-const attachmentStrip = document.querySelector("#attachment-strip");
-const saveIntakeButton = document.querySelector("#save-intake");
-const saveSelectionButton = document.querySelector("#save-selection");
-const contextToggleButton = document.querySelector("#context-toggle");
-const transcript = document.querySelector("#transcript");
-const contextDock = document.querySelector("#context-dock");
-const activityPanel = document.querySelector("#activity-panel");
-const activityLabel = document.querySelector("#activity-label");
-const activityDetail = document.querySelector("#activity-detail");
-const commandForm = document.querySelector("#command-form");
-const commandInput = document.querySelector("#command-input");
-const contextMeter = document.querySelector("#context-meter");
-const contextPopover = document.querySelector("#context-popover");
-const composerNotice = document.querySelector("#composer-notice");
-const modelSelect = document.querySelector("#model-select");
-const thinkingDepthSelect = document.querySelector("#thinking-depth");
-const dictateButton = document.querySelector("#dictate-button");
-const connectionLine = document.querySelector("#connection-line");
-const sitePermissionPanel = document.querySelector("#site-permission-panel");
-const sitePermissionHost = document.querySelector("#site-permission-host");
-const sitePermissionNote = document.querySelector("#site-permission-note");
-const sitePermissionMode = document.querySelector("#site-permission-mode");
-const taskConsentPanel = document.querySelector("#task-consent-panel");
-const taskConsentTitle = document.querySelector("#task-consent-title");
-const taskConsentList = document.querySelector("#task-consent-list");
-const permissionManagerPanel = document.querySelector("#permission-manager-panel");
-const permissionManagerTitle = document.querySelector("#permission-manager-title");
-const permissionManagerList = document.querySelector("#permission-manager-list");
-const controlPreflightCard = document.querySelector("#control-preflight-card");
-const controlPreflightTitle = document.querySelector("#control-preflight-title");
-const controlPreflightBody = document.querySelector("#control-preflight-body");
-const controlPreflightApproveButton = document.querySelector("#control-preflight-approve");
-const controlPreflightTrustButton = document.querySelector("#control-preflight-trust");
-const controlPreflightDenyButton = document.querySelector("#control-preflight-deny");
-const jobMonitor = document.querySelector("#job-monitor");
-const jobMonitorTitle = document.querySelector("#job-monitor-title");
-const jobMonitorToggle = document.querySelector("#job-monitor-toggle");
-const jobList = document.querySelector("#job-list");
-const controlMonitor = document.querySelector("#control-monitor");
-const controlCurrentAction = document.querySelector("#control-current-action");
-const controlSummaryCard = document.querySelector("#control-summary-card");
-const controlMonitorTitle = document.querySelector("#control-monitor-title");
-const controlMonitorStatus = document.querySelector("#control-monitor-status");
-const controlStopButton = document.querySelector("#control-stop");
-const controlStepList = document.querySelector("#control-step-list");
-const controlArtifacts = document.querySelector("#control-artifacts");
-const approvalCard = document.querySelector("#approval-card");
-const approvalTitle = document.querySelector("#approval-title");
-const approvalReason = document.querySelector("#approval-reason");
-const approvalApproveButton = document.querySelector("#approval-approve");
-const approvalTrustSiteButton = document.querySelector("#approval-trust-site");
-const approvalDenyButton = document.querySelector("#approval-deny");
-const approvalDelegateButton = document.querySelector("#approval-delegate");
+const {
+  activityDetail,
+  activityLabel,
+  activityPanel,
+  approvalApproveButton,
+  approvalCard,
+  approvalDelegateButton,
+  approvalDenyButton,
+  approvalReason,
+  approvalTitle,
+  approvalTrustSiteButton,
+  attachFileButton,
+  attachmentStrip,
+  commandForm,
+  commandInput,
+  composerNotice,
+  connectionLine,
+  contextDock,
+  contextMeter,
+  contextPopover,
+  contextToggleButton,
+  controlArtifacts,
+  controlCurrentAction,
+  controlMonitor,
+  controlMonitorStatus,
+  controlMonitorTitle,
+  controlPreflightApproveButton,
+  controlPreflightBody,
+  controlPreflightCard,
+  controlPreflightDenyButton,
+  controlPreflightTitle,
+  controlPreflightTrustButton,
+  controlStepList,
+  controlStopButton,
+  controlSummaryCard,
+  dictateButton,
+  fileInput,
+  jobList,
+  jobMonitor,
+  jobMonitorTitle,
+  jobMonitorToggle,
+  modelSelect,
+  permissionManagerList,
+  permissionManagerPanel,
+  permissionManagerTitle,
+  readButton,
+  saveIntakeButton,
+  saveSelectionButton,
+  sitePermissionHost,
+  sitePermissionMode,
+  sitePermissionNote,
+  sitePermissionPanel,
+  taskConsentList,
+  taskConsentPanel,
+  taskConsentTitle,
+  thinkingDepthSelect,
+  transcript
+} = getSidePanelElements(document);
 
 const bridgeRequest = createBridgeClient();
-const STORAGE_KEYS = {
-  messages: "augmentorBrowserMessages",
-  forks: "augmentorBrowserForks",
-  sessions: "augmentorBrowserSessions",
-  activeSessionId: "augmentorActiveBrowserSessionId",
-  projects: "augmentorBrowserProjects",
-  pendingSidebarPrompt: "augmentorPendingSidebarPrompt",
-  augmentorConfig: "augmentorConfig",
-  model: "augmentorModel",
-  thinkingDepth: "augmentorThinkingDepth",
-  attachments: "augmentorBrowserAttachments",
-  sitePermissions: "augmentorSitePermissions",
-  sitePermissionAudit: "augmentorSitePermissionAudit",
-  taskConsents: "augmentorTaskConsents",
-  taskConsentAudit: "augmentorTaskConsentAudit",
-  browserJobs: "augmentorBrowserJobs",
-  activeBrowserJob: "augmentorActiveBrowserJob",
-  controlPreflight: "augmentorControlPreflight",
-  jobMonitorCollapsed: "augmentorJobMonitorCollapsed",
-  contextDockExpanded: "augmentorContextDockExpanded",
-  userProfile: "augmentorUserProfile"
-};
+const STORAGE_KEYS = SIDE_PANEL_STORAGE_KEYS;
 let lastSnapshot = null;
 let statusLabel = "Ready";
 let turnBusy = false;

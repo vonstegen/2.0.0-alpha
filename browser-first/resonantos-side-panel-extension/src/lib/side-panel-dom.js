@@ -1,0 +1,91 @@
+export const SIDE_PANEL_STORAGE_KEYS = {
+  messages: "augmentorBrowserMessages",
+  forks: "augmentorBrowserForks",
+  sessions: "augmentorBrowserSessions",
+  activeSessionId: "augmentorActiveBrowserSessionId",
+  projects: "augmentorBrowserProjects",
+  pendingSidebarPrompt: "augmentorPendingSidebarPrompt",
+  augmentorConfig: "augmentorConfig",
+  model: "augmentorModel",
+  thinkingDepth: "augmentorThinkingDepth",
+  attachments: "augmentorBrowserAttachments",
+  sitePermissions: "augmentorSitePermissions",
+  sitePermissionAudit: "augmentorSitePermissionAudit",
+  taskConsents: "augmentorTaskConsents",
+  taskConsentAudit: "augmentorTaskConsentAudit",
+  browserJobs: "augmentorBrowserJobs",
+  activeBrowserJob: "augmentorActiveBrowserJob",
+  controlPreflight: "augmentorControlPreflight",
+  jobMonitorCollapsed: "augmentorJobMonitorCollapsed",
+  contextDockExpanded: "augmentorContextDockExpanded",
+  userProfile: "augmentorUserProfile"
+};
+
+const sidePanelElementSelectors = {
+  activityDetail: "#activity-detail",
+  activityLabel: "#activity-label",
+  activityPanel: "#activity-panel",
+  approvalApproveButton: "#approval-approve",
+  approvalCard: "#approval-card",
+  approvalDelegateButton: "#approval-delegate",
+  approvalDenyButton: "#approval-deny",
+  approvalReason: "#approval-reason",
+  approvalTitle: "#approval-title",
+  approvalTrustSiteButton: "#approval-trust-site",
+  attachFileButton: "#attach-file",
+  attachmentStrip: "#attachment-strip",
+  commandForm: "#command-form",
+  commandInput: "#command-input",
+  composerNotice: "#composer-notice",
+  connectionLine: "#connection-line",
+  contextDock: "#context-dock",
+  contextMeter: "#context-meter",
+  contextPopover: "#context-popover",
+  contextToggleButton: "#context-toggle",
+  controlArtifacts: "#control-artifacts",
+  controlCurrentAction: "#control-current-action",
+  controlMonitor: "#control-monitor",
+  controlMonitorStatus: "#control-monitor-status",
+  controlMonitorTitle: "#control-monitor-title",
+  controlPreflightApproveButton: "#control-preflight-approve",
+  controlPreflightBody: "#control-preflight-body",
+  controlPreflightCard: "#control-preflight-card",
+  controlPreflightDenyButton: "#control-preflight-deny",
+  controlPreflightTitle: "#control-preflight-title",
+  controlPreflightTrustButton: "#control-preflight-trust",
+  controlStepList: "#control-step-list",
+  controlStopButton: "#control-stop",
+  controlSummaryCard: "#control-summary-card",
+  dictateButton: "#dictate-button",
+  fileInput: "#file-input",
+  jobList: "#job-list",
+  jobMonitor: "#job-monitor",
+  jobMonitorTitle: "#job-monitor-title",
+  jobMonitorToggle: "#job-monitor-toggle",
+  modelSelect: "#model-select",
+  permissionManagerList: "#permission-manager-list",
+  permissionManagerPanel: "#permission-manager-panel",
+  permissionManagerTitle: "#permission-manager-title",
+  readButton: "#read-page",
+  saveIntakeButton: "#save-intake",
+  saveSelectionButton: "#save-selection",
+  sitePermissionHost: "#site-permission-host",
+  sitePermissionMode: "#site-permission-mode",
+  sitePermissionNote: "#site-permission-note",
+  sitePermissionPanel: "#site-permission-panel",
+  taskConsentList: "#task-consent-list",
+  taskConsentPanel: "#task-consent-panel",
+  taskConsentTitle: "#task-consent-title",
+  thinkingDepthSelect: "#thinking-depth",
+  transcript: "#transcript"
+};
+
+export const SIDE_PANEL_REQUIRED_ELEMENT_IDS = Object.values(sidePanelElementSelectors)
+  .map((selector) => selector.slice(1));
+
+export function getSidePanelElements(rootDocument = document) {
+  return Object.fromEntries(
+    Object.entries(sidePanelElementSelectors)
+      .map(([key, selector]) => [key, rootDocument.querySelector(selector)])
+  );
+}

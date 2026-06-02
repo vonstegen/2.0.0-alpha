@@ -569,6 +569,7 @@ test("browser layer exposes Augmentor chat as the side-panel surface without ste
   const pageActions = await readText(path.join(extensionRoot, "src", "lib", "browser-page-actions.js"));
   const chatSessionStore = await readText(path.join(extensionRoot, "src", "lib", "chat-session-store.js"));
   const messageActionController = await readText(path.join(extensionRoot, "src", "lib", "message-action-controller.js"));
+  const sidePanelDom = await readText(path.join(extensionRoot, "src", "lib", "side-panel-dom.js"));
   const sidePanelRenderers = await readText(path.join(extensionRoot, "src", "lib", "side-panel-renderers.js"));
   const sidePanelUiController = await readText(path.join(extensionRoot, "src", "lib", "side-panel-ui-controller.js"));
   const sidePanelBrowserActionController = await readText(path.join(extensionRoot, "src", "lib", "side-panel-browser-action-controller.js"));
@@ -723,9 +724,10 @@ test("browser layer exposes Augmentor chat as the side-panel surface without ste
   assert.match(taskConsentStore, /taskConsentKey/);
   assert.match(taskConsentStore, /taskConsentAudit/);
   assert.match(script, /createTaskConsentStore/);
-  assert.match(script, /augmentorSitePermissionAudit/);
-  assert.match(script, /augmentorTaskConsents/);
-  assert.match(script, /augmentorTaskConsentAudit/);
+  assert.match(script, /SIDE_PANEL_STORAGE_KEYS/);
+  assert.match(sidePanelDom, /augmentorSitePermissionAudit/);
+  assert.match(sidePanelDom, /augmentorTaskConsents/);
+  assert.match(sidePanelDom, /augmentorTaskConsentAudit/);
   assert.match(monitorRenderers, /renderTaskConsentPanel/);
   assert.match(monitorRenderers, /renderPermissionManager/);
   assert.match(monitorRenderers, /auditLabel/);
@@ -824,8 +826,8 @@ test("browser layer exposes Augmentor chat as the side-panel surface without ste
   assert.match(appCommandHandlers, /cancelBrowserJob/);
   assert.match(commandRouter, /reportBrowserJob/);
   assert.match(commandRouter, /continueBrowserJob/);
-  assert.match(script, /augmentorBrowserJobs/);
-  assert.match(script, /augmentorActiveBrowserJob/);
+  assert.match(sidePanelDom, /augmentorBrowserJobs/);
+  assert.match(sidePanelDom, /augmentorActiveBrowserJob/);
   assert.match(sidePanelBrowserJobController, /recoverInterruptedJobs/);
   assert.match(script, /renderSitePermissionPanel/);
   assert.match(sidePanelLifecycleController, /sitePermissionMode\?\.addEventListener/);
@@ -844,7 +846,7 @@ test("browser layer exposes Augmentor chat as the side-panel surface without ste
   assert.match(script, /createSidePanelControlPreflightController/);
   assert.match(sidePanelControlPreflightController, /createControlPreflight/);
   assert.match(sidePanelControlPreflightController, /formatControlPreflightMessage/);
-  assert.match(script, /augmentorControlPreflight/);
+  assert.match(sidePanelDom, /augmentorControlPreflight/);
   assert.match(script, /renderControlPreflightCard/);
   assert.match(script, /approveControlPreflight/);
   assert.match(script, /trustControlPreflightForSafeActions/);
