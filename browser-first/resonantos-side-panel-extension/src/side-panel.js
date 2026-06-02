@@ -25,6 +25,7 @@ import { createControlReportingService } from "./lib/control-reporting-service.j
 import { createControlRunState } from "./lib/control-run-state.js";
 import { createControlStepExecutor } from "./lib/control-step-executor.js";
 import { createControlTabTargets } from "./lib/control-tab-targets.js";
+import { createControlApprovalActions } from "./lib/control-approval-actions.js";
 import { createMessageActionController } from "./lib/message-action-controller.js";
 import { createMonitorRenderers } from "./lib/monitor-renderers.js";
 import { createSidePanelBrowserActionController } from "./lib/side-panel-browser-action-controller.js";
@@ -521,6 +522,10 @@ monitorRenderers = createMonitorRenderers({
   updateContextDockVisibility
 });
 
+const renderControlMonitor = () => {
+  monitorRenderers.renderControlMonitor();
+};
+
 const tabContextController = createTabContextController({
   addMessage,
   chrome,
@@ -756,46 +761,23 @@ const approveControlPreflight = controlPreflightController.approveControlPreflig
 const denyControlPreflight = controlPreflightController.denyControlPreflight;
 const trustControlPreflightForSafeActions = controlPreflightController.trustControlPreflightForSafeActions;
 
-const approvePendingControlStep = async () => {
-  if (!pendingApproval || !currentControlRun) return;
-  const approval = pendingApproval;
-  const boundary = approvalBoundaryForStep(approval.step, approval.reason);
-  if (boundary === "hard") {
-    await addMessage("system", `Cannot automate this action: ${controlStepLabel(approval.step)}.\nWallet, payment, login, credential, signing, and transfer actions are human-only.`);
-    return;
-  }
-  await agentControlRunner.approvePendingControlStep(approval);
-};
-
-const trustCurrentTaskForSafeActions = async () => {
-  if (!pendingApproval || !currentControlRun) return;
-  const approval = pendingApproval;
-  const boundary = approvalBoundaryForStep(approval.step, approval.reason);
-  const tab = await activeTab();
-  if (boundary !== "safe") {
-    await addMessage(
-      "system",
-      `Cannot trust this task class for ${boundary} actions. Wallet, payment, login, credential, signing, public-submit, and transfer boundaries stay once-only human review.`
-    );
-    renderControlMonitor();
-    return;
-  }
-  const consent = await taskConsentStore.setTaskConsent({
-    siteKey: siteKeyForUrl(tab?.url),
-    goal: currentControlRun.goal,
-    mode: "allow-safe",
-    reason: `Trusted after approval for: ${controlStepLabel(approval.step)}`,
-    source: "approval-card"
-  });
-  await addMessage("system", `Trusted safe ${consent.taskClass} actions on ${consent.siteKey} for this task class and approved this safe step once: ${controlStepLabel(approval.step)}`);
-  await approvePendingControlStep();
-  await renderTaskConsentPanel(tab);
-};
-
-const denyPendingControlStep = async () => {
-  if (!pendingApproval || !currentControlRun) return;
-  await agentControlRunner.denyPendingControlStep(pendingApproval);
-};
+const {
+  approvePendingControlStep,
+  denyPendingControlStep,
+  trustCurrentTaskForSafeActions,
+} = createControlApprovalActions({
+  activeTab,
+  addMessage,
+  agentControlRunner,
+  approvalBoundaryForStep,
+  controlStepLabel,
+  getCurrentControlRun: () => currentControlRun,
+  getPendingApproval: () => pendingApproval,
+  renderControlMonitor,
+  renderTaskConsentPanel,
+  siteKeyForUrl,
+  taskConsentStore,
+});
 
 const browserActionController = createSidePanelBrowserActionController({
   addMessage,

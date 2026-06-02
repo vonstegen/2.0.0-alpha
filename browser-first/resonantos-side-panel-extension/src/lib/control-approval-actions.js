@@ -1,0 +1,83 @@
+export function createControlApprovalActions({
+  activeTab = async () => null,
+  addMessage = async () => undefined,
+  agentControlRunner,
+  approvalBoundaryForStep = () => "safe",
+  controlStepLabel = () => "browser action",
+  getCurrentControlRun = () => null,
+  getPendingApproval = () => null,
+  renderControlMonitor = () => undefined,
+  renderTaskConsentPanel = async () => undefined,
+  siteKeyForUrl = () => "unknown-site",
+  taskConsentStore,
+} = {}) {
+  if (!agentControlRunner) {
+    throw new Error("createControlApprovalActions requires agentControlRunner.");
+  }
+  if (!taskConsentStore) {
+    throw new Error("createControlApprovalActions requires taskConsentStore.");
+  }
+
+  const approvePendingControlStep = async () => {
+    const pendingApproval = getPendingApproval();
+    const currentControlRun = getCurrentControlRun();
+    if (!pendingApproval || !currentControlRun) return;
+
+    const approval = pendingApproval;
+    const boundary = approvalBoundaryForStep(approval.step, approval.reason);
+    if (boundary === "hard") {
+      await addMessage(
+        "system",
+        `Cannot automate this action: ${controlStepLabel(approval.step)}.\nWallet, payment, login, credential, signing, and transfer actions are human-only.`
+      );
+      return;
+    }
+
+    await agentControlRunner.approvePendingControlStep(approval);
+  };
+
+  const trustCurrentTaskForSafeActions = async () => {
+    const pendingApproval = getPendingApproval();
+    const currentControlRun = getCurrentControlRun();
+    if (!pendingApproval || !currentControlRun) return;
+
+    const approval = pendingApproval;
+    const boundary = approvalBoundaryForStep(approval.step, approval.reason);
+    const tab = await activeTab();
+    if (boundary !== "safe") {
+      await addMessage(
+        "system",
+        `Cannot trust this task class for ${boundary} actions. Wallet, payment, login, credential, signing, public-submit, and transfer boundaries stay once-only human review.`
+      );
+      renderControlMonitor();
+      return;
+    }
+
+    const consent = await taskConsentStore.setTaskConsent({
+      siteKey: siteKeyForUrl(tab?.url),
+      goal: currentControlRun.goal,
+      mode: "allow-safe",
+      reason: `Trusted after approval for: ${controlStepLabel(approval.step)}`,
+      source: "approval-card",
+    });
+    await addMessage(
+      "system",
+      `Trusted safe ${consent.taskClass} actions on ${consent.siteKey} for this task class and approved this safe step once: ${controlStepLabel(approval.step)}`
+    );
+    await approvePendingControlStep();
+    await renderTaskConsentPanel(tab);
+  };
+
+  const denyPendingControlStep = async () => {
+    const pendingApproval = getPendingApproval();
+    const currentControlRun = getCurrentControlRun();
+    if (!pendingApproval || !currentControlRun) return;
+    await agentControlRunner.denyPendingControlStep(pendingApproval);
+  };
+
+  return {
+    approvePendingControlStep,
+    denyPendingControlStep,
+    trustCurrentTaskForSafeActions,
+  };
+}
