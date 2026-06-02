@@ -18,6 +18,7 @@ import { createComposerController } from "./lib/composer-controller.js";
 import {
   shouldRequireControlPreflight
 } from "./lib/control-preflight.js";
+import { createControlPreflightDecisionSlot } from "./lib/control-preflight-decision-slot.js";
 import { createControlPageObserver } from "./lib/control-page-observer.js";
 import { createControlPlanningService } from "./lib/control-planning-service.js";
 import { createControlReportingService } from "./lib/control-reporting-service.js";
@@ -118,7 +119,6 @@ let contextDockExpanded = false;
 let personalizationSettings = null;
 let messageActions = null;
 let monitorRenderers = null;
-let nextControlPreflightDecision = null;
 let browserJobScheduler = null;
 
 const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -224,6 +224,7 @@ const taskConsentStore = createTaskConsentStore({
   taskConsentAuditStorageKey: STORAGE_KEYS.taskConsentAudit,
   taskConsentStorageKey: STORAGE_KEYS.taskConsents
 });
+const controlPreflightDecisionSlot = createControlPreflightDecisionSlot();
 
 const controlPreflightController = createSidePanelControlPreflightController({
   addMessage: (...args) => addMessage(...args),
@@ -713,25 +714,8 @@ const runScheduledBrowserJob = scheduledBrowserJobRunner.runScheduledBrowserJob;
 
 const hydrateControlPreflight = controlPreflightController.hydrateControlPreflight;
 
-const setNextControlPreflightDecision = (decision) => {
-  nextControlPreflightDecision = decision ? {
-    id: decision.id ?? "",
-    goal: decision.goal ?? "",
-    siteKey: decision.siteKey ?? "unknown-site",
-    taskClass: decision.taskClass ?? "general",
-    mode: decision.mode ?? "not-required",
-    permissionMode: decision.permissionMode ?? "",
-    decidedAt: decision.decidedAt ?? new Date().toISOString(),
-    source: decision.source ?? "control-preflight",
-    reason: decision.reason ?? ""
-  } : null;
-};
-
-const consumeNextControlPreflightDecision = () => {
-  const decision = nextControlPreflightDecision;
-  nextControlPreflightDecision = null;
-  return decision;
-};
+const setNextControlPreflightDecision = (decision) => controlPreflightDecisionSlot.set(decision);
+const consumeNextControlPreflightDecision = () => controlPreflightDecisionSlot.consume();
 
 const controlCommandController = createSidePanelControlCommandController({
   activeTab,
@@ -1065,7 +1049,16 @@ const lifecycleController = createSidePanelLifecycleController({
   windowRef: window
 });
 const consumePendingSidebarPrompt = lifecycleController.consumePendingSidebarPrompt;
-lifecycleController.bindListeners();
+window.__resonantosSidePanelReady = false;
+try {
+  lifecycleController.bindListeners();
+  window.__resonantosSidePanelReady = true;
+} catch (error) {
+  window.__resonantosSidePanelReadyError = error instanceof Error
+    ? { message: error.message, stack: error.stack }
+    : { message: String(error) };
+  throw error;
+}
 
 hydrateChatSettings().then(async () => {
   await loadBrowserJobs();
