@@ -363,7 +363,10 @@ extern "C" const char* resonant_browser_native_initialize_json(const char* frame
   CefMainArgs main_args;
   g_app = new BridgeApp();
   CefSettings settings;
-  settings.no_sandbox = true;
+  // Sandbox is enabled by default in release builds.
+  // Set RESONANTOS_CEF_NO_SANDBOX=1 only for local development/debugging.
+  settings.no_sandbox = (std::getenv("RESONANTOS_CEF_NO_SANDBOX") != nullptr &&
+                         std::string(std::getenv("RESONANTOS_CEF_NO_SANDBOX")) == "1") ? 1 : 0;
   settings.external_message_pump = true;
   if (framework_dir_path && framework_dir_path[0] != '\0') {
     CefString(&settings.framework_dir_path) = framework_dir_path;

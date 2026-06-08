@@ -9,12 +9,14 @@ on:
     paths:
       - ".github/workflows/alpha-build.yml"
       - "addons/**"
+      - "browser-first/**"
       - "docs/**"
       - "package-lock.json"
       - "package.json"
       - "public/**"
       - "scripts/**"
       - "src/**"
+      - "src/sdk/**"
       - "src-tauri/**"
       - "index.html"
       - "vite.config.ts"
@@ -78,6 +80,9 @@ jobs:
 
       - name: Run frontend tests
         run: npm test -- --run
+
+      - name: Run browser-first tests
+        run: npm run test:browser-first
 
       - name: Check Rust formatting
         working-directory: src-tauri

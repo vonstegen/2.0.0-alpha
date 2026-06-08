@@ -1348,7 +1348,10 @@ int resonant_browser_native_cef_main(int argc, char* argv[]) {
   }
 
   CefSettings settings;
-  settings.no_sandbox = true;
+  // Sandbox is enabled by default in release builds.
+  // Set RESONANTOS_CEF_NO_SANDBOX=1 only for local development/debugging.
+  settings.no_sandbox = (std::getenv("RESONANTOS_CEF_NO_SANDBOX") != nullptr &&
+                         std::string(std::getenv("RESONANTOS_CEF_NO_SANDBOX")) == "1") ? 1 : 0;
 #if defined(OS_MAC)
   const auto main_bundle_path = resonantos::MacMainBundlePath();
   if (!main_bundle_path.empty()) {
