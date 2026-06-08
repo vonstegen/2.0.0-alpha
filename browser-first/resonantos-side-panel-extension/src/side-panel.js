@@ -7,7 +7,8 @@ import { activateBrowserJobPage } from "./lib/browser-job-activation.js";
 import { createBrowserJobScheduler } from "./lib/browser-job-scheduler.js";
 import { createBrowserJobStore } from "./lib/browser-job-store.js";
 import { createBrowserPageActions } from "./lib/browser-page-actions.js";
-import { createBridgeClient } from "./lib/bridge-client.js";
+import { createBridgeClient, detectLoopbackBridge, resolveBridgeConfig } from "./lib/bridge-client.js";
+import { createPrefsSync } from "./lib/prefs-sync.js";
 import { createChatSessionStore } from "./lib/chat-session-store.js";
 import { createChatTurnController } from "./lib/chat-turn-controller.js";
 import {
@@ -108,7 +109,45 @@ const {
   transcript
 } = getSidePanelElements(document);
 
-const bridgeRequest = createBridgeClient();
+// `bridgeRequest` is `let` because the rebind chain below replaces it
+// once loopback detection has settled. We use .then() chains (not
+// top-level await) to keep MV3 SW registration happy.
+let bridgeRequest = null;
+let prefsSync = null;
+let rebindInFlight = null;
+
+function rebindBridge({ forceResolve = false } = {}) {
+  if (rebindInFlight && !forceResolve) return rebindInFlight;
+  rebindInFlight = resolveBridgeConfig()
+    .then((cfg) => detectLoopbackBridge(cfg))
+    .then((cfg) => {
+      bridgeRequest = createBridgeClient(cfg);
+      if (!prefsSync) {
+        prefsSync = createPrefsSync({ getBridgeRequest: () => bridgeRequest });
+        prefsSync.install();
+      }
+      return { cfg, bridgeRequest };
+    })
+    .catch(() => null);
+  return rebindInFlight;
+}
+
+function hydrateAfterRebind() {
+  return rebindBridge().then((result) => {
+    if (!result) return null;
+    void prefsSync.hydrate().catch(() => undefined);
+    return result;
+  });
+}
+
+void hydrateAfterRebind();
+
+chrome?.storage?.onChanged?.addListener?.((changes, area) => {
+  if (area !== "local") return;
+  if (!changes?.bridgeTargetOverride) return;
+  rebindInFlight = null;
+  void hydrateAfterRebind();
+});
 const STORAGE_KEYS = SIDE_PANEL_STORAGE_KEYS;
 let lastSnapshot = null;
 let statusLabel = "Ready";
@@ -342,6 +381,7 @@ const dictationController = createDictationController({
 messageActions = createMessageActionController({
   addMessage,
   bridgeRequest,
+  getBridgeRequest: () => bridgeRequest,
   chatSessionStore,
   commandInput,
   composerController,
@@ -547,6 +587,7 @@ const bindMentionedTab = tabContextController.bindMentionedTab;
 
 const controlPlanningService = createControlPlanningService({
   bridgeRequest,
+  getBridgeRequest: () => bridgeRequest,
   getLastSnapshot: () => lastSnapshot,
   getModel: () => modelSelect.value,
   getSystemPrompt: () => personalizationSettings?.augmentor?.systemPrompt ?? "",
@@ -582,6 +623,7 @@ const executeControlStep = controlStepExecutor.executeControlStep;
 const controlReportingService = createControlReportingService({
   addMessage,
   bridgeRequest,
+  getBridgeRequest: () => bridgeRequest,
   controlStepLabel,
   getCurrentControlRun: () => currentControlRun,
   getLastSnapshot: () => lastSnapshot,
@@ -806,6 +848,7 @@ const saveIntake = browserActionController.saveIntake;
 const chatTurnController = createChatTurnController({
   addMessage,
   bridgeRequest,
+  getBridgeRequest: () => bridgeRequest,
   chatSessionStore,
   clearActivitySoon,
   clearAttachments: () => messageActions.clearAttachments(),
@@ -849,6 +892,7 @@ const {
   activeTab,
   addMessage,
   bridgeRequest,
+  getBridgeRequest: () => bridgeRequest,
   browserJobStore,
   chrome,
   detectWalletState,
@@ -949,6 +993,7 @@ const chatHydration = createSidePanelChatHydration({
   hydrateControlPreflight,
   hydrateProviderModelOptions: () => hydrateProviderModelOptions({
     bridgeRequest,
+    getBridgeRequest: () => bridgeRequest,
     getPreferredModel: () => modelSelect.value,
     modelSelect,
     setStatus

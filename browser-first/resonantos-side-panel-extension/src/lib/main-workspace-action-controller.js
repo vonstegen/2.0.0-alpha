@@ -29,6 +29,12 @@ const providerMessagesFromHistory = (messages, limit = 18) => messages
 export function createMainWorkspaceActionController({
   addMessage,
   bridgeRequest,
+  // Optional getter for late-bound bridge clients. The extension's
+  // rebind chain sets the module-level `bridgeRequest` *after* this
+  // controller is constructed, so passing a value here captures a
+  // stale `null`. Callers that pass a getter get the current value
+  // on every call. When both are present, the getter wins.
+  getBridgeRequest,
   browserPageActions,
   chatSessionStore,
   chromeApi,
@@ -48,6 +54,9 @@ export function createMainWorkspaceActionController({
   setPendingWorkspaceAction,
   updateConnectionLine
 }) {
+  // Resolve the bridgeRequest at call time. Falls back to the
+  // captured value if no getter is provided (legacy callers).
+  const bridge = () => (typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest);
   let activeChatAbortController = null;
 
   async function handoffToBrowserControl(prompt) {
@@ -80,7 +89,7 @@ export function createMainWorkspaceActionController({
     activeChatAbortController = new AbortController();
     updateConnectionLine("Thinking");
     try {
-      const response = await bridgeRequest("/augmentor/chat", {
+      const response = await bridge()("/augmentor/chat", {
         method: "POST",
         signal: activeChatAbortController.signal,
         body: {
@@ -112,7 +121,7 @@ export function createMainWorkspaceActionController({
     const mission = parseHermesSlashCommand(prompt);
     if (/^(?:status|health|runtime)$/i.test(mission)) {
       updateConnectionLine("Checking Hermes");
-      await addMessage("system", await buildHermesRuntimeStatusMessage({ bridgeRequest }));
+      await addMessage("system", await buildHermesRuntimeStatusMessage({ bridgeRequest: bridge() }));
       updateConnectionLine("Ready");
       return;
     }
@@ -127,11 +136,11 @@ export function createMainWorkspaceActionController({
       return;
     }
     updateConnectionLine("Delegating");
-    const result = await bridgeRequest("/addons/delegate", {
+    const result = await bridge()("/addons/delegate", {
       method: "POST",
       body: { target: "hermes", mission }
     });
-    const lifecycle = await startDelegationLifecycle(result, { bridgeRequest });
+    const lifecycle = await startDelegationLifecycle(result, { bridgeRequest: bridge() });
     await addMessage("system", `Delegation queued for Hermes: ${result.id}\n${result.path}${lifecycle}`);
     updateConnectionLine("Ready");
   }
@@ -149,11 +158,11 @@ export function createMainWorkspaceActionController({
       return;
     }
     updateConnectionLine(`Delegating to ${delegationTargetLabel(intent.target)}`);
-    const result = await bridgeRequest("/addons/delegate", {
+    const result = await bridge()("/addons/delegate", {
       method: "POST",
       body: { target: intent.target, mission: intent.mission }
     });
-    const lifecycle = await startDelegationLifecycle(result, { bridgeRequest });
+    const lifecycle = await startDelegationLifecycle(result, { bridgeRequest: bridge() });
     await addMessage(
       "system",
       [
@@ -168,7 +177,7 @@ export function createMainWorkspaceActionController({
 
   async function runDelegationsCommand(filter = "") {
     updateConnectionLine("Checking delegations");
-    const message = await buildDelegationStatusMessage({ bridgeRequest, filter, limit: 6 });
+    const message = await buildDelegationStatusMessage({ bridgeRequest: bridge(), filter, limit: 6 });
     await addMessage("system", message);
     updateConnectionLine("Ready");
   }
@@ -213,7 +222,7 @@ export function createMainWorkspaceActionController({
       return true;
     }
     updateConnectionLine("Drafting");
-    const result = await bridgeRequest("/addons/draft", {
+    const result = await bridge()("/addons/draft", {
       method: "POST",
       body: draft
     });

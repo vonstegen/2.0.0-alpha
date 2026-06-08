@@ -214,7 +214,11 @@ function createDelegationCard(delegation, actions = {}) {
   return card;
 }
 
-export function renderAddOnsWorkspace({ container, bridgeRequest, onOpenProviderHandoff, onOpenWorkspace }) {
+export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeRequest, onOpenProviderHandoff, onOpenWorkspace }) {
+  // Resolve at call time. The module-level `bridgeRequest` may be
+  // null at construction (rebind still in flight); the getter lets
+  // us re-read the current value on every call.
+  const bridge = () => (typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest);
   const section = document.createElement("section");
   section.className = "addons-workspace";
   section.setAttribute("aria-label", "Add-ons workspace");
@@ -275,13 +279,13 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, onOpenProvider
 
   const loadDrafts = async () => {
     try {
-      const result = await bridgeRequest("/addons/draft/list", { method: "POST", body: { limit: 8 } });
+      const result = await bridge()("/addons/draft/list", { method: "POST", body: { limit: 8 } });
       const drafts = Array.isArray(result.drafts) ? result.drafts : [];
       draftList.replaceChildren();
       drafts.forEach((draft) => draftList.append(createDraftReviewCard(draft, async (selected, nextStatus) => {
         draftStatus.textContent = `Updating ${selected.id}...`;
         draftStatus.dataset.tone = "";
-        await bridgeRequest("/addons/draft/transition", {
+        await bridge()("/addons/draft/transition", {
           method: "POST",
           body: {
             path: selected.path,
@@ -293,7 +297,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, onOpenProvider
       }, async (selected, provider) => {
         draftStatus.textContent = `Opening ${providerActionLabel(selected)}...`;
         draftStatus.dataset.tone = "";
-        const result = await bridgeRequest("/addons/draft/handoff", {
+        const result = await bridge()("/addons/draft/handoff", {
           method: "POST",
           body: {
             path: selected.path,
@@ -316,14 +320,14 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, onOpenProvider
 
   const loadDelegations = async () => {
     try {
-      const result = await bridgeRequest("/addons/delegate/list", { method: "POST", body: { limit: 8 } });
+      const result = await bridge()("/addons/delegate/list", { method: "POST", body: { limit: 8 } });
       const delegations = Array.isArray(result.delegations) ? result.delegations : [];
       delegationList.replaceChildren();
       delegations.forEach((delegation) => delegationList.append(createDelegationCard(delegation, {
         onStartHermes: async (selected) => {
           delegationStatus.textContent = `Starting Hermes task ${selected.id}...`;
           delegationStatus.dataset.tone = "";
-          await bridgeRequest("/hermes/delegation/start", {
+          await bridge()("/hermes/delegation/start", {
             method: "POST",
             body: { path: selected.path }
           });
@@ -332,7 +336,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, onOpenProvider
         onReadHermes: async (selected) => {
           delegationStatus.textContent = `Reading Hermes result ${selected.id}...`;
           delegationStatus.dataset.tone = "";
-          const result = await bridgeRequest("/hermes/delegation/artifact", {
+          const result = await bridge()("/hermes/delegation/artifact", {
             method: "POST",
             body: { path: selected.path }
           });
@@ -352,7 +356,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, onOpenProvider
         onCancelHermes: async (selected) => {
           delegationStatus.textContent = `Cancelling Hermes task ${selected.id}...`;
           delegationStatus.dataset.tone = "";
-          await bridgeRequest("/hermes/delegation/cancel", {
+          await bridge()("/hermes/delegation/cancel", {
             method: "POST",
             body: { path: selected.path, reason: "Human cancelled from Add-ons workspace." }
           });
@@ -361,7 +365,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, onOpenProvider
         onStartOpenCode: async (selected) => {
           delegationStatus.textContent = `Starting OpenCode task ${selected.id}...`;
           delegationStatus.dataset.tone = "";
-          await bridgeRequest("/opencode/delegation/start", {
+          await bridge()("/opencode/delegation/start", {
             method: "POST",
             body: { path: selected.path }
           });
@@ -370,7 +374,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, onOpenProvider
         onReadOpenCode: async (selected) => {
           delegationStatus.textContent = `Reading OpenCode result ${selected.id}...`;
           delegationStatus.dataset.tone = "";
-          const result = await bridgeRequest("/opencode/delegation/artifact", {
+          const result = await bridge()("/opencode/delegation/artifact", {
             method: "POST",
             body: { path: selected.path }
           });
@@ -390,7 +394,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, onOpenProvider
         onCancelOpenCode: async (selected) => {
           delegationStatus.textContent = `Cancelling OpenCode task ${selected.id}...`;
           delegationStatus.dataset.tone = "";
-          await bridgeRequest("/opencode/delegation/cancel", {
+          await bridge()("/opencode/delegation/cancel", {
             method: "POST",
             body: { path: selected.path, reason: "Human cancelled from Add-ons workspace." }
           });
@@ -409,7 +413,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, onOpenProvider
 
   const loadAddons = async () => {
     try {
-      const result = await bridgeRequest("/addons/status", { method: "GET" });
+      const result = await bridge()("/addons/status", { method: "GET" });
       const addons = Array.isArray(result.addons) ? result.addons : [];
       grid.replaceChildren();
       addons.forEach((addon) => grid.append(createAddonCard(addon, {
@@ -419,7 +423,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, onOpenProvider
           if (!addonKey) return;
           status.textContent = `${enabled ? "Enabling" : "Disabling"} ${selected.name} local execution...`;
           status.dataset.tone = "";
-          await bridgeRequest("/addons/execution-settings", {
+          await bridge()("/addons/execution-settings", {
             method: "POST",
             capability: "addon-execution-settings-write",
             body: {

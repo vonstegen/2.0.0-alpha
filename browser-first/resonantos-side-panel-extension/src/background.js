@@ -1,5 +1,33 @@
-import "./bridge-config.generated.js";
-import { createBridgeClient, initCapabilityTokens } from "./lib/bridge-client.js";
+// bridge-config.generated.js is auto-written by the bridge at startup.
+// It's gitignored and may not exist in a fresh checkout / shipped zip.
+// The static import would throw "Failed to fetch" and kill the service
+// worker, so we load it dynamically and fall back to a stub config.
+// To bake a real config: run the bridge once, or set chrome.storage
+// overrides via Settings > Bridge Target.
+let __bridgeConfigPromise;
+async function loadBridgeConfig() {
+  if (!__bridgeConfigPromise) {
+    __bridgeConfigPromise = (async () => {
+      try {
+        await import("./bridge-config.generated.js");
+      } catch (err) {
+        console.warn(
+          "[ResonantOS] bridge-config.generated.js missing — falling back to defaults. " +
+            "Run the bridge once or set chrome.storage overrides via Settings > Bridge Target.",
+          err
+        );
+      }
+      return globalThis.__RESONANTOS_BRIDGE_CONFIG__ || {
+        bridgeUrl: "http://127.0.0.1:47773",
+        bridgeToken: "",
+        bridgeCapabilityTokens: {},
+      };
+    })();
+  }
+  return __bridgeConfigPromise;
+}
+import { createBridgeClient, detectLoopbackBridge, resolveBridgeConfig, initCapabilityTokens } from "./lib/bridge-client.js";
+import { createPrefsSync } from "./lib/prefs-sync.js";
 
 const APPROVAL_REQUIRED_ACTIONS = new Set([
   "wallet_connect",
@@ -11,7 +39,74 @@ const APPROVAL_REQUIRED_ACTIONS = new Set([
 ]);
 
 const MAIN_WORKSPACE_PATH = "/src/main-workspace.html";
-const bridgeRequest = createBridgeClient();
+
+// `bridgeRequest` is `let` (not `const`) because the rebind chain below
+// replaces it once loopback detection has settled. Anything that holds
+// a reference to bridgeRequest directly (e.g. the prefsSync getter) will
+// see the updated client on the next call. We never reassign inside
+// message handlers — those always go through the most recent binding.
+let bridgeRequest = null;
+let rawFetch = null;
+
+// `rebindAndHydrate` runs the full re-initialization chain in the
+// right order:
+//
+//   1. resolveBridgeConfig() reads the user override from
+//      chrome.storage.local (if any) and falls back to the generated
+//      config baked into the extension.
+//   2. detectLoopbackBridge() probes 127.0.0.1:19443 / 47773 and
+//      rewrites the config's bridgeUrl to the loopback address when
+//      the extension is running on the bridge host itself. This is
+//      what makes the same zip work both on the Pi5 (loopback) and
+//      on a Mac/Windows box (LAN). On a remote host, the probe
+//      times out and the original LAN URL is kept.
+//   3. createBridgeClient() / createRawBridgeFetch() build the
+//      final request functions from the resolved config.
+//   4. prefsSync.hydrate() pulls cross-machine preferences — but
+//      only AFTER the rebind has settled, so the hydrate uses the
+//      loopback-resolved client. (If we hydrate first with the LAN
+//      URL on a Pi5 host, the first pull fails until the rebind
+//      kicks in a moment later. Visible regression on first launch.)
+//
+// We deliberately use .then() chains (not top-level await) because
+// some Chromium/Edge builds throw "Service worker registration
+// failed" if the SW's top-level evaluation awaits a fetch. The
+// promise itself still resolves before the SW is considered ready,
+// so message handlers that fire during the bootstrap window simply
+// retry on the next event.
+const prefsSync = createPrefsSync({
+  getBridgeRequest: () => bridgeRequest,
+});
+prefsSync.install();
+
+function rebindAndHydrate() {
+  return resolveBridgeConfig()
+    .then((cfg) => detectLoopbackBridge(cfg))
+    .then((cfg) => {
+      bridgeRequest = createBridgeClient(cfg);
+      rawFetch = createRawBridgeFetch(cfg);
+      return { cfg, bridgeRequest, rawFetch };
+    })
+    .then(({ cfg, bridgeRequest: req, rawFetch: raw }) => {
+      // Prefs hydrate is fire-and-forget — the hydration state is
+      // visible to the user via the Bridge Target settings card and
+      // doesn't need to gate any other startup work.
+      void prefsSync.hydrate().catch(() => undefined);
+      return { cfg, bridgeRequest: req, rawFetch: raw };
+    })
+    .catch(() => undefined);
+}
+
+void rebindAndHydrate();
+
+// Re-bind the client if the user changes the bridge target override
+// from the settings page. The service worker can be woken by the storage
+// change event after a settings update.
+chrome?.storage?.onChanged?.addListener?.((changes, area) => {
+  if (area !== "local") return;
+  if (!changes?.bridgeTargetOverride) return;
+  void rebindAndHydrate();
+});
 
 const isMainWorkspaceUrl = (url = "") => {
   try {
@@ -150,10 +245,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "inline_assistant_request") {
-    void bridgeRequest("/augmentor/inline", {
-      method: "POST",
-      body: message.body ?? {}
-    })
+    const pending = (typeof bridgeRequest === "function")
+      ? Promise.resolve(bridgeRequest)
+      : rebindAndHydrate().then(() => bridgeRequest);
+    void pending
+      .then((req) => req("/augmentor/inline", {
+        method: "POST",
+        body: message.body ?? {}
+      }))
       .then((payload) => sendResponse({ ok: true, reply: payload.reply ?? "" }))
       .catch((error) => sendResponse({
         ok: false,

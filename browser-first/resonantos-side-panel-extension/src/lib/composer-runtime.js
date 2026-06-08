@@ -41,14 +41,15 @@ function providerModelEntries(providerStatus) {
     .filter((entry) => entry.model);
 }
 
-export async function hydrateProviderModelOptions({ bridgeRequest, modelSelect, getPreferredModel = () => "__auto__", setStatus = () => undefined }) {
+export async function hydrateProviderModelOptions({ bridgeRequest, getBridgeRequest, modelSelect, getPreferredModel = () => "__auto__", setStatus = () => undefined }) {
+  const bridge = () => (typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest);
   const preferred = getPreferredModel() || modelSelect.value || "__auto__";
   const fallbackOptions = [...modelSelect.options].map((option) => ({
     model: option.value,
     label: option.textContent || option.value
   }));
   try {
-    const status = await bridgeRequest("/providers/status", { method: "GET" });
+    const status = await bridge()("/providers/status", { method: "GET" });
     const entries = providerModelEntries(status);
     const byModel = new Map();
     for (const entry of entries) {
