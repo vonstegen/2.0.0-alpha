@@ -224,7 +224,11 @@ export const saveProviderSecret = async (providerId: string, apiKey: string): Pr
     await invoke("save_provider_secret", { providerId, apiKey });
     return;
   }
-  window.localStorage.setItem(`${STORAGE_KEY}.secret.${providerId}`, apiKey);
+  // SECURITY: credentials resolved host-side via provider_service.
+  // Raw API keys must never be stored in the renderer (localStorage is readable
+  // by any script in the same origin). Record only an opaque profile-configured
+  // marker so the UI can reflect credential status without holding the secret.
+  window.localStorage.setItem(`${STORAGE_KEY}.secret.${providerId}`, "__configured__");
 };
 
 export const saveTelegramBotToken = async (botToken: string): Promise<void> => {
@@ -232,7 +236,9 @@ export const saveTelegramBotToken = async (botToken: string): Promise<void> => {
     await invoke("telegram_save_bot_token", { botToken });
     return;
   }
-  window.localStorage.setItem(`${STORAGE_KEY}.secret.addon.telegram-channel.bot-token`, botToken);
+  // SECURITY: credentials resolved host-side via provider_service.
+  // Store only a presence marker; the raw bot token is not persisted in the renderer.
+  window.localStorage.setItem(`${STORAGE_KEY}.secret.addon.telegram-channel.bot-token`, "__configured__");
 };
 
 export const requestTelegramServiceStatus = async (channelId = "telegram-primary"): Promise<TelegramServiceStatus> => {
@@ -1650,6 +1656,12 @@ const readPersistedState = async (): Promise<ResonantShellState | null> => {
 };
 
 export const persistState = async (state: ResonantShellState): Promise<void> => {
+  // NOTE: The Rust host (`save_runtime_state` in src-tauri/src/lib.rs) applies
+  // a security filter before writing.  Only whitelisted UI/UX fields from this
+  // payload are accepted; security-sensitive fields such as
+  // `installations[*].grantedCapabilities` and `providerProfiles` are always
+  // preserved from the existing on-disk state and can never be overwritten by
+  // the renderer process.  Sending the full state here is intentional and safe.
   if (hasElectronHost()) {
     await electronInvoke("save_runtime_state", { state });
     return;

@@ -174,15 +174,73 @@ fn load_runtime_state(app: AppHandle) -> Result<Option<Value>, String> {
     read_runtime_state_value(&app)
 }
 
+/// Merge only whitelisted (safe) top-level fields from `incoming` onto `existing`.
+///
+/// The renderer process is untrusted. Security-sensitive fields — addon
+/// `installations` (which carry `grantedCapabilities`), `providerProfiles`,
+/// `providerCredentials`, `securityPolicy`, and `trustTier` — are owned
+/// exclusively by the Rust host and must never be overwritten by a renderer
+/// message.  Only UI / UX state that has no security implications is accepted
+/// from the renderer.
+fn merge_safe_state_fields(existing: &Value, incoming: &Value) -> Value {
+    // Whitelist: UI/UX-only fields the renderer is allowed to update.
+    const SAFE_KEYS: &[&str] = &[
+        "uiPreferences",
+        "activeSection",
+        "chatThreads",
+        "archiveSearchState",
+        "modelStrategy",
+        "browserState",
+        "delegationState",
+    ];
+
+    // Start from the existing on-disk state so all security fields are preserved.
+    let mut merged = existing.clone();
+    let merged_obj = merged
+        .as_object_mut()
+        .expect("runtime state must be a JSON object");
+
+    if let Some(incoming_obj) = incoming.as_object() {
+        for key in SAFE_KEYS {
+            if let Some(value) = incoming_obj.get(*key) {
+                merged_obj.insert(key.to_string(), value.clone());
+            }
+        }
+    }
+
+    merged
+}
+
 #[tauri::command]
 fn save_runtime_state(app: AppHandle, state: Value) -> Result<Value, String> {
     let path = state_file(&app)?;
-    let payload = serde_json::to_string_pretty(&state)
+
+    // Read the current on-disk state so we can preserve security-sensitive
+    // fields (addon capability grants, provider credentials, etc.) that the
+    // renderer is NOT permitted to overwrite.
+    let safe_state = match read_runtime_state_value(&app)? {
+        Some(existing) => merge_safe_state_fields(&existing, &state),
+        // No existing state yet — bootstrap from the incoming value, but strip
+        // any security fields that the renderer should not be able to pre-seed.
+        None => {
+            let mut bootstrapped = state.clone();
+            if let Some(obj) = bootstrapped.as_object_mut() {
+                obj.remove("installations");
+                obj.remove("providerProfiles");
+                obj.remove("providerCredentials");
+                obj.remove("securityPolicy");
+                obj.remove("trustTier");
+            }
+            bootstrapped
+        }
+    };
+
+    let payload = serde_json::to_string_pretty(&safe_state)
         .map_err(|error| format!("Failed to encode runtime state: {error}"))?;
     fs::write(&path, payload).map_err(|error| format!("Failed to write runtime state: {error}"))?;
-    app.emit("runtime-state-updated", state.clone())
+    app.emit("runtime-state-updated", safe_state.clone())
         .map_err(|error| format!("Failed to broadcast runtime state update: {error}"))?;
-    Ok(state)
+    Ok(safe_state)
 }
 
 #[tauri::command]
