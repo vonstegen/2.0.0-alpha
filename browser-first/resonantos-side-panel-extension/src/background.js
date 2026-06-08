@@ -1,5 +1,5 @@
 import "./bridge-config.generated.js";
-import { createBridgeClient } from "./lib/bridge-client.js";
+import { createBridgeClient, initCapabilityTokens } from "./lib/bridge-client.js";
 
 const APPROVAL_REQUIRED_ACTIONS = new Set([
   "wallet_connect",
@@ -91,8 +91,18 @@ const handoffToResonantSidePanel = async ({ senderTab, targetUrl = "" } = {}) =>
   return { ok: true, opened: true, navigated: Boolean(targetUrl), tabId: tab.id };
 };
 
+// Fetch capability tokens from the bridge on service-worker startup.
+// Tokens are NOT stored in the generated config (security boundary); they
+// are delivered via the authenticated /api/capability-tokens endpoint.
+void initCapabilityTokens();
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => undefined);
+  void initCapabilityTokens();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  void initCapabilityTokens();
 });
 
 chrome.action.onClicked.addListener(async (tab) => {
