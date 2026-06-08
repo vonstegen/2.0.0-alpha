@@ -394,8 +394,8 @@ export const modelStrategy: ModelStrategyState = {
       rule: "Try the main fast route first, then premium cloud, then remote or local fallback.",
       orderedRoutes: [
         { providerProfileId: "shared-minimax", runtimeNodeId: "node-minimax-cloud", model: "MiniMax-M3", costPosture: "subscription", note: "Default fast route for Augmentor and the Engineer Agent." },
-        { providerProfileId: "gx10-local-llama", runtimeNodeId: "node-gx10-qwen", model: "Qwen3.6-35B-A3B-Q4_K_M.gguf", costPosture: "free-local", note: "Verified local-owned GX10 route for private LAN inference." },
         { providerProfileId: "shared-openai", runtimeNodeId: "node-openai-cloud", model: "gpt-5.5", costPosture: "subscription", note: "Premium fallback for demanding moments." },
+        { providerProfileId: "gx10-local-llama", runtimeNodeId: "node-gx10-qwen", model: "Qwen3.6-35B-A3B-Q4_K_M.gguf", costPosture: "free-local", note: "Verified local-owned GX10 route for private LAN inference." },
       ],
       lastResortRoute: {
         providerProfileId: "shared-local",
@@ -427,6 +427,7 @@ export const modelStrategy: ModelStrategyState = {
       orderedRoutes: [
         { providerProfileId: "shared-openai", runtimeNodeId: "node-openai-cloud", model: "gpt-5.5", costPosture: "subscription", note: "Preferred ingest quality route." },
         { providerProfileId: "shared-minimax", runtimeNodeId: "node-minimax-cloud", model: "MiniMax-M3", costPosture: "subscription", note: "Temporary fallback if premium route is unavailable." },
+        { providerProfileId: "gx10-local-llama", runtimeNodeId: "node-gx10-qwen", model: "Qwen3.6-35B-A3B-Q4_K_M.gguf", costPosture: "free-local", note: "Local inference last resort before hard-stop." },
       ],
     },
   ],
@@ -894,6 +895,7 @@ export const buildDefaultState = (manifests: AddOnManifest[]): ResonantShellStat
     uiPreferences: {
       activeSection: "overview",
       activeChatThreadId: "thread-main-desktop",
+      activeCostPosture: "subscription" as const,
       pinnedChatThreadIds: ["thread-main-desktop"],
       pinnedChatProjectIds: [],
       leftSidebarOpen: true,

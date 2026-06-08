@@ -224,7 +224,7 @@ export const resolveProviderRoute = (
   let fallbackUsed = false;
   for (const providerId of orderedProviderIds) {
     const provider = state.providers.find((item) => item.id === providerId);
-    if (!provider || provider.status === "missing" || !allowedAuthTiers.includes(provider.authTier)) {
+    if (!provider || provider.status === "missing" || provider.credentialStatus === "missing" || !allowedAuthTiers.includes(provider.authTier)) {
       fallbackUsed = fallbackUsed || providerId !== input.primaryProviderProfileId;
       continue;
     }

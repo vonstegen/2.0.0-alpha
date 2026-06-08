@@ -21,7 +21,13 @@ const message = (
 
 describe("buildProviderChatRouteRequest", () => {
   it("resolves the selected model, prompt messages, and context budget together", () => {
-    const state = buildDefaultState([]);
+    const rawState = buildDefaultState([]);
+    const state = {
+      ...rawState,
+      providers: rawState.providers.map((p) =>
+        p.id === "shared-minimax" ? { ...p, credentialStatus: "configured" as const } : p,
+      ),
+    };
     state.uiPreferences.activeChatThreadId = "thread-main-desktop";
     state.conversationThreads = state.conversationThreads.map((thread) =>
       thread.id === "thread-main-desktop"

@@ -80,7 +80,13 @@ describe("provider routing", () => {
 
   it("resolves a primary provider runtime node when a healthy route exists", () => {
     const state = buildDefaultState([]);
-    const resolved = resolveProviderRoute(state, {
+    const configuredState = {
+      ...state,
+      providers: state.providers.map((p) =>
+        p.id === "shared-minimax" ? { ...p, credentialStatus: "configured" as const } : p,
+      ),
+    };
+    const resolved = resolveProviderRoute(configuredState, {
       consumerId: "strategist.core",
       primaryProviderProfileId: "shared-minimax",
       fallbackProviderProfileId: "shared-openai",
