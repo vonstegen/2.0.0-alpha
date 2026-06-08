@@ -519,19 +519,29 @@ fn archive_read_document(
 }
 
 #[tauri::command]
-fn obsidian_vault_status(request: ObsidianVaultRequest) -> Result<ObsidianVaultStatus, String> {
+fn obsidian_vault_status(
+    app: AppHandle,
+    request: ObsidianVaultRequest,
+) -> Result<ObsidianVaultStatus, String> {
+    assert_addon_capabilities(&app, "addon.obsidian", &["filesystem"])?;
     query_obsidian_vault_status(request)
 }
 
 #[tauri::command]
 fn obsidian_list_notes(
+    app: AppHandle,
     request: ObsidianListNotesRequest,
 ) -> Result<Vec<ObsidianNoteSummary>, String> {
+    assert_addon_capabilities(&app, "addon.obsidian", &["filesystem"])?;
     list_obsidian_notes(request)
 }
 
 #[tauri::command]
-fn obsidian_read_note(request: ObsidianReadNoteRequest) -> Result<ObsidianNotePayload, String> {
+fn obsidian_read_note(
+    app: AppHandle,
+    request: ObsidianReadNoteRequest,
+) -> Result<ObsidianNotePayload, String> {
+    assert_addon_capabilities(&app, "addon.obsidian", &["filesystem"])?;
     read_obsidian_note(request)
 }
 
@@ -586,7 +596,11 @@ fn obsidian_archive_note(
 }
 
 #[tauri::command]
-fn obsidian_vault_index(request: ObsidianVaultIndexRequest) -> Result<ObsidianVaultIndex, String> {
+fn obsidian_vault_index(
+    app: AppHandle,
+    request: ObsidianVaultIndexRequest,
+) -> Result<ObsidianVaultIndex, String> {
+    assert_addon_capabilities(&app, "addon.obsidian", &["filesystem"])?;
     index_obsidian_vault(request)
 }
 
@@ -1638,4 +1652,53 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running ResonantOS vNext");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn merge_safe_state_fields_preserves_security_state() {
+        // existing state has installations with grants
+        let existing = json!({
+            "installations": {
+                "test-addon": {
+                    "installed": true,
+                    "grantedCapabilities": [
+                        {"capability": "network", "granted": false}
+                    ]
+                }
+            },
+            "uiPreferences": {"theme": "dark"},
+            "activeSection": "archive"
+        });
+
+        // incoming tries to overwrite installations AND change UI prefs
+        let incoming = json!({
+            "installations": {
+                "test-addon": {
+                    "installed": true,
+                    "grantedCapabilities": [
+                        {"capability": "network", "granted": true}
+                    ]
+                }
+            },
+            "uiPreferences": {"theme": "light"},
+            "activeSection": "settings"
+        });
+
+        let result = merge_safe_state_fields(&existing, &incoming);
+
+        // UI prefs should be updated
+        assert_eq!(result["uiPreferences"]["theme"], "light");
+        assert_eq!(result["activeSection"], "settings");
+
+        // Security fields should be preserved from existing
+        assert_eq!(
+            result["installations"]["test-addon"]["grantedCapabilities"][0]["granted"],
+            false, // NOT true — the renderer's attempt was blocked
+        );
+    }
 }

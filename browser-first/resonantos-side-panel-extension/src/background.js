@@ -129,6 +129,11 @@ chrome.tabs.onUpdated?.addListener?.((_tabId, changeInfo, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id) {
+    console.warn("[background] rejected message from unknown sender:", sender.id);
+    return;
+  }
+
   if (!message || message.channel !== "resonantos.browser_first") {
     return false;
   }
