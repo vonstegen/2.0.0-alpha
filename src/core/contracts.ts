@@ -80,7 +80,6 @@ export type ProviderExecutionAdapterId = "cloud-openai-compatible" | "cloud-mini
 export type ProviderCostPosture = "free-local" | "subscription" | "paid-api" | "emergency-only" | "unknown";
 export type RoutingResolutionReason =
   | "primary-healthy"
-  | "primary-unavailable"
   | "fallback-in-policy"
   | "resurrection-available"
   | "no-viable-route";
