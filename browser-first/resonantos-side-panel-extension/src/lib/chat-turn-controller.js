@@ -26,6 +26,7 @@ export function providerMessagesFromHistory(messages, maxHistoryMessages = DEFAU
 export function createChatTurnController({
   addMessage,
   bridgeRequest,
+  getBridgeRequest,
   chatSessionStore,
   clearActivitySoon,
   clearAttachments,
@@ -39,11 +40,12 @@ export function createChatTurnController({
   setStatus,
   setTurnBusy = () => undefined
 }) {
+  const bridge = () => (typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest);
   let activeAbortController = null;
 
   async function bridgeChat({ signal } = {}) {
     const attachments = chatSessionStore.getAttachments();
-    return bridgeRequest("/augmentor/chat", {
+    return bridge()("/augmentor/chat", {
       method: "POST",
       signal,
       body: {

@@ -1,0 +1,290 @@
+import assert from "node:assert/strict";
+import http from "node:http";
+import { test } from "node:test";
+
+import {
+  dashboardProxyUrl,
+  startBridgeServer,
+} from "../host/bridge-server.mjs";
+
+// Spin up a fake "Hermes" upstream and wire it as the proxy target. The
+// upstream handler is invoked by node for each incoming proxied request —
+// we don't call it ourselves. The bridge HTTP request flows:
+//   test fetch → bridge (port X) → upstream (port Y, here).
+async function withFakeUpstream(handler, fn) {
+  const upstream = http.createServer(handler);
+  await new Promise((resolve) =>
+    upstream.listen(0, "127.0.0.1", () => {
+      process.env.RESONANTOS_HERMES_DASHBOARD_PORT = String(
+        upstream.address().port,
+      );
+      resolve();
+    }),
+  );
+  const previous = process.env.RESONANTOS_HERMES_DASHBOARD_PORT;
+  try {
+    await fn();
+  } finally {
+    if (previous === undefined)
+      delete process.env.RESONANTOS_HERMES_DASHBOARD_PORT;
+    else
+      process.env.RESONANTOS_HERMES_DASHBOARD_PORT = previous;
+    await new Promise((resolve) => upstream.close(resolve));
+  }
+}
+
+async function withBridgeServer(options, fn) {
+  const server = await startBridgeServer({
+    port: 0,
+    host: "127.0.0.1",
+    ...options,
+  });
+  const port = server.address().port;
+  try {
+    await fn({ bridgePort: port, bridgeUrl: `http://127.0.0.1:${port}` });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+function fetchWithToken(bridgeUrl, path, options = {}) {
+  return fetch(`${bridgeUrl}${path}`, {
+    ...options,
+    headers: {
+      "X-ResonantOS-Bridge-Token": "proxy-test-token",
+      ...(options.headers || {}),
+    },
+  });
+}
+
+test("proxy: dashboardProxyUrl strips trailing slashes", () => {
+  assert.equal(
+    dashboardProxyUrl({ publicUrl: "http://192.168.1.100:47773" }),
+    "http://192.168.1.100:47773/hermes-dashboard/",
+  );
+  assert.equal(
+    dashboardProxyUrl({ publicUrl: "http://192.168.1.100:47773/" }),
+    "http://192.168.1.100:47773/hermes-dashboard/",
+  );
+  assert.equal(
+    dashboardProxyUrl({ publicUrl: "http://192.168.1.100:47773//" }),
+    "http://192.168.1.100:47773/hermes-dashboard/",
+  );
+});
+
+test("proxy: rejects requests without a bridge token", async () => {
+  await withFakeUpstream(() => {}, async () => {
+    await withBridgeServer(
+      { bridgeToken: "proxy-test-token", routes: [] },
+      async ({ bridgeUrl }) => {
+        const r = await fetch(`${bridgeUrl}/hermes-dashboard/`);
+        assert.equal(r.status, 401);
+      },
+    );
+  });
+});
+
+test("proxy: rejects requests with the wrong bridge token", async () => {
+  await withFakeUpstream(() => {}, async () => {
+    await withBridgeServer(
+      { bridgeToken: "proxy-test-token", routes: [] },
+      async ({ bridgeUrl }) => {
+        const r = await fetch(`${bridgeUrl}/hermes-dashboard/`, {
+          headers: { "X-ResonantOS-Bridge-Token": "wrong" },
+        });
+        assert.equal(r.status, 401);
+      },
+    );
+  });
+});
+
+test("proxy: serves /hermes-dashboard/ from the upstream root", async () => {
+  await withFakeUpstream((req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ path: req.url, method: req.method }));
+  }, async () => {
+    await withBridgeServer(
+      { bridgeToken: "proxy-test-token", routes: [] },
+      async ({ bridgeUrl }) => {
+        const r = await fetchWithToken(bridgeUrl, "/hermes-dashboard/");
+        assert.equal(r.status, 200);
+        const body = await r.json();
+        assert.equal(body.path, "/");
+        assert.equal(body.method, "GET");
+      },
+    );
+  });
+});
+
+test("proxy: strips the prefix from subpaths", async () => {
+  await withFakeUpstream((req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ path: req.url }));
+  }, async () => {
+    await withBridgeServer(
+      { bridgeToken: "proxy-test-token", routes: [] },
+      async ({ bridgeUrl }) => {
+        const r = await fetchWithToken(
+          bridgeUrl,
+          "/hermes-dashboard/assets/index-abc.js",
+        );
+        assert.equal(r.status, 200);
+        const body = await r.json();
+        assert.equal(body.path, "/assets/index-abc.js");
+      },
+    );
+  });
+});
+
+test("proxy: preserves the query string", async () => {
+  await withFakeUpstream((req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ path: req.url }));
+  }, async () => {
+    await withBridgeServer(
+      { bridgeToken: "proxy-test-token", routes: [] },
+      async ({ bridgeUrl }) => {
+        const r = await fetchWithToken(
+          bridgeUrl,
+          "/hermes-dashboard/api/chat?x=1&y=2",
+        );
+        assert.equal(r.status, 200);
+        const body = await r.json();
+        assert.equal(body.path, "/api/chat?x=1&y=2");
+      },
+    );
+  });
+});
+
+test("proxy: forwards POST body to upstream", async () => {
+  await withFakeUpstream((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({ method: req.method, path: req.url, body }),
+      );
+    });
+  }, async () => {
+    await withBridgeServer(
+      { bridgeToken: "proxy-test-token", routes: [] },
+      async ({ bridgeUrl }) => {
+        const r = await fetchWithToken(
+          bridgeUrl,
+          "/hermes-dashboard/api/submit",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ hello: "world" }),
+          },
+        );
+        assert.equal(r.status, 200);
+        const payload = await r.json();
+        assert.equal(payload.method, "POST");
+        assert.equal(payload.path, "/api/submit");
+        assert.equal(payload.body, '{"hello":"world"}');
+      },
+    );
+  });
+});
+
+test("proxy: does not leak the bridge token header to the upstream", async () => {
+  await withFakeUpstream((req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ headers: req.headers }));
+  }, async () => {
+    await withBridgeServer(
+      { bridgeToken: "proxy-test-token", routes: [] },
+      async ({ bridgeUrl }) => {
+        const r = await fetchWithToken(bridgeUrl, "/hermes-dashboard/");
+        const body = await r.json();
+        assert.equal(
+          body.headers["x-resonantos-bridge-token"],
+          undefined,
+          "bridge token header must not reach upstream",
+        );
+      },
+    );
+  });
+});
+
+test("proxy: replaces the Host header with the upstream's address", async () => {
+  let observedHost = null;
+  await withFakeUpstream((req, res) => {
+    observedHost = req.headers.host;
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+  }, async () => {
+    await withBridgeServer(
+      { bridgeToken: "proxy-test-token", routes: [] },
+      async ({ bridgeUrl }) => {
+        const r = await fetchWithToken(bridgeUrl, "/hermes-dashboard/");
+        assert.equal(r.status, 200);
+        // Upstream sees its own loopback host (or the bridge host if the
+        // bridge is bound to a specific IP), not the bridge's public host.
+        assert.match(observedHost, /^(127\.0\.0\.1|\[?[\d.:a-f]+]?):\d+$/);
+      },
+    );
+  });
+});
+
+test("proxy: returns 502 when the upstream is not running", async () => {
+  // Point the proxy at a guaranteed-unbound port
+  process.env.RESONANTOS_HERMES_DASHBOARD_PORT = "1";
+  const previous = process.env.RESONANTOS_HERMES_DASHBOARD_PORT;
+  try {
+    await withBridgeServer(
+      { bridgeToken: "proxy-test-token", routes: [] },
+      async ({ bridgeUrl }) => {
+        const r = await fetchWithToken(bridgeUrl, "/hermes-dashboard/");
+        assert.equal(r.status, 502);
+        const body = await r.json();
+        assert.match(body.error, /Hermes dashboard is not running/);
+      },
+    );
+  } finally {
+    if (previous === undefined)
+      delete process.env.RESONANTOS_HERMES_DASHBOARD_PORT;
+    else process.env.RESONANTOS_HERMES_DASHBOARD_PORT = previous;
+  }
+});
+
+test("proxy: non-proxy routes still go through the JSON evaluator", async () => {
+  await withFakeUpstream(() => {}, async () => {
+    await withBridgeServer(
+      { bridgeToken: "proxy-test-token", routes: [] },
+      async ({ bridgeUrl }) => {
+        // No routes registered → 404 from the JSON evaluator, not 502 from
+        // the proxy.
+        const r = await fetchWithToken(bridgeUrl, "/some-unknown-route");
+        assert.equal(r.status, 404);
+      },
+    );
+  });
+});
+
+test("proxy: echoes CORS Allow-Origin for matching origin", async () => {
+  await withFakeUpstream((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("ok");
+  }, async () => {
+    await withBridgeServer(
+      {
+        bridgeToken: "proxy-test-token",
+        extensionOrigin: "chrome-extension://test",
+        routes: [],
+      },
+      async ({ bridgeUrl }) => {
+        const r = await fetch(`${bridgeUrl}/hermes-dashboard/`, {
+          headers: {
+            "X-ResonantOS-Bridge-Token": "proxy-test-token",
+            Origin: "chrome-extension://test",
+          },
+        });
+        assert.equal(r.headers.get("access-control-allow-origin"),
+          "chrome-extension://test");
+      },
+    );
+  });
+});

@@ -14,7 +14,11 @@ function boundaryItem(text) {
   return item;
 }
 
-export function renderOpenCodeWorkspace({ container, bridgeRequest, initialMission = "" }) {
+export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeRequest, initialMission = "" }) {
+  // Resolve at call time. The module-level `bridgeRequest` may be
+  // null at construction (rebind still in flight); the getter lets
+  // us re-read the current value on every call.
+  const bridge = () => (typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest);
   const section = document.createElement("section");
   section.className = "opencode-main-workspace";
   section.setAttribute("aria-label", "OpenCode workspace");
@@ -76,7 +80,7 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, initialMissi
   const loadStatus = async () => {
     refreshButton.disabled = true;
     try {
-      const status = await bridgeRequest("/opencode/status", { method: "GET" });
+      const status = await bridge()("/opencode/status", { method: "GET" });
       const executionEnabled = status.executionEnabled !== false;
       statusBody.textContent = status.detail;
       statusMeta.textContent = status.command || "OpenCode command not detected";
@@ -124,11 +128,11 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, initialMissi
     taskButton.disabled = true;
     setStatus(taskStatus, "Creating governed OpenCode delegation packet…");
     try {
-      const result = await bridgeRequest("/addons/delegate", {
+      const result = await bridge()("/addons/delegate", {
         method: "POST",
         body: { target: "opencode", mission }
       });
-      const started = await bridgeRequest("/opencode/delegation/start", {
+      const started = await bridge()("/opencode/delegation/start", {
         method: "POST",
         body: { path: result.path }
       });

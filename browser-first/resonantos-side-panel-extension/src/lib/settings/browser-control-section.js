@@ -50,7 +50,8 @@ async function runDownloadAction(bridgeRequest, statusNode, action, payload = {}
   if (!bridgeRequest) {
     throw new Error("Browser bridge is unavailable.");
   }
-  const result = await bridgeRequest("/browser/downloads/action", {
+  const bridge = () => (typeof bridgeRequest === "function" ? bridgeRequest : null);
+  const result = await bridge()("/browser/downloads/action", {
     method: "POST",
     capability: "browser-download-action",
     body: { action, ...payload }
@@ -98,9 +99,7 @@ async function readStored(storage, key, fallback) {
   return result?.[key] ?? fallback;
 }
 
-export function renderBrowserControlSection(container, {
-  bridgeRequest,
-  chromeApi,
+export function renderBrowserControlSection(container, { bridgeRequest, getBridgeRequest, chromeApi,
   sitePermissionStore,
   taskConsentStore,
   storage,

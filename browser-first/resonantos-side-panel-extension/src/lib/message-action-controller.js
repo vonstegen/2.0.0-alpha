@@ -6,6 +6,10 @@ export function fileLooksTextLike(file) {
 export function createMessageActionController({
   addMessage,
   bridgeRequest,
+  // Optional getter for late-bound bridge client. The rebind chain
+  // sets the module-level `bridgeRequest` *after* this controller is
+  // constructed, so passing a value here captures a stale `null`.
+  getBridgeRequest,
   chatSessionStore,
   commandInput,
   composerController,
@@ -18,6 +22,15 @@ export function createMessageActionController({
   renderMessages,
   setStatus
 }) {
+  // Resolve at call time. The rebind chain sets the module-level
+  // `bridgeRequest` *after* this controller is constructed, so a
+  // captured value can be a stale `null`. The getter wins when set.
+  // We accept the same args as bridgeRequest and forward them so call
+  // sites can do `await bridgeRequestCurrent(path, options)` directly.
+  const bridgeRequestCurrent = (...args) => {
+    const fn = typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest;
+    return fn(...args);
+  };
   async function clearAttachments() {
     await chatSessionStore.clearAttachments();
     renderAttachments();
@@ -74,7 +87,7 @@ export function createMessageActionController({
     if (!message) return;
     setStatus("Saving");
     try {
-      const result = await bridgeRequest("/archive/intake", {
+      const result = await bridgeRequestCurrent("/archive/intake", {
         method: "POST",
         body: {
           title: `Augmentor message ${new Date(message.createdAt).toLocaleString()}`,

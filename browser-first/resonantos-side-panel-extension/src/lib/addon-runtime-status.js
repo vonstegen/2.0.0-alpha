@@ -35,12 +35,14 @@ export function formatHermesRuntimeStatus(status = {}) {
   ].filter(Boolean).join("\n");
 }
 
-export async function buildHermesRuntimeStatusMessage({ bridgeRequest }) {
-  if (typeof bridgeRequest !== "function") {
+export async function buildHermesRuntimeStatusMessage({ bridgeRequest, getBridgeRequest }) {
+  const bridge = () => (typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest);
+  const bridgeFn = bridge();
+  if (typeof bridgeFn !== "function") {
     return "Hermes status is unavailable because the ResonantOS bridge is not connected.";
   }
   try {
-    const status = await bridgeRequest("/hermes/status", { method: "POST", body: {} });
+    const status = await bridgeFn("/hermes/status", { method: "POST", body: {} });
     return formatHermesRuntimeStatus(status);
   } catch (error) {
     return [

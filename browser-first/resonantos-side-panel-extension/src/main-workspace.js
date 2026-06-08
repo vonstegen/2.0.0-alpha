@@ -1,6 +1,7 @@
 import { createBrowserPageActions } from "./lib/browser-page-actions.js";
 import { normalizeBrowserUrl } from "./lib/browser-command-parser.js";
-import { createBridgeClient } from "./lib/bridge-client.js";
+import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, resolveBridgeConfig } from "./lib/bridge-client.js";
+import { createPrefsSync } from "./lib/prefs-sync.js";
 import { createChatSessionStore } from "./lib/chat-session-store.js";
 import { createComposerController } from "./lib/composer-controller.js";
 import {
@@ -90,7 +91,55 @@ const contextPopover = document.querySelector("#context-popover");
 const composerNotice = document.querySelector("#composer-notice");
 const connectionLine = document.querySelector("#connection-line");
 const sendButton = commandForm.querySelector(".send-button");
-const bridgeRequest = createBridgeClient();
+// `bridgeRequest` and `rawFetch` are `let` because the rebind chain
+// below replaces them once loopback detection has settled. Anything
+// that holds a reference to the current value (e.g. prefsSync's getter)
+// will see the updated function on the next call.
+//
+// We deliberately use .then() chains (not top-level await) because
+// some Chromium/Edge builds throw "Service worker registration
+// failed" if the extension page's top-level evaluation awaits a
+// fetch. The promise itself still resolves before any user interaction
+// is possible, so message handlers that fire during the bootstrap
+// window simply retry on the next event.
+let bridgeRequest = null;
+let rawFetch = null;
+let prefsSync = null;
+let rebindInFlight = null;
+
+function rebindBridge({ forceResolve = false } = {}) {
+  if (rebindInFlight && !forceResolve) return rebindInFlight;
+  rebindInFlight = resolveBridgeConfig()
+    .then((cfg) => detectLoopbackBridge(cfg))
+    .then((cfg) => {
+      bridgeRequest = createBridgeClient(cfg);
+      rawFetch = createRawBridgeFetch(cfg);
+      if (!prefsSync) {
+        prefsSync = createPrefsSync({ getBridgeRequest: () => bridgeRequest });
+        prefsSync.install();
+      }
+      return { cfg, bridgeRequest, rawFetch };
+    })
+    .catch(() => null);
+  return rebindInFlight;
+}
+
+function hydrateAfterRebind() {
+  return rebindBridge().then((result) => {
+    if (!result) return null;
+    void prefsSync.hydrate().catch(() => undefined);
+    return result;
+  });
+}
+
+void hydrateAfterRebind();
+
+chrome?.storage?.onChanged?.addListener?.((changes, area) => {
+  if (area !== "local") return;
+  if (!changes?.bridgeTargetOverride) return;
+  rebindInFlight = null;
+  void hydrateAfterRebind();
+});
 let busy = false;
 let activeWorkspace = "answer";
 let pendingWorkspaceAction = null;
@@ -198,6 +247,7 @@ const setMainActivity = (_phase, label, detail = "") => {
 const browserPageActions = createBrowserPageActions({
   addMessage,
   bridgeRequest,
+  getBridgeRequest: () => bridgeRequest,
   chrome,
   getControlledTabId: () => controlledTabId,
   getLastSnapshot: () => lastSnapshot,
@@ -226,6 +276,7 @@ const browserPageActions = createBrowserPageActions({
 const mainWorkspaceActions = createMainWorkspaceActionController({
   addMessage,
   bridgeRequest,
+  getBridgeRequest: () => bridgeRequest,
   browserPageActions,
   chatSessionStore,
   chromeApi: chrome,
@@ -305,6 +356,7 @@ const chatRenderers = createSidePanelRenderers({
 messageActions = createMessageActionController({
   addMessage,
   bridgeRequest,
+  getBridgeRequest: () => bridgeRequest,
   chatSessionStore,
   commandInput,
   composerController,
@@ -569,13 +621,14 @@ function renderMessages() {
     const initialArtifactPath = pendingWorkspaceAction?.workspace === "memory" ? pendingWorkspaceAction.artifactPath : "";
     const initialPromotedPage = pendingWorkspaceAction?.workspace === "memory" ? pendingWorkspaceAction.promotedPage : "";
     pendingWorkspaceAction = null;
-    renderLivingArchiveWorkspace({ container: transcript, bridgeRequest, initialQuery, initialReviewPath, initialArtifactPath, initialPromotedPage });
+    renderLivingArchiveWorkspace({ container: transcript, bridgeRequest, getBridgeRequest: () => bridgeRequest, initialQuery, initialReviewPath, initialArtifactPath, initialPromotedPage });
     return;
   }
   if (activeWorkspace === "artifacts") {
     renderArtifactsWorkspace({
       container: transcript,
       bridgeRequest,
+      getBridgeRequest: () => bridgeRequest,
       onContinueArtifact: continueFromArtifact,
       onOpenReviewQueue: openMemoryReviewQueue
     });
@@ -600,13 +653,14 @@ function renderMessages() {
   if (activeWorkspace === "opencode") {
     const initialMission = pendingWorkspaceAction?.workspace === "opencode" ? pendingWorkspaceAction.mission : "";
     pendingWorkspaceAction = null;
-    renderOpenCodeWorkspace({ container: transcript, bridgeRequest, initialMission });
+    renderOpenCodeWorkspace({ container: transcript, bridgeRequest, getBridgeRequest: () => bridgeRequest, initialMission });
     return;
   }
   if (activeWorkspace === "settings") {
     renderSettingsWorkspace({
       container: transcript,
       bridgeRequest,
+      getBridgeRequest: () => bridgeRequest,
       chatSessionStore,
       onOpenSession: async (sessionId) => {
         await switchToSession(sessionId);
@@ -625,6 +679,7 @@ function renderMessages() {
       storage: chrome.storage?.local,
       storageKeys: STORAGE_KEYS,
       taskConsentStore,
+      prefsSync,
       initialSection: initialSettingsSection
     });
     return;
@@ -667,6 +722,7 @@ function workspaceShell({ eyebrow, title, body }) {
 }
 
 async function statusForAddon(addonId) {
+  if (typeof bridgeRequest !== "function") return null;
   const result = await bridgeRequest("/addons/status", { method: "GET" });
   return result?.addons?.find((addon) => addon.id === addonId) ?? null;
 }
@@ -687,8 +743,23 @@ function renderStatusWorkspace({ eyebrow, title, body, addonId }) {
   });
 }
 
-function renderHermesWorkspace() {
-  renderHermesDashboardWorkspace({ container: transcript, bridgeRequest, statusForAddon });
+async function renderHermesWorkspace() {
+  // Resolve the bridge URL fresh on each render so the override flow works.
+  // We await the loopback-detected config so the iframe and the JSON
+  // endpoints both hit the same URL (no LAN-URL-first-then-rebind race).
+  const cfg = await resolveBridgeConfig()
+    .then((c) => detectLoopbackBridge(c))
+    .catch(() => null);
+  const effective = cfg ?? (globalThis.__RESONANTOS_BRIDGE_CONFIG__ ?? {});
+  renderHermesDashboardWorkspace({
+    container: transcript,
+    bridgeRequest,
+    getBridgeRequest: () => bridgeRequest,
+    rawFetch,
+    bridgeUrl: effective.bridgeUrl ?? "http://127.0.0.1:47773",
+    bridgeToken: effective.bridgeToken ?? "",
+    statusForAddon,
+  });
 }
 
 async function addMessage(role, content, options = {}) {
