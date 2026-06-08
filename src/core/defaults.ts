@@ -894,6 +894,7 @@ export const buildDefaultState = (manifests: AddOnManifest[]): ResonantShellStat
     uiPreferences: {
       activeSection: "overview",
       activeChatThreadId: "thread-main-desktop",
+      activeCostPosture: "subscription" as const,
       pinnedChatThreadIds: ["thread-main-desktop"],
       pinnedChatProjectIds: [],
       leftSidebarOpen: true,

@@ -2875,6 +2875,7 @@ export interface RecoverySession {
 export interface UiPreferences {
   activeSection: ShellSectionId;
   activeChatThreadId: string;
+  activeCostPosture: ProviderCostPosture;
   pinnedChatThreadIds: string[];
   pinnedChatProjectIds: string[];
   leftSidebarOpen: boolean;
