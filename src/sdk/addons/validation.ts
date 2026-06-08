@@ -5,13 +5,11 @@ import type {
   AddOnManifest,
   AddOnRuntimeType,
   AddOnSurfaceType,
-  AddOnDockIconName,
   Capability,
   CapabilityScope,
   DelegationArtifactType,
   RevocationBehavior,
   RuntimeIsolationBoundary,
-  ShellSectionId,
 } from "../../core/contracts";
 import {
   ADDON_CAPABILITIES,
@@ -43,31 +41,9 @@ const surfaceTypes: readonly AddOnSurfaceType[] = [
   "background-task-monitor",
   "channel",
 ];
-const shellSectionIds: readonly ShellSectionId[] = [
-  "overview",
-  "strategist",
-  "archive",
-  "delegation",
-  "compute",
-  "addons",
-  "obsidian",
-  "browser",
-  "opencode",
-  "paperclip",
-  "hermes",
-  "terminal",
-  "audio2tol",
-  "settings",
-];
-const dockIconNames: readonly AddOnDockIconName[] = [
-  "browser",
-  "obsidian",
-  "opencode",
-  "paperclip",
-  "hermes",
-  "terminal",
-  "audio2tol",
-];
+// Section IDs and dock icon names are open strings: core values are defined in CoreSectionId /
+// CoreDockIconName in contracts.ts, but add-on manifests may register any string as a new section
+// or dock icon. Validation here only checks that the field is a non-empty string.
 const scopes: readonly CapabilityScope[] = ["none", "self", "workspace", "shared", "system", "intake-only"];
 const revocationBehaviors: readonly RevocationBehavior[] = ["hard-stop", "degrade", "hide-surface"];
 const isolationBoundaries: readonly RuntimeIsolationBoundary[] = [
@@ -291,8 +267,8 @@ export const validateAddOnManifest = (
         if (!isRecord(surface.shellNavigation)) {
           pushIssue(issues, "error", "surface-navigation-object", `${path}.shellNavigation`, "shellNavigation must be an object.");
         } else {
-          validateEnum(issues, surface.shellNavigation.sectionId, shellSectionIds, `${path}.shellNavigation.sectionId`);
-          validateEnum(issues, surface.shellNavigation.dockIcon, dockIconNames, `${path}.shellNavigation.dockIcon`);
+          validateStringValue(issues, surface.shellNavigation.sectionId, `${path}.shellNavigation.sectionId`);
+          validateStringValue(issues, surface.shellNavigation.dockIcon, `${path}.shellNavigation.dockIcon`);
           validateStringValue(issues, surface.shellNavigation.eyebrow, `${path}.shellNavigation.eyebrow`);
           if (
             surface.shellNavigation.order !== undefined &&

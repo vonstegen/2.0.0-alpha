@@ -401,8 +401,10 @@ describe("add-on SDK manifest validation", () => {
     const invalid = validateAddOnManifest(validManifest(invalidSurfaceNavigation));
 
     expect(invalid.valid).toBe(false);
-    expect(invalid.issues.some((issue) => issue.path === "surfaces[0].shellNavigation.sectionId")).toBe(true);
-    expect(invalid.issues.some((issue) => issue.path === "surfaces[0].shellNavigation.dockIcon")).toBe(true);
+    // sectionId and dockIcon are open strings — add-ons may register any section name.
+    // "not-a-section" and "not-an-icon" are valid dynamic section/icon IDs; no errors on those paths.
+    expect(invalid.issues.some((issue) => issue.path === "surfaces[0].shellNavigation.sectionId")).toBe(false);
+    expect(invalid.issues.some((issue) => issue.path === "surfaces[0].shellNavigation.dockIcon")).toBe(false);
     expect(invalid.issues.some((issue) => issue.code === "surface-navigation-unrequested-capability")).toBe(true);
   });
 
