@@ -188,7 +188,7 @@ fn execute_codex_subscription_chat_with_usage(
     let output = codex_command_builder()
         .args([
             "exec",
-            "--dangerously-bypass-approvals-and-sandbox",
+            "--full-auto",
             "--skip-git-repo-check",
             "-m",
             &request.model,
