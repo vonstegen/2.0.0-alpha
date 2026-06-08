@@ -1,3 +1,67 @@
+// ── Resonant Context SDK ─────────────────────────────────────────────────────
+// Loaded via content_scripts array before this file; window._ResonantContext and
+// window.ResonantContext are populated by resonant-context.js at document_idle.
+(() => {
+if (window.__resonantOSContentScriptLoaded) return;
+window.__resonantOSContentScriptLoaded = true;
+(function initResonantContextSDK() {
+  try {
+    if (typeof window.ResonantContext === 'undefined' || typeof window._ResonantContext === 'undefined') {
+      // SDK not loaded (e.g. unit-test harness) — skip silently
+      return;
+    }
+
+    var _rcCollector = window.ResonantContext.init({
+      plugin: {
+        domain: 'resonantos-browser-layer',
+        viewportThreshold: 0.4,
+        maxTextChars: 600,
+        clickSelectors: 'a, button, [role="button"], input[type="submit"], [onclick]',
+        persistSession: true,
+        pages: {
+          default: {
+            match: function () { return true; },
+            sections: [
+              { selector: 'main',    label: 'Main content', priority: 8 },
+              { selector: 'article', label: 'Article',      priority: 7 },
+              { selector: 'header',  label: 'Header',       priority: 4 },
+              { selector: 'nav',     label: 'Navigation',   priority: 3 },
+              { selector: 'footer',  label: 'Footer',       priority: 1 }
+            ]
+          }
+        }
+      }
+    });
+
+    // Broadcast snapshots to the background service worker so the side-panel
+    // can access live page context without making a separate read_page round-trip.
+    var _rcSnapshotTimer = null;
+    function _rcScheduleSnapshot() {
+      if (_rcSnapshotTimer) return;
+      _rcSnapshotTimer = window.setTimeout(function () {
+        _rcSnapshotTimer = null;
+        try {
+          var snapshot = _rcCollector.getContext();
+          if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+            chrome.runtime.sendMessage({ type: 'resonant-context-snapshot', payload: snapshot });
+          }
+        } catch (_e) { /* extension may have been reloaded */ }
+      }, 500);
+    }
+
+    // Send an initial snapshot and re-send on navigation or meaningful DOM changes.
+    _rcScheduleSnapshot();
+    document.addEventListener('visibilitychange', _rcScheduleSnapshot);
+    window.addEventListener('popstate', _rcScheduleSnapshot);
+    window.addEventListener('hashchange', _rcScheduleSnapshot);
+
+    // Expose collector on window for debugging / other content-script modules.
+    window._resonantContextCollector = _rcCollector;
+  } catch (_initErr) {
+    // Never crash the content script due to SDK init failure.
+  }
+})();
+
 const inlineAssistantId = "resonantos-inline-assistant";
 const inlineButtonId = "resonantos-inline-button";
 const controlOverlayId = "resonantos-control-overlay";
@@ -940,3 +1004,5 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   sendResponse({ ok: false, error: "Unknown ResonantOS content command." });
   return true;
 });
+
+})();

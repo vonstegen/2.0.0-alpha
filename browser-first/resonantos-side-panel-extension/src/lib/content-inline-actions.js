@@ -1,4 +1,5 @@
 (() => {
+  if (globalThis.ResonantOSInlineActions) return;
   const inlineActionList = Object.freeze([
     { action: "custom", label: "Ask", shortcut: "A" },
     { action: "summarize", label: "Summarize", shortcut: "S" },

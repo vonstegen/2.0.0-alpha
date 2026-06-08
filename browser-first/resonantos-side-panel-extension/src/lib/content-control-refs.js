@@ -1,4 +1,5 @@
 (() => {
+  if (globalThis.ResonantOSContentControlRefs) return;
   const defaultControlRefAttribute = "data-resonantos-control-ref";
 
   const escapeAttributeValue = (value) =>

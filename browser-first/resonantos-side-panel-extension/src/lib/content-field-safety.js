@@ -1,6 +1,7 @@
 // Intent citation: docs/architecture/ADR-036-wallet-capable-browser-host.md
 
 (() => {
+  if (globalThis.ResonantOSContentFieldSafety) return;
   function classifyEditableField(element, { relatedLabelText = () => "" } = {}) {
     const tagName = element?.tagName?.toLowerCase?.() ?? "";
     const type = element instanceof HTMLInputElement ? String(element.getAttribute("type") || "text").toLowerCase() : "";

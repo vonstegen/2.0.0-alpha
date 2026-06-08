@@ -1,4 +1,5 @@
 (() => {
+  if (window.ResonantOSControlOverlay) return;
   const controlPhaseDetails = {
     active: { icon: "(( ))", label: "Working..." },
     blocked: { icon: "!!", label: "Blocked" },

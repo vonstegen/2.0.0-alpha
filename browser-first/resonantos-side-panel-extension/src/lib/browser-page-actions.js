@@ -202,7 +202,14 @@ export function createBrowserPageActions(deps) {
     if (chrome.scripting?.executeScript) {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        files: ["src/content.js"]
+        files: [
+          "src/lib/control-overlay.js",
+          "src/lib/content-field-safety.js",
+          "src/lib/content-inline-actions.js",
+          "src/lib/content-control-refs.js",
+          "src/lib/resonant-context.js",
+          "src/content.js"
+        ]
       }).catch(() => undefined);
     } else {
       await chrome.tabs.reload(tab.id);

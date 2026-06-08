@@ -1307,7 +1307,13 @@ test("settings memory section completes real move-on-import and rollback against
     ));
   } finally {
     cleanup();
-    await rm(root, { recursive: true, force: true });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    try {
+      await rm(root, { recursive: true, force: true });
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await rm(root, { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 });
 
