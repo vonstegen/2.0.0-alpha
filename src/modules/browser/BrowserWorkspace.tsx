@@ -221,7 +221,7 @@ export function BrowserWorkspace({
           setExtensions(nextExtensions);
         }
       })
-      .catch(() => undefined);
+      .catch((error) => console.warn("[BrowserWorkspace] native webview operation failed:", error));
     return () => {
       cancelled = true;
     };
@@ -316,7 +316,7 @@ export function BrowserWorkspace({
           activeSurfaceRef.current === "native-chromium" && latest.onResizeNativeWebview
             ? latest.onResizeNativeWebview
             : latest.onResizeLiveWebview;
-        void resize?.(bounds).catch(() => undefined);
+        void resize?.(bounds).catch((error) => console.warn("[BrowserWorkspace] native webview operation failed:", error));
       }
     };
     syncBounds();
@@ -331,13 +331,13 @@ export function BrowserWorkspace({
 
   useEffect(() => {
     return () => {
-      void hostCallbacksRef.current.onHideLiveWebview?.().catch(() => undefined);
+      void hostCallbacksRef.current.onHideLiveWebview?.().catch((error) => console.warn("[BrowserWorkspace] native webview operation failed:", error));
     };
   }, []);
 
   useEffect(() => {
     return () => {
-      void hostCallbacksRef.current.onHideNativeWebview?.().catch(() => undefined);
+      void hostCallbacksRef.current.onHideNativeWebview?.().catch((error) => console.warn("[BrowserWorkspace] native webview operation failed:", error));
     };
   }, []);
 
@@ -345,7 +345,7 @@ export function BrowserWorkspace({
     if (browserReady || !hostCallbacksRef.current.onHideNativeWebview) {
       return;
     }
-    void hostCallbacksRef.current.onHideNativeWebview().catch(() => undefined);
+    void hostCallbacksRef.current.onHideNativeWebview().catch((error) => console.warn("[BrowserWorkspace] native webview operation failed:", error));
   }, [browserReady]);
 
   useEffect(() => {

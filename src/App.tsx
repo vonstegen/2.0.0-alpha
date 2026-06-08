@@ -1447,8 +1447,11 @@ export function App() {
     );
     commitReadyState(nextState);
 
-    const runToken = `chat-run-${threadId}-${Date.now()}`;
-    activeChatRunTokenRef.current = runToken;
+    const runToken = claimChatRun(activeChatRunTokenRef, threadId);
+    if (!runToken) {
+      setChatNotice("Hermes is already working on a response. Please wait.");
+      return;
+    }
     await executeChatTurn({
       snapshot: { state: nextState, bundled, sideloaded },
       activeThread: thread,
@@ -1471,8 +1474,7 @@ export function App() {
       isRunCurrent: (token) => activeChatRunTokenRef.current === token,
       errorMessageOf,
     });
-    if (activeChatRunTokenRef.current === runToken) {
-      activeChatRunTokenRef.current = null;
+    if (releaseChatRun(activeChatRunTokenRef, runToken)) {
       setChatRunPhase("idle");
     }
   };
