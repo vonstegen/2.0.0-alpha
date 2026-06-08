@@ -75,10 +75,12 @@ function normalizeHeaders(headers = {}) {
 
 export async function writeBridgeConfig({ extensionRoot, bridgePort, bridgeToken, bridgeCapabilityTokens = {} }) {
   const configPath = path.join(extensionRoot, "src", "bridge-config.generated.js");
+  // SECURITY: Only bridgeUrl and bridgeToken are written to the generated config file.
+  // bridgeCapabilityTokens are NOT included here; they are delivered at runtime via the
+  // authenticated /api/capability-tokens endpoint, scoped behind the bridge token.
   const config = {
     bridgeUrl: `http://127.0.0.1:${bridgePort}`,
     bridgeToken,
-    bridgeCapabilityTokens,
   };
   await writeFile(
     configPath,
@@ -133,6 +135,17 @@ export async function evaluateBridgeRequestForSelfTest({
 }
 
 export async function startBridgeServer({ port, bridgeToken, bridgeCapabilityTokens = {}, extensionOrigin, routes }) {
+  // SECURITY: /api/capability-tokens is a built-in internal route that delivers capability
+  // tokens only to callers who already hold a valid bridge token. Capability tokens are
+  // never written to the generated config file; the extension fetches them at runtime.
+  const internalRoutes = [
+    {
+      method: "GET",
+      path: "/api/capability-tokens",
+      handler: async () => ({ capabilityTokens: bridgeCapabilityTokens }),
+    },
+    ...routes,
+  ];
   const server = http.createServer(async (request, response) => {
     try {
       const body = request.method === "POST" ? await readJsonBody(request) : {};
@@ -143,7 +156,7 @@ export async function startBridgeServer({ port, bridgeToken, bridgeCapabilityTok
         body,
         bridgeToken,
         bridgeCapabilityTokens,
-        routes,
+        routes: internalRoutes,
       });
       writeJson(response, result.status, result.payload, extensionOrigin);
     } catch (error) {
