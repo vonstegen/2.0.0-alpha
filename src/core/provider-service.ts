@@ -2,6 +2,7 @@
 // Intent citation: docs/architecture/ADR-009-rust-service-ipc-boundary.md
 
 import type {
+  ProviderCostPosture,
   ProviderExecutionAdapterPolicy,
   ProviderProfile,
   ProviderRoutingDecision,
@@ -226,6 +227,42 @@ const expandStrategyRoutes = (state: ResonantShellState, strategy: WorkloadStrat
   ];
 };
 
+/**
+ * Reorders strategy routes based on the active cost posture preference.
+ * Preferred-posture routes are sorted to the front; mismatched routes are
+ * deprioritized to the back rather than eliminated (fail-open, not fail-closed).
+ */
+const applyCostPostureOrdering = (
+  routes: StrategyRouteReference[],
+  activeCostPosture: ProviderCostPosture,
+): StrategyRouteReference[] => {
+  if (activeCostPosture === "subscription") {
+    // Default posture — preserve original strategy ordering.
+    return routes;
+  }
+  if (activeCostPosture === "free-local") {
+    // Prefer free-local routes; move paid-api routes to the back.
+    const preferred = routes.filter((r) => r.costPosture === "free-local");
+    const neutral = routes.filter(
+      (r) => !r.costPosture || (r.costPosture !== "free-local" && r.costPosture !== "paid-api"),
+    );
+    const deprioritized = routes.filter((r) => r.costPosture === "paid-api");
+    return [...preferred, ...neutral, ...deprioritized];
+  }
+  if (activeCostPosture === "emergency-only") {
+    // Prefer emergency-only and free-local routes; deprioritize everything else.
+    const preferred = routes.filter(
+      (r) => r.costPosture === "emergency-only" || r.costPosture === "free-local",
+    );
+    const deprioritized = routes.filter(
+      (r) => r.costPosture !== "emergency-only" && r.costPosture !== "free-local",
+    );
+    return [...preferred, ...deprioritized];
+  }
+  // paid-api / unknown posture: no reordering.
+  return routes;
+};
+
 const resolveStrategyRoute = (
   state: ResonantShellState,
   strategy: WorkloadStrategy,
@@ -236,7 +273,8 @@ const resolveStrategyRoute = (
     preferredLocalities?: Array<ProviderRuntimeNode["locality"]>;
   },
 ): ProviderRoutingDecision => {
-  const strategyRoutes = expandStrategyRoutes(state, strategy);
+  const activeCostPosture: ProviderCostPosture = state.uiPreferences.activeCostPosture ?? "subscription";
+  const strategyRoutes = applyCostPostureOrdering(expandStrategyRoutes(state, strategy), activeCostPosture);
   const preferredModelProviderIds = providerIdsForPreferredModel(
     state,
     options.preferredModel,
