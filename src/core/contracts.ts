@@ -39,29 +39,14 @@ export type AddOnCategory =
   | "tool"
   | "integration"
   | "orchestration";
-export type ShellSectionId =
-  | "overview"
-  | "strategist"
-  | "archive"
-  | "delegation"
-  | "compute"
-  | "addons"
-  | "obsidian"
-  | "browser"
-  | "opencode"
-  | "paperclip"
-  | "hermes"
-  | "terminal"
-  | "audio2tol"
-  | "settings";
-export type AddOnDockIconName =
-  | "browser"
-  | "obsidian"
-  | "opencode"
-  | "paperclip"
-  | "hermes"
-  | "terminal"
-  | "audio2tol";
+// Core (non-replaceable) shell sections. Add-on sections are registered at runtime via the add-on manifest.
+export type CoreSectionId = "overview" | "strategist" | "archive" | "delegation" | "compute" | "addons" | "settings";
+// Open union: autocomplete works for CoreSectionId values; add-on manifests may supply any string.
+export type ShellSectionId = CoreSectionId | (string & {});
+// Core dock icon provided by the shell. Add-ons supply their own icon names via their manifests.
+export type CoreDockIconName = "browser";
+// Open union: autocomplete works for CoreDockIconName; add-on manifests may supply any string.
+export type AddOnDockIconName = CoreDockIconName | (string & {});
 export type SystemSlotId = "primary-agent" | "chat-interface" | "memory-system" | "communication-channel";
 export type TrustTier = "core" | "addon" | "external";
 export type WorkspaceBehavior = "primary" | "delegated" | "background";
