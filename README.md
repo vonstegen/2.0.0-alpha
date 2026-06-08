@@ -1,73 +1,162 @@
-# ResonantOS vNext
+# ResonantOS vNext — 2.0.0-alpha
 
-New desktop-first ResonantOS foundation built as a Tauri + React shell.
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE.txt)
 
-This app is intentionally separate from the legacy OpenClaw-centered Alpha dashboard. It implements the first executable layer of the vNext architecture:
+**ResonantOS is a browser-first AI operating layer.**  
+It is not a dashboard — it is a Chromium-family browser where the AI assistant,
+memory, add-ons, provider routing, and task monitor all live together in one
+application.
 
-- modular desktop shell
-- Resonant Engineer kernel assistant
-- replaceable Augmentor Chat default add-on
-- replaceable Living Archive default add-on
-- add-on SDK manifest format
-- explicit capability grants
-- shared/private provider model
-- channel and workspace model
-- local memory/MCP bridge examples for external clients
+This repository is the public source preview of ResonantOS vNext plus the
+add-on SDK foundation. It is not a finished consumer release.
 
-## Run
+> **Status:** Public source preview — active development on the `dev` branch.
+> See [`docs/PRODUCT_GUIDE_BROWSER_FIRST.md`](docs/PRODUCT_GUIDE_BROWSER_FIRST.md)
+> for the product direction and [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md)
+> for the operational checkpoint.
+
+---
+
+## Quick Start — Browser Preview (fastest path)
 
 ```bash
-cd resonantos-vnext
+cd 2.0.0-alpha
 npm install
+npm run dev
+```
+
+This starts a Vite dev server on `http://127.0.0.1:1430`. Open that URL in any
+browser to see the ResonantOS shell with the main AI workspace, chat rail, and
+workspace navigation.
+
+No Tauri, no native build, no Rust toolchain required.
+
+---
+
+## Full App — Browser-First (Chromium-native path)
+
+The full ResonantOS browser runs as a Chromium-family app with a native browser
+host, side panel, agent control overlay, and Living Archive integration.
+
+```bash
+npm run browser-first:install       # build + install the browser-first app
+npm run browser-first:dev           # launch in development mode
+```
+
+See [`browser-first/README.md`](browser-first/README.md) and
+[`docs/PRODUCT_GUIDE_BROWSER_FIRST.md`](docs/PRODUCT_GUIDE_BROWSER_FIRST.md)
+for details.
+
+---
+
+## Desktop App — Tauri Shell (legacy / feature reservoir)
+
+The older Tauri desktop shell is still available as a reference and feature
+reservoir. It requires a Rust toolchain (pinned to 1.94.1):
+
+```bash
+rustup toolchain install 1.94.1
+rustup override set 1.94.1
 npm run tauri:dev
 ```
 
-For a browser-only preview:
+See [`docs/ALPHA_DISTRIBUTION.md`](docs/ALPHA_DISTRIBUTION.md) for packaging
+instructions. Note that the active product path is now browser-first (per
+ADR-037); the Tauri shell is not the primary development target.
 
-```bash
-npm run dev
+---
+
+## Provider & API Key Setup
+
+ResonantOS routes AI model calls through a **provider fabric**. You need at
+least one provider configured to use the chat and agent features.
+
+Supported provider types (defined in `src/core/defaults.ts`):
+
+| Provider        | Type               | Key Required |
+|-----------------|--------------------|--------------|
+| MiniMax         | `minimax`          | Yes          |
+| OpenAI          | `openai`           | Yes          |
+| Compatible      | `openai-compatible`| Varies       |
+| Local LLM       | `local`            | No           |
+
+### How to configure
+
+1. Launch the app (browser or Tauri).
+2. Open **Settings → Providers**.
+3. Add a provider profile with your API key.
+4. Assign a routing priority (fastest/cheapest first, fallback on failure).
+
+> ⚠ Provider secrets are stored under `ResonantOS_User/Secrets/`. They are not
+> shared, committed, or bundled.
+
+For local models (e.g., Ollama, LM Studio, llama.cpp), add a `local` or
+`openai-compatible` provider pointing to `http://localhost:{port}`.
+
+---
+
+## What's Included
+
+- **ResonantOS shell** — workspace layout, chat rail, settings, add-on registry
+- **Augmentor Chat** — default primary-agent add-on (configurable)
+- **Living Archive** — default memory-system add-on (configurable)
+- **Provider fabric** — routing, fallback, cost policy for AI model calls
+- **Add-on SDK** — manifest validation, capability grants, registry helpers
+- **Browser agent control** — mediated web page interaction via side panel
+- **Resonant Engineer** — kernel-owned setup/repair/recovery assistant
+- **MCP bridge examples** — `examples/living-archive-memory-service.mjs`
+
+## Project Structure
+
+```
+├── browser-first/              # Chromium-native browser host & extension
+├── src/
+│   ├── core/
+│   │   ├── contracts.ts        # Public interfaces and types
+│   │   ├── defaults.ts         # Core services, providers, default state
+│   │   └── policies.ts         # Archive write guards, provider selection
+│   ├── sdk/addons/             # Add-on validation & registry helpers
+│   └── …                       # React UI, workspace components
+├── public/addons/index.json    # Default public add-on catalog
+├── examples/                   # SDK reference services & MCP bridges
+├── src-tauri/                  # Tauri desktop shell (legacy)
+└── docs/                       # ADRs, product guide, project status
 ```
 
 ## Git Workflow
 
 - Active development happens on `dev`.
-- `main` is the stable preview/release branch.
 - Commit to `dev` by default.
+- `main` is the stable preview/release branch (not yet created).
 - Do not commit directly to `main` unless explicitly instructed.
 - Merge or PR `dev` into `main` only after deterministic validation.
 
-## Public Source Preview
+## Validation
 
-This repository is a public source preview of the new ResonantOS direction plus the SDK foundation for creating add-ons.
+Before merging or tagging:
 
-It is not a finished consumer release and it is not the legacy Alpha dashboard. The current release scope is:
+```bash
+npm test -- --run               # Vitest (TypeScript/UI)
+npm run build                   # TypeScript + Vite production build
+```
 
-- ResonantOS vNext shell and runtime foundation
-- Add-on manifest contracts, validation, registry helpers, and capability model
-- Default recommended catalog containing only Augmentor Chat and Living Archive
-- Example memory-provider and Living Archive MCP bridge services for SDK validation
+If touching Rust/Tauri code (legacy path):
 
-No new optional add-on is released in this checkpoint. Files outside `public/addons/index.json` may exist as SDK references, historical contracts, or development-only work; they are not installed, enabled, trusted, or advertised by default.
+```bash
+cd src-tauri
+cargo fmt --check && cargo test
+```
 
-Packaged installers are still alpha-grade and unsigned. See [docs/ALPHA_DISTRIBUTION.md](docs/ALPHA_DISTRIBUTION.md) for current artifact and platform notes.
+## Documentation
 
-## Current Scope
+| Document | Purpose |
+|----------|---------|
+| [`docs/PRODUCT_GUIDE_BROWSER_FIRST.md`](docs/PRODUCT_GUIDE_BROWSER_FIRST.md) | Human-readable product overview |
+| [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md) | Operational checkpoint & validation snapshot |
+| [`docs/ALPHA_DISTRIBUTION.md`](docs/ALPHA_DISTRIBUTION.md) | Build & share instructions for alpha testers |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributor guidelines |
+| [`AGENTS.md`](AGENTS.md) | AI coding agent instructions (internal) |
 
-This is a working foundation, not the full product. The current implementation provides:
+## License
 
-- typed public contracts for vNext architecture
-- a persisted local shell state
-- add-on manifest sideloading
-- policy enforcement helpers for archive trust and provider fallback
-- a branded shell UI showing the target operating model
-- scoped Living Archive memory bridge examples for external tools
-
-## Structure
-
-- `src/core/contracts.ts`: public interfaces and types
-- `src/core/defaults.ts`: core services, providers, archive policy, and default state
-- `src/core/policies.ts`: archive write guards and provider selection logic
-- `src/sdk/addons`: add-on SDK validation and registry helpers
-- `public/addons/index.json`: default public add-on catalog
-- `examples`: SDK/reference local services and MCP bridge examples
-- `src-tauri/src/lib.rs`: desktop persistence, sideload commands, and IPC registration
+MIT — see [LICENSE.txt](LICENSE.txt).
