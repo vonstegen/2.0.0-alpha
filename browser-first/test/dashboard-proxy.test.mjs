@@ -288,3 +288,64 @@ test("proxy: echoes CORS Allow-Origin for matching origin", async () => {
     );
   });
 });
+
+test("proxy: forwards WebSocket upgrade to upstream and pipes both ways", async () => {
+  // Fake upstream that performs a real WebSocket handshake and echoes
+  // any bytes back to the client. We use a raw net.Server (not
+  // http.createServer) because Node's built-in http.Server auto-handles
+  // "Connection: Upgrade" requests with a 200 OK before the request
+  // handler runs — that breaks the bridge's http.request upgrade event
+  // and would falsely fail this test.
+  // Proves the bridge proxy speaks the upgrade protocol, not just
+  // plain HTTP — without this the dashboard iframe's chat / event
+  // WebSockets fail to connect (close code 1006).
+  const WebSocket = (await import("ws")).WebSocket;
+  const { WebSocketServer } = await import("ws");
+  const net = await import("node:net");
+  const upstream = http.createServer();
+  const wss = new WebSocketServer({ server: upstream });
+  wss.on("connection", (ws) => {
+    ws.on("message", (data) => {
+      // Echo back. ws handles unmasking/fragmentation/etc. for us.
+      ws.send(data.toString());
+    });
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  const upstreamPort = upstream.address().port;
+  const previousPort = process.env.RESONANTOS_HERMES_DASHBOARD_PORT;
+  const previousOpenPrefixes = process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES;
+  process.env.RESONANTOS_HERMES_DASHBOARD_PORT = String(upstreamPort);
+  process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES = "/hermes-dashboard";
+  try {
+    await withBridgeServer(
+      { bridgeToken: "proxy-test-token", routes: [] },
+      async ({ bridgeUrl }) => {
+        const ws = new WebSocket(
+          `${bridgeUrl.replace(/^http/, "ws")}/hermes-dashboard/api/ws`,
+          { perMessageDeflate: false },
+        );
+        const opened = new Promise((resolve, reject) => {
+          ws.once("open", resolve);
+          ws.once("error", reject);
+          setTimeout(() => reject(new Error("ws open timeout")), 3000);
+        });
+        await opened;
+        ws.send("ping");
+        const echoed = await new Promise((resolve, reject) => {
+          ws.once("message", (data) => resolve(data.toString()));
+          ws.once("error", reject);
+          setTimeout(() => reject(new Error("ws message timeout")), 3000);
+        });
+        assert.equal(echoed, "ping");
+        ws.close();
+      },
+    );
+  } finally {
+    if (previousPort === undefined) delete process.env.RESONANTOS_HERMES_DASHBOARD_PORT;
+    else process.env.RESONANTOS_HERMES_DASHBOARD_PORT = previousPort;
+    if (previousOpenPrefixes === undefined)
+      delete process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES;
+    else process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES = previousOpenPrefixes;
+    await new Promise((resolve) => upstream.close(resolve));
+  }
+});

@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import https from "node:https";
+import net from "node:net";
 import path from "node:path";
 
 const bridgeTokenHeader = "x-resonantos-bridge-token";
@@ -302,6 +303,190 @@ function createDashboardProxyHandler({
     //   /favicon.ico            -> /favicon.ico
     mirrorPaths: DASHBOARD_PROXY_MIRROR_PATHS,
   });
+}
+
+// WebSocket upgrade handler. Node's http server emits "upgrade" (not
+// "request") for WebSocket handshakes, so this lives on a separate
+// code path from the request handler. We perform IP allowlist + token
+// checks identical to the request handler, then forward the upgrade
+// to the upstream and pipe bytes both directions. The browser's
+// WebSocket client can't set custom headers, so the openPathPrefixes
+// exemption is what makes iframe WebSockets work (the IP allowlist
+// is still enforced).
+function createDashboardProxyUpgradeHandler({
+  bridgeToken,
+  allowedCidrs = [],
+  upstreamHostname,
+  upstreamPort,
+  addonId = "hermes",
+  addonLabel = "Hermes dashboard",
+  notRunningHint = (port) => `${addonLabel} is not running on port ${port}.`,
+  openPathPrefixes = [],
+  mirrorPaths = DASHBOARD_PROXY_MIRROR_PATHS,
+}) {
+  return function handleProxyUpgrade(request, clientSocket, head) {
+    const remoteAddress = clientSocket?.remoteAddress;
+    const pathPart = (request.url ?? "/").split("?")[0] ?? "/";
+    if (allowedCidrs.length > 0 && !clientIpAllowed(remoteAddress, allowedCidrs)) {
+      clientSocket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+      clientSocket.destroy();
+      return;
+    }
+    if (!isAuthorizedBridgeRequest(request, bridgeToken)) {
+      const isOpenPath = openPathPrefixes.some(
+        (openPrefix) => pathPart === openPrefix || pathPart.startsWith(`${openPrefix}/`),
+      );
+      if (!isOpenPath) {
+        clientSocket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        clientSocket.destroy();
+        return;
+      }
+    }
+    const matched = matchMirrorPath(pathPart, mirrorPaths);
+    if (!matched) {
+      clientSocket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+      clientSocket.destroy();
+      return;
+    }
+    let upstreamPath = `${matched.entry.upstream}${matched.remainder}`;
+    if (!upstreamPath.startsWith("/")) upstreamPath = `/${upstreamPath}`;
+    if (upstreamPath === "") upstreamPath = "/";
+    const queryIndex = request.url.indexOf("?");
+    const upstreamQuery = queryIndex >= 0 ? request.url.slice(queryIndex) : "";
+    const finalUpstreamPath = `${upstreamPath}${upstreamQuery}`;
+    const upstreamPortValue = typeof upstreamPort === "function" ? upstreamPort() : upstreamPort;
+    const upstreamHostnameValue = typeof upstreamHostname === "function" ? upstreamHostname() : upstreamHostname;
+    const headers = {};
+    for (const [key, value] of Object.entries(request.headers)) {
+      const lower = String(key).toLowerCase();
+      // For a regular HTTP forward, hop-by-hop headers (Connection,
+      // Upgrade, etc.) are dropped — they're meaningful only between
+      // adjacent hops. For a WebSocket upgrade, however, the
+      // upstream needs to see them so it knows to respond with 101.
+      // Re-inject them here.
+      if (HOP_BY_HOP_HEADERS.has(lower) && lower !== "connection" && lower !== "upgrade") continue;
+      headers[lower] = value;
+    }
+    // Ensure Connection/Upgrade are present so the upstream treats
+    // this as a real upgrade. Browsers always send these, but other
+    // WebSocket clients (e.g. `ws`, websocket-as-library) might not.
+    headers["connection"] = "Upgrade";
+    headers["upgrade"] = "websocket";
+
+    // We use a raw net.Socket to the upstream (not http.request)
+    // because http.request's upgrade event semantics in Node 22 are
+    // surprising: the response bytes are still buffered in the socket
+    // after the upgrade event fires, so a naive pipe() to the client
+    // duplicates the 101 response, which the client then misparses as
+    // a WebSocket frame with stray RSV1 bits set. Using net.Socket we
+    // get clean control: we parse the response headers ourselves,
+    // forward them to the client, then pipe raw bytes both ways.
+
+    const upstreamSocket = net.connect(upstreamPortValue, upstreamHostnameValue, () => {
+      const headerLines = [`${request.method} ${finalUpstreamPath} HTTP/1.1`];
+      headerLines.push(`Host: ${upstreamHostnameValue}:${upstreamPortValue}`);
+      for (const [k, v] of Object.entries(headers)) {
+        if (k === "host") continue;
+        headerLines.push(`${k}: ${v}`);
+      }
+      upstreamSocket.write(headerLines.join("\r\n") + "\r\n\r\n");
+      if (head && head.length > 0) upstreamSocket.write(head);
+    });
+
+    let clientToUpstreamPiped = false;
+    let queuedClientData = [];
+    const setupBidirectionalPipe = () => {
+      if (clientToUpstreamPiped) return;
+      clientToUpstreamPiped = true;
+      // Forward any data the client sent during the upgrade handshake
+      // (we held it back so it wouldn't be double-sent with the request
+      // we wrote in the connect callback).
+      for (const chunk of queuedClientData) upstreamSocket.write(chunk);
+      queuedClientData = [];
+      clientSocket.pipe(upstreamSocket);
+    };
+    // Hold the client's WebSocket data back until the upgrade
+    // handshake is complete. The connect callback already wrote the
+    // HTTP request + the initial `head` (bytes after the client's own
+    // request line + headers). Forwarding the same `head` via pipe
+    // would double-send it to the upstream.
+    clientSocket.on("data", (chunk) => {
+      if (clientToUpstreamPiped) return;
+      queuedClientData.push(chunk);
+    });
+    upstreamSocket.on("close", () => {
+      if (!clientSocket.destroyed) clientSocket.destroy();
+    });
+    clientSocket.on("close", () => {
+      if (!upstreamSocket.destroyed) upstreamSocket.destroy();
+    });
+
+    let responseHeadersDone = false;
+    let responseBuffer = Buffer.alloc(0);
+    upstreamSocket.on("data", (chunk) => {
+      if (responseHeadersDone) {
+        clientSocket.write(chunk);
+        return;
+      }
+      responseBuffer = Buffer.concat([responseBuffer, chunk]);
+      const end = responseBuffer.indexOf("\r\n\r\n");
+      if (end < 0) return;
+      // Parse the status line + headers from the response.
+      const responseText = responseBuffer.slice(0, end).toString("ascii");
+      const responseLines = responseText.split("\r\n");
+      const statusLineParts = (responseLines[0] || "").match(/^HTTP\/\S+\s+(\d+)\s*(.*)$/);
+      const statusCode = statusLineParts ? Number(statusLineParts[1]) : 101;
+      const statusMessage = statusLineParts ? statusLineParts[2] : "Switching Protocols";
+      const upstreamHeaderMap = {};
+      for (const line of responseLines.slice(1)) {
+        const idx = line.indexOf(":");
+        if (idx > 0) {
+          const k = line.slice(0, idx).trim();
+          const v = line.slice(idx + 1).trim();
+          if (HOP_BY_HOP_HEADERS.has(k.toLowerCase())) continue;
+          upstreamHeaderMap[k] = v;
+        }
+      }
+      // Re-inject the canonical Connection/Upgrade headers (we just
+      // filtered them above) so the client sees a real 101 response.
+      const responseOut = [
+        `HTTP/1.1 ${statusCode} ${statusMessage}`,
+        "Upgrade: websocket",
+        "Connection: Upgrade",
+        ...Object.entries(upstreamHeaderMap).map(([k, v]) => `${k}: ${v}`),
+        "",
+        "",
+      ].join("\r\n");
+      clientSocket.write(responseOut);
+      // Any data past the response headers is the first WebSocket
+      // frame(s) from the upstream. Forward as-is.
+      const remainder = responseBuffer.slice(end + 4);
+      if (remainder.length > 0) clientSocket.write(remainder);
+      responseHeadersDone = true;
+      responseBuffer = null;
+      // Now that the upgrade handshake is complete, start forwarding
+      // any client data the client sent during the handshake
+      // (queuedClientData) and pipe client→upstream for new data.
+      setupBidirectionalPipe();
+    });
+
+    upstreamSocket.on("error", (err) => {
+      const message = err?.code === "ECONNREFUSED"
+        ? notRunningHint(upstreamPortValue)
+        : `${addonLabel} proxy upstream error: ${err?.message ?? String(err)}`;
+      const body = Buffer.from(JSON.stringify({ ok: false, error: message, addon: addonId }), "utf8");
+      if (!clientSocket.destroyed) {
+        clientSocket.write(
+          "HTTP/1.1 502 Bad Gateway\r\n" +
+          "Content-Type: application/json\r\n" +
+          `Content-Length: ${body.length}\r\n` +
+          "Connection: close\r\n\r\n",
+        );
+        clientSocket.write(body);
+        clientSocket.destroy();
+      }
+    });
+  };
 }
 
 // Find the longest matching mirror-path entry for `pathPart`. Returns
@@ -928,6 +1113,14 @@ export async function startBridgeServer({
   dashboardProxyHandler = null,
 }) {
   const bindHost = host ?? getBridgeHost();
+  const effectiveProxyHandler =
+    dashboardProxyHandler ??
+    createDashboardProxyHandler({
+      bridgeToken,
+      extensionOrigin,
+      allowedOrigins,
+      openPathPrefixes: parseAllowedList(process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES),
+    });
   const handle = createBridgeRequestHandler({
     bridgeToken,
     bridgeCapabilityTokens,
@@ -935,9 +1128,34 @@ export async function startBridgeServer({
     routes,
     allowedOrigins,
     allowedCidrs,
-    dashboardProxyHandler,
+    dashboardProxyHandler: effectiveProxyHandler,
   });
   const server = http.createServer(handle);
+  // WebSocket upgrade support. Node's http server emits "upgrade"
+  // (not "request") for WebSocket handshakes, so the request
+  // handler above is bypassed for those. Register a parallel
+  // upgrade handler that performs the same IP allowlist + token
+  // check, then forwards the upgrade to the upstream and pipes
+  // bytes both directions. Without this, the dashboard iframe's
+  // chat / event WebSockets fail to connect (close code 1006).
+  const upgradeHandler = createDashboardProxyUpgradeHandler({
+    bridgeToken,
+    allowedCidrs,
+    upstreamHostname: dashboardProxyHostname,
+    upstreamPort: dashboardProxyPort,
+    openPathPrefixes: parseAllowedList(process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES),
+  });
+  server.on("upgrade", (req, socket, head) => {
+    const pathPart = (req.url ?? "/").split("?")[0] ?? "/";
+    if (!dashboardProxyPathMatches(pathPart)) {
+      // Non-proxy upgrade (none today, but defensively) — drop
+      // the socket cleanly. The dashboard iframe is the only
+      // known WebSocket consumer.
+      socket.destroy();
+      return;
+    }
+    upgradeHandler(req, socket, head);
+  });
   await new Promise((resolve, reject) => {
     const onError = (error) => {
       server.off("listening", onListening);
@@ -1005,6 +1223,33 @@ export async function startBridgeServersWithTls({
     });
     httpsActualPort = httpsServer.address().port;
   }
+  // WebSocket upgrade support — always register, not just when
+  // dashboardProxyHandler is passed. The dashboard proxy is wired
+  // into the request handler in createBridgeRequestHandler; the
+  // upgrade path is separate (Node's http server emits "upgrade"
+  // instead of "request" for WebSocket handshakes) and was
+  // previously skipped in this code path, causing the dashboard
+  // iframe's chat / event WebSockets to fail (close code 1006).
+  const upgradeHandler = createDashboardProxyUpgradeHandler({
+    bridgeToken,
+    allowedCidrs,
+    upstreamHostname: dashboardProxyHostname,
+    upstreamPort: dashboardProxyPort,
+    openPathPrefixes: parseAllowedList(process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES),
+  });
+  const onUpgrade = (req, socket, head) => {
+    const pathPart = (req.url ?? "/").split("?")[0] ?? "/";
+    if (!dashboardProxyPathMatches(pathPart)) {
+      // Non-proxy upgrade (none today, but defensively) — drop the
+      // socket cleanly. The dashboard iframe is the only known
+      // WebSocket consumer.
+      socket.destroy();
+      return;
+    }
+    upgradeHandler(req, socket, head);
+  };
+  httpServer.on("upgrade", onUpgrade);
+  if (httpsServer) httpsServer.on("upgrade", onUpgrade);
   return {
     httpServer,
     httpsServer,
