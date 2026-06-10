@@ -20,6 +20,7 @@ import {
 } from "./memory-review-renderers.js";
 import {
   formatCount,
+  memoryMetric,
   memoryResultCard,
   promotionMatchesHandoff,
   reviewMatchesHandoff,
