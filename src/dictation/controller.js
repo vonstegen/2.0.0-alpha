@@ -1,6 +1,7 @@
 // @ts-check
 
 import {
+  dispose as disposeEngine,
   getEngineState,
   subscribeEngineState,
   transcribe,
@@ -47,14 +48,6 @@ const DEFAULT_WASM_PATHS = "/dictation/ort-wasm/";
  * fragment), and runs one `transcribe(pcm)` call against the
  * parakeet.js model.
  *
- * Earlier revisions tried AudioWorklet-based streaming with per-chunk
- * decoding. That pipeline accumulated four architectural regressions
- * (worklet reloads per session, silence-gate vs real-speech tradeoff,
- * streaming-session lifecycle bugs, CSP constraints under
- * cross-origin isolation). This version picks the simplest correct
- * shape: capture whole, decode whole, transcribe once. We give up
- * live-updating partials in exchange for reliability.
- *
  * For tap-toggle the sequence is `start()` → wait → `stop()`. For
  * push-to-talk (Ctrl+Space) the keyboard handlers in the returned
  * object manage the same lifecycle.
@@ -66,7 +59,7 @@ const DEFAULT_WASM_PATHS = "/dictation/ort-wasm/";
  *   toggle: () => Promise<void>,
  *   isRecording: () => boolean,
  *   isReady: () => boolean,
- *   dispose: () => void,
+ *   dispose: () => Promise<void>,
  *   handleKeyDown: (event: KeyboardEvent) => boolean,
  *   handleKeyUp: (event: KeyboardEvent) => boolean,
  * }}
@@ -355,7 +348,7 @@ export function createDictationController(input = {}) {
     }
   }
 
-  function dispose() {
+  async function dispose() {
     unsubscribeEngine();
     if (recording) {
       try { recorder?.stop(); } catch { /* ignore */ }
@@ -365,6 +358,9 @@ export function createDictationController(input = {}) {
     chunks = null;
     startContext = null;
     gotData = false;
+    // Tear down the engine worker too so a fresh controller
+    // (e.g. in tests, or after a hot reload) re-preloads cleanly.
+    await disposeEngine();
   }
 
   return {

@@ -10,7 +10,7 @@
  * `new Worker(new URL('./worker.js', import.meta.url), { type: 'module' })`)
  * can boot the same engine.
  *
- * The Parakeet TDT 0.6B v3 int4/int8 model files are pulled from the
+ * The Parakeet TDT 0.6B v3 int8 model files are pulled from the
  * HuggingFace CDN at runtime. parakeet.js caches them in IndexedDB so the
  * second and subsequent loads are near-instant. The CDN is verified
  * CORS-enabled for any origin.
@@ -23,6 +23,11 @@
  *     *partial* transcript (cumulative). Finalize resolves with the final
  *     transcript. Best for push-to-talk where the user wants to see text
  *     appear in real time.
+ *
+ * Streaming mode is currently exposed but unused by the default
+ * controller (which uses `transcribe()` on a full recording for
+ * reliability). It's retained for callers that want to drive the
+ * streaming pipeline directly.
  */
 
 const HF_BASE = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main";
@@ -212,10 +217,11 @@ export function preload(options) {
       }
     };
     worker.addEventListener("message", onReady);
-    // The init message no longer carries model URLs — the worker derives
-    // them from the parakeet-tdt-0.6b-v3-onnx-int4 repo via the hub, so
-    // it can check IndexedDB before hitting the network. We only need to
-    // pass through the runtime config (backend, wasmPaths).
+    // The init message carries only the runtime config (backend,
+    // wasmPaths). The worker derives the model URLs from the
+    // istupakov/parakeet-tdt-0.6b-v3-onnx repo and resolves them
+    // through parakeet.js's `getModelFile` hub helper, which checks
+    // IndexedDB before hitting the network.
     worker.postMessage({
       type: "init",
       wasmPaths: options.wasmPaths ?? null,

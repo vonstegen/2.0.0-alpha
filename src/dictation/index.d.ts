@@ -42,7 +42,7 @@ export interface DictationController {
   toggle: () => Promise<void>;
   isRecording: () => boolean;
   isReady: () => boolean;
-  dispose: () => void;
+  dispose: () => Promise<void>;
   handleKeyDown: (event: KeyboardEvent) => boolean;
   handleKeyUp: (event: KeyboardEvent) => boolean;
 }

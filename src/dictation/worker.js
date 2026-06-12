@@ -5,11 +5,10 @@
  * segments, and returns the transcribed text.
  *
  * Message protocol (see types.js):
- *   in:  { type: "init", encoderUrl, decoderUrl, tokenizerUrl, wasmPaths, sharedArrayBuffer }
+ *   in:  { type: "init", wasmPaths, backend }
  *   in:  { type: "transcribe", id, pcm, sampleRate }
  *   in:  { type: "transcribe-chunk", id, sessionId, pcm, sampleRate }   (streaming)
  *   in:  { type: "stream-finalize", id, sessionId }                     (streaming)
- *   in:  { type: "stream-reset", id, sessionId }                         (streaming)
  *   in:  { type: "stream-cancel", id, sessionId }                        (streaming)
  *   out: { type: "ready" }
  *   out: { type: "result", id, text }
@@ -97,7 +96,6 @@ let wasmPathsValue = null;
 
 /** @type {Map<string, import("parakeet.js").StatefulStreamingTranscriber>} */
 const streamingSessions = new Map();
-let streamingSessionCounter = 0;
 
 self.addEventListener("message", async (event) => {
   const data = event.data;

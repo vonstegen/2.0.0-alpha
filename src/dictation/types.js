@@ -30,14 +30,18 @@
  *
  * @typedef {{ type: "init", wasmPaths: string | null, backend?: string }} WorkerInitMessage
  * @typedef {{ type: "transcribe", id: number, pcm: Float32Array, sampleRate: number }} WorkerTranscribeMessage
- * @typedef {WorkerInitMessage | WorkerTranscribeMessage} WorkerInbound
+ * @typedef {{ type: "transcribe-chunk", id: number, sessionId: string, pcm: Float32Array, sampleRate: number }} WorkerTranscribeChunkMessage
+ * @typedef {{ type: "stream-finalize", id: number, sessionId: string }} WorkerStreamFinalizeMessage
+ * @typedef {{ type: "stream-cancel", id: number, sessionId: string }} WorkerStreamCancelMessage
+ * @typedef {WorkerInitMessage | WorkerTranscribeMessage | WorkerTranscribeChunkMessage | WorkerStreamFinalizeMessage | WorkerStreamCancelMessage} WorkerInbound
  */
 
 /**
  * Callbacks the controller fires while recording. Each is optional.
  *
  * @typedef {Object} ControllerCallbacks
- * @property {(text: string) => void} [onText] Final transcript text from the most recent recording.
+ * @property {(text: string, context: import("./controller.js").TextInsertionContext) => void} [onText]
+ *   Final transcript text from the most recent recording.
  * @property {(recording: boolean) => void} [onStateChange] Recording state flipped on start/stop.
  * @property {(message: string) => void} [onNotice] User-visible error/notice.
  * @property {(state: EngineState) => void} [onEngineState] Engine load state changed.
@@ -45,10 +49,14 @@
 
 /**
  * @typedef {Object} CreateControllerInput
- * @property {HTMLTextAreaElement | HTMLInputElement} [input] Optional input to insert transcript into. If omitted, the controller is button-only and the host handles the text.
+ * @property {HTMLTextAreaElement | HTMLInputElement | (() => HTMLTextAreaElement | HTMLInputElement | null) | null} [input]
+ *   Optional input to insert transcript into. May be a DOM element or a
+ *   function that returns one (useful for refs that mount later). If
+ *   omitted, the controller is button-only and the host handles the text.
  * @property {HTMLElement} [button] Optional mic button to update aria/title/disabled.
  * @property {ControllerCallbacks} [callbacks]
- * @property {(target: HTMLElement | null) => boolean} [isEditableTarget] Editable predicate override (defaults to {@link isEditableTarget}).
+ * @property {(target: Element | null) => boolean} [isEditableTarget]
+ *   Editable predicate override (defaults to {@link isEditableTarget}).
  */
 
 export {};
