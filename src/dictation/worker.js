@@ -52,6 +52,13 @@ import * as ort from "onnxruntime-web";
  * quantization. The int8 version is ~650 MB (vs ~390 MB int4) but the
  * IndexedDB cache makes that a one-time cost.
  *
+ * The int8 model with the JS mel preprocessor (`preprocessorBackend:
+ * "js"`) hits a null-deref in parakeet.js's decoder step on real speech
+ * (works fine on a 440 Hz sine wave). Switching `preprocessorBackend` to
+ * "onnx" with the `nemo128.int8.onnx` from the int4 repo (the int8
+ * model repo doesn't have one) forces the int8 model through the full
+ * ONNX graph, which sidesteps the JS-preprocessor → decoder bug.
+ *
  * The hub's `getModelFile` looks up files in IndexedDB
  * (`parakeet-cache-db`) before hitting the network.
  *
@@ -66,6 +73,20 @@ const MODEL_FILES = Object.freeze({
   decoder: "decoder_joint-model.int8.onnx",
   tokenizer: "vocab.txt",
 });
+
+/**
+ * The ONNX mel preprocessor model. Loaded from the int4 repo (the int8
+ * repo doesn't have a preprocessor ONNX). Forces parakeet.js to use the
+ * full ONNX graph path for the int8 model, which avoids the JS mel
+ * preprocessor → decoder compatibility bug.
+ *
+ * @type {string}
+ */
+const PREPROCESSOR_FILE = "nemo128.int8.onnx";
+
+/** Different repo for the preprocessor (the int8 model repo doesn't
+ * have one). */
+const PREPROCESSOR_REPO = "efederici/parakeet-tdt-0.6b-v3-onnx-int4";
 
 /** @type {ParakeetModel | null} */
 let model = null;
@@ -102,18 +123,20 @@ self.addEventListener("message", async (event) => {
       //
       // We use `getModelFile` directly (not the higher-level
       // `getParakeetModel`) because the hub's quant-suffix map only
-      // covers int8/fp16/fp32, and our encoder is int4.
-      const [encoderUrl, decoderUrl, tokenizerUrl] = await Promise.all([
+      // covers int8/fp16/fp32.
+      const [encoderUrl, decoderUrl, tokenizerUrl, preprocessorUrl] = await Promise.all([
         getModelFile(MODEL_REPO.repoId, MODEL_FILES.encoder, { revision: MODEL_REPO.revision }),
         getModelFile(MODEL_REPO.repoId, MODEL_FILES.decoder, { revision: MODEL_REPO.revision }),
         getModelFile(MODEL_REPO.repoId, MODEL_FILES.tokenizer, { revision: MODEL_REPO.revision }),
+        getModelFile(PREPROCESSOR_REPO, PREPROCESSOR_FILE, { revision: MODEL_REPO.revision }),
       ]);
 
       model = await ParakeetModel.fromUrls({
         encoderUrl,
         decoderUrl,
         tokenizerUrl,
-        preprocessorBackend: "js",
+        preprocessorUrl,
+        preprocessorBackend: "onnx",
         backend: preferredBackend,
         wasmPaths: wasmPathsValue ?? undefined,
       });
