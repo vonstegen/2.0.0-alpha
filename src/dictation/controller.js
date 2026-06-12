@@ -1,12 +1,9 @@
 // @ts-check
 
 import {
-  cancelStream,
-  finalizeStream,
   getEngineState,
-  openStream,
-  streamChunk,
   subscribeEngineState,
+  transcribe,
 } from "./engine.js";
 import { isEditableTarget } from "./editable.js";
 import { getToneContext, playStartTone, playStopTone } from "./tones.js";
@@ -302,27 +299,9 @@ export function createDictationController(input = {}) {
     try {
       const pcm = await decodeBlobToMono16k(blob);
       if (pcm.length === 0) return;
-      // Use the streaming transcriber (one chunk + finalize) rather than
-      // `model.transcribe()`. The non-streaming path was producing
-      // degenerate "A A A A" output on 1-2s of real speech — the
-      // Parakeet TDT 0.6B int4 model with the JS mel preprocessor
-      // produces correct output only when the streaming pipeline is
-      // used. Open a session, push the whole recording as a single
-      // chunk, then finalize.
-      const sessionId = openStream();
-      try {
-        // We don't need the partial-cumulative text from streamChunk
-        // because the final `finalizeStream` will return the same
-        // result for a single-chunk session. We DO need to await
-        // streamChunk before finalizeStream so the worker sees the
-        // chunk before the finalize message.
-        await streamChunk(sessionId, pcm, 16_000);
-        const text = await finalizeStream(sessionId);
-        if (text && text.trim()) {
-          callbacks.onText?.(text, localStartContext);
-        }
-      } finally {
-        cancelStream(sessionId);
+      const text = await transcribe(pcm, 16_000);
+      if (text && text.trim()) {
+        callbacks.onText?.(text, localStartContext);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

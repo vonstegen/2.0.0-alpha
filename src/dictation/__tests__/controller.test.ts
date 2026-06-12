@@ -24,10 +24,6 @@ class FakeWorker {
   ready = false;
   /** Override to make `transcribe` return text. */
   transcribeHandler: ((id: number, pcm: Float32Array, sampleRate: number) => void) | null = null;
-  /** Override to make `transcribe-chunk` return text. */
-  streamChunkHandler: ((id: number, sessionId: string, pcm: Float32Array, sampleRate: number) => void) | null = null;
-  /** Override to make `stream-finalize` return text. */
-  streamFinalizeHandler: ((id: number, sessionId: string) => void) | null = null;
 
   constructor(url: string, options: { type?: string } = {}) {
     this.url = url;
@@ -58,7 +54,7 @@ class FakeWorker {
   postMessage(message: unknown) {
     this.sentMessages.push(message);
     if (message && typeof message === "object" && "type" in message) {
-      const m = message as { type: string; id?: number; sessionId?: string; pcm?: Float32Array; sampleRate?: number };
+      const m = message as { type: string; id?: number; pcm?: Float32Array; sampleRate?: number };
       if (m.type === "init") {
         queueMicrotask(() => {
           this.ready = true;
@@ -68,14 +64,6 @@ class FakeWorker {
       if (m.type === "transcribe" && this.transcribeHandler) {
         const id = m.id ?? 0;
         this.transcribeHandler(id, m.pcm ?? new Float32Array(0), m.sampleRate ?? 16_000);
-      }
-      if (m.type === "transcribe-chunk" && this.streamChunkHandler) {
-        const id = m.id ?? 0;
-        this.streamChunkHandler(id, m.sessionId ?? "", m.pcm ?? new Float32Array(0), m.sampleRate ?? 16_000);
-      }
-      if (m.type === "stream-finalize" && this.streamFinalizeHandler) {
-        const id = m.id ?? 0;
-        this.streamFinalizeHandler(id, m.sessionId ?? "");
       }
     }
   }
@@ -288,15 +276,9 @@ async function runEndToEndPipeline(): Promise<string | null> {
     wasmPaths: "/dictation/ort-wasm/",
   };
   await preloadEngine(localEngineOptions);
-  capturedWorker!.streamChunkHandler = (id, sessionId) => {
+  capturedWorker!.transcribeHandler = (id) => {
     queueMicrotask(() => {
-      capturedWorker!.emitMessage({ type: "partial", id, sessionId, text: "hello world" });
-      capturedWorker!.emitMessage({ type: "chunk-result", id, sessionId, text: "hello world" });
-    });
-  };
-  capturedWorker!.streamFinalizeHandler = (id, sessionId) => {
-    queueMicrotask(() => {
-      capturedWorker!.emitMessage({ type: "final", id, sessionId, text: "hello world" });
+      capturedWorker!.emitMessage({ type: "result", id, text: "hello world" });
     });
   };
 
@@ -436,15 +418,9 @@ async function runEndToEndPipelineWithContext(): Promise<{
     wasmPaths: "/dictation/ort-wasm/",
   };
   await preloadEngine(localEngineOptions);
-  capturedWorker!.streamChunkHandler = (id, sessionId) => {
+  capturedWorker!.transcribeHandler = (id) => {
     queueMicrotask(() => {
-      capturedWorker!.emitMessage({ type: "partial", id, sessionId, text: "hello world" });
-      capturedWorker!.emitMessage({ type: "chunk-result", id, sessionId, text: "hello world" });
-    });
-  };
-  capturedWorker!.streamFinalizeHandler = (id, sessionId) => {
-    queueMicrotask(() => {
-      capturedWorker!.emitMessage({ type: "final", id, sessionId, text: "hello world" });
+      capturedWorker!.emitMessage({ type: "result", id, text: "hello world" });
     });
   };
 
@@ -595,13 +571,11 @@ describe("createDictationController full record→transcribe pipeline", () => {
       await new Promise<void>((resolve) => queueMicrotask(resolve));
     }
     expect(onTextCalls).toBe(0);
-    // Worker should never have seen a transcribe-chunk message either
-    // (the empty recording means we never produced PCM, so we never
-    // opened a streaming session).
-    const chunkMessages = (capturedWorker!.sentMessages as Array<{ type: string }>).filter(
-      (m) => m?.type === "transcribe-chunk",
+    // Worker should never have seen a transcribe message either.
+    const transcribeMessages = (capturedWorker!.sentMessages as Array<{ type: string }>).filter(
+      (m) => m?.type === "transcribe",
     );
-    expect(chunkMessages).toHaveLength(0);
+    expect(transcribeMessages).toHaveLength(0);
 
     (globalThis as Record<string, unknown>).MediaRecorder = originalMediaRecorder;
     (globalThis as Record<string, unknown>).AudioContext = originalAudioContext;
