@@ -38,20 +38,31 @@ import { getModelFile } from "parakeet.js/hub";
 import * as ort from "onnxruntime-web";
 
 /**
- * HuggingFace repo + revision used for the parakeet-tdt-0.6b-v3 int4/int8
- * weights. The hub's `getModelFile` looks up these files in IndexedDB
- * (`parakeet-cache-db`) before hitting the network, so subsequent page
- * loads skip the ~150 MB download entirely.
+ * HuggingFace repo + revision used for the parakeet-tdt-0.6b-v3 weights.
+ *
+ * We previously used the int4 quantized export
+ * (`efederici/parakeet-tdt-0.6b-v3-onnx-int4`). That model loaded, ran, and
+ * processed real speech correctly through the full pipeline (3.78s of
+ * "Hello how are you?" → 378 mel frames → 3.6s encode), but consistently
+ * decoded everything to the single token "A". The int4 quantization in
+ * that export appears to break the TDT decoder's cold-start path.
+ *
+ * Switched to the int8 community export (`istupakov/parakeet-tdt-0.6b-v3-onnx`),
+ * which is the same Parakeet TDT 0.6B v3 architecture with less aggressive
+ * quantization. The int8 version is ~650 MB (vs ~390 MB int4) but the
+ * IndexedDB cache makes that a one-time cost.
+ *
+ * The hub's `getModelFile` looks up files in IndexedDB
+ * (`parakeet-cache-db`) before hitting the network.
  *
  * @type {{ repoId: string, revision: string }}
  */
-const MODEL_REPO = { repoId: "efederici/parakeet-tdt-0.6b-v3-onnx-int4", revision: "main" };
+const MODEL_REPO = { repoId: "istupakov/parakeet-tdt-0.6b-v3-onnx", revision: "main" };
 
-/** Filenames within the repo. The int4 encoder + int8 decoder are what we
- * actually ship — see https://huggingface.co/efederici/parakeet-tdt-0.6b-v3-onnx-int4
- * for the full file listing. */
+/** Filenames within the int8 repo. See
+ * https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/tree/main */
 const MODEL_FILES = Object.freeze({
-  encoder: "encoder-model.int4.onnx",
+  encoder: "encoder-model.int8.onnx",
   decoder: "decoder_joint-model.int8.onnx",
   tokenizer: "vocab.txt",
 });

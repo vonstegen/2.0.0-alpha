@@ -25,20 +25,25 @@
  *     appear in real time.
  */
 
-const HF_BASE = "https://huggingface.co/efederici/parakeet-tdt-0.6b-v3-onnx-int4/resolve/main";
+const HF_BASE = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main";
 
 /**
- * Source URLs for the parakeet-tdt-0.6b-v3-onnx-int4 model files. Exported
- * for documentation and external tooling. The worker no longer fetches
- * these directly — it goes through parakeet.js's `getModelFile` hub helper
- * which transparently caches the downloads in IndexedDB on first load and
- * serves them same-origin on subsequent page loads. See `worker.js` for
- * the cache path.
+ * Source URLs for the parakeet-tdt-0.6b-v3 model files (int8 quant).
+ * Exported for documentation and external tooling. The worker no longer
+ * fetches these directly — it goes through parakeet.js's `getModelFile`
+ * hub helper which transparently caches the downloads in IndexedDB on
+ * first load and serves them same-origin on subsequent page loads. See
+ * `worker.js` for the cache path.
+ *
+ * The int8 export replaced the int4 export because the int4 quant
+ * consistently produced degenerate single-token output ("A") for real
+ * speech input. The int8 version is larger (~650 MB encoder vs ~390 MB
+ * int4) but the IndexedDB cache makes that a one-time cost.
  *
  * @type {Readonly<{ encoderUrl: string, decoderUrl: string, tokenizerUrl: string }>}
  */
 export const MODEL_URLS = Object.freeze({
-  encoderUrl: `${HF_BASE}/encoder-model.int4.onnx`,
+  encoderUrl: `${HF_BASE}/encoder-model.int8.onnx`,
   decoderUrl: `${HF_BASE}/decoder_joint-model.int8.onnx`,
   tokenizerUrl: `${HF_BASE}/vocab.txt`,
 });
