@@ -27,6 +27,16 @@
 
 const HF_BASE = "https://huggingface.co/efederici/parakeet-tdt-0.6b-v3-onnx-int4/resolve/main";
 
+/**
+ * Source URLs for the parakeet-tdt-0.6b-v3-onnx-int4 model files. Exported
+ * for documentation and external tooling. The worker no longer fetches
+ * these directly — it goes through parakeet.js's `getModelFile` hub helper
+ * which transparently caches the downloads in IndexedDB on first load and
+ * serves them same-origin on subsequent page loads. See `worker.js` for
+ * the cache path.
+ *
+ * @type {Readonly<{ encoderUrl: string, decoderUrl: string, tokenizerUrl: string }>}
+ */
 export const MODEL_URLS = Object.freeze({
   encoderUrl: `${HF_BASE}/encoder-model.int4.onnx`,
   decoderUrl: `${HF_BASE}/decoder_joint-model.int8.onnx`,
@@ -197,14 +207,15 @@ export function preload(options) {
       }
     };
     worker.addEventListener("message", onReady);
-    /** @type {WorkerInbound} */
-    const initMessage = {
+    // The init message no longer carries model URLs — the worker derives
+    // them from the parakeet-tdt-0.6b-v3-onnx-int4 repo via the hub, so
+    // it can check IndexedDB before hitting the network. We only need to
+    // pass through the runtime config (backend, wasmPaths).
+    worker.postMessage({
       type: "init",
-      ...MODEL_URLS,
       wasmPaths: options.wasmPaths ?? null,
       backend: options.backend ?? "webgpu-hybrid",
-    };
-    worker.postMessage(initMessage);
+    });
   }).catch((error) => {
     setState("error", error instanceof Error ? error.message : String(error));
     initPromise = null;

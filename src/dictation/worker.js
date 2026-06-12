@@ -34,7 +34,27 @@
  */
 
 import { ParakeetModel } from "parakeet.js";
+import { getModelFile } from "parakeet.js/hub";
 import * as ort from "onnxruntime-web";
+
+/**
+ * HuggingFace repo + revision used for the parakeet-tdt-0.6b-v3 int4/int8
+ * weights. The hub's `getModelFile` looks up these files in IndexedDB
+ * (`parakeet-cache-db`) before hitting the network, so subsequent page
+ * loads skip the ~150 MB download entirely.
+ *
+ * @type {{ repoId: string, revision: string }}
+ */
+const MODEL_REPO = { repoId: "efederici/parakeet-tdt-0.6b-v3-onnx-int4", revision: "main" };
+
+/** Filenames within the repo. The int4 encoder + int8 decoder are what we
+ * actually ship — see https://huggingface.co/efederici/parakeet-tdt-0.6b-v3-onnx-int4
+ * for the full file listing. */
+const MODEL_FILES = Object.freeze({
+  encoder: "encoder-model.int4.onnx",
+  decoder: "decoder_joint-model.int8.onnx",
+  tokenizer: "vocab.txt",
+});
 
 /** @type {ParakeetModel | null} */
 let model = null;
@@ -63,10 +83,25 @@ self.addEventListener("message", async (event) => {
       // We don't set it explicitly so parakeet.js uses the right default.
       ort.env.logLevel = "warning";
 
+      // Resolve model file URLs through the hub. `getModelFile` checks the
+      // IndexedDB cache (`parakeet-cache-db`) first and only falls back to
+      // a HuggingFace fetch when the file is missing. After a single
+      // first-load, all subsequent page loads serve the model from
+      // IndexedDB and skip the ~150 MB network transfer.
+      //
+      // We use `getModelFile` directly (not the higher-level
+      // `getParakeetModel`) because the hub's quant-suffix map only
+      // covers int8/fp16/fp32, and our encoder is int4.
+      const [encoderUrl, decoderUrl, tokenizerUrl] = await Promise.all([
+        getModelFile(MODEL_REPO.repoId, MODEL_FILES.encoder, { revision: MODEL_REPO.revision }),
+        getModelFile(MODEL_REPO.repoId, MODEL_FILES.decoder, { revision: MODEL_REPO.revision }),
+        getModelFile(MODEL_REPO.repoId, MODEL_FILES.tokenizer, { revision: MODEL_REPO.revision }),
+      ]);
+
       model = await ParakeetModel.fromUrls({
-        encoderUrl: data.encoderUrl,
-        decoderUrl: data.decoderUrl,
-        tokenizerUrl: data.tokenizerUrl,
+        encoderUrl,
+        decoderUrl,
+        tokenizerUrl,
         preprocessorBackend: "js",
         backend: preferredBackend,
         wasmPaths: wasmPathsValue ?? undefined,

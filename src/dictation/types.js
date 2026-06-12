@@ -28,7 +28,7 @@
 /**
  * Main thread → worker messages.
  *
- * @typedef {{ type: "init", encoderUrl: string, decoderUrl: string, tokenizerUrl: string, wasmPaths: string | null }} WorkerInitMessage
+ * @typedef {{ type: "init", wasmPaths: string | null, backend?: string }} WorkerInitMessage
  * @typedef {{ type: "transcribe", id: number, pcm: Float32Array, sampleRate: number }} WorkerTranscribeMessage
  * @typedef {WorkerInitMessage | WorkerTranscribeMessage} WorkerInbound
  */
