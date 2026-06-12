@@ -51,3 +51,4 @@ browser-first/resonantos-side-panel-extension/src/bridge-config.generated.js
 .idea/
 .vscode/
 *.swp
+docs/code-forge-architecture/
