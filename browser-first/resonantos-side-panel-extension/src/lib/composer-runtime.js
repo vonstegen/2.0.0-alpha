@@ -1,3 +1,22 @@
+// TODO(dictation-local): the dictation controller below still uses the Web
+// Speech API (cloud STT). The shared `src/dictation/` engine introduced for
+// the React app (parakeet.js + meljs, no cloud calls) is the migration target.
+//
+// Migration steps (tracked separately):
+//   1. Vendor parakeet.js, meljs, and onnxruntime-web into
+//      `browser-first/resonantos-side-panel-extension/src/lib/vendor/` via a
+//      `scripts/sync-dictation-engine.mjs` copy step wired into
+//      `browser-first:install`.
+//   2. Replace this `createDictationController` with an adapter that uses
+//      `chrome.runtime.getURL("src/lib/vendor/parakeet.js/src/index.js")` as
+//      the worker entrypoint and `assets/ort-wasm/*.wasm` for the ONNX WASM
+//      blobs (already in the WAR list of `manifest.json`).
+//   3. Re-run the extension's `composer-runtime.test.mjs` with a fake worker
+//      that emits canned transcripts (mirror the `FakeWorker` class in
+//      `src/dictation/__tests__/controller.test.ts`).
+//   4. Update the `createDictationController` greps in
+//      `browser-first/test/browser-first-contract.test.mjs`.
+
 const DEFAULT_MODEL_LABELS = {
   "__auto__": "Auto route",
   "MiniMax-M3": "MiniMax M3",

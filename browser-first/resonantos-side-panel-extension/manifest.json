@@ -62,5 +62,16 @@
       },
       "description": "Open the Augmentor side panel"
     }
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/ort-wasm/*.wasm",
+        "src/lib/dictation/worker.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
 }

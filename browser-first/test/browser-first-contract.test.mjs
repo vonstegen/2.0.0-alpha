@@ -547,7 +547,8 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.doesNotMatch(contentScript, /resonantos-content-dock/);
   assert.doesNotMatch(contentScript, /content_dock/);
   assert.doesNotMatch(contentScript, /bridge-config\.generated/);
-  assert.doesNotMatch(JSON.stringify(manifest), /web_accessible_resources/);
+  assert.match(JSON.stringify(manifest), /web_accessible_resources/);
+  assert.match(JSON.stringify(manifest), /ort-wasm/);
   assert.doesNotMatch(JSON.stringify(manifest), /content-dock/);
   assert.doesNotMatch(background, /suppress_side_panel_on_main_workspace/);
   assert.match(background, /openResonantSidePanel\(windowId, \{ force: Boolean\(message\.force\) \}\)/);
