@@ -592,15 +592,6 @@ export function App() {
         onStateChange: (recording) => setDictating(recording),
         onNotice: (message) => setChatNotice(message),
         onEngineState: () => undefined,
-        onPartialText: (text) => {
-          // Live partials appear in the chat notice so the user can see
-          // text forming as they speak. We don't splice into the composer
-          // until the final `onText`, which avoids clobbering the user's
-          // edits with every chunk.
-          if (text && text.trim()) {
-            setChatNotice(`… ${text.trim()}`);
-          }
-        },
         onText: (text, context) => {
           // Splice the final dictation result into the composer using the
           // cursor and value captured at recording *start* (not completion).

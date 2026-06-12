@@ -277,13 +277,13 @@ export function streamChunk(sessionId, pcm, sampleRate = 16000, opts = {}) {
 }
 
 /**
+/**
  * Finalize a streaming session. Resolves with the final transcript.
  *
- * If the session was never created on the worker (e.g. the controller
- * dropped every chunk via its silence gate), the worker would otherwise
- * reply with "Unknown streaming session". We special-case that here so the
- * caller can `await finalizeStream(...)` unconditionally — it just resolves
- * to an empty string.
+ * Note: the current controller uses a single `transcribe()` call against
+ * the full recording rather than streaming, so this entry point is unused
+ * in production. It's retained for callers that want to drive the
+ * streaming pipeline directly.
  *
  * @param {string} sessionId
  * @returns {Promise<string>}
@@ -291,18 +291,6 @@ export function streamChunk(sessionId, pcm, sampleRate = 16000, opts = {}) {
 export function finalizeStream(sessionId) {
   if (state !== "ready" || !worker) {
     return Promise.reject(new Error("Dictation engine is not ready."));
-  }
-  // If the caller never forwarded any chunk for this session, the worker
-  // has no streaming session to finalize. Resolve with an empty string
-  // instead of round-tripping and bouncing an "Unknown streaming session"
-  // error back to the UI.
-  // If the caller never forwarded any chunk for this session, the worker
-  // has no streaming session to finalize. Resolve with an empty string
-  // instead of round-tripping and bouncing an "Unknown streaming session"
-  // error back to the UI.
-  const lastChunkId = sessionIdToLastChunkId.get(sessionId);
-  if (lastChunkId === undefined) {
-    return Promise.resolve("");
   }
   const id = nextRequestId++;
   return new Promise((resolve, reject) => {

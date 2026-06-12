@@ -24,7 +24,6 @@ export interface TextInsertionContext {
 
 export interface ControllerCallbacks {
   onText?: (text: string, context: TextInsertionContext | null) => void;
-  onPartialText?: (text: string, context: TextInsertionContext | null) => void;
   onStateChange?: (recording: boolean) => void;
   onNotice?: (message: string) => void;
   onEngineState?: (state: EngineState) => void;
