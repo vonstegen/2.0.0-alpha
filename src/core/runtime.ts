@@ -1621,6 +1621,44 @@ export const requestProviderSmokeTest = async (input: {
   authTier?: string;
   model: string;
 }): Promise<ProviderSmokeTestResult> => {
+  if (hasElectronHost()) {
+    const checkedAt = new Date().toISOString();
+    const reply = await requestProviderServiceChatCompletion({
+      requestId: `provider-smoke:${input.providerId}:${Date.now()}`,
+      threadId: "settings-provider-smoke",
+      agentId: "settings.provider-smoke",
+      channelId: "settings",
+      providerId: input.providerId,
+      providerType: input.providerType,
+      apiBaseUrl: input.apiBaseUrl,
+      runtimeNodeId: input.runtimeNodeId,
+      runtimeNodeKind: input.runtimeNodeKind,
+      runtimeNodeEndpoint: input.runtimeNodeEndpoint,
+      authTier: input.authTier,
+      model: input.model,
+      reasoningEffort: "minimal",
+      systemPrompt: "You are a provider smoke test. Reply briefly and do not ask follow-up questions.",
+      messages: [
+        {
+          id: `provider-smoke:${input.providerId}:user`,
+          threadId: "settings-provider-smoke",
+          channelId: "settings",
+          role: "user",
+          author: "Settings",
+          content: "Reply with one short sentence confirming this provider can answer.",
+          createdAt: checkedAt,
+        },
+      ],
+    });
+    return {
+      providerId: input.providerId,
+      model: input.model,
+      ok: true,
+      replyPreview: reply.slice(0, 500),
+      checkedAt,
+      summary: `Provider smoke test succeeded for ${input.model}.`,
+    };
+  }
   if (hasTauri()) {
     return (await invoke("provider_smoke_test", input)) as ProviderSmokeTestResult;
   }
@@ -1635,6 +1673,20 @@ export const requestProviderSetupProbe = async (input: {
   runtimeNodeEndpoint?: string;
   authTier?: string;
 }): Promise<ProviderSetupProbeResult> => {
+  if (hasElectronHost()) {
+    const endpoint = input.runtimeNodeEndpoint ?? input.apiBaseUrl ?? "";
+    return {
+      providerId: input.providerId,
+      ok: false,
+      setupState: "adapter-pending",
+      discoveredModels: [],
+      endpoint,
+      checkedAt: new Date().toISOString(),
+      summary: "Electron setup probing is not implemented yet. Use Check Health or Test to verify this provider.",
+      detail: "Provider setup probing currently requires the Tauri host adapter; Electron can still run diagnostics and smoke tests.",
+      source: "unsupported-adapter",
+    };
+  }
   if (hasTauri()) {
     return (await invoke("provider_setup_probe", input)) as ProviderSetupProbeResult;
   }
