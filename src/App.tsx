@@ -123,6 +123,7 @@ import {
   type DictationController,
 } from "./dictation";
 import DictationWorker from "./dictation/worker.js?worker";
+import WhisperWorker from "./dictation/worker-whisper.js?worker";
 import { saveChatMessageToArchiveIntake } from "./modules/chat/archive-intake-controller";
 import { executeChatTurn } from "./modules/chat/controller";
 import { claimChatRun, releaseChatRun } from "./modules/chat/run-guard";
@@ -615,6 +616,7 @@ export function App() {
 
     void preloadDictationEngine({
       createWorker: () => new DictationWorker(),
+      kind: "parakeet",
       wasmPaths: DEFAULT_ENGINE_WASM_PATHS,
     }).catch((error) => {
       setChatNotice(

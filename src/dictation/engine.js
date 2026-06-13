@@ -203,11 +203,6 @@ export function preload(options) {
     return Promise.reject(new Error("Engine preload requires a createWorker() factory."));
   }
   const kind = options.kind ?? "parakeet";
-  if (kind === "whisper") {
-    return Promise.reject(
-      new Error("Whisper dictation engine is not yet implemented. Pick Parakeet in Settings."),
-    );
-  }
   if (initPromise) return initPromise;
   if (state === "ready") return Promise.resolve();
   setState("loading");
@@ -253,7 +248,6 @@ export function preload(options) {
   });
   return initPromise;
 }
-
 /**
  * Send PCM to the worker and resolve with the transcribed text. Throws if the
  * engine isn't ready or the worker reports an error.

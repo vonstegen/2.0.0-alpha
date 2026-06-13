@@ -198,12 +198,6 @@ describe("engine dispatch", () => {
     expect(getEngineKind()).toBe("parakeet");
   });
 
-  it("rejects with a clear error when kind is 'whisper' (not yet implemented)", async () => {
-    await expect(
-      preloadEngine({ ...engineOptions, kind: "whisper" }),
-    ).rejects.toThrow(/whisper.*not yet implemented/i);
-  });
-
   it("resets the kind on dispose so the next preload starts clean", async () => {
     await preloadEngine({ ...engineOptions, kind: "parakeet" });
     expect(getEngineKind()).toBe("parakeet");
