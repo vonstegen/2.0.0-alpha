@@ -164,7 +164,7 @@ function dispatchMessage(event) {
       }
       pending.clear();
       sessionIdToLastChunkId.clear();
-      worker?.terminate().catch(() => undefined);
+      worker?.terminate();
       worker = null;
       initPromise = null;
       return;
@@ -185,7 +185,7 @@ function teardown() {
   pending.clear();
   sessionIdToLastChunkId.clear();
   if (worker) {
-    worker.terminate().catch(() => undefined);
+    worker.terminate();
     worker = null;
   }
   initPromise = null;
