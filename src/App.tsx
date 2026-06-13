@@ -123,7 +123,6 @@ import {
   type DictationController,
 } from "./dictation";
 import DictationWorker from "./dictation/worker.js?worker";
-import WhisperWorker from "./dictation/worker-whisper.js?worker";
 import { saveChatMessageToArchiveIntake } from "./modules/chat/archive-intake-controller";
 import { executeChatTurn } from "./modules/chat/controller";
 import { claimChatRun, releaseChatRun } from "./modules/chat/run-guard";
@@ -615,21 +614,13 @@ export function App() {
     dictationControllerRef.current = controller;
 
     void preloadDictationEngine({
-      // Temporary test affordance for Stage 2 hand-debug: append
-      // `?engine=whisper` to the URL to select the Whisper worker.
-      // Stage 4 will replace this with a proper Settings section.
-      createWorker: () => {
-        const url = new URL(window.location.href);
-        const requested = url.searchParams.get("engine");
-        if (requested === "whisper") {
-          return new WhisperWorker();
-        }
-        return new DictationWorker();
-      },
-      kind:
-        new URL(window.location.href).searchParams.get("engine") === "whisper"
-          ? "whisper"
-          : "parakeet",
+      // Engine kind is hard-coded to "parakeet" until a Whisper
+      // fallback path is wired in. Stage 1 of the dispatcher plan
+      // (commit d3bdfde) keeps the field plumbed; the engine
+      // module rejects any kind other than "parakeet" with a
+      // clear "not implemented" notice.
+      createWorker: () => new DictationWorker(),
+      kind: "parakeet",
       wasmPaths: DEFAULT_ENGINE_WASM_PATHS,
     }).catch((error) => {
       setChatNotice(

@@ -203,6 +203,13 @@ export function preload(options) {
     return Promise.reject(new Error("Engine preload requires a createWorker() factory."));
   }
   const kind = options.kind ?? "parakeet";
+  if (kind !== "parakeet") {
+    return Promise.reject(
+      new Error(
+        `Dictation engine "${kind}" is not implemented. The only supported engine is "parakeet".`,
+      ),
+    );
+  }
   if (initPromise) return initPromise;
   if (state === "ready") return Promise.resolve();
   setState("loading");

@@ -198,6 +198,18 @@ describe("engine dispatch", () => {
     expect(getEngineKind()).toBe("parakeet");
   });
 
+  it("rejects with a clear error when kind is anything other than 'parakeet'", async () => {
+    // Whisper fallback was attempted in WIP commits 641d3bb and 5fd50a3.
+    // The q8 export had a decoder quant-scale incompatibility; the
+    // fp16 export hung silently. Same shape as the parakeet int4/int8
+    // failures earlier. Stage 2 was reverted; the dispatcher exists
+    // but only 'parakeet' is implemented. The Settings UI (Stage 4)
+    // is now a "future" task and shouldn't offer Whisper selection.
+    await expect(
+      preloadEngine({ ...engineOptions, kind: "whisper" }),
+    ).rejects.toThrow(/not implemented/i);
+  });
+
   it("resets the kind on dispose so the next preload starts clean", async () => {
     await preloadEngine({ ...engineOptions, kind: "parakeet" });
     expect(getEngineKind()).toBe("parakeet");
