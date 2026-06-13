@@ -615,8 +615,21 @@ export function App() {
     dictationControllerRef.current = controller;
 
     void preloadDictationEngine({
-      createWorker: () => new DictationWorker(),
-      kind: "parakeet",
+      // Temporary test affordance for Stage 2 hand-debug: append
+      // `?engine=whisper` to the URL to select the Whisper worker.
+      // Stage 4 will replace this with a proper Settings section.
+      createWorker: () => {
+        const url = new URL(window.location.href);
+        const requested = url.searchParams.get("engine");
+        if (requested === "whisper") {
+          return new WhisperWorker();
+        }
+        return new DictationWorker();
+      },
+      kind:
+        new URL(window.location.href).searchParams.get("engine") === "whisper"
+          ? "whisper"
+          : "parakeet",
       wasmPaths: DEFAULT_ENGINE_WASM_PATHS,
     }).catch((error) => {
       setChatNotice(
