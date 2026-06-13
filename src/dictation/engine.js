@@ -60,8 +60,17 @@ export const MODEL_URLS = Object.freeze({
  */
 
 /**
+ * @typedef {import("./types.js").DictationEngineKind} DictationEngineKind
+ */
+
+/**
  * @typedef {Object} EngineOptions
- * @property {() => Worker} createWorker Returns a fresh module Web Worker.
+ * @property {() => Worker} createWorker Returns a fresh module Web Worker
+ *   for the chosen engine kind.
+ * @property {DictationEngineKind} [kind="parakeet"] Which on-device ASR
+ *   engine to load. Defaults to `"parakeet"` (NVIDIA Parakeet TDT 0.6B v3
+ *   int8 via parakeet.js). The Whisper fallback (`"whisper"`) loads
+ *   Whisper base multilingual q8 via @huggingface/transformers.
  * @property {string | null} [wasmPaths] Optional path to onnxruntime-web WASM
  *   blobs. When omitted, parakeet.js falls back to the jsDelivr CDN. Pass
  *   `/dictation/ort-wasm/` to keep WASM blobs same-origin.
@@ -81,6 +90,9 @@ const subscribers = new Set();
 let worker = null;
 /** @type {Promise<void> | null} */
 let initPromise = null;
+/** Currently-loaded engine kind. Default "parakeet"; the Whisper fallback
+ * is wired in Stage 2. */
+let currentKind = "parakeet";
 let nextRequestId = 1;
 /** @type {Map<number, { resolve: (text: string) => void, reject: (error: Error) => void, partialHandler: ((text: string) => void) | null }>} */
 const pending = new Map();
@@ -190,9 +202,16 @@ export function preload(options) {
   if (!options || typeof options.createWorker !== "function") {
     return Promise.reject(new Error("Engine preload requires a createWorker() factory."));
   }
+  const kind = options.kind ?? "parakeet";
+  if (kind === "whisper") {
+    return Promise.reject(
+      new Error("Whisper dictation engine is not yet implemented. Pick Parakeet in Settings."),
+    );
+  }
   if (initPromise) return initPromise;
   if (state === "ready") return Promise.resolve();
   setState("loading");
+  currentKind = kind;
   worker = options.createWorker();
   worker.addEventListener("message", dispatchMessage);
   worker.addEventListener("error", (event) => {
@@ -351,6 +370,15 @@ export function getEngineState() {
 }
 
 /**
+ * Currently-loaded engine kind. Synchronous read.
+ *
+ * @returns {DictationEngineKind}
+ */
+export function getEngineKind() {
+  return currentKind;
+}
+
+/**
  * Last error message, if any.
  *
  * @returns {string | null}
@@ -381,5 +409,6 @@ export function subscribeEngineState(cb) {
 export async function dispose() {
   subscribers.clear();
   teardown();
+  currentKind = "parakeet";
   setState("idle");
 }

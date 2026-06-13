@@ -3,9 +3,17 @@
 
 export type EngineState = "idle" | "loading" | "ready" | "error";
 
+export type DictationEngineKind = "parakeet" | "whisper";
+
 export interface EngineOptions {
   /** Returns a fresh module Web Worker. */
   createWorker: () => Worker;
+  /**
+   * Which on-device ASR engine to load. Defaults to `"parakeet"`. The
+   * `"whisper"` fallback is not yet implemented; selecting it surfaces a
+   * notice.
+   */
+  kind?: DictationEngineKind;
   /** Optional path to onnxruntime-web WASM blobs (same-origin recommended). */
   wasmPaths?: string | null;
   /**
@@ -67,6 +75,7 @@ export function streamChunk(
 export function finalizeStream(sessionId: string): Promise<string>;
 export function cancelStream(sessionId: string): void;
 export function getEngineState(): EngineState;
+export function getEngineKind(): DictationEngineKind;
 export function getEngineMessage(): string | null;
 export function subscribeEngineState(
   cb: (state: EngineState, message: string | null) => void,

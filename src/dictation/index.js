@@ -10,6 +10,7 @@ export {
   openStream,
   cancelStream,
   getEngineState,
+  getEngineKind,
   getEngineMessage,
   subscribeEngineState,
   dispose,

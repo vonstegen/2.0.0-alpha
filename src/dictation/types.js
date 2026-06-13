@@ -8,6 +8,19 @@
  */
 
 /**
+ * Which on-device ASR engine the engine module is currently configured
+ * to load. The engine module is a singleton — switching kinds means
+ * `dispose()` then `preload({ kind: <new> })`.
+ *
+ * - `"parakeet"` — NVIDIA Parakeet TDT 0.6B v3 int8 via parakeet.js.
+ *   Default. ~650 MB encoder, multilingual, fast on CPU.
+ * - `"whisper"` — Whisper base multilingual q8 via
+ *   @huggingface/transformers. ~77 MB. Fallback option.
+ *
+ * @typedef {"parakeet" | "whisper"} DictationEngineKind
+ */
+
+/**
  * @typedef {Object} EngineStatus
  * @property {EngineState} state
  * @property {string | null} message Optional human-readable detail (only set on `error`).

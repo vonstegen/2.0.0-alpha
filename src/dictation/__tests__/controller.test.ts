@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createDictationController,
   dispose as disposeEngine,
+  getEngineKind,
   getEngineState,
   isEditableTarget,
   preload as preloadEngine,
@@ -183,6 +184,33 @@ describe("engine state machine", () => {
     expect(errors).toContain("boom");
     unsubscribe();
     await disposeEngine();
+  });
+});
+
+describe("engine dispatch", () => {
+  it("defaults to parakeet when no kind is specified", async () => {
+    await preloadEngine(engineOptions);
+    expect(getEngineKind()).toBe("parakeet");
+  });
+
+  it("records the requested kind in getEngineKind()", async () => {
+    await preloadEngine({ ...engineOptions, kind: "parakeet" });
+    expect(getEngineKind()).toBe("parakeet");
+  });
+
+  it("rejects with a clear error when kind is 'whisper' (not yet implemented)", async () => {
+    await expect(
+      preloadEngine({ ...engineOptions, kind: "whisper" }),
+    ).rejects.toThrow(/whisper.*not yet implemented/i);
+  });
+
+  it("resets the kind on dispose so the next preload starts clean", async () => {
+    await preloadEngine({ ...engineOptions, kind: "parakeet" });
+    expect(getEngineKind()).toBe("parakeet");
+    await disposeEngine();
+    expect(getEngineKind()).toBe("parakeet");
+    // (Reset to the default initial state. beforeEach re-preloads.)
+    expect(getEngineState()).toBe("idle");
   });
 });
 
