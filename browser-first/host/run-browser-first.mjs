@@ -42,6 +42,7 @@ import {
   seedResonantStartupExperience,
 } from "./browser-profile-service.mjs";
 import { createMemorySourceSettingsService } from "./memory-source-settings-service.mjs";
+import { resolveBrowserProfile, resolveRemoteDebugging } from "./browser-launch-config.mjs";
 import { createProviderHostService } from "./provider-host-service.mjs";
 import {
   memorySourceMoveHistoryPath as sourceMoveHistoryPath,
@@ -124,7 +125,13 @@ function browserLaunchLogPath() {
   return path.join(repoRoot, "logs", "browser-first-installed-app.log");
 }
 
-const profileDir = path.resolve(args.get("profile") ?? process.env.RESONANTOS_BROWSER_FIRST_PROFILE ?? defaultProfile);
+const browserProfile = resolveBrowserProfile({
+  args,
+  env: process.env,
+  persistentDefaultProfile: defaultProfile,
+  userRoot: userRoot(),
+});
+const profileDir = browserProfile.profileDir;
 
 function hermesHome(profileHome) {
   const value = String(profileHome ?? process.env.HERMES_HOME ?? "~/.hermes").trim();
@@ -476,7 +483,7 @@ if (selfTestHandled) {
 const url = args.get("url") ?? defaultMainWorkspaceUrl;
 const autoOpenSidePanel = args.get("auto-open-side-panel") === "true";
 const bridgePort = Number(args.get("bridge-port") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_PORT ?? defaultBridgePort);
-const remoteDebuggingPort = args.get("remote-debugging-port") ?? process.env.RESONANTOS_BROWSER_FIRST_REMOTE_DEBUGGING_PORT;
+const remoteDebugging = resolveRemoteDebugging({ args, env: process.env });
 
 if (!existsSync(hostBinary)) {
   console.error(`Browser-first host binary is missing: ${hostBinary}`);
@@ -505,7 +512,7 @@ const hostArgs = [
   `--resonantos-user-data-dir=${profileDir}`,
   `--resonantos-extension-dirs=${extensionDirs.join(",")}`,
   `--resonantos-log-path=${browserLaunchLogPath()}`,
-  ...(remoteDebuggingPort ? [`--resonantos-remote-debugging-port=${remoteDebuggingPort}`] : []),
+  ...remoteDebugging.hostArgs,
 ];
 
 const launchThroughMacAppBundle = process.platform === "darwin" && args.get("launch-mode") !== "direct";
@@ -551,7 +558,7 @@ console.log(JSON.stringify({
 }));
 
 console.log("Launching ResonantOS Browser-First host");
-console.log(JSON.stringify({ hostBinary, hostAppBundle, url, profileDir, extensionDirs, phantomLoaded: Boolean(phantomExtension), pinnedExtensions: [resonantExtensionId, phantomExtension ? phantomExtensionId : null].filter(Boolean), bridgeUrl: `http://127.0.0.1:${activeBridgePort}`, bridgeConfigPath, remoteDebuggingPort: remoteDebuggingPort ?? "ephemeral" }, null, 2));
+console.log(JSON.stringify({ hostBinary, hostAppBundle, url, profileDir, extensionDirs, phantomLoaded: Boolean(phantomExtension), pinnedExtensions: [resonantExtensionId, phantomExtension ? phantomExtensionId : null].filter(Boolean), bridgeUrl: `http://127.0.0.1:${activeBridgePort}`, bridgeConfigPath, profileMode: browserProfile.mode, remoteDebugging: remoteDebugging.enabled ? { port: 0, address: "127.0.0.1", requested: remoteDebugging.requestedPort } : "disabled" }, null, 2));
 
 function launchNativeHostDirect() {
   return spawn(hostBinary, hostArgs, {
