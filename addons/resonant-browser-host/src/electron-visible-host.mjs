@@ -5,6 +5,7 @@ import { stat } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { assertContained } from "./lib/path-contains.mjs";
 
 const DEFAULT_HOME_URL = "https://resonantos.com";
 const DEFAULT_BOUNDS = { width: 1440, height: 1000 };
@@ -51,7 +52,7 @@ function sanitizeText(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_TEXT_CHARS);
 }
 
-async function assertExtensionDirectory(path) {
+async function assertExtensionDirectory(path, extensionsRoot = null) {
   if (!path || typeof path !== "string") {
     throw new Error("Extension loading requires an unpacked extension directory path.");
   }
@@ -59,7 +60,14 @@ async function assertExtensionDirectory(path) {
   if (!stats.isDirectory()) {
     throw new Error(`Extension path is not a directory: ${path}`);
   }
-  return realpathSync(path);
+  // P1-d containment: realpath alone canonicalizes but never pins the directory
+  // to a root, so a `..` chain / absolute reroot / symlink-out could load an
+  // extension from anywhere. When an extensionsRoot is configured we contain the
+  // requested directory to its realpath; with no root we contain to the
+  // directory's own realpath (target === root) so symlink/`..` escapes relative
+  // to a declared base are still rejected while legitimate in-root paths load.
+  const root = typeof extensionsRoot === "string" && extensionsRoot.length > 0 ? extensionsRoot : path;
+  return assertContained(root, path, "unpacked extension directory");
 }
 
 export function toBrowserExtensionState(extension, pinned = false) {
@@ -387,7 +395,7 @@ export class ResonantElectronBrowserHost {
 
   async loadUnpackedExtension(params = {}) {
     const electron = await this.electron();
-    const extensionPath = await assertExtensionDirectory(params.path);
+    const extensionPath = await assertExtensionDirectory(params.path, params.extensionsRoot ?? null);
     const extension = await electron.session.defaultSession.loadExtension(extensionPath, {
       allowFileAccess: Boolean(params.allowFileAccess),
     });

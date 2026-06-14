@@ -4,6 +4,7 @@
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { assertContained } from "./lib/path-contains.mjs";
 
 const DEFAULT_HOME_URL = "https://resonantos.com";
 const DEFAULT_VIEWPORT = { width: 1440, height: 1000 };
@@ -186,7 +187,12 @@ export class ResonantBrowserHost {
     if (!params.artifactsDir) {
       throw new Error("Evidence capture requires artifactsDir.");
     }
-    const path = `${params.artifactsDir.replace(/\/$/, "")}/${this.sessionId}-${Date.now()}.png`;
+    // P1-d containment: the screenshot leaf must resolve INSIDE the realpath of
+    // the caller-declared artifactsDir. A `..` chain, an absolute reroot, or a
+    // symlink that escapes the artifacts root is refused before any FS write.
+    const artifactsRoot = params.artifactsDir.replace(/\/$/, "");
+    const path = `${artifactsRoot}/${this.sessionId}-${Date.now()}.png`;
+    assertContained(artifactsRoot, path, "evidence screenshot");
     await page.screenshot({ path, fullPage: Boolean(params.fullPage) });
     this.record("evidence.captured", { path, reason: params.reason ?? "unspecified" });
     return {
