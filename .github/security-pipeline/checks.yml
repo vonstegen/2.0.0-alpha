@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "families": {
+    "supply-chain": {
+      "status": "active",
+      "description": "Dependency, lockfile, registry, and CI workflow integrity checks."
+    },
+    "runtime-hardening": {
+      "status": "active",
+      "description": "Subprocess/runtime hardening: argv secrets, env scoping, pinned load roots, terminal command allowlist."
+    }
+  },
+  "checks": [
+    {
+      "id": "npm-lockfiles",
+      "family": "supply-chain",
+      "policy": "block",
+      "adapter": "npm-lockfiles",
+      "surfaces": [
+        ".",
+        "addons/resonant-browser-host",
+        "addons/resonant-browser-native"
+      ],
+      "lockfiles": [
+        "package-lock.json",
+        "npm-shrinkwrap.json"
+      ]
+    },
+    {
+      "id": "subprocess-no-argv-secret",
+      "family": "runtime-hardening",
+      "policy": "observe",
+      "adapter": "subprocess-no-argv-secret",
+      "surfaces": [
+        "src-tauri/src"
+      ]
+    },
+    {
+      "id": "subprocess-env-clear",
+      "family": "runtime-hardening",
+      "policy": "observe",
+      "adapter": "subprocess-env-clear",
+      "surfaces": [
+        "src-tauri/src"
+      ]
+    },
+    {
+      "id": "subprocess-pinned-roots",
+      "family": "runtime-hardening",
+      "policy": "observe",
+      "adapter": "subprocess-pinned-roots",
+      "surfaces": [
+        "src-tauri/src"
+      ]
+    },
+    {
+      "id": "subprocess-terminal-allowlist",
+      "family": "runtime-hardening",
+      "policy": "observe",
+      "adapter": "subprocess-terminal-allowlist",
+      "surfaces": [
+        "src-tauri/src"
+      ]
+    }
+  ]
+}
