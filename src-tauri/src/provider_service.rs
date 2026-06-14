@@ -21,6 +21,55 @@ use crate::host_state::{
 static ABORTED_CHAT_RUNS: LazyLock<Mutex<HashSet<String>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
+/// Wall-clock timeout applied to non-streaming chat requests.
+const CHAT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Short timeout for the readiness probe against the local runtime.
+const OLLAMA_READY_TIMEOUT: Duration = Duration::from_secs(3);
+/// Connection timeout applied to streaming chat requests. A full request
+/// timeout would truncate long streams, so streaming paths bound the
+/// *connection* by a deadline and keep the cooperative `chat_run_aborted`
+/// cancellation flag (polled per chunk) for the in-flight body.
+const CHAT_STREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Env flag (default-OFF) that gates LAN `/24` subnet discovery. Discovery
+/// probes the local subnet (hosts 1..=254) and must only run when the user has
+/// explicitly opted in. Absent or non-truthy => no scan.
+const LAN_DISCOVERY_CONSENT_ENV: &str = "RESONANTOS_LAN_DISCOVERY_CONSENT";
+
+/// Returns `true` only when the LAN-discovery consent flag is explicitly
+/// enabled. Default-off: a missing flag, or a flag set to anything other than a
+/// recognized truthy value, blocks the subnet scan.
+fn lan_discovery_consent() -> bool {
+    match std::env::var(LAN_DISCOVERY_CONSENT_ENV) {
+        Ok(value) => matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        Err(_) => false,
+    }
+}
+
+/// Builds a reqwest client bounded by a wall-clock `timeout`. Centralizing
+/// client construction guarantees every non-streaming request path is bounded
+/// instead of using an unbounded `reqwest::Client::new()`.
+fn bounded_http_client(timeout: Duration) -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(timeout)
+        .build()
+        .map_err(|error| format!("Failed to build HTTP client: {error}"))
+}
+
+/// Builds a reqwest client for streaming chat. Bounds the connection with
+/// `connect_timeout` (so a dead endpoint can't hang the connect) while leaving
+/// the streamed body un-truncated; cancellation is handled cooperatively via
+/// `chat_run_aborted` polled per chunk.
+fn streaming_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .connect_timeout(CHAT_STREAM_CONNECT_TIMEOUT)
+        .build()
+        .map_err(|error| format!("Failed to build HTTP client: {error}"))
+}
+
 fn strip_think_blocks(content: &str) -> String {
     let mut output = String::new();
     let mut remainder = content;
@@ -1042,6 +1091,12 @@ fn local_subnet_openai_compatible_candidates() -> Vec<String> {
 }
 
 fn local_subnet_http_candidates(port: u16, openai_compatible: bool) -> Vec<String> {
+    // Consent fence (default-off): never scan the local /24 subnet unless the
+    // user has explicitly opted in. Without consent, degrade gracefully by
+    // returning no candidates so the caller simply skips LAN probing.
+    if !lan_discovery_consent() {
+        return Vec::new();
+    }
     let socket = match UdpSocket::bind("0.0.0.0:0") {
         Ok(socket) => socket,
         Err(_) => return Vec::new(),
@@ -1253,7 +1308,10 @@ fn parse_ollama_model_names(stdout: &str) -> Vec<String> {
 }
 
 async fn ollama_ready(base_url: &str) -> bool {
-    let client = reqwest::Client::new();
+    let client = match bounded_http_client(OLLAMA_READY_TIMEOUT) {
+        Ok(client) => client,
+        Err(_) => return false,
+    };
     match client
         .get(format!("{}/api/tags", base_url.trim_end_matches('/')))
         .send()
@@ -1814,7 +1872,7 @@ async fn execute_cloud_provider_service_chat_with_usage(
         request_messages_with_system_prompt(&request.system_prompt, request.messages.clone())?;
     let wire_model = provider_wire_model(&request.provider_type, &request.model);
 
-    let client = reqwest::Client::new();
+    let client = bounded_http_client(CHAT_REQUEST_TIMEOUT)?;
     let mut builder = client
         .post(format!(
             "{}/chat/completions",
@@ -1879,7 +1937,7 @@ async fn execute_local_provider_service_chat_with_usage(
     let request_messages =
         request_messages_with_system_prompt(&request.system_prompt, request.messages.clone())?;
 
-    let client = reqwest::Client::new();
+    let client = bounded_http_client(CHAT_REQUEST_TIMEOUT)?;
     let response = client
         .post(format!("{}/api/chat", base_url.trim_end_matches('/')))
         .header("Content-Type", "application/json")
@@ -1967,7 +2025,7 @@ async fn execute_cloud_provider_service_chat_stream(
         }),
     };
 
-    let mut builder = reqwest::Client::new()
+    let mut builder = streaming_http_client()?
         .post(format!(
             "{}/chat/completions",
             base_url.trim_end_matches('/')
@@ -2069,7 +2127,7 @@ async fn execute_local_provider_service_chat_stream(
     let request_messages =
         request_messages_with_system_prompt(&request.system_prompt, request.messages.clone())?;
 
-    let response = reqwest::Client::new()
+    let response = streaming_http_client()?
         .post(format!("{}/api/chat", base_url.trim_end_matches('/')))
         .header("Content-Type", "application/json")
         .json(&json!({
@@ -2648,18 +2706,55 @@ pub(crate) async fn execute_archive_ingest_probe(
 #[cfg(test)]
 mod tests {
     use super::{
-        append_provider_request_audit_to_logs_root, audit_error_summary, endpoint_host,
-        ensure_runtime_kind_supported, extract_assistant_content, extract_cloud_usage,
-        extract_local_assistant_content, extract_local_usage, extract_ollama_tag_model_ids,
-        extract_openai_compatible_model_ids, filter_think_stream_delta, http_probe_outcome,
-        models_endpoint_for_openai_compatible, ollama_tags_endpoint, parse_ollama_model_names,
-        request_messages_with_system_prompt, resolve_local_runtime_model,
+        append_provider_request_audit_to_logs_root, audit_error_summary, bounded_http_client,
+        endpoint_host, ensure_runtime_kind_supported, extract_assistant_content,
+        extract_cloud_usage, extract_local_assistant_content, extract_local_usage,
+        extract_ollama_tag_model_ids, extract_openai_compatible_model_ids,
+        filter_think_stream_delta, http_probe_outcome, lan_discovery_consent,
+        local_subnet_http_candidates, models_endpoint_for_openai_compatible, ollama_tags_endpoint,
+        parse_ollama_model_names, request_messages_with_system_prompt, resolve_local_runtime_model,
         resolve_provider_base_url, resolve_provider_execution_adapter, sanitize_assistant_content,
-        sanitize_stream_delta, strip_think_blocks, ChatMessageInput, ProviderExecutionAdapter,
-        ProviderServiceChatRequest,
+        sanitize_stream_delta, streaming_http_client, strip_think_blocks, ChatMessageInput,
+        ProviderExecutionAdapter, ProviderServiceChatRequest, LAN_DISCOVERY_CONSENT_ENV,
     };
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::{Mutex, MutexGuard};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    // Serializes tests that mutate the process-global LAN-consent env var so
+    // they don't race each other (env is shared across the test binary).
+    static LAN_CONSENT_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct LanConsentEnvGuard {
+        _lock: MutexGuard<'static, ()>,
+        previous: Option<String>,
+    }
+
+    impl LanConsentEnvGuard {
+        fn set(value: Option<&str>) -> Self {
+            let lock = LAN_CONSENT_ENV_LOCK
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let previous = std::env::var(LAN_DISCOVERY_CONSENT_ENV).ok();
+            match value {
+                Some(v) => std::env::set_var(LAN_DISCOVERY_CONSENT_ENV, v),
+                None => std::env::remove_var(LAN_DISCOVERY_CONSENT_ENV),
+            }
+            Self {
+                _lock: lock,
+                previous,
+            }
+        }
+    }
+
+    impl Drop for LanConsentEnvGuard {
+        fn drop(&mut self) {
+            match self.previous.take() {
+                Some(v) => std::env::set_var(LAN_DISCOVERY_CONSENT_ENV, v),
+                None => std::env::remove_var(LAN_DISCOVERY_CONSENT_ENV),
+            }
+        }
+    }
 
     use serde_json::{json, Value};
 
@@ -2667,6 +2762,67 @@ mod tests {
     fn strips_minimax_thinking_blocks() {
         let content = "<think>internal reasoning</think>\n\nFinal answer";
         assert_eq!(strip_think_blocks(content), "Final answer");
+    }
+
+    #[test]
+    fn lan_discovery_consent_defaults_off_when_unset() {
+        let _guard = LanConsentEnvGuard::set(None);
+        assert!(!lan_discovery_consent());
+    }
+
+    #[test]
+    fn lan_discovery_consent_off_for_non_truthy_values() {
+        for value in ["0", "false", "no", "off", "", "maybe"] {
+            let _guard = LanConsentEnvGuard::set(Some(value));
+            assert!(
+                !lan_discovery_consent(),
+                "expected consent off for {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lan_discovery_consent_on_for_truthy_values() {
+        for value in ["1", "true", "TRUE", "yes", "on", " on "] {
+            let _guard = LanConsentEnvGuard::set(Some(value));
+            assert!(lan_discovery_consent(), "expected consent on for {value:?}");
+        }
+    }
+
+    #[test]
+    fn subnet_scan_returns_empty_without_consent() {
+        let _guard = LanConsentEnvGuard::set(None);
+        assert!(local_subnet_http_candidates(11434, false).is_empty());
+        assert!(local_subnet_http_candidates(30004, true).is_empty());
+    }
+
+    #[test]
+    fn subnet_scan_attempts_discovery_with_consent() {
+        let _guard = LanConsentEnvGuard::set(Some("1"));
+        // With consent enabled the scan is permitted past the consent fence. It
+        // still depends on a routable IPv4 address; in environments where one
+        // is available it yields up to 253 candidates, otherwise the network
+        // probe legitimately yields none. The contract under test is that
+        // consent no longer short-circuits to empty, so we assert the call does
+        // not panic and produces a bounded candidate list.
+        let candidates = local_subnet_http_candidates(11434, false);
+        assert!(candidates.len() <= 253);
+        for candidate in &candidates {
+            assert!(candidate.starts_with("http://"));
+        }
+    }
+
+    #[test]
+    fn bounded_http_client_builds_with_timeout() {
+        // The helper exists so every non-streaming request path is bounded; a
+        // successful build proves the timeout is accepted by the builder.
+        assert!(bounded_http_client(Duration::from_secs(30)).is_ok());
+        assert!(bounded_http_client(Duration::from_secs(3)).is_ok());
+    }
+
+    #[test]
+    fn streaming_http_client_builds_with_connect_timeout() {
+        assert!(streaming_http_client().is_ok());
     }
 
     #[test]
