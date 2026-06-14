@@ -879,14 +879,17 @@ export const archiveAutomationPolicy: ArchiveAutomationPolicy = {
   aiMemoryBuilds: "off",
 };
 
+// P1-e: do not trust by omission. A bundled manifest with NO provenance is
+// marked dev/internal/unreviewed (sideloaded-unverified / unverified) rather than
+// silently defaulting to curated-signed / verified.
 const defaultProvenanceTier = (manifest: AddOnManifest, source: AddOnInstallation["source"]): AddOnInstallation["provenanceTier"] =>
-  source === "sideload" ? "sideloaded-unverified" : (manifest.provenance?.tier ?? "curated-signed");
+  source === "sideload" || !manifest.provenance ? "sideloaded-unverified" : (manifest.provenance.tier ?? "curated-signed");
 
 const defaultVerificationState = (
   manifest: AddOnManifest,
   source: AddOnInstallation["source"],
 ): AddOnInstallation["verificationState"] =>
-  source === "sideload" ? "unverified" : (manifest.provenance?.verificationState ?? "verified");
+  source === "sideload" || !manifest.provenance ? "unverified" : (manifest.provenance.verificationState ?? "verified");
 
 export const createDefaultInstallation = (manifest: AddOnManifest, source: AddOnInstallation["source"]): AddOnInstallation => ({
   addonId: manifest.id,
