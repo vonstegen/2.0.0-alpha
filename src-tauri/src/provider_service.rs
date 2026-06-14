@@ -180,29 +180,58 @@ fn prompt_for_codex_subscription(
     Ok(sections.join("\n\n"))
 }
 
-fn execute_codex_subscription_chat_with_usage(
-    request: &ProviderServiceChatRequest,
-) -> Result<ProviderServiceChatResponse, String> {
-    let output_path = codex_output_path();
-    let prompt = prompt_for_codex_subscription(&request.system_prompt, &request.messages)?;
-    let output = codex_command_builder()
+/// Build the `codex exec` command for a subscription chat. The prompt argument
+/// is `-`, which tells codex to read the prompt from stdin, so the prompt text
+/// is never placed on the child argv.
+fn build_codex_exec_command(output_path: &Path, model: &str, reasoning_effort: &str) -> Command {
+    let mut command = codex_command_builder();
+    command
         .args([
             "exec",
             "--full-auto",
             "--skip-git-repo-check",
             "-m",
-            &request.model,
+            model,
             "-c",
-            &format!(
-                "model_reasoning_effort={}",
-                codex_reasoning_effort(&request.reasoning_effort)
-            ),
+            &format!("model_reasoning_effort={reasoning_effort}"),
             "-o",
         ])
-        .arg(&output_path)
-        .arg(prompt)
-        .stdin(Stdio::null())
-        .output()
+        .arg(output_path)
+        .arg("-");
+    command
+}
+
+fn execute_codex_subscription_chat_with_usage(
+    request: &ProviderServiceChatRequest,
+) -> Result<ProviderServiceChatResponse, String> {
+    let output_path = codex_output_path();
+    let prompt = prompt_for_codex_subscription(&request.system_prompt, &request.messages)?;
+    // Keep the full user prompt off the child argv (visible via /proc, ps,
+    // shell history). `codex exec` reads the prompt from stdin when the prompt
+    // argument is `-`, so we pipe the prompt instead of inlining it as an arg.
+    let mut command = build_codex_exec_command(
+        &output_path,
+        &request.model,
+        codex_reasoning_effort(&request.reasoning_effort),
+    );
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Failed to run Codex subscription provider: {error}"))?;
+    {
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "Codex subscription stdin was not available.".to_string())?;
+        stdin
+            .write_all(prompt.as_bytes())
+            .map_err(|error| format!("Failed to send Codex subscription prompt: {error}"))?;
+        // Dropping stdin closes the pipe so codex sees EOF and starts work.
+    }
+    let output = child
+        .wait_with_output()
         .map_err(|error| format!("Failed to run Codex subscription provider: {error}"))?;
     let content = fs::read_to_string(&output_path).unwrap_or_default();
     let _ = fs::remove_file(&output_path);
@@ -2648,20 +2677,53 @@ pub(crate) async fn execute_archive_ingest_probe(
 #[cfg(test)]
 mod tests {
     use super::{
-        append_provider_request_audit_to_logs_root, audit_error_summary, endpoint_host,
-        ensure_runtime_kind_supported, extract_assistant_content, extract_cloud_usage,
-        extract_local_assistant_content, extract_local_usage, extract_ollama_tag_model_ids,
-        extract_openai_compatible_model_ids, filter_think_stream_delta, http_probe_outcome,
-        models_endpoint_for_openai_compatible, ollama_tags_endpoint, parse_ollama_model_names,
-        request_messages_with_system_prompt, resolve_local_runtime_model,
-        resolve_provider_base_url, resolve_provider_execution_adapter, sanitize_assistant_content,
-        sanitize_stream_delta, strip_think_blocks, ChatMessageInput, ProviderExecutionAdapter,
-        ProviderServiceChatRequest,
+        append_provider_request_audit_to_logs_root, audit_error_summary, build_codex_exec_command,
+        endpoint_host, ensure_runtime_kind_supported, extract_assistant_content,
+        extract_cloud_usage, extract_local_assistant_content, extract_local_usage,
+        extract_ollama_tag_model_ids, extract_openai_compatible_model_ids,
+        filter_think_stream_delta, http_probe_outcome, models_endpoint_for_openai_compatible,
+        ollama_tags_endpoint, parse_ollama_model_names, request_messages_with_system_prompt,
+        resolve_local_runtime_model, resolve_provider_base_url, resolve_provider_execution_adapter,
+        sanitize_assistant_content, sanitize_stream_delta, strip_think_blocks, ChatMessageInput,
+        ProviderExecutionAdapter, ProviderServiceChatRequest,
     };
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use serde_json::{json, Value};
+
+    /// Mirrors the no-argv-secret rule set: the codex prompt must not appear as
+    /// an argv value (it is piped via stdin, with `-` as the prompt marker).
+    #[test]
+    fn codex_exec_command_keeps_prompt_off_argv() {
+        let secret_prompt = "SECRET-USER-PROMPT-do-not-leak-on-argv";
+        let command = build_codex_exec_command(
+            std::path::Path::new("/tmp/codex-out.json"),
+            "gpt-test",
+            "high",
+        );
+        let args: Vec<String> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect();
+        assert!(
+            args.iter().all(|arg| !arg.contains(secret_prompt)),
+            "codex argv must not contain the prompt text: {args:?}"
+        );
+        // The prompt position is the stdin marker, never inline prompt content.
+        assert_eq!(
+            args.last().map(String::as_str),
+            Some("-"),
+            "codex prompt argument must be the stdin marker `-`: {args:?}"
+        );
+        // No value flag carries the prompt inline.
+        for flag in ["-p", "--prompt", "-q"] {
+            assert!(
+                !args.iter().any(|arg| arg == flag),
+                "codex argv must not use an inline prompt flag {flag}: {args:?}"
+            );
+        }
+    }
 
     #[test]
     fn strips_minimax_thinking_blocks() {
