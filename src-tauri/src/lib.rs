@@ -13,6 +13,7 @@ mod opencode_service;
 mod paperclip_service;
 mod provider_service;
 mod recovery_service;
+mod scoped_env;
 mod telegram_service;
 mod terminal_service;
 

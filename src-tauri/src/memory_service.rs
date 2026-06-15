@@ -13,6 +13,8 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+use crate::scoped_env::apply_scoped_env;
+
 use crate::host_state::ensure_portable_user_state;
 
 const DEFAULT_MEMORY_SERVICE_PORT: u16 = 4888;
@@ -181,7 +183,8 @@ pub(crate) fn start_memory_service(
         sessions.remove(&session_id);
     }
 
-    let child = Command::new(resolve_node_binary())
+    let mut command = Command::new(resolve_node_binary());
+    command
         .arg(&script)
         .arg("--memory-root")
         .arg(&portable_state.memory_root)
@@ -192,7 +195,9 @@ pub(crate) fn start_memory_service(
         .args(if readonly { vec!["--readonly"] } else { vec![] })
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    apply_scoped_env(&mut command, "memory");
+    let child = command
         .spawn()
         .map_err(|error| format!("Failed to start Living Archive memory service: {error}"))?;
     let pid = child.id();

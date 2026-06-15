@@ -17,6 +17,7 @@ use tauri::{AppHandle, Emitter, Window};
 use crate::host_state::{
     ensure_portable_user_state, read_runtime_state_value, resolve_provider_secret,
 };
+use crate::scoped_env::apply_scoped_env;
 
 static ABORTED_CHAT_RUNS: LazyLock<Mutex<HashSet<String>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
@@ -121,6 +122,10 @@ fn codex_command_path() -> String {
 
 fn codex_command_builder() -> Command {
     let mut command = Command::new(codex_command());
+    // Scoped-env (opt-in) clears inherited env first; set the pinned PATH AFTER so
+    // it survives the clear. When scoped-env is OFF this is an unchanged no-op and
+    // the pinned PATH still prepends the ambient PATH tail as before.
+    apply_scoped_env(&mut command, "codex");
     command.env("PATH", codex_command_path());
     command
 }
@@ -1269,14 +1274,15 @@ async fn ensure_local_runtime_ready(base_url: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    Command::new("ollama")
+    let mut serve_command = Command::new("ollama");
+    serve_command
         .arg("serve")
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| {
-            format!("Failed to launch local runtime service via `ollama serve`: {error}")
-        })?;
+        .stderr(Stdio::null());
+    apply_scoped_env(&mut serve_command, "ollama");
+    serve_command.spawn().map_err(|error| {
+        format!("Failed to launch local runtime service via `ollama serve`: {error}")
+    })?;
 
     for _ in 0..10 {
         thread::sleep(Duration::from_millis(400));
@@ -1293,25 +1299,30 @@ pub(crate) fn query_local_runtime_status(target_model: Option<String>) -> LocalR
         resolve_local_runtime_model(target_model.as_deref().unwrap_or("local/creative"))
             .to_string();
 
-    let (available, installed_models, ollama_list_raw) =
-        match Command::new("ollama").arg("list").output() {
-            Ok(output) if output.status.success() => {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                (true, parse_ollama_model_names(&stdout), stdout)
-            }
-            Ok(output) => (
-                false,
-                Vec::new(),
-                String::from_utf8_lossy(&output.stderr).to_string(),
-            ),
-            Err(error) => (
-                false,
-                Vec::new(),
-                format!("Failed to run `ollama list`: {error}"),
-            ),
-        };
+    let mut list_command = Command::new("ollama");
+    list_command.arg("list");
+    apply_scoped_env(&mut list_command, "ollama");
+    let (available, installed_models, ollama_list_raw) = match list_command.output() {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            (true, parse_ollama_model_names(&stdout), stdout)
+        }
+        Ok(output) => (
+            false,
+            Vec::new(),
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        ),
+        Err(error) => (
+            false,
+            Vec::new(),
+            format!("Failed to run `ollama list`: {error}"),
+        ),
+    };
 
-    let (running_models, ollama_ps_raw) = match Command::new("ollama").arg("ps").output() {
+    let mut ps_command = Command::new("ollama");
+    ps_command.arg("ps");
+    apply_scoped_env(&mut ps_command, "ollama");
+    let (running_models, ollama_ps_raw) = match ps_command.output() {
         Ok(output) if output.status.success() => {
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             (parse_ollama_model_names(&stdout), stdout)

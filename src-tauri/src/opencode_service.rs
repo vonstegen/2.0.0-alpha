@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
+
+use crate::scoped_env::apply_scoped_env;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -159,9 +161,9 @@ pub(crate) fn query_opencode_status() -> OpenCodeStatus {
             command
                 .arg("--version")
                 .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
-                .ok()
+                .stderr(Stdio::piped());
+            apply_scoped_env(&mut command, "opencode");
+            command.output().ok()
         })
         .and_then(|output| {
             if output.status.success() {
@@ -228,7 +230,8 @@ pub(crate) fn start_opencode_service(
 
     let mode_arg = opencode_command_arg_for_mode(&mode);
     let trust_kernel = start_trust_kernel_advisory(&workspace, &session_id, mode_arg);
-    let child = Command::new(&binary)
+    let mut command = Command::new(&binary);
+    command
         .arg(mode_arg)
         .arg("--hostname")
         .arg(OPENCODE_HOSTNAME)
@@ -243,7 +246,9 @@ pub(crate) fn start_opencode_service(
         .current_dir(&workspace)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    apply_scoped_env(&mut command, "opencode");
+    let child = command
         .spawn()
         .map_err(|error| format!("Failed to start OpenCode {mode_arg} with {binary}: {error}"))?;
     let pid = child.id();
@@ -703,12 +708,15 @@ fn build_trust_hook_event_args(
 }
 
 fn run_trust_kernel_command(root: &Path, args: &[&str]) -> Result<String, String> {
-    let mut child = Command::new("uv")
+    let mut command = Command::new("uv");
+    command
         .args(args)
         .current_dir(root)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    apply_scoped_env(&mut command, "opencode");
+    let mut child = command
         .spawn()
         .map_err(|error| format!("Failed to start Trust Kernel advisory command: {error}"))?;
     let deadline = Instant::now() + TRUST_KERNEL_COMMAND_TIMEOUT;
@@ -808,10 +816,13 @@ fn resolve_opencode_binary() -> Option<String> {
     } else {
         ("which", vec!["opencode"])
     };
-    Command::new(command.0)
+    let mut which_command = Command::new(command.0);
+    which_command
         .args(command.1)
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    apply_scoped_env(&mut which_command, "opencode");
+    which_command
         .output()
         .ok()
         .filter(|output| output.status.success())
