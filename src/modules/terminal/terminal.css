@@ -25,14 +25,14 @@
   gap: 0.35rem;
   min-width: 0;
   padding: 0.42rem 0.55rem 0;
-  border-bottom: 1px solid rgba(255, 248, 236, 0.08);
+  border-bottom: 1px solid var(--surface-tint-md);
   background: #141817;
 }
 
 .terminal-tab,
 .terminal-tab-add {
   min-height: 34px;
-  border: 1px solid rgba(255, 248, 236, 0.08);
+  border: 1px solid var(--surface-tint-md);
   border-bottom: 0;
   border-radius: 10px 10px 0 0;
   background: rgba(255, 248, 236, 0.055);
@@ -177,7 +177,7 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 0.85rem 1rem;
-  border-bottom: 1px solid rgba(255, 248, 236, 0.08);
+  border-bottom: 1px solid var(--surface-tint-md);
   background: #141817;
 }
 
