@@ -268,6 +268,67 @@ describe("engine dispatch", () => {
     expect(getEngineDevice()).toBe(null);
     await disposeEngine();
   });
+
+  it("falls back to Parakeet when engineSelection='auto' and Whisper init fails", async () => {
+    const calls: string[] = [];
+    let firstWorkerReady = false;
+    // First call (whisper) simulates init failure; second call (parakeet) succeeds.
+    await preloadEngine({
+      ...engineOptions,
+      createWorker: (kind) => {
+        calls.push(kind);
+        const w = new FakeWorker("blob:fake", { type: "module" }) as unknown as FakeWorker;
+        if (kind === "whisper") {
+          // Override postMessage to emit an init error.
+          w.postMessage = (msg) => {
+            if (msg?.type === "init") {
+              queueMicrotask(() => {
+                w.emitMessage({ type: "error", id: -1, message: "whisper init failed" });
+              });
+            }
+          };
+        } else {
+          w.postMessage = (msg) => {
+            if (msg?.type === "init" && !firstWorkerReady) {
+              firstWorkerReady = true;
+              queueMicrotask(() => {
+                w.emitMessage({ type: "ready", device: undefined });
+              });
+            }
+          };
+        }
+        return w as unknown as Worker;
+      },
+      engineSelection: "auto",
+    });
+    expect(calls).toEqual(["whisper", "parakeet"]);
+    expect(getEngineKind()).toBe("parakeet");
+    await disposeEngine();
+  });
+
+  it("does not fall back when engineSelection='whisper' and Whisper init fails", async () => {
+    const calls: string[] = [];
+    await expect(
+      preloadEngine({
+        ...engineOptions,
+        createWorker: (kind) => {
+          calls.push(kind);
+          const w = new FakeWorker("blob:fake", { type: "module" }) as unknown as FakeWorker;
+          w.postMessage = (msg) => {
+            if (msg?.type === "init") {
+              queueMicrotask(() => {
+                w.emitMessage({ type: "error", id: -1, message: "whisper init failed" });
+              });
+            }
+          };
+          return w as unknown as Worker;
+        },
+        engineSelection: "whisper",
+      }),
+    ).rejects.toThrow(/whisper init failed/);
+    expect(calls).toEqual(["whisper"]);
+    await disposeEngine();
+  });
 });
 
 describe("transcribe()", () => {
