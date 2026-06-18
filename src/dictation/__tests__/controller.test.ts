@@ -198,16 +198,34 @@ describe("engine dispatch", () => {
     expect(getEngineKind()).toBe("parakeet");
   });
 
-  it("rejects with a clear error when kind is anything other than 'parakeet'", async () => {
-    // Whisper fallback was attempted in WIP commits 641d3bb and 5fd50a3.
-    // The q8 export had a decoder quant-scale incompatibility; the
-    // fp16 export hung silently. Same shape as the parakeet int4/int8
-    // failures earlier. Stage 2 was reverted; the dispatcher exists
-    // but only 'parakeet' is implemented. The Settings UI (Stage 4)
-    // is now a "future" task and shouldn't offer Whisper selection.
-    await expect(
-      preloadEngine({ ...engineOptions, kind: "whisper" }),
-    ).rejects.toThrow(/not implemented/i);
+  it("calls createWorker with kind='whisper' when engineSelection='whisper'", async () => {
+    const calls: string[] = [];
+    await preloadEngine({
+      ...engineOptions,
+      createWorker: (kind: string) => {
+        calls.push(kind);
+        return new FakeWorker("blob:fake", { type: "module" }) as unknown as Worker;
+      },
+      engineSelection: "whisper",
+    });
+    expect(calls).toEqual(["whisper"]);
+    expect(getEngineKind()).toBe("whisper");
+    await disposeEngine();
+  });
+
+  it("calls createWorker with kind='parakeet' when engineSelection='parakeet'", async () => {
+    const calls: string[] = [];
+    await preloadEngine({
+      ...engineOptions,
+      createWorker: (kind: string) => {
+        calls.push(kind);
+        return new FakeWorker("blob:fake", { type: "module" }) as unknown as Worker;
+      },
+      engineSelection: "parakeet",
+    });
+    expect(calls).toEqual(["parakeet"]);
+    expect(getEngineKind()).toBe("parakeet");
+    await disposeEngine();
   });
 
   it("resets the kind on dispose so the next preload starts clean", async () => {

@@ -65,12 +65,13 @@ export const MODEL_URLS = Object.freeze({
 
 /**
  * @typedef {Object} EngineOptions
- * @property {() => Worker} createWorker Returns a fresh module Web Worker
- *   for the chosen engine kind.
- * @property {DictationEngineKind} [kind="parakeet"] Which on-device ASR
- *   engine to load. Defaults to `"parakeet"` (NVIDIA Parakeet TDT 0.6B v3
- *   int8 via parakeet.js). The Whisper fallback (`"whisper"`) loads
- *   Whisper base multilingual q8 via @huggingface/transformers.
+ * @property {(kind: DictationEngineKind) => Worker} createWorker Returns a
+ *   fresh module Web Worker for the chosen engine kind.
+ * @property {("auto" | "whisper" | "parakeet")} [engineSelection="auto"]
+ *   Which on-device ASR engine to load. `"auto"` tries Whisper first and
+ *   falls back to Parakeet on init failure or 60s timeout. `"whisper"`
+ *   loads Whisper base multilingual q8 via @huggingface/transformers.
+ *   `"parakeet"` loads NVIDIA Parakeet TDT 0.6B v3 int8 via parakeet.js.
  * @property {string | null} [wasmPaths] Optional path to onnxruntime-web WASM
  *   blobs. When omitted, parakeet.js falls back to the jsDelivr CDN. Pass
  *   `/dictation/ort-wasm/` to keep WASM blobs same-origin.
@@ -93,11 +94,48 @@ let initPromise = null;
 /** Currently-loaded engine kind. Default "parakeet"; the Whisper fallback
  * is wired in Stage 2. */
 let currentKind = "parakeet";
+/** Currently-loaded engine device. Whisper reports this in `ready`; null for Parakeet. */
+let currentDevice = null;
 let nextRequestId = 1;
 /** @type {Map<number, { resolve: (text: string) => void, reject: (error: Error) => void, partialHandler: ((text: string) => void) | null }>} */
 const pending = new Map();
 /** @type {Map<string, number>} Map sessionId → nextRequestId for partial lookups. */
 const sessionIdToLastChunkId = new Map();
+
+/** @type {Set<(message: string) => void>} */
+const noticeSubscribers = new Set();
+
+/**
+ * Emit a notice event to all subscribers. Used for engine-level signals
+ * like the Auto-fallback notice.
+ *
+ * @param {string} message
+ */
+function emitNotice(message) {
+  for (const cb of noticeSubscribers) {
+    try { cb(message); } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Subscribe to engine notice events (engine-level signals, not worker errors).
+ *
+ * @param {(message: string) => void} cb
+ * @returns {() => void}
+ */
+export function subscribeEngineNotices(cb) {
+  noticeSubscribers.add(cb);
+  return () => noticeSubscribers.delete(cb);
+}
+
+/**
+ * Currently-loaded engine device. Synchronous read.
+ *
+ * @returns {"webgpu" | "wasm" | null}
+ */
+export function getEngineDevice() {
+  return currentDevice;
+}
 
 function setState(next, message = null) {
   state = next;
@@ -193,7 +231,9 @@ function teardown() {
 
 /**
  * Idempotent. Resolves once the worker reports `ready`, or rejects if the
- * engine fails to initialise.
+ * engine fails to initialise. In `"auto"` mode, Whisper init failure (or 60s
+ * timeout) triggers an internal re-spawn with Parakeet, which is announced
+ * via the `notice` event.
  *
  * @param {EngineOptions} options
  * @returns {Promise<void>}
@@ -202,58 +242,123 @@ export function preload(options) {
   if (!options || typeof options.createWorker !== "function") {
     return Promise.reject(new Error("Engine preload requires a createWorker() factory."));
   }
-  const kind = options.kind ?? "parakeet";
-  if (kind !== "parakeet") {
-    return Promise.reject(
-      new Error(
-        `Dictation engine "${kind}" is not implemented. The only supported engine is "parakeet".`,
-      ),
-    );
-  }
+  const engineSelection = options.engineSelection ?? "auto";
   if (initPromise) return initPromise;
   if (state === "ready") return Promise.resolve();
   setState("loading");
-  currentKind = kind;
-  worker = options.createWorker();
-  worker.addEventListener("message", dispatchMessage);
-  worker.addEventListener("error", (event) => {
-    const message = (event && /** @type {any} */ (event).message) || "Dictation worker crashed.";
-    setState("error", String(message));
-    for (const [, entry] of pending) {
-      entry.reject(new Error(String(message)));
+
+  const startingKind = engineSelection === "parakeet" ? "parakeet" : "whisper";
+  currentKind = startingKind;
+  currentDevice = null;
+
+  const initTimeoutMs = engineSelection === "auto" ? 60_000 : 0;
+
+  initPromise = spawnAndInit({
+    kind: startingKind,
+    createWorker: options.createWorker,
+    wasmPaths: options.wasmPaths ?? null,
+    backend: options.backend ?? "webgpu-hybrid",
+    initTimeoutMs,
+  }).catch(async (error) => {
+    if (engineSelection !== "auto" || startingKind === "parakeet") {
+      // Explicit mode (or already on Parakeet): surface the error, no fallback.
+      setState("error", error instanceof Error ? error.message : String(error));
+      initPromise = null;
+      throw error;
     }
+    // Auto mode: fall back to Parakeet.
+    if (worker) { try { worker.terminate(); } catch { /* ignore */ } worker = null; }
     pending.clear();
     sessionIdToLastChunkId.clear();
-  });
-
-  initPromise = new Promise((resolve, reject) => {
-    const onReady = (/** @type {MessageEvent<WorkerOutbound>} */ event) => {
-      const data = event.data;
-      if (data?.type === "ready") {
-        worker?.removeEventListener("message", onReady);
-        resolve();
-      } else if (data?.type === "error" && data.id === -1) {
-        worker?.removeEventListener("message", onReady);
-        reject(new Error(data.message));
-      }
-    };
-    worker.addEventListener("message", onReady);
-    // The init message carries only the runtime config (backend,
-    // wasmPaths). The worker derives the model URLs from the
-    // istupakov/parakeet-tdt-0.6b-v3-onnx repo and resolves them
-    // through parakeet.js's `getModelFile` hub helper, which checks
-    // IndexedDB before hitting the network.
-    worker.postMessage({
-      type: "init",
-      wasmPaths: options.wasmPaths ?? null,
-      backend: options.backend ?? "webgpu-hybrid",
-    });
-  }).catch((error) => {
-    setState("error", error instanceof Error ? error.message : String(error));
-    initPromise = null;
-    throw error;
+    currentKind = "parakeet";
+    currentDevice = null;
+    setState("loading");
+    try {
+      await spawnAndInit({
+        kind: "parakeet",
+        createWorker: options.createWorker,
+        wasmPaths: options.wasmPaths ?? null,
+        backend: options.backend ?? "webgpu-hybrid",
+        initTimeoutMs: 0,
+      });
+      // Surface the fallback to subscribers. Use `setState("ready", msg)`
+      // to push the message to existing subscribers (Settings status line)
+      // AND emit a notice for the chat-notice side channel.
+      const fallbackMsg = "Whisper unavailable — using Parakeet (slower).";
+      setState("ready", fallbackMsg);
+      emitNotice(fallbackMsg);
+      return;
+    } catch (fallbackError) {
+      const msg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+      setState("error", `Whisper and Parakeet both failed. Last error: ${msg}`);
+      initPromise = null;
+      throw fallbackError;
+    }
   });
   return initPromise;
+}
+
+/**
+ * Spawn a worker of the given kind and resolve once it reports `ready`,
+ * or reject on init error / timeout.
+ *
+ * @param {{ kind: DictationEngineKind, createWorker: (kind: DictationEngineKind) => Worker, wasmPaths: string | null, backend: string, initTimeoutMs: number }} opts
+ * @returns {Promise<void>}
+ */
+function spawnAndInit(opts) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timeoutId = null;
+    if (opts.initTimeoutMs > 0) {
+      timeoutId = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        worker?.removeEventListener("message", onMessage);
+        reject(new Error(`Engine init timed out after ${opts.initTimeoutMs}ms.`));
+      }, opts.initTimeoutMs);
+    }
+    worker = opts.createWorker(opts.kind);
+    worker.addEventListener("message", dispatchMessage);
+    worker.addEventListener("error", (event) => {
+      const message = (event && /** @type {any} */ (event).message) || "Dictation worker crashed.";
+      if (!settled) {
+        settled = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        worker?.removeEventListener("message", onMessage);
+        reject(new Error(String(message)));
+      }
+      setState("error", String(message));
+    });
+
+    function onMessage(/** @type {MessageEvent<WorkerOutbound>} */ event) {
+      const data = event.data;
+      if (data?.type === "ready") {
+        if (settled) return;
+        settled = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        worker?.removeEventListener("message", onMessage);
+        // Capture the device the worker reported (Whisper only; Parakeet omits).
+        if (typeof data.device === "string") {
+          currentDevice = /** @type {"webgpu" | "wasm"} */ (data.device);
+        }
+        setState("ready");
+        resolve();
+      } else if (data?.type === "error" && data.id === -1) {
+        if (settled) return;
+        settled = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        worker?.removeEventListener("message", onMessage);
+        reject(new Error(data.message));
+      }
+    }
+    worker.addEventListener("message", onMessage);
+
+    worker.postMessage({
+      type: "init",
+      wasmPaths: opts.wasmPaths,
+      backend: opts.backend,
+    });
+  });
 }
 /**
  * Send PCM to the worker and resolve with the transcribed text. Throws if the
@@ -409,7 +514,9 @@ export function subscribeEngineState(cb) {
  */
 export async function dispose() {
   subscribers.clear();
+  noticeSubscribers.clear();
   teardown();
   currentKind = "parakeet";
+  currentDevice = null;
   setState("idle");
 }
