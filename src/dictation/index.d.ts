@@ -5,22 +5,27 @@ export type EngineState = "idle" | "loading" | "ready" | "error";
 
 export type DictationEngineKind = "parakeet" | "whisper";
 
+export type DictationEngineSelection = "auto" | "whisper" | "parakeet";
+
+export interface DictationSettings {
+  engineSelection?: DictationEngineSelection;
+  language?: string;
+  task?: "transcribe" | "translate";
+}
+
 export interface EngineOptions {
-  /** Returns a fresh module Web Worker. */
-  createWorker: () => Worker;
-  /**
-   * Which on-device ASR engine to load. Defaults to `"parakeet"`. The
-   * `"whisper"` fallback is not yet implemented; selecting it surfaces a
-   * notice.
-   */
-  kind?: DictationEngineKind;
+  /** Returns a fresh module Web Worker for the requested engine kind. */
+  createWorker: (kind: DictationEngineKind) => Worker;
+  /** Engine selection mode. Defaults to "auto". */
+  engineSelection?: DictationEngineSelection;
+  /** Returns the current settings snapshot; called per-transcribe. */
+  getDictationSettings?: () => DictationSettings;
   /** Optional path to onnxruntime-web WASM blobs (same-origin recommended). */
   wasmPaths?: string | null;
-  /**
-   * Preferred execution backend. Defaults to `'webgpu-hybrid'`. parakeet.js
-   * falls back to multithreaded WASM when WebGPU is not exposed.
-   */
+  /** Preferred execution backend for Parakeet. Ignored by Whisper. */
   backend?: "webgpu-hybrid" | "webgpu-strict" | "wasm";
+  /** Reserved for future use. */
+  streaming?: boolean;
 }
 
 export interface TextInsertionContext {
@@ -76,6 +81,7 @@ export function finalizeStream(sessionId: string): Promise<string>;
 export function cancelStream(sessionId: string): void;
 export function getEngineState(): EngineState;
 export function getEngineKind(): DictationEngineKind;
+export function getEngineDevice(): "webgpu" | "wasm" | null;
 export function getEngineMessage(): string | null;
 export function subscribeEngineState(
   cb: (state: EngineState, message: string | null) => void,

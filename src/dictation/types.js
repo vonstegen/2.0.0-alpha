@@ -21,6 +21,41 @@
  */
 
 /**
+ * @typedef {"auto" | "whisper" | "parakeet"} DictationEngineSelection
+ *   `"auto"` tries Whisper at preload and falls back to Parakeet if Whisper
+ *   init fails or times out (60s). `"whisper"` and `"parakeet"` force one
+ *   engine with no fallback.
+ */
+
+/**
+ * @typedef {Object} DictationSettings
+ * @property {DictationEngineSelection} [engineSelection="auto"]
+ * @property {string} [language="auto"] Whisper language code or `"auto"` for
+ *   auto-detect. Ignored by Parakeet (English-only model).
+ * @property {"transcribe" | "translate"} [task="transcribe"] Whisper task.
+ *   Ignored by Parakeet.
+ */
+
+/**
+ * @typedef {Object} EngineOptions
+ * @property {(kind: DictationEngineKind) => Worker} createWorker Returns a
+ *   fresh module Web Worker for the requested engine kind. The factory is
+ *   called once at preload; Auto mode calls it a second time with
+ *   `"parakeet"` if Whisper init fails.
+ * @property {DictationEngineSelection} [engineSelection="auto"] Engine
+ *   selection mode. Replaces the older `kind` field.
+ * @property {() => DictationSettings} [getDictationSettings] Returns the
+ *   current settings snapshot. Called at each `transcribe` to pick up
+ *   `language`/`task` changes without an engine reload.
+ * @property {string | null} [wasmPaths] Optional path to onnxruntime-web
+ *   WASM blobs.
+ * @property {"webgpu-hybrid" | "webgpu-strict" | "wasm"} [backend] Preferred
+ *   execution backend for Parakeet. Ignored by Whisper (Whisper auto-detects
+ *   WebGPU at the worker level).
+ * @property {boolean} [streaming] Reserved for future use.
+ */
+
+/**
  * @typedef {Object} EngineStatus
  * @property {EngineState} state
  * @property {string | null} message Optional human-readable detail (only set on `error`).
