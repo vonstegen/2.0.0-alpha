@@ -94,6 +94,7 @@ describe("SettingsWorkspace strategy planner", () => {
         onStartMemoryService={vi.fn()}
         onStopMemoryService={vi.fn()}
         onOpenLogicianAddOn={vi.fn()}
+        onUpdateDictation={vi.fn()}
       />,
     );
 
@@ -147,6 +148,7 @@ describe("SettingsWorkspace strategy planner", () => {
         onStartMemoryService={vi.fn()}
         onStopMemoryService={vi.fn()}
         onOpenLogicianAddOn={vi.fn()}
+        onUpdateDictation={vi.fn()}
       />,
     );
 
@@ -168,5 +170,59 @@ describe("SettingsWorkspace strategy planner", () => {
     expect(screen.getByText("Hook enforcement")).toBeTruthy();
     expect(screen.getByText("Evidence trust policy")).toBeTruthy();
     expect(screen.getByText("before-task-complete")).toBeTruthy();
+  });
+
+  it("persists dictation engineSelection, language, and task changes", () => {
+    const onUpdateDictation = vi.fn();
+    const state = buildDefaultState([]);
+
+    render(
+      <SettingsWorkspace
+        state={state}
+        manifests={[]}
+        settingsSection="dictation"
+        settingsNotice={null}
+        providerDiagnostics={[]}
+        providerDiagnosticsBusy={false}
+        activeProviderProbeId={null}
+        providerSmokeResults={{}}
+        providerSmokeBusyId={null}
+        providerDrafts={{}}
+        memoryServiceStatus={null}
+        memoryServiceBusy={false}
+        memoryServiceLastResult={null}
+        onSettingsSectionChange={vi.fn()}
+        onUpdateProvider={vi.fn()}
+        onCreateProvider={vi.fn()}
+        onUpdateWorkloadStrategy={vi.fn()}
+        onUpdateWorkloadStrategyRoute={vi.fn()}
+        onProviderDraftChange={vi.fn()}
+        onSaveProviderSecret={vi.fn()}
+        onProbeProvider={vi.fn()}
+        onProbeAllProviders={vi.fn()}
+        onSetupProvider={vi.fn()}
+        onSmokeTestProvider={vi.fn()}
+        onRefreshMemoryServiceStatus={vi.fn()}
+        onStartMemoryService={vi.fn()}
+        onStopMemoryService={vi.fn()}
+        onOpenLogicianAddOn={vi.fn()}
+        onUpdateDictation={onUpdateDictation}
+      />,
+    );
+
+    // Engine: click Whisper radio
+    const whisperRadio = screen.getByRole("radio", { name: /Whisper — faster/i });
+    fireEvent.click(whisperRadio);
+    expect(onUpdateDictation).toHaveBeenLastCalledWith({ engineSelection: "whisper" });
+
+    // Language: change dropdown to Spanish
+    const languageSelect = screen.getByLabelText("Language");
+    fireEvent.change(languageSelect, { target: { value: "es" } });
+    expect(onUpdateDictation).toHaveBeenLastCalledWith({ language: "es" });
+
+    // Task: click Translate radio
+    const translateRadio = screen.getByRole("radio", { name: /Translate \(output English\)/i });
+    fireEvent.click(translateRadio);
+    expect(onUpdateDictation).toHaveBeenLastCalledWith({ task: "translate" });
   });
 });

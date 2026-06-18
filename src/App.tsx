@@ -2787,6 +2787,12 @@ export function App() {
                   setSection("addons");
                   setSelectedAddonId("addon.logician");
                 }}
+                onUpdateDictation={(patch) =>
+                  commitReadyState({
+                    ...state,
+                    dictation: { ...state.dictation, ...patch },
+                  })
+                }
               />
             </Suspense>
           )}
