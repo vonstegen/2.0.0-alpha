@@ -158,6 +158,8 @@ self.addEventListener("message", async (event) => {
       });
       return;
     }
+    // Note: `data.language` and `data.task` are accepted but ignored.
+    // They're Whisper-specific options; Parakeet is English-only.
     try {
       const result = await model.transcribe(data.pcm, data.sampleRate, {
         returnTimestamps: false,
