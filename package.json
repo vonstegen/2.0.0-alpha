@@ -55,10 +55,10 @@
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.7.0",
     "@xterm/addon-fit": "^0.11.0",
-    "@huggingface/transformers": "^4.2.0",
+    "@huggingface/transformers": "^3.8.1",
     "@xterm/xterm": "^6.0.0",
     "meljs": "^1.0.0",
-    "onnxruntime-web": "^1.26.0",
+    "onnxruntime-web": "1.22.0-dev.20250409-89f8206ba4",
     "parakeet.js": "^1.4.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -80,6 +80,6 @@
     "vitest": "^4.1.7"
   },
   "overrides": {
-    "onnxruntime-web": "^1.26.0"
+    "onnxruntime-web": "1.22.0-dev.20250409-89f8206ba4"
   }
 }
