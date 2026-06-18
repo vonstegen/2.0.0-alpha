@@ -5,14 +5,18 @@
  * parakeet worker (`./worker.js`) so the engine singleton in
  * `engine.js` can swap workers without changing anything else.
  *
- * **Failure mode honesty:** Transformers.js + onnxruntime-web has the
- * same compatibility surface as parakeet.js + onnxruntime-web, and
- * parakeet.js took 7 fixes to get working in this environment. This
- * worker is provided as a fallback for users who hit issues with the
- * default Parakeet path. If Transformers.js fails to load (CSP, ORT
- * backend not found, model fetch error, etc.), the worker surfaces
- * a clear `error` message and stays unready; the engine reports the
- * error via the existing `Voice dictation failed: ...` notice.
+ * **Failure mode honesty:** The prior attempt failed with a
+ * `Missing required scale: model.decoder.embed_tokens.weight_merged_0_scale`
+ * error on every dtype. Root cause was two implementation bugs, not an
+ * architectural dead end: (1) the worker called `pipeline({ quantized: ... })`
+ * but transformers.js v3 dropped `quantized` after v2 — v3 uses `dtype`, so
+ * the `quantized` key was silently ignored and the default model file was
+ * loaded regardless of the requested dtype; (2) the worker loaded
+ * `onnx-community/whisper-base`, but the transformers.js reference app
+ * (whisper-word-timestamps) uses `onnx-community/whisper-base_timestamped` —
+ * the variant the transformers.js team actually tests and exports. The
+ * plain `whisper-base` q8 export has a broken DequantizeLinear scale; the
+ * `_timestamped` export doesn't.
  *
  * **Audio contract:** the host thread sends 16 kHz mono Float32Array
  * PCM (the existing `decodeBlobToMono16k` helper in `controller.js`
@@ -20,9 +24,9 @@
  * feature extraction internally.
  *
  * Message protocol (mirrors `./worker.js`):
- *   in:  { type: "init" }
- *   in:  { type: "transcribe", id, pcm, sampleRate }
- *   out: { type: "ready" }
+ *   in:  { type: "init" [, modelId, dtype] }
+ *   in:  { type: "transcribe", id, pcm, sampleRate [, language, task] }
+ *   out: { type: "ready", device }
  *   out: { type: "result", id, text }
  *   out: { type: "error", id, message }
  *
@@ -43,32 +47,38 @@ self.addEventListener("message", async (event) => {
 
   if (data.type === "init") {
     try {
-      // Tell transformers.js to use the onnxruntime-web wasm files we
-      // already serve at `/dictation/ort-wasm/`. This is the same
-      // directory parakeet.js uses, so both engines share the ORT
-      // runtime in the browser.
-      // The path is relative to the page origin (we set wasmPaths on
-      // the engine side; here we just configure cache + remote host).
       transformersEnv.allowLocalModels = false;
       transformersEnv.useFs = false;
 
-      // Default HF model. The q8 dtype keeps the on-device footprint
-      // at ~77 MB and works on every browser; WebGPU is a future
-      // optimization tracked separately.
-      const modelId = "Xenova/whisper-base";
-      const transcriberPromise = pipeline(
-        "automatic-speech-recognition",
-        modelId,
-        {
-          dtype: "q8",
-          device: "wasm",
-        },
-      );
-      transcriber = await transcriberPromise;
-      self.postMessage({ type: "ready" });
+      // Per-device dtype config matching the whisper-word-timestamps reference:
+      //   WebGPU -> { encoder_model: "fp32", decoder_model_merged: "q4" }
+      //   WASM    -> "q8"
+      // WebGPU auto-detect at the worker level — the user enables WebGPU at
+      // the browser level (chrome://flags/#enable-unsafe-webgpu on Linux, or
+      // stable Chrome with a discrete GPU). No manual WebGPU toggle in
+      // Settings.
+      const hasWebGPU =
+        typeof navigator !== "undefined" && "gpu" in navigator
+        && (await navigator.gpu.requestAdapter().catch(() => null)) != null;
+      const device = hasWebGPU ? "webgpu" : "wasm";
+      const defaultDtype = hasWebGPU
+        ? { encoder_model: "fp32", decoder_model_merged: "q4" }
+        : "q8";
+
+      // v3 API: dtype (not quantized — that was v2). The `data.dtype` override
+      // is a debug knob; the default is per-device.
+      const modelId = data.modelId ?? "onnx-community/whisper-base_timestamped";
+      transcriber = await pipeline("automatic-speech-recognition", modelId, {
+        dtype: data.dtype ?? defaultDtype,
+        device,
+        revision: "main",
+      });
+
+      // Report the chosen device to the engine so the Settings status line
+      // can show "(WebGPU)" or "(CPU)".
+      self.postMessage({ type: "ready", device });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // Stay unready. The engine surfaces the error.
       self.postMessage({
         type: "error",
         id: -1,
@@ -88,15 +98,20 @@ self.addEventListener("message", async (event) => {
       return;
     }
     try {
-      // transformers.js expects an AudioBuffer-like object or a
-      // Float32Array. We pass a Float32Array directly; the AutoProcessor
-      // resamples to 16 kHz if needed (we already do that in the
-      // controller, so this is a no-op for us).
-      const out = await transcriber(data.pcm, {
+      const opts = {
         chunk_length_s: 30,
         stride_length_s: 5,
         return_timestamps: false,
-      });
+        task: data.task ?? "transcribe",
+      };
+      // When language === "auto", OMIT the field entirely — transformers.js
+      // treats `language: "auto"` as the literal language code "auto", not
+      // as auto-detect. The only safe way to get Whisper's auto-detect is to
+      // leave the field unset.
+      if (data.language && data.language !== "auto") {
+        opts.language = data.language;
+      }
+      const out = await transcriber(data.pcm, opts);
       const text = typeof out?.text === "string" ? out.text : "";
       self.postMessage({ type: "result", id: data.id, text });
     } catch (error) {
