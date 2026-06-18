@@ -11,8 +11,10 @@ export {
   cancelStream,
   getEngineState,
   getEngineKind,
+  getEngineDevice,
   getEngineMessage,
   subscribeEngineState,
+  subscribeEngineNotices,
   dispose,
   MODEL_URLS,
 } from "./engine.js";

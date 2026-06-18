@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createDictationController,
   dispose as disposeEngine,
+  getEngineDevice,
   getEngineKind,
   getEngineState,
   isEditableTarget,
@@ -81,9 +82,10 @@ function makeButton() {
   return button;
 }
 
-/** @type {{ createWorker: () => Worker, wasmPaths: string }} */
+/** @type {{ createWorker: (kind: "parakeet" | "whisper") => Worker, engineSelection: "parakeet" | "whisper" | "auto", wasmPaths: string }} */
 const engineOptions = {
-  createWorker: () => new FakeWorker("blob:fake", { type: "module" }) as unknown as Worker,
+  createWorker: (_kind: "parakeet" | "whisper"): Worker => new FakeWorker("blob:fake", { type: "module" }) as unknown as Worker,
+  engineSelection: "parakeet" as "parakeet" | "whisper" | "auto",
   wasmPaths: "/dictation/ort-wasm/",
 };
 
@@ -235,6 +237,36 @@ describe("engine dispatch", () => {
     expect(getEngineKind()).toBe("parakeet");
     // (Reset to the default initial state. beforeEach re-preloads.)
     expect(getEngineState()).toBe("idle");
+  });
+
+  it("captures the device from the worker's ready message in getEngineDevice()", async () => {
+    await preloadEngine({
+      ...engineOptions,
+      engineSelection: "whisper",
+      createWorker: (_kind: "parakeet" | "whisper") => {
+        const w = new FakeWorker("blob:fake", { type: "module" }) as unknown as FakeWorker;
+        // Override postMessage to emit ready with a device field.
+        w.postMessage = (msg: unknown) => {
+          if (msg && typeof msg === "object" && (msg as { type?: string }).type === "init") {
+            queueMicrotask(() => {
+              w.emitMessage({ type: "ready", device: "webgpu" });
+            });
+          }
+        };
+        return w as unknown as Worker;
+      },
+    });
+    expect(getEngineDevice()).toBe("webgpu");
+    await disposeEngine();
+  });
+
+  it("returns null from getEngineDevice when the worker omits device in ready", async () => {
+    await preloadEngine({
+      ...engineOptions,
+      engineSelection: "parakeet",
+    });
+    expect(getEngineDevice()).toBe(null);
+    await disposeEngine();
   });
 });
 

@@ -91,8 +91,8 @@ const subscribers = new Set();
 let worker = null;
 /** @type {Promise<void> | null} */
 let initPromise = null;
-/** Currently-loaded engine kind. Default "parakeet"; the Whisper fallback
- * is wired in Stage 2. */
+/** Currently-loaded engine kind. Set from `engineSelection` at preload; Auto
+ * mode may switch this to "parakeet" if Whisper init fails. */
 let currentKind = "parakeet";
 /** Currently-loaded engine device. Whisper reports this in `ready`; null for Parakeet. */
 let currentDevice = null;
@@ -317,17 +317,25 @@ function spawnAndInit(opts) {
         reject(new Error(`Engine init timed out after ${opts.initTimeoutMs}ms.`));
       }, opts.initTimeoutMs);
     }
-    worker = opts.createWorker(opts.kind);
+    try {
+      worker = opts.createWorker(opts.kind);
+    } catch (err) {
+      if (timeoutId) clearTimeout(timeoutId);
+      reject(err instanceof Error ? err : new Error(String(err)));
+      return;
+    }
     worker.addEventListener("message", dispatchMessage);
     worker.addEventListener("error", (event) => {
       const message = (event && /** @type {any} */ (event).message) || "Dictation worker crashed.";
-      if (!settled) {
-        settled = true;
-        if (timeoutId) clearTimeout(timeoutId);
-        worker?.removeEventListener("message", onMessage);
-        reject(new Error(String(message)));
+      if (settled) {
+        // Post-init crash: surface as error.
+        setState("error", String(message));
+        return;
       }
-      setState("error", String(message));
+      settled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      worker?.removeEventListener("message", onMessage);
+      reject(new Error(String(message)));
     });
 
     function onMessage(/** @type {MessageEvent<WorkerOutbound>} */ event) {
