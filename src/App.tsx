@@ -615,22 +615,18 @@ export function App() {
     dictationControllerRef.current = controller;
 
     void preloadDictationEngine({
-      // Temporary test affordance for Stage 2 hand-debug: append
-      // `?engine=whisper` to the URL to select the Whisper worker.
-      // Stage 4 will replace this with a proper Settings section.
-      createWorker: () => {
-        const url = new URL(window.location.href);
-        const requested = url.searchParams.get("engine");
-        if (requested === "whisper") {
-          return new WhisperWorker();
-        }
-        return new DictationWorker();
-      },
-      kind:
-        new URL(window.location.href).searchParams.get("engine") === "whisper"
-          ? "whisper"
-          : "parakeet",
+      createWorker: (kind) =>
+        kind === "whisper" ? new WhisperWorker() : new DictationWorker(),
+      engineSelection:
+        currentReadyStateRef.current?.dictation?.engineSelection ?? "auto",
       wasmPaths: DEFAULT_ENGINE_WASM_PATHS,
+      // getDictationSettings is called at each stop() to pick up language/task
+      // changes without an engine reload. Reads from the ref so it always sees
+      // the current state, not the state captured at preload time.
+      getDictationSettings: () => ({
+        language: currentReadyStateRef.current?.dictation?.language ?? "auto",
+        task: currentReadyStateRef.current?.dictation?.task ?? "transcribe",
+      }),
     }).catch((error) => {
       setChatNotice(
         error instanceof Error
