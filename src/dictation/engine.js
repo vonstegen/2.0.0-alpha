@@ -374,16 +374,21 @@ function spawnAndInit(opts) {
  *
  * @param {Float32Array} pcm
  * @param {number} [sampleRate=16000]
+ * @param {{ language?: string, task?: "transcribe" | "translate" }} [opts]
+ *   Per-utterance Whisper options. Ignored by Parakeet.
  * @returns {Promise<string>}
  */
-export function transcribe(pcm, sampleRate = 16000) {
+export function transcribe(pcm, sampleRate = 16000, opts = {}) {
   if (state !== "ready" || !worker) {
     return Promise.reject(new Error("Dictation engine is not ready."));
   }
   const id = nextRequestId++;
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject, partialHandler: null });
-    worker.postMessage({ type: "transcribe", id, pcm, sampleRate }, [pcm.buffer]);
+    worker.postMessage(
+      { type: "transcribe", id, pcm, sampleRate, language: opts.language, task: opts.task },
+      [pcm.buffer],
+    );
   });
 }
 

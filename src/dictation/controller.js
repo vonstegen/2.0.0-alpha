@@ -40,6 +40,9 @@ const DEFAULT_WASM_PATHS = "/dictation/ort-wasm/";
  * @property {HTMLElement} [button]
  * @property {ControllerCallbacks} [callbacks]
  * @property {(target: Element | null) => boolean} [isEditableTarget]
+ * @property {() => { language?: string, task?: "transcribe" | "translate" }} [getDictationSettings]
+ *   Returns the current per-utterance settings. Called at each `stop()` so
+ *   changes take effect without an engine reload.
  */
 
 /**
@@ -72,6 +75,7 @@ export function createDictationController(input = {}) {
     : () => input.input ?? null;
   const callbacks = input.callbacks ?? {};
   const isEditable = input.isEditableTarget ?? isEditableTarget;
+  const getDictationSettings = input.getDictationSettings ?? (() => ({}));
 
   /** @type {MediaStream | null} */
   let stream = null;
@@ -292,7 +296,11 @@ export function createDictationController(input = {}) {
     try {
       const pcm = await decodeBlobToMono16k(blob);
       if (pcm.length === 0) return;
-      const text = await transcribe(pcm, 16_000);
+      const settings = getDictationSettings() ?? {};
+      const text = await transcribe(pcm, 16_000, {
+        language: settings.language,
+        task: settings.task,
+      });
       if (text && text.trim()) {
         callbacks.onText?.(text, localStartContext);
       }

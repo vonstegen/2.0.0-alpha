@@ -47,6 +47,8 @@ export interface CreateControllerInput {
   button?: HTMLElement | null;
   callbacks?: ControllerCallbacks;
   isEditableTarget?: (target: Element | null) => boolean;
+  /** Returns the current per-utterance settings; called at each stop(). */
+  getDictationSettings?: () => { language?: string; task?: "transcribe" | "translate" };
 }
 
 export interface DictationController {

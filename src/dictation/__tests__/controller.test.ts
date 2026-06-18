@@ -752,3 +752,222 @@ describe("createDictationController full record→transcribe pipeline", () => {
 // Reference `vi` so the import isn't flagged as unused if a future test
 // needs to add spies.
 vi.fn();
+
+describe("language/task plumbing", () => {
+  /**
+   * Drives a start→stop cycle with fakes for getUserMedia/MediaRecorder/
+   * AudioContext (mirrors runEndToEndPipeline above) and returns the
+   * `transcribe` message that was posted to the worker, so a test can
+   * assert on its `language`/`task` fields.
+   */
+  async function runCycleAndCaptureTranscribeMessage(
+    getDictationSettings: () => { language?: string; task?: "transcribe" | "translate" },
+  ): Promise<{ language?: string; task?: string } | null> {
+    const pcm = new Float32Array(16_000);
+    const originalMediaRecorder = (globalThis as Record<string, unknown>).MediaRecorder;
+    const originalAudioContext = (globalThis as Record<string, unknown>).AudioContext;
+    const originalMediaDevices = navigator.mediaDevices;
+
+    let capturedWorker: FakeWorker | null = null;
+    await preloadEngine({
+      createWorker: () => {
+        capturedWorker = new FakeWorker("blob:fake", { type: "module" });
+        return capturedWorker as unknown as Worker;
+      },
+      wasmPaths: "/dictation/ort-wasm/",
+    });
+    capturedWorker!.transcribeHandler = (id) => {
+      queueMicrotask(() => {
+        capturedWorker!.emitMessage({ type: "result", id, text: "hola" });
+      });
+    };
+
+    class FakeMediaRecorder {
+      static isTypeSupported(_t: string) { return true; }
+      ondataavailable: ((e: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      onerror: ((e: unknown) => void) | null = null;
+      state: "inactive" | "recording" = "inactive";
+      addEventListener(type: "stop" | "dataavailable" | "error", listener: (e: unknown) => void) {
+        if (type === "stop") this.onstop = listener as () => void;
+        if (type === "dataavailable") this.ondataavailable = listener as (e: { data: Blob }) => void;
+        if (type === "error") this.onerror = listener as (e: unknown) => void;
+      }
+      start() { this.state = "recording"; }
+      stop() {
+        this.state = "inactive";
+        const blob = new Blob([new Uint8Array(8192)], { type: "audio/webm;codecs=opus" });
+        this.ondataavailable?.({ data: blob });
+        queueMicrotask(() => this.onstop?.());
+      }
+      constructor(_stream: MediaStream) {}
+    }
+    (globalThis as Record<string, unknown>).MediaRecorder = FakeMediaRecorder;
+
+    class FakeAudioContext {
+      state = "running";
+      decodeAudioData(_buf: ArrayBuffer): Promise<{ numberOfChannels: number; length: number; getChannelData: (ch: number) => Float32Array }> {
+        return Promise.resolve({
+          numberOfChannels: 1,
+          length: pcm.length,
+          getChannelData: (_ch: number) => pcm,
+        });
+      }
+      createOscillator(): unknown {
+        const self = { type: "sine", frequency: { value: 0 }, connect: () => self, start: () => undefined, stop: () => undefined };
+        return self;
+      }
+      createGain(): unknown {
+        const self = { gain: { setValueAtTime: () => undefined, exponentialRampToValueAtTime: () => undefined }, connect: () => self };
+        return self;
+      }
+      get currentTime(): number { return 0; }
+      get destination(): unknown { return {}; }
+      resume(): Promise<void> { return Promise.resolve(); }
+      close(): Promise<void> { return Promise.resolve(); }
+    }
+    (globalThis as Record<string, unknown>).AudioContext = FakeAudioContext;
+
+    (navigator as unknown as Record<string, unknown>).mediaDevices = {
+      getUserMedia: async () => {
+        return { getTracks: () => [{ stop: () => undefined, kind: "audio" }] } as unknown as MediaStream;
+      },
+    } as MediaDevices;
+
+    const controller = createDictationController({
+      callbacks: { onText: () => undefined },
+      getDictationSettings,
+    });
+    await controller.start();
+    await controller.stop();
+    // The stop sequence awaits the recorder's `stop` event, then a microtask
+    // for the worker, so yield a few ticks for the transcribe message to land.
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+    }
+
+    const transcribeMessages = (capturedWorker!.sentMessages as Array<{ type: string; language?: string; task?: string }>).filter(
+      (m) => m?.type === "transcribe",
+    );
+
+    (globalThis as Record<string, unknown>).MediaRecorder = originalMediaRecorder;
+    (globalThis as Record<string, unknown>).AudioContext = originalAudioContext;
+    (navigator as unknown as Record<string, unknown>).mediaDevices = originalMediaDevices;
+    controller.dispose();
+    await disposeEngine();
+
+    return transcribeMessages[0] ?? null;
+  }
+
+  it("passes language and task from getDictationSettings into the transcribe message", async () => {
+    const message = await runCycleAndCaptureTranscribeMessage(
+      () => ({ language: "es", task: "transcribe" as const }),
+    );
+    expect(message).not.toBeNull();
+    expect(message!.language).toBe("es");
+    expect(message!.task).toBe("transcribe");
+  });
+
+  it("passes language through as-is when getDictationSettings returns language='auto'", async () => {
+    // The controller is a pass-through; the worker is responsible for
+    // converting "auto" to undefined before calling the transcriber.
+    const message = await runCycleAndCaptureTranscribeMessage(
+      () => ({ language: "auto", task: "transcribe" as const }),
+    );
+    expect(message).not.toBeNull();
+    expect(message!.language).toBe("auto");
+    expect(message!.task).toBe("transcribe");
+  });
+
+  it("defaults language and task to undefined when getDictationSettings is not provided", async () => {
+    // Existing callers don't pass getDictationSettings — the factory defaults
+    // it to () => ({}), so language/task must be undefined on the wire.
+    const originalMediaRecorder = (globalThis as Record<string, unknown>).MediaRecorder;
+    const originalAudioContext = (globalThis as Record<string, unknown>).AudioContext;
+    const originalMediaDevices = navigator.mediaDevices;
+    const pcm = new Float32Array(16_000);
+
+    let capturedWorker: FakeWorker | null = null;
+    await preloadEngine({
+      createWorker: () => {
+        capturedWorker = new FakeWorker("blob:fake", { type: "module" });
+        return capturedWorker as unknown as Worker;
+      },
+      wasmPaths: "/dictation/ort-wasm/",
+    });
+    capturedWorker!.transcribeHandler = (id) => {
+      queueMicrotask(() => {
+        capturedWorker!.emitMessage({ type: "result", id, text: "hi" });
+      });
+    };
+
+    class FakeMediaRecorder {
+      static isTypeSupported(_t: string) { return true; }
+      ondataavailable: ((e: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      onerror: ((e: unknown) => void) | null = null;
+      state: "inactive" | "recording" = "inactive";
+      addEventListener(type: "stop" | "dataavailable" | "error", listener: (e: unknown) => void) {
+        if (type === "stop") this.onstop = listener as () => void;
+        if (type === "dataavailable") this.ondataavailable = listener as (e: { data: Blob }) => void;
+        if (type === "error") this.onerror = listener as (e: unknown) => void;
+      }
+      start() { this.state = "recording"; }
+      stop() {
+        this.state = "inactive";
+        const blob = new Blob([new Uint8Array(8192)], { type: "audio/webm;codecs=opus" });
+        this.ondataavailable?.({ data: blob });
+        queueMicrotask(() => this.onstop?.());
+      }
+      constructor(_stream: MediaStream) {}
+    }
+    (globalThis as Record<string, unknown>).MediaRecorder = FakeMediaRecorder;
+
+    class FakeAudioContext {
+      state = "running";
+      decodeAudioData(_buf: ArrayBuffer): Promise<{ numberOfChannels: number; length: number; getChannelData: (ch: number) => Float32Array }> {
+        return Promise.resolve({ numberOfChannels: 1, length: pcm.length, getChannelData: (_ch: number) => pcm });
+      }
+      createOscillator(): unknown {
+        const self = { type: "sine", frequency: { value: 0 }, connect: () => self, start: () => undefined, stop: () => undefined };
+        return self;
+      }
+      createGain(): unknown {
+        const self = { gain: { setValueAtTime: () => undefined, exponentialRampToValueAtTime: () => undefined }, connect: () => self };
+        return self;
+      }
+      get currentTime(): number { return 0; }
+      get destination(): unknown { return {}; }
+      resume(): Promise<void> { return Promise.resolve(); }
+      close(): Promise<void> { return Promise.resolve(); }
+    }
+    (globalThis as Record<string, unknown>).AudioContext = FakeAudioContext;
+
+    (navigator as unknown as Record<string, unknown>).mediaDevices = {
+      getUserMedia: async () => ({ getTracks: () => [{ stop: () => undefined, kind: "audio" }] } as unknown as MediaStream),
+    } as MediaDevices;
+
+    const controller = createDictationController({
+      callbacks: { onText: () => undefined },
+      // Intentionally no getDictationSettings — exercises the default.
+    });
+    await controller.start();
+    await controller.stop();
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+    }
+
+    const transcribeMessages = (capturedWorker!.sentMessages as Array<{ type: string; language?: string; task?: string }>).filter(
+      (m) => m?.type === "transcribe",
+    );
+    expect(transcribeMessages).toHaveLength(1);
+    expect(transcribeMessages[0].language).toBeUndefined();
+    expect(transcribeMessages[0].task).toBeUndefined();
+
+    (globalThis as Record<string, unknown>).MediaRecorder = originalMediaRecorder;
+    (globalThis as Record<string, unknown>).AudioContext = originalAudioContext;
+    (navigator as unknown as Record<string, unknown>).mediaDevices = originalMediaDevices;
+    controller.dispose();
+    await disposeEngine();
+  });
+});
