@@ -2875,6 +2875,15 @@ export interface UiPreferences {
   theme: "resonant-dark";
 }
 
+export interface DictationSettings {
+  /** Engine selection mode. Default "auto". */
+  engineSelection: "auto" | "whisper" | "parakeet";
+  /** Whisper language code or "auto" for auto-detect. Default "auto". Ignored by Parakeet. */
+  language: string;
+  /** Whisper task. Default "transcribe". Ignored by Parakeet. */
+  task: "transcribe" | "translate";
+}
+
 export interface TerminalRunCommandResult {
   command: string;
   cwd: string;
@@ -2914,4 +2923,5 @@ export interface ResonantShellState {
   installations: Record<string, AddOnInstallation>;
   uiPreferences: UiPreferences;
   distributionModel: "curated-plus-sideload";
+  dictation: DictationSettings;
 }

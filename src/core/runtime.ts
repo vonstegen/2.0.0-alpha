@@ -2276,6 +2276,8 @@ export const normalizeState = (state: ResonantShellState, base: ResonantShellSta
       checklist: state.recoverySession?.checklist ?? base.recoverySession.checklist,
       changeLog: state.recoverySession?.changeLog ?? base.recoverySession.changeLog,
     },
+    // Backward compat: pre-Whisper snapshots don't have dictation.
+    dictation: state.dictation ?? base.dictation,
     installations,
   };
 };
