@@ -8,14 +8,18 @@
  */
 
 /**
- * Which on-device ASR engine the engine module is currently configured
- * to load. The engine module is a singleton — switching kinds means
- * `dispose()` then `preload({ kind: <new> })`.
+ * Which on-device ASR engine the engine module has loaded. Set at preload
+ * time from the user's {@link DictationEngineSelection} (with Auto mode
+ * resolving to whichever engine actually initialized). The engine module
+ * is a singleton — switching kinds means `dispose()` then `preload()`
+ * with a new `engineSelection`.
  *
  * - `"parakeet"` — NVIDIA Parakeet TDT 0.6B v3 int8 via parakeet.js.
- *   Default. ~650 MB encoder, multilingual, fast on CPU.
- * - `"whisper"` — Whisper base multilingual q8 via
- *   @huggingface/transformers. ~77 MB. Fallback option.
+ *   ~650 MB encoder, English-only. Used as the Auto-mode fallback when
+ *   Whisper init fails.
+ * - `"whisper"` — Whisper base multilingual via @huggingface/transformers
+ *   (`onnx-community/whisper-base_timestamped`). ~150 MB. Auto-mode
+ *   primary; per-utterance `language` / `task` apply only to this engine.
  *
  * @typedef {"parakeet" | "whisper"} DictationEngineKind
  */
