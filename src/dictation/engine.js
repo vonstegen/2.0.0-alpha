@@ -96,6 +96,10 @@ let initPromise = null;
 let currentKind = "parakeet";
 /** Currently-loaded engine device. Whisper reports this in `ready`; null for Parakeet. */
 let currentDevice = null;
+/** Set when `dispose()` is called; checked in async paths to avoid post-dispose side effects. */
+let disposed = false;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let currentInitTimeoutId = null;
 let nextRequestId = 1;
 /** @type {Map<number, { resolve: (text: string) => void, reject: (error: Error) => void, partialHandler: ((text: string) => void) | null }>} */
 const pending = new Map();
@@ -222,6 +226,10 @@ function teardown() {
   }
   pending.clear();
   sessionIdToLastChunkId.clear();
+  if (currentInitTimeoutId) {
+    clearTimeout(currentInitTimeoutId);
+    currentInitTimeoutId = null;
+  }
   if (worker) {
     worker.terminate();
     worker = null;
@@ -245,6 +253,9 @@ export function preload(options) {
   const engineSelection = options.engineSelection ?? "auto";
   if (initPromise) return initPromise;
   if (state === "ready") return Promise.resolve();
+  // Reset the disposed flag — a fresh preload after dispose() should work
+  // (e.g. between tests, or after a hot reload).
+  disposed = false;
   setState("loading");
 
   const startingKind = engineSelection === "parakeet" ? "parakeet" : "whisper";
@@ -262,11 +273,19 @@ export function preload(options) {
   }).catch(async (error) => {
     if (engineSelection !== "auto" || startingKind === "parakeet") {
       // Explicit mode (or already on Parakeet): surface the error, no fallback.
+      // Make sure we don't leak the worker that failed to init.
+      if (worker) { try { worker.terminate(); } catch { /* ignore */ } worker = null; }
       setState("error", error instanceof Error ? error.message : String(error));
       initPromise = null;
       throw error;
     }
-    // Auto mode: fall back to Parakeet.
+    // Auto mode: fall back to Parakeet. But if the module was disposed
+    // while we were waiting on Whisper init, bail out — don't spawn a
+    // fresh worker attached to module state that's already gone.
+    if (disposed) {
+      initPromise = null;
+      return;
+    }
     if (worker) { try { worker.terminate(); } catch { /* ignore */ } worker = null; }
     pending.clear();
     sessionIdToLastChunkId.clear();
@@ -281,6 +300,12 @@ export function preload(options) {
         backend: options.backend ?? "webgpu-hybrid",
         initTimeoutMs: 0,
       });
+      // If the module was disposed during Parakeet init, bail before
+      // surfacing state changes.
+      if (disposed) {
+        initPromise = null;
+        return;
+      }
       // Surface the fallback to subscribers. Use `setState("ready", msg)`
       // to push the message to existing subscribers (Settings status line)
       // AND emit a notice for the chat-notice side channel.
@@ -308,19 +333,24 @@ export function preload(options) {
 function spawnAndInit(opts) {
   return new Promise((resolve, reject) => {
     let settled = false;
-    let timeoutId = null;
     if (opts.initTimeoutMs > 0) {
-      timeoutId = setTimeout(() => {
+      currentInitTimeoutId = setTimeout(() => {
         if (settled) return;
         settled = true;
+        currentInitTimeoutId = null;
         worker?.removeEventListener("message", onMessage);
+        // Terminate the slow worker so it doesn't keep running in the
+        // background, and clear module state so a subsequent spawn can
+        // reassign `worker` cleanly.
+        const slow = worker;
+        if (slow) { try { slow.terminate(); } catch { /* ignore */ } if (slow === worker) worker = null; }
         reject(new Error(`Engine init timed out after ${opts.initTimeoutMs}ms.`));
       }, opts.initTimeoutMs);
     }
     try {
       worker = opts.createWorker(opts.kind);
     } catch (err) {
-      if (timeoutId) clearTimeout(timeoutId);
+      if (currentInitTimeoutId) { clearTimeout(currentInitTimeoutId); currentInitTimeoutId = null; }
       reject(err instanceof Error ? err : new Error(String(err)));
       return;
     }
@@ -333,8 +363,11 @@ function spawnAndInit(opts) {
         return;
       }
       settled = true;
-      if (timeoutId) clearTimeout(timeoutId);
+      if (currentInitTimeoutId) { clearTimeout(currentInitTimeoutId); currentInitTimeoutId = null; }
       worker?.removeEventListener("message", onMessage);
+      // Terminate the failed worker and clear module state.
+      const failed = worker;
+      if (failed) { try { failed.terminate(); } catch { /* ignore */ } if (failed === worker) worker = null; }
       reject(new Error(String(message)));
     });
 
@@ -343,7 +376,7 @@ function spawnAndInit(opts) {
       if (data?.type === "ready") {
         if (settled) return;
         settled = true;
-        if (timeoutId) clearTimeout(timeoutId);
+        if (currentInitTimeoutId) { clearTimeout(currentInitTimeoutId); currentInitTimeoutId = null; }
         worker?.removeEventListener("message", onMessage);
         // Capture the device the worker reported (Whisper only; Parakeet omits).
         if (typeof data.device === "string") {
@@ -354,8 +387,11 @@ function spawnAndInit(opts) {
       } else if (data?.type === "error" && data.id === -1) {
         if (settled) return;
         settled = true;
-        if (timeoutId) clearTimeout(timeoutId);
+        if (currentInitTimeoutId) { clearTimeout(currentInitTimeoutId); currentInitTimeoutId = null; }
         worker?.removeEventListener("message", onMessage);
+        // Terminate the failed worker and clear module state.
+        const failed = worker;
+        if (failed) { try { failed.terminate(); } catch { /* ignore */ } if (failed === worker) worker = null; }
         reject(new Error(data.message));
       }
     }
@@ -526,6 +562,7 @@ export function subscribeEngineState(cb) {
  * Tear down the worker. Intended for tests.
  */
 export async function dispose() {
+  disposed = true;
   subscribers.clear();
   noticeSubscribers.clear();
   teardown();

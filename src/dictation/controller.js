@@ -4,6 +4,7 @@ import {
   dispose as disposeEngine,
   getEngineState,
   subscribeEngineState,
+  subscribeEngineNotices,
   transcribe,
 } from "./engine.js";
 import { isEditableTarget } from "./editable.js";
@@ -115,6 +116,9 @@ export function createDictationController(input = {}) {
   const unsubscribeEngine = subscribeEngineState(() => {
     reflectEngineState();
     callbacks.onEngineState?.(getEngineState());
+  });
+  const unsubscribeNotices = subscribeEngineNotices((message) => {
+    callbacks.onNotice?.(message);
   });
   reflectEngineState();
 
@@ -358,6 +362,7 @@ export function createDictationController(input = {}) {
 
   async function dispose() {
     unsubscribeEngine();
+    unsubscribeNotices();
     if (recording) {
       try { recorder?.stop(); } catch { /* ignore */ }
     }

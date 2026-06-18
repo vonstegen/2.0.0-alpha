@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createDictationController,
   dispose as disposeEngine,
@@ -753,10 +753,6 @@ describe("createDictationController full record→transcribe pipeline", () => {
     expect(capturedContext!.end).toBe(6);
   });
 });
-
-// Reference `vi` so the import isn't flagged as unused if a future test
-// needs to add spies.
-vi.fn();
 
 describe("language/task plumbing", () => {
   /**

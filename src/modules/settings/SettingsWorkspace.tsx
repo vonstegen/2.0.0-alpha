@@ -1001,6 +1001,9 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
                   Parakeet — slower, always works
                 </label>
               </div>
+              <div className="setting-note">
+                <span>Changes to the engine take effect after a page reload.</span>
+              </div>
             </div>
 
             <div className="setting-row">
