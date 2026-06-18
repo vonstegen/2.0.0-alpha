@@ -196,7 +196,7 @@ describe("engine dispatch", () => {
   });
 
   it("records the requested kind in getEngineKind()", async () => {
-    await preloadEngine({ ...engineOptions, kind: "parakeet" });
+    await preloadEngine({ ...engineOptions, engineSelection: "parakeet" });
     expect(getEngineKind()).toBe("parakeet");
   });
 
@@ -231,7 +231,7 @@ describe("engine dispatch", () => {
   });
 
   it("resets the kind on dispose so the next preload starts clean", async () => {
-    await preloadEngine({ ...engineOptions, kind: "parakeet" });
+    await preloadEngine({ ...engineOptions, engineSelection: "parakeet" });
     expect(getEngineKind()).toBe("parakeet");
     await disposeEngine();
     expect(getEngineKind()).toBe("parakeet");
@@ -281,7 +281,7 @@ describe("engine dispatch", () => {
         if (kind === "whisper") {
           // Override postMessage to emit an init error.
           w.postMessage = (msg) => {
-            if (msg?.type === "init") {
+            if (msg && typeof msg === "object" && (msg as { type?: string }).type === "init") {
               queueMicrotask(() => {
                 w.emitMessage({ type: "error", id: -1, message: "whisper init failed" });
               });
@@ -289,7 +289,12 @@ describe("engine dispatch", () => {
           };
         } else {
           w.postMessage = (msg) => {
-            if (msg?.type === "init" && !firstWorkerReady) {
+            if (
+              msg &&
+              typeof msg === "object" &&
+              (msg as { type?: string }).type === "init" &&
+              !firstWorkerReady
+            ) {
               firstWorkerReady = true;
               queueMicrotask(() => {
                 w.emitMessage({ type: "ready", device: undefined });
@@ -315,7 +320,7 @@ describe("engine dispatch", () => {
           calls.push(kind);
           const w = new FakeWorker("blob:fake", { type: "module" }) as unknown as FakeWorker;
           w.postMessage = (msg) => {
-            if (msg?.type === "init") {
+            if (msg && typeof msg === "object" && (msg as { type?: string }).type === "init") {
               queueMicrotask(() => {
                 w.emitMessage({ type: "error", id: -1, message: "whisper init failed" });
               });
