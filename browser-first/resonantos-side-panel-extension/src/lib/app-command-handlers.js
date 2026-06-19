@@ -291,6 +291,7 @@ export function createAppCommandHandlers({
       [
         "ResonantOS Browser status",
         `MiniMax credential: ${result.providers["shared-minimax"] ? "ready" : "missing"}`,
+        `Z.AI GLM credential: ${result.providers["shared-zai-glm"] ? "ready" : "missing"}`,
         `OpenAI credential: ${result.providers["shared-openai"] ? "ready" : "missing"}`,
         `Living Archive wiki pages: ${result.memory.wiki.pages}`,
         `Intake artifacts: ${result.memory.intake.artifacts}`,

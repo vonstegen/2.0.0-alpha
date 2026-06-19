@@ -82,6 +82,8 @@ export function createProviderBridgeService({
       deepseek: { apiBaseUrl: "https://api.deepseek.com/v1", models: ["deepseek-chat", "deepseek-reasoner"] },
       mistral: { apiBaseUrl: "https://api.mistral.ai/v1", models: ["mistral-large-latest", "mistral-small-latest", "open-mixtral"] },
       qwen: { apiBaseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", models: ["qwen-max", "qwen-plus", "qwen-turbo"] },
+      zai: { apiBaseUrl: "http://127.0.0.1:18789/v1", models: ["zai/glm-5.2", "zai/glm-5-turbo", "zai/glm-5.1", "zai/glm-5", "zai/glm-5v-turbo", "zai/glm-4.7", "zai/glm-4.6"] },
+      "zai-glm": { apiBaseUrl: "http://127.0.0.1:18789/v1", models: ["zai/glm-5.2"] },
       "nvidia-nim": { apiBaseUrl: "https://integrate.api.nvidia.com/v1", models: ["nvidia/llama-3.1-nemotron-ultra-253b-v1", "nvidia/nemotron"] },
       "microsoft-azure": { apiBaseUrl: "", models: ["azure-model-deployment"] },
       openrouter: { apiBaseUrl: "https://openrouter.ai/api/v1", models: ["openai/gpt-5.5", "anthropic/claude-sonnet-4.5", "google/gemini-2.5-pro"] },
@@ -242,12 +244,16 @@ export function createProviderBridgeService({
 
   async function allProviderProfiles() {
     const customAccounts = await readProviderAccounts().catch(() => []);
-    const builtIns = providerProfiles.map((profile) => ({
-      ...profile,
-      providerType: profile.providerType ?? inferProviderType(profile.id),
-      apiBaseUrl: providerPreset(profile.providerType ?? inferProviderType(profile.id)).apiBaseUrl,
-      source: "built-in",
-    }));
+    const builtIns = providerProfiles.map((profile) => {
+      const providerType = profile.providerType ?? inferProviderType(profile.id);
+      const preset = providerPreset(providerType, profile.templateId ?? profile.id);
+      return {
+        ...profile,
+        providerType,
+        apiBaseUrl: profile.apiBaseUrl ?? preset.apiBaseUrl,
+        source: "built-in",
+      };
+    });
     const byId = new Map(builtIns.map((profile) => [profile.id, profile]));
     for (const account of customAccounts) {
       byId.set(account.id, { ...byId.get(account.id), ...account, source: account.source === "built-in" ? "built-in-customized" : "user" });
@@ -711,6 +717,10 @@ export function createProviderBridgeService({
     const openAiRoute = providerRouteForModel("gpt-5.5");
     if (secrets[openAiRoute.providerId]) {
       return openAiRoute;
+    }
+    const zaiGlmRoute = providerRouteForModel("zai/glm-5.2");
+    if (secrets[zaiGlmRoute.providerId]) {
+      return zaiGlmRoute;
     }
     const miniMaxRoute = providerRouteForModel("MiniMax-M3");
     return secrets[miniMaxRoute.providerId] ? miniMaxRoute : null;

@@ -11,7 +11,7 @@ function createService(overrides = {}) {
     memoryRoot: () => "/tmp/resonantos-user/Memory",
     profileDir: "/tmp/resonantos-profile",
     browserLaunchLogPath: () => "/tmp/resonantos-browser.log",
-    readProviderSecrets: async () => ({ "shared-minimax": "redacted", "shared-openai": "" }),
+    readProviderSecrets: async () => ({ "shared-minimax": "redacted", "shared-zai-glm": "", "shared-openai": "" }),
     executeProviderStatus: async () => ({ providers: [] }),
     executeAddonsStatus: async () => ({ addons: [{ id: "living-archive" }] }),
     executeMemoryStatus: async () => ({ exists: true }),
@@ -42,6 +42,7 @@ test("browser diagnostics host service aggregates system status without exposing
   assert.equal(status.bridge, "resonantos-browser-first");
   assert.deepEqual(status.providers, {
     "shared-minimax": true,
+    "shared-zai-glm": false,
     "shared-openai": false,
   });
   assert.deepEqual(status.memory, { exists: true });

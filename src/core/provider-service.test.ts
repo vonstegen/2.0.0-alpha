@@ -57,11 +57,37 @@ describe("strategist provider service routing", () => {
 
     expect(selectableAgentChatModels(state, "strategist.core")).toEqual([
       "MiniMax-M3",
+      "zai/glm-5.2",
       "gpt-5.5",
       "gpt-5.4-mini",
       "batiai/gemma4-e2b:q4",
       "Qwen3.6-35B-A3B-Q4_K_M.gguf",
     ]);
+  });
+
+  it("uses Z.AI GLM as the first cloud fallback when the primary route is unavailable", () => {
+    const state = buildDefaultState([]);
+    const glmFallbackState = {
+      ...state,
+      providers: state.providers.map((provider) =>
+        provider.id === "shared-zai-glm"
+          ? { ...provider, credentialStatus: "configured" as const }
+          : provider.id === "shared-minimax"
+            ? { ...provider, status: "missing" as const }
+            : provider,
+      ),
+      runtimeNodes: state.runtimeNodes.map((node) =>
+        node.id === "node-minimax-cloud" ? { ...node, healthState: "unavailable" as const } : node,
+      ),
+    };
+
+    const resolved = resolveStrategistChatRoute(glmFallbackState);
+
+    expect(resolved.provider?.id).toBe("shared-zai-glm");
+    expect(resolved.runtimeNode?.id).toBe("node-zai-glm-cloud");
+    expect(resolved.decision.executionAdapterId).toBe("cloud-openai-compatible");
+    expect(resolved.model).toBe("zai/glm-5.2");
+    expect(resolved.decision.resolutionReason).toBe("fallback-in-policy");
   });
 
   it("uses the verified GX10 runtime as a supported fallback route", () => {
@@ -205,6 +231,29 @@ describe("workload strategy routing", () => {
     expect(resolved.model).toBe("gpt-5.5");
   });
 
+  it("routes archive ingest to Z.AI GLM when OpenAI is unavailable but Z.AI GLM is configured", () => {
+    const state = buildDefaultState([]);
+    const glmFallbackState = {
+      ...state,
+      providers: state.providers.map((provider) =>
+        provider.id === "shared-zai-glm"
+          ? { ...provider, credentialStatus: "configured" as const }
+          : provider.id === "shared-openai"
+            ? { ...provider, status: "missing" as const }
+            : provider,
+      ),
+      runtimeNodes: state.runtimeNodes.map((node) =>
+        node.id === "node-openai-cloud" ? { ...node, healthState: "unavailable" as const } : node,
+      ),
+    };
+    const resolved = resolveArchiveIngestRoute(glmFallbackState);
+
+    expect(resolved.provider?.id).toBe("shared-zai-glm");
+    expect(resolved.runtimeNode?.id).toBe("node-zai-glm-cloud");
+    expect(resolved.decision.executionAdapterId).toBe("cloud-openai-compatible");
+    expect(resolved.model).toBe("zai/glm-5.2");
+  });
+
   it("hard-stops archive ingest when strategy-approved cloud routes are unavailable", () => {
     const state = buildDefaultState([]);
     const unavailableState = {
@@ -238,5 +287,27 @@ describe("workload strategy routing", () => {
     expect(resolved.runtimeNode?.id).toBe("node-minimax-cloud");
     expect(resolved.decision.executionAdapterId).toBe("cloud-minimax-compatible");
     expect(resolved.model).toBe("MiniMax-M3");
+  });
+
+  it("routes routine work to Z.AI GLM before the local floor when MiniMax is unavailable", () => {
+    const state = buildDefaultState([]);
+    const glmFallbackState = {
+      ...state,
+      providers: state.providers.map((provider) =>
+        provider.id === "shared-zai-glm"
+          ? { ...provider, credentialStatus: "configured" as const }
+          : provider.id === "shared-minimax"
+            ? { ...provider, status: "missing" as const }
+            : provider,
+      ),
+      runtimeNodes: state.runtimeNodes.map((node) =>
+        node.id === "node-minimax-cloud" ? { ...node, healthState: "unavailable" as const } : node,
+      ),
+    };
+    const resolved = resolveRoutineRoute(glmFallbackState);
+
+    expect(resolved.provider?.id).toBe("shared-zai-glm");
+    expect(resolved.runtimeNode?.id).toBe("node-zai-glm-cloud");
+    expect(resolved.model).toBe("zai/glm-5.2");
   });
 });

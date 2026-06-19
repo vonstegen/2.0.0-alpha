@@ -25,6 +25,7 @@ export type ProviderRouteResolution = {
 const ROUTABLE_RUNTIME_HEALTH: ProviderRuntimeNode["healthState"][] = ["ready", "degraded", "deployable"];
 const CANONICAL_CHAT_MODEL_ORDER = [
   "MiniMax-M3",
+  "zai/glm-5.2",
   "gpt-5.5",
   "gpt-5.4-mini",
   "batiai/gemma4-e2b:q4",

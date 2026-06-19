@@ -51,6 +51,7 @@ export function createBrowserDiagnosticsHostService({
       bridge: "resonantos-browser-first",
       providers: {
         "shared-minimax": Boolean(secrets["shared-minimax"]),
+        "shared-zai-glm": Boolean(secrets["shared-zai-glm"]),
         "shared-openai": Boolean(secrets["shared-openai"]),
       },
       memory,
