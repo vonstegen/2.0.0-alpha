@@ -371,6 +371,26 @@ function sanitizeAssistantContent(providerType, content) {
   return providerType === "minimax" ? stripThinkBlocks(content) : String(content ?? "").trim();
 }
 
+function providerSmokeInputFromEnv() {
+  const providerId = process.env.RESONANTOS_PROVIDER_SMOKE_PROVIDER_ID || "shared-minimax";
+  const providerType = process.env.RESONANTOS_PROVIDER_SMOKE_PROVIDER_TYPE || "minimax";
+  const model = process.env.RESONANTOS_PROVIDER_SMOKE_MODEL || "MiniMax-M3";
+  return {
+    requestId: "electron-provider-smoke",
+    providerId,
+    providerType,
+    apiBaseUrl: process.env.RESONANTOS_PROVIDER_SMOKE_BASE_URL || undefined,
+    runtimeNodeId: process.env.RESONANTOS_PROVIDER_SMOKE_RUNTIME_NODE_ID || undefined,
+    runtimeNodeKind: process.env.RESONANTOS_PROVIDER_SMOKE_RUNTIME_NODE_KIND || "cloud",
+    runtimeNodeEndpoint: process.env.RESONANTOS_PROVIDER_SMOKE_RUNTIME_NODE_ENDPOINT || undefined,
+    authTier: process.env.RESONANTOS_PROVIDER_SMOKE_AUTH_TIER || undefined,
+    model,
+    reasoningEffort: "minimal",
+    systemPrompt: "Reply briefly to confirm the ResonantOS provider smoke test reached you.",
+    messages: [{ role: "user", content: process.env.RESONANTOS_PROVIDER_SMOKE_PROMPT || "hello" }],
+  };
+}
+
 async function providerDiagnostics(providerId = null) {
   const state = await readRuntimeState();
   const providers = Array.isArray(state?.providers) ? state.providers : [];
@@ -380,8 +400,9 @@ async function providerDiagnostics(providerId = null) {
   for (const provider of providers) {
     if (providerId && provider.id !== providerId) continue;
     if (provider.id === "shared-local") continue;
-    const credentialConfigured = Boolean(await resolveProviderSecret(provider.id));
+    const credentialConfigured = provider.authMethod === "local-runtime" || Boolean(await resolveProviderSecret(provider.id));
     const node = runtimeNodes.find((candidate) => candidate.providerProfileId === provider.id);
+    const providerReady = credentialConfigured || node?.kind === "desktop-local" || node?.kind === "remote-user-owned";
     reports.push({
       providerId: provider.id,
       providerLabel: provider.label ?? provider.id,
@@ -390,8 +411,8 @@ async function providerDiagnostics(providerId = null) {
       authTier: provider.authTier ?? "supported",
       executionAdapter: node?.kind === "remote-user-owned" ? "local-ollama" : provider.providerType === "minimax" ? "cloud-minimax-compatible" : "cloud-openai-compatible",
       credentialConfigured,
-      status: credentialConfigured || node?.kind === "desktop-local" || node?.kind === "remote-user-owned" ? "ready" : "blocked",
-      summary: credentialConfigured ? "Credential configured in portable provider vault." : "Credentials are not configured for this provider.",
+      status: providerReady ? "healthy" : "offline",
+      summary: credentialConfigured ? "Credential configured or not required for this provider." : "Credentials are not configured for this provider.",
       checkedAt,
       primaryModel: provider.primaryModel,
       fallbackModel: provider.fallbackModel ?? null,
@@ -1008,16 +1029,7 @@ async function runProductSmoke() {
     }
     const providerSmoke =
       process.env.RESONANTOS_PROVIDER_SMOKE === "1"
-        ? await handleInvoke({ sender: mainWindow.webContents }, "provider_service_chat_completion", {
-            requestId: "electron-provider-smoke",
-            providerId: "shared-minimax",
-            providerType: "minimax",
-            runtimeNodeKind: "cloud",
-            model: "MiniMax-M3",
-            reasoningEffort: "minimal",
-            systemPrompt: "Reply with exactly: ResonantOS provider smoke OK",
-            messages: [{ role: "user", content: "Run the smoke test." }],
-          })
+        ? await handleInvoke({ sender: mainWindow.webContents }, "provider_service_chat_completion", providerSmokeInputFromEnv())
         : null;
     process.stdout.write(
       `${JSON.stringify({

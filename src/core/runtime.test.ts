@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AddOnManifest, ResonantShellState } from "./contracts";
 import { buildDefaultState } from "./defaults";
-import { applyProviderCredentialStatuses, normalizeState, rebaseStateOnManifests } from "./runtime";
+import { applyProviderCredentialStatuses, normalizeState, rebaseStateOnManifests, requestProviderSmokeTest } from "./runtime";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("runtime state migration", () => {
   it("migrates legacy recovery state onto the Resonant Engineer Agent and Gemma local runtime", () => {
@@ -200,6 +204,40 @@ describe("runtime state migration", () => {
     const updated = applyProviderCredentialStatuses(state, {});
 
     expect(updated.providers.find((item) => item.id === provider.id)?.credentialStatus).toBe("configured");
+  });
+
+  it("routes Electron provider smoke tests through provider chat completion", async () => {
+    const invoke = vi.fn(async () => "Coder7 smoke response.");
+    vi.stubGlobal("window", { resonantosElectron: { invoke } });
+
+    const result = await requestProviderSmokeTest({
+      providerId: "provider-coder7",
+      providerType: "openai-compatible",
+      apiBaseUrl: "http://192.168.1.13:8081/v1",
+      runtimeNodeId: "node-coder7",
+      runtimeNodeKind: "remote-user-owned",
+      runtimeNodeEndpoint: "http://192.168.1.13:8081/v1",
+      authTier: "supported",
+      model: "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M",
+    });
+
+    expect(invoke).toHaveBeenCalledWith(
+      "provider_service_chat_completion",
+      expect.objectContaining({
+        providerId: "provider-coder7",
+        providerType: "openai-compatible",
+        runtimeNodeKind: "remote-user-owned",
+        model: "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M",
+        reasoningEffort: "minimal",
+      }),
+    );
+    expect(result).toMatchObject({
+      providerId: "provider-coder7",
+      model: "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M",
+      ok: true,
+      replyPreview: "Coder7 smoke response.",
+    });
+    expect(result.summary).toContain("Provider smoke test succeeded");
   });
 
   it("rebases stale placeholder GX10 runtime state onto the verified default runtime", () => {
