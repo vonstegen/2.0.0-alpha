@@ -27,6 +27,28 @@ const providerMessagesFromHistory = (messages, limit = 18) => messages
   .slice(-limit)
   .map((message) => ({ role: message.role, content: message.content }));
 
+const formatList = (items, fallback = "None detected") => {
+  const values = Array.isArray(items) ? items.map((item) => {
+    if (typeof item === "string") return item;
+    const label = String(item?.label ?? item?.name ?? item?.id ?? "").trim();
+    const detail = String(item?.detail ?? item?.reason ?? "").trim();
+    const count = Number.isFinite(Number(item?.count)) ? ` (${Number(item.count)})` : "";
+    return [label ? `${label}${count}` : "", detail].filter(Boolean).join(" - ");
+  }).filter(Boolean) : [];
+  return values.length ? values.join(", ") : fallback;
+};
+
+const formatWorkspaceInspectionMessage = (report) => [
+  "Workspace inspection completed.",
+  `Project: ${[report?.project?.name, report?.project?.version].filter(Boolean).join(" ") || "ResonantOS workspace"}`,
+  `Languages: ${formatList(report?.languages)}`,
+  `Frameworks: ${formatList(report?.frameworks)}`,
+  `Runtimes: ${formatList(report?.runtimes)}`,
+  `Package managers: ${formatList(report?.packageManagers)}`,
+  `Evidence: ${formatList(report?.evidence, "Metadata scan completed")}`,
+  "Boundary: read-only workspace metadata scan. No OpenCode/Hermes delegation, shell execution, provider secrets, wallet actions, or trusted memory writes were used."
+].join("\n");
+
 export function createMainWorkspaceActionController({
   addMessage,
   bridgeRequest,
@@ -185,6 +207,13 @@ export function createMainWorkspaceActionController({
     updateConnectionLine("Ready");
   }
 
+  async function runWorkspaceInspectionCommand() {
+    updateConnectionLine("Inspecting workspace");
+    const result = await bridge()("/workspace/inspect", { method: "GET" });
+    await addMessage("system", formatWorkspaceInspectionMessage(result));
+    updateConnectionLine("Ready");
+  }
+
   async function runMemoryCommand(prompt) {
     const query = parseMemorySlashCommand(prompt);
     setActiveWorkspace("memory", { persist: true });
@@ -282,6 +311,8 @@ export function createMainWorkspaceActionController({
       await runNaturalDelegation(promptPlan.intent);
     } else if (promptPlan.action === "delegations") {
       await runDelegationsCommand(promptPlan.filter);
+    } else if (promptPlan.action === "workspace-inspection") {
+      await runWorkspaceInspectionCommand();
     } else if (promptPlan.action === "wallet") {
       const command = promptPlan.command;
       if (command?.action === "audit") {

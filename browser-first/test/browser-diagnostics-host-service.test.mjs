@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { createBrowserDiagnosticsHostService } from "../host/browser-diagnostics-host-service.mjs";
 
@@ -27,6 +30,7 @@ test("browser diagnostics host service owns status, diagnostics, and download ro
   const routes = new Map(service.browserDiagnosticsRoutes.map((route) => [`${route.method} ${route.path}`, route]));
 
   assert.equal(typeof routes.get("GET /status")?.handler, "function");
+  assert.equal(typeof routes.get("GET /workspace/inspect")?.handler, "function");
   assert.equal(typeof routes.get("GET /browser/downloads")?.handler, "function");
   assert.equal(typeof routes.get("GET /browser/launch-diagnostics")?.handler, "function");
   assert.equal(typeof routes.get("POST /browser/downloads/action")?.handler, "function");
@@ -48,6 +52,53 @@ test("browser diagnostics host service aggregates system status without exposing
   assert.deepEqual(status.memory, { exists: true });
   assert.deepEqual(status.addons, [{ id: "living-archive" }]);
   assert.deepEqual(status.records, { goals: 2, delegations: 3 });
+});
+
+test("browser diagnostics host service inspects workspace stack metadata without delegated execution", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-workspace-inspect-"));
+  const repoRoot = path.join(root, "repo");
+  const extensionRoot = path.join(repoRoot, "browser-first", "resonantos-side-panel-extension");
+  try {
+    await mkdir(path.join(repoRoot, "src-tauri"), { recursive: true });
+    await mkdir(path.join(repoRoot, "src"), { recursive: true });
+    await mkdir(extensionRoot, { recursive: true });
+    await writeFile(path.join(repoRoot, "package.json"), JSON.stringify({
+      name: "stack-test",
+      version: "2.0.0-alpha",
+      packageManager: "npm@10.0.0",
+      dependencies: { "@tauri-apps/api": "^2.0.0", react: "^19.0.0", vite: "^6.0.0" },
+      devDependencies: { typescript: "^5.0.0", vitest: "^4.0.0" }
+    }, null, 2));
+    await writeFile(path.join(repoRoot, "package-lock.json"), "{}\n");
+    await writeFile(path.join(repoRoot, "src", "App.tsx"), "export const App = () => null;\n");
+    await writeFile(path.join(repoRoot, "src", "main.ts"), "import './App';\n");
+    await writeFile(path.join(repoRoot, "src-tauri", "Cargo.toml"), "[package]\nname = \"stack-test\"\n[dependencies]\ntauri = \"2\"\n");
+    await writeFile(path.join(repoRoot, "src-tauri", "main.rs"), "fn main() {}\n");
+    await writeFile(path.join(extensionRoot, "manifest.json"), JSON.stringify({ manifest_version: 3, version: "0.1.0" }));
+
+    const service = createService({
+      repoRoot,
+      resonantExtension: extensionRoot,
+      redactPathForDiagnostics: (value) => String(value ?? "").replace(root, "~")
+    });
+    const report = await service.executeWorkspaceInspection();
+
+    assert.equal(report.project.name, "stack-test");
+    assert.ok(report.languages.some((entry) => entry.label === "TypeScript/React"));
+    assert.ok(report.languages.some((entry) => entry.label === "Rust"));
+    assert.ok(report.frameworks.some((entry) => entry.label === "React"));
+    assert.ok(report.frameworks.some((entry) => entry.label === "Vite"));
+    assert.ok(report.frameworks.some((entry) => entry.label === "Tauri"));
+    assert.ok(report.frameworks.some((entry) => entry.label === "Chrome Extension MV3"));
+    assert.ok(report.runtimes.some((entry) => entry.label === "Node.js"));
+    assert.ok(report.runtimes.some((entry) => entry.label === "Chromium extension runtime"));
+    assert.ok(report.packageManagers.some((entry) => entry.label === "npm"));
+    assert.ok(report.packageManagers.some((entry) => entry.label === "Cargo"));
+    assert.match(report.project.root, /^~\/repo$/);
+    assert.match(report.boundary, /Read-only metadata inspection/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("browser diagnostics host service fails fast when a dependency is missing", () => {
