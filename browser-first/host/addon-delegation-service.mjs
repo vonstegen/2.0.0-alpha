@@ -57,6 +57,7 @@ export function createAddonDelegationService(dependencies) {
     listFilesRecursive,
     memoryRoot,
     opencodeCommand,
+    opencodeRuntimeDiagnostics,
     redactPathForDiagnostics,
     repoRoot,
     safeFileSlug,
@@ -64,6 +65,29 @@ export function createAddonDelegationService(dependencies) {
     uniqueRuntimeId,
     userRoot,
   } = dependencies;
+
+  function currentOpenCodeRuntime() {
+    if (typeof opencodeRuntimeDiagnostics === "function") {
+      return opencodeRuntimeDiagnostics();
+    }
+    const command = opencodeCommand();
+    return {
+      installed: Boolean(command),
+      command,
+      commandRedacted: command ? redactPathForDiagnostics(command) : "",
+      installHint: "Install OpenCode with `curl -fsSL https://opencode.ai/install | bash` or `npm install -g opencode-ai`. If it is already installed outside PATH, set `OPENCODE_COMMAND=/absolute/path/to/opencode` and restart ResonantOS.",
+      installCommand: "curl -fsSL https://opencode.ai/install | bash",
+      alternativeInstallCommands: ["npm install -g opencode-ai", "brew install anomalyco/tap/opencode"],
+      configureCommand: "OPENCODE_COMMAND=/absolute/path/to/opencode",
+      searchedCommands: ["opencode", "opencode-ai"],
+      searchedPaths: [],
+      searchedPathCount: 0,
+      searchedPathOmitted: 0,
+      overrideConfigured: false,
+      overridePath: "",
+      overrideFound: false,
+    };
+  }
 
   // Reverse-proxy URL the extension can embed in an iframe without tripping
   // Chrome's mixed-content blocker. The proxy lives at the bridge origin
@@ -669,7 +693,8 @@ export function createAddonDelegationService(dependencies) {
 
   async function executeOpenCodeStatus(payload = {}) {
     const executionSettings = await readAddonExecutionSettings();
-    const command = opencodeCommand();
+    const runtime = currentOpenCodeRuntime();
+    const command = runtime.command;
     const taskRoot = path.join(delegationRoot(), "opencode");
     const tasks = await listFilesRecursive(taskRoot, (filePath) => filePath.endsWith(".md"), 200);
     const statusCounts = {};
@@ -680,13 +705,24 @@ export function createAddonDelegationService(dependencies) {
     }
     return {
       installed: Boolean(command),
-      command: command ? redactPathForDiagnostics(command) : "",
+      command: runtime.commandRedacted || (command ? redactPathForDiagnostics(command) : ""),
       mode: command && addonLocalCliExecutionEnabled("opencode", payload, executionSettings) ? "local-opencode-cli" : command ? "local-opencode-cli-disabled" : "packet-only",
       executionEnabled: addonLocalCliExecutionEnabled("opencode", payload, executionSettings),
       workspaceLaunch: "not-enabled-in-browser-first-v1",
       detail: command
         ? "OpenCode runtime was detected. ResonantOS can create governed coding packets and start execution only when explicit OpenCode execution is enabled."
-        : "OpenCode runtime was not detected. Install or configure OpenCode before enabling local coding execution.",
+        : "OpenCode runtime was not detected. Install OpenCode, or point ResonantOS at an existing binary with OPENCODE_COMMAND.",
+      installHint: runtime.installHint,
+      installCommand: runtime.installCommand,
+      alternativeInstallCommands: runtime.alternativeInstallCommands,
+      configureCommand: runtime.configureCommand,
+      searchedCommands: runtime.searchedCommands,
+      searchedPaths: runtime.searchedPaths,
+      searchedPathCount: runtime.searchedPathCount,
+      searchedPathOmitted: runtime.searchedPathOmitted,
+      overrideConfigured: runtime.overrideConfigured,
+      overridePath: runtime.overridePath,
+      overrideFound: runtime.overrideFound,
       taskCounts: statusCounts,
       delegationPackets: tasks.length,
       requiredGrants: ["filesystem", "shell", "providers", "ui-embedding"],
@@ -830,7 +866,8 @@ export function createAddonDelegationService(dependencies) {
       throw new Error(`OpenCode delegation is already ${currentStatus}.`);
     }
     const adapter = String(payload.adapter ?? process.env.RESONANTOS_OPENCODE_ADAPTER ?? "auto").trim().toLowerCase();
-    const command = opencodeCommand();
+    const runtime = currentOpenCodeRuntime();
+    const command = runtime.command;
     const executionSettings = await readAddonExecutionSettings();
     await writeDelegationStatus(taskPath, "running", {
       startedAt: new Date().toISOString(),
@@ -844,7 +881,18 @@ export function createAddonDelegationService(dependencies) {
       });
       return {
         ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
-        blockedReason: "OpenCode CLI unavailable. Install or configure OpenCode, or run the deterministic adapter in tests.",
+        blockedReason: "OpenCode CLI unavailable.",
+        installHint: runtime.installHint,
+        installCommand: runtime.installCommand,
+        alternativeInstallCommands: runtime.alternativeInstallCommands,
+        configureCommand: runtime.configureCommand,
+        searchedCommands: runtime.searchedCommands,
+        searchedPaths: runtime.searchedPaths,
+        searchedPathCount: runtime.searchedPathCount,
+        searchedPathOmitted: runtime.searchedPathOmitted,
+        overrideConfigured: runtime.overrideConfigured,
+        overridePath: runtime.overridePath,
+        overrideFound: runtime.overrideFound,
         status: "blocked",
       };
     }

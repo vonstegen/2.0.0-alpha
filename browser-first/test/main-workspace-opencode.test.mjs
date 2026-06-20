@@ -86,7 +86,17 @@ test("opencode workspace can create an initial routed delegation", async () => {
   const bridgeRequest = async (route, options = {}) => {
     calls.push([route, options]);
     if (route === "/opencode/status") {
-      return { installed: false, command: "", detail: "OpenCode runtime was not detected." };
+      return {
+        installed: false,
+        command: "",
+        detail: "OpenCode runtime was not detected.",
+        installHint: "Install OpenCode with `curl -fsSL https://opencode.ai/install | bash`.",
+        installCommand: "curl -fsSL https://opencode.ai/install | bash",
+        alternativeInstallCommands: ["npm install -g opencode-ai"],
+        configureCommand: "OPENCODE_COMMAND=/absolute/path/to/opencode",
+        searchedCommands: ["opencode", "opencode-ai"],
+        searchedPaths: ["~/.local/bin/opencode", "/opt/homebrew/bin/opencode"],
+      };
     }
     if (route === "/addons/delegate") {
       return { id: "opencode-routed", path: "BrowserFirst/Delegations/opencode/opencode-routed.md" };
@@ -114,6 +124,11 @@ test("opencode workspace can create an initial routed delegation", async () => {
     assert.match(container.textContent, /opencode-routed/);
     assert.match(container.textContent, /Blocked: OpenCode runtime unavailable/);
     assert.match(container.textContent, /Next action: Install or start OpenCode/);
+    assert.match(container.textContent, /curl -fsSL https:\/\/opencode\.ai\/install \| bash/);
+    assert.match(container.textContent, /npm install -g opencode-ai/);
+    assert.match(container.textContent, /OPENCODE_COMMAND=\/absolute\/path\/to\/opencode/);
+    assert.match(container.textContent, /Command names checked: opencode, opencode-ai/);
+    assert.match(container.textContent, /~\/\.local\/bin\/opencode/);
     assert.match(container.textContent, /OpenCode is an add-on worker/);
   } finally {
     cleanup();

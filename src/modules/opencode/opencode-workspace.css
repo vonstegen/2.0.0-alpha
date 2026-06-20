@@ -162,6 +162,15 @@
 .opencode-error {
   border-color: rgba(248, 113, 113, 0.26);
   color: #fda4af;
+  white-space: pre-wrap;
+}
+
+.opencode-runtime-guidance {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--warning);
+  font: 700 0.72rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .opencode-actions {

@@ -2517,6 +2517,16 @@ export interface OpenCodeStatus {
   version?: string | null;
   binaryPath?: string | null;
   installHint: string;
+  installCommand?: string | null;
+  alternativeInstallCommands?: string[];
+  configureCommand?: string | null;
+  searchedCommands?: string[];
+  searchedPaths?: string[];
+  searchedPathCount?: number;
+  searchedPathOmitted?: number;
+  overrideConfigured?: boolean;
+  overridePath?: string | null;
+  overrideFound?: boolean;
   supportsWebUi: boolean;
   supportsServerApi: boolean;
 }
