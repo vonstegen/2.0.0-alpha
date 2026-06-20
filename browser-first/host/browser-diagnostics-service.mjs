@@ -134,6 +134,176 @@ export function createBrowserDiagnosticsService({
     }
   }
 
+  async function readJsonFile(filePath) {
+    try {
+      return JSON.parse(await readFile(filePath, "utf8"));
+    } catch {
+      return null;
+    }
+  }
+
+  async function readTextFile(filePath) {
+    try {
+      return await readFile(filePath, "utf8");
+    } catch {
+      return "";
+    }
+  }
+
+  function uniqueEntries(entries) {
+    const byId = new Map();
+    for (const entry of entries.filter(Boolean)) {
+      const id = String(entry.id ?? entry.label ?? entry.name ?? "").toLowerCase();
+      if (!id || byId.has(id)) continue;
+      byId.set(id, entry);
+    }
+    return [...byId.values()];
+  }
+
+  function packageDependencies(pkg) {
+    return new Set([
+      ...Object.keys(pkg?.dependencies ?? {}),
+      ...Object.keys(pkg?.devDependencies ?? {}),
+      ...Object.keys(pkg?.peerDependencies ?? {}),
+      ...Object.keys(pkg?.optionalDependencies ?? {}),
+    ]);
+  }
+
+  async function collectWorkspaceFiles(root, limit = 20_000) {
+    const skipDirs = new Set([
+      ".git",
+      ".next",
+      ".turbo",
+      ".vite",
+      ".cache",
+      "build",
+      "coverage",
+      "dist",
+      "node_modules",
+      "target",
+    ]);
+    const files = [];
+    async function walk(dir) {
+      if (files.length >= limit) return;
+      const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        if (files.length >= limit || entry.name.startsWith(".")) continue;
+        const filePath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (!skipDirs.has(entry.name)) await walk(filePath);
+          continue;
+        }
+        if (entry.isFile()) files.push(filePath);
+      }
+    }
+    await walk(root);
+    return files;
+  }
+
+  function languageInventory(files) {
+    const labels = new Map([
+      [".css", "CSS"],
+      [".html", "HTML"],
+      [".js", "JavaScript"],
+      [".jsx", "JavaScript/React"],
+      [".mjs", "JavaScript"],
+      [".cjs", "JavaScript"],
+      [".json", "JSON"],
+      [".md", "Markdown"],
+      [".py", "Python"],
+      [".rs", "Rust"],
+      [".sh", "Shell"],
+      [".toml", "TOML"],
+      [".ts", "TypeScript"],
+      [".tsx", "TypeScript/React"],
+      [".yaml", "YAML"],
+      [".yml", "YAML"],
+    ]);
+    const counts = new Map();
+    for (const filePath of files) {
+      const label = labels.get(path.extname(filePath).toLowerCase());
+      if (!label) continue;
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([label, count]) => ({ label, count }))
+      .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+  }
+
+  function detectFrameworks({ dependencies, cargoToml, extensionManifest }) {
+    return uniqueEntries([
+      dependencies.has("react") ? { id: "react", label: "React", detail: "react dependency" } : null,
+      dependencies.has("vite") ? { id: "vite", label: "Vite", detail: "vite dependency" } : null,
+      dependencies.has("vitest") ? { id: "vitest", label: "Vitest", detail: "vitest dependency" } : null,
+      dependencies.has("@testing-library/react") ? { id: "testing-library", label: "Testing Library", detail: "@testing-library/react dependency" } : null,
+      dependencies.has("lucide-react") ? { id: "lucide-react", label: "Lucide React", detail: "lucide-react dependency" } : null,
+      /\btauri\b/i.test(cargoToml) ? { id: "tauri", label: "Tauri", detail: "src-tauri Cargo metadata" } : null,
+      extensionManifest?.manifest_version === 3 ? { id: "chrome-mv3", label: "Chrome Extension MV3", detail: "extension manifest" } : null,
+    ]);
+  }
+
+  function detectRuntimes({ dependencies, cargoToml, extensionManifest }) {
+    return uniqueEntries([
+      { id: "node", label: "Node.js", detail: "npm scripts and browser-first host services" },
+      dependencies.has("typescript") ? { id: "typescript", label: "TypeScript compiler", detail: "typescript dependency" } : null,
+      dependencies.has("vite") ? { id: "vite-dev-server", label: "Vite dev/build runtime", detail: "vite dependency" } : null,
+      /\btauri\b/i.test(cargoToml) ? { id: "tauri-runtime", label: "Tauri native host", detail: "Rust desktop shell" } : null,
+      cargoToml ? { id: "rust", label: "Rust/Cargo", detail: "Cargo.toml metadata" } : null,
+      extensionManifest?.manifest_version === 3 ? { id: "chromium", label: "Chromium extension runtime", detail: "Manifest V3 side panel" } : null,
+    ]);
+  }
+
+  function detectPackageManagers(pkg) {
+    return uniqueEntries([
+      existsSync(path.join(repoRoot, "package-lock.json")) || /^npm@/i.test(String(pkg?.packageManager ?? ""))
+        ? { id: "npm", label: "npm", detail: "package-lock.json/package.json" }
+        : null,
+      existsSync(path.join(repoRoot, "pnpm-lock.yaml")) || /^pnpm@/i.test(String(pkg?.packageManager ?? ""))
+        ? { id: "pnpm", label: "pnpm", detail: "pnpm lock/packageManager field" }
+        : null,
+      existsSync(path.join(repoRoot, "yarn.lock")) || /^yarn@/i.test(String(pkg?.packageManager ?? ""))
+        ? { id: "yarn", label: "Yarn", detail: "yarn.lock/packageManager field" }
+        : null,
+      existsSync(path.join(repoRoot, "Cargo.toml")) || existsSync(path.join(repoRoot, "src-tauri", "Cargo.toml"))
+        ? { id: "cargo", label: "Cargo", detail: "Rust/Tauri metadata" }
+        : null,
+    ]);
+  }
+
+  async function executeWorkspaceInspection() {
+    const [pkg, extensionManifest, cargoToml, rootCargoToml, files] = await Promise.all([
+      readJsonFile(path.join(repoRoot, "package.json")),
+      readJsonFile(path.join(resonantExtension, "manifest.json")),
+      readTextFile(path.join(repoRoot, "src-tauri", "Cargo.toml")),
+      readTextFile(path.join(repoRoot, "Cargo.toml")),
+      collectWorkspaceFiles(repoRoot),
+    ]);
+    const dependencies = packageDependencies(pkg);
+    const combinedCargoToml = [cargoToml, rootCargoToml].filter(Boolean).join("\n");
+    const evidence = [
+      existsSync(path.join(repoRoot, "package.json")) ? { label: "package.json", detail: "project scripts and npm dependencies" } : null,
+      existsSync(path.join(repoRoot, "package-lock.json")) ? { label: "package-lock.json", detail: "npm lockfile" } : null,
+      cargoToml ? { label: "src-tauri/Cargo.toml", detail: "Tauri/Rust host metadata" } : null,
+      extensionManifest ? { label: "browser-first extension manifest", detail: `Manifest V${extensionManifest.manifest_version ?? "?"}` } : null,
+      { label: "source file scan", detail: `${files.length} file(s) sampled outside build/vendor directories` },
+    ];
+    return {
+      generatedAt: new Date().toISOString(),
+      project: {
+        name: String(pkg?.name ?? "resonantos-workspace"),
+        version: String(pkg?.version ?? ""),
+        packageManager: String(pkg?.packageManager ?? ""),
+        root: redactPathForDiagnostics(repoRoot),
+      },
+      languages: languageInventory(files),
+      frameworks: detectFrameworks({ dependencies, cargoToml: combinedCargoToml, extensionManifest }),
+      runtimes: detectRuntimes({ dependencies, cargoToml: combinedCargoToml, extensionManifest }),
+      packageManagers: detectPackageManagers(pkg),
+      evidence: evidence.filter(Boolean),
+      boundary: "Read-only metadata inspection. Provider credentials, bridge tokens, wallet secrets, private keys, and full home paths are excluded or redacted.",
+    };
+  }
+
   async function executeBrowserLaunchDiagnostics() {
     const logPath = browserLaunchLogPath();
     let logContent = "";
@@ -316,5 +486,6 @@ export function createBrowserDiagnosticsService({
     executeBrowserDownloads,
     executeBrowserLaunchDiagnostics,
     executeDiagnosticsReport,
+    executeWorkspaceInspection,
   };
 }

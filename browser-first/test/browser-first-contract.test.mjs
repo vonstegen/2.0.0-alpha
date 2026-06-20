@@ -488,6 +488,8 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(browserDiagnosticsHostService, /diagnostics-report-export/);
   assert.match(browserDiagnosticsHostService, /createBrowserDiagnosticsService/);
   assert.match(browserDiagnosticsService, /executeDiagnosticsReport/);
+  assert.match(browserDiagnosticsHostService, /\/workspace\/inspect/);
+  assert.match(browserDiagnosticsService, /executeWorkspaceInspection/);
   assert.match(browserDiagnosticsService, /browser-launch-diagnostics\.mjs/);
   assert.match(browserDiagnosticsHostService, /\/browser\/launch-diagnostics/);
   assert.match(browserDiagnosticsService, /executeBrowserLaunchDiagnostics/);

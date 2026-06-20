@@ -84,6 +84,7 @@ export function createBrowserDiagnosticsHostService({
     executeSystemStatus,
     browserDiagnosticsRoutes: [
       { method: "GET", path: "/status", handler: executeSystemStatus },
+      { method: "GET", path: "/workspace/inspect", handler: service.executeWorkspaceInspection },
       { method: "GET", path: "/browser/downloads", handler: service.executeBrowserDownloads },
       { method: "GET", path: "/browser/launch-diagnostics", handler: service.executeBrowserLaunchDiagnostics },
       {

@@ -47,6 +47,16 @@ function createHarness(overrides = {}) {
       if (route === "/augmentor/chat") {
         return { content: "assistant reply", usage: { tokens: 4 } };
       }
+      if (route === "/workspace/inspect") {
+        return {
+          project: { name: "resonantos-vnext", version: "0.1.0" },
+          languages: [{ label: "TypeScript", count: 12 }, { label: "Rust", count: 3 }],
+          frameworks: [{ label: "React", detail: "react dependency" }, { label: "Tauri", detail: "src-tauri Cargo metadata" }],
+          runtimes: [{ label: "Node.js", detail: "npm scripts" }, { label: "Chromium extension runtime", detail: "Manifest V3 side panel" }],
+          packageManagers: [{ label: "npm", detail: "package-lock.json" }, { label: "Cargo", detail: "Rust/Tauri metadata" }],
+          evidence: [{ label: "package.json", detail: "project scripts" }]
+        };
+      }
       if (route === "/addons/delegate") {
         return { id: "task-1", path: "Tasks/task-1.md", target: request.body.target };
       }
@@ -151,6 +161,26 @@ test("main workspace action controller routes explicit control slash commands in
     event[1].targetUrl === "https://disney.com/"
   ));
   assert.equal(harness.events.some((event) => event[0] === "bridge" && event[1] === "/augmentor/chat"), false);
+});
+
+test("main workspace action controller completes workspace self-inspection without delegation", async () => {
+  const harness = createHarness({
+    prompt: "/control inspect this workspace and summarize the languages, frameworks, runtimes, and package managers used"
+  });
+
+  await harness.controller.handleSubmit({ preventDefault() {} });
+
+  assert.ok(harness.events.some((event) => event[0] === "bridge" && event[1] === "/workspace/inspect"));
+  assert.equal(harness.events.some((event) => event[0] === "bridge" && event[1] === "/augmentor/chat"), false);
+  assert.equal(harness.events.some((event) => event[0] === "bridge" && event[1] === "/addons/delegate"), false);
+  assert.equal(harness.events.some((event) => event[0] === "runtime-message"), false);
+  const message = harness.events.find((event) => event[0] === "message" && event[1] === "system" && /Workspace inspection completed/.test(event[2]));
+  assert.ok(message);
+  assert.match(message[2], /TypeScript/);
+  assert.match(message[2], /React/);
+  assert.match(message[2], /Tauri/);
+  assert.match(message[2], /npm/);
+  assert.match(message[2], /No OpenCode\/Hermes delegation/);
 });
 
 test("main workspace action controller falls back when atomic browser handoff is unavailable", async () => {

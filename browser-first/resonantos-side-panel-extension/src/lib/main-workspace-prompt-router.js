@@ -55,6 +55,22 @@ export const parseControlSlashCommand = (value) => {
   return match ? (match[1] ?? "").trim() : null;
 };
 
+export const parseWorkspaceInspectionIntent = (value) => {
+  const prompt = String(value ?? "").trim();
+  if (!prompt) return null;
+  const controlGoal = parseControlSlashCommand(prompt);
+  const text = (controlGoal !== null ? controlGoal : prompt).trim();
+  if (!text) return null;
+  const asksForInspection = /\b(inspect|scan|summari[sz]e|inventory|diagnos|audit|list|what(?:'s| is| are)?|which)\b/i.test(text) ||
+    /\b(technology\s+stack|tech\s+stack|languages?|frameworks?|runtimes?|package\s+managers?|dependencies)\b/i.test(text);
+  const targetsWorkspace = /\b(this|current|local|resonantos|code)\s+(workspace|repo|repository|codebase|project)\b/i.test(text) ||
+    /\b(self[-\s]?inspection|technology\s+stack|tech\s+stack)\b/i.test(text) ||
+    /\b(your|its)\s+(languages?|frameworks?|runtimes?|package\s+managers?|dependencies)\b/i.test(text);
+  return asksForInspection && targetsWorkspace
+    ? { query: text, source: controlGoal !== null ? "control-slash" : "main-workspace" }
+    : null;
+};
+
 export const parseWalletSlashCommand = (value) => {
   const match = /^\/\s*wallet(?:\s+([\s\S]*))?$/i.exec(String(value ?? "").trim());
   if (!match) return null;
@@ -78,6 +94,8 @@ export const parseDaoSlashCommand = (value) => {
 export function planMainWorkspacePrompt(value) {
   const prompt = String(value ?? "").trim();
   if (!prompt) return { action: "empty" };
+  const workspaceInspection = parseWorkspaceInspectionIntent(prompt);
+  if (workspaceInspection) return { action: "workspace-inspection", intent: workspaceInspection };
   const controlGoal = parseControlSlashCommand(prompt);
   if (controlGoal !== null) return { action: "control", goal: controlGoal };
   const memoryQuery = parseMemorySlashCommand(prompt);
