@@ -32,7 +32,8 @@
       "policy": "observe",
       "adapter": "subprocess-no-argv-secret",
       "surfaces": [
-        "src-tauri/src"
+        "browser-first/host",
+        "src"
       ]
     },
     {
@@ -41,7 +42,8 @@
       "policy": "observe",
       "adapter": "subprocess-env-clear",
       "surfaces": [
-        "src-tauri/src"
+        "browser-first/host",
+        "src"
       ]
     },
     {
@@ -50,7 +52,8 @@
       "policy": "observe",
       "adapter": "subprocess-pinned-roots",
       "surfaces": [
-        "src-tauri/src"
+        "browser-first/host",
+        "src"
       ]
     },
     {
@@ -59,7 +62,8 @@
       "policy": "observe",
       "adapter": "subprocess-terminal-allowlist",
       "surfaces": [
-        "src-tauri/src"
+        "browser-first/host",
+        "src"
       ]
     }
   ]
