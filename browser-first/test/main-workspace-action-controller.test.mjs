@@ -136,6 +136,23 @@ test("main workspace action controller routes browser work into sidebar control 
   assert.equal(harness.events.some((event) => event[0] === "open-sidebar"), false);
 });
 
+test("main workspace action controller routes explicit control slash commands into sidebar control mode", async () => {
+  const harness = createHarness({ prompt: "/control go to disney.com" });
+
+  await harness.controller.handleSubmit({ preventDefault() {} });
+
+  assert.ok(harness.events.some((event) =>
+    event[0] === "storage-set" &&
+    event[1].augmentorPendingSidebarPrompt.prompt === "/control go to disney.com"
+  ));
+  assert.ok(harness.events.some((event) =>
+    event[0] === "runtime-message" &&
+    event[1].type === "browser_control_handoff" &&
+    event[1].targetUrl === "https://disney.com/"
+  ));
+  assert.equal(harness.events.some((event) => event[0] === "bridge" && event[1] === "/augmentor/chat"), false);
+});
+
 test("main workspace action controller falls back when atomic browser handoff is unavailable", async () => {
   const harness = createHarness({
     prompt: "go to https://resonantos.com and summarize it",

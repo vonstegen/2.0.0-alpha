@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   parseDaoSlashCommand,
+  parseControlSlashCommand,
   parseDraftSlashCommand,
   parseHermesSlashCommand,
   parseIntakeSlashCommand,
@@ -14,6 +15,8 @@ import {
 
 test("main workspace prompt router parses explicit workspace slash commands", () => {
   assert.equal(parseMemorySlashCommand("/memory augmentatism"), "augmentatism");
+  assert.equal(parseControlSlashCommand("/control go to disney.com"), "go to disney.com");
+  assert.equal(parseControlSlashCommand("/control"), "");
   assert.equal(parseMemorySlashCommand("/archive"), "");
   assert.equal(parseHermesSlashCommand("/hermes coordinate research"), "coordinate research");
   assert.equal(parseOpenCodeSlashCommand("/open code inspect tests"), "inspect tests");
@@ -123,6 +126,10 @@ test("main workspace prompt router preserves explicit command priority", () => {
   assert.equal(planMainWorkspacePrompt("/wallet status").action, "wallet");
   assert.equal(planMainWorkspacePrompt("/dao review proposal").action, "dao");
   assert.equal(planMainWorkspacePrompt("/calendar Planning | body: Tuesday 10").action, "draft");
+  assert.deepEqual(planMainWorkspacePrompt("/control go to disney.com"), {
+    action: "control",
+    goal: "go to disney.com"
+  });
 });
 
 test("main workspace prompt router separates browser control from normal chat", () => {
