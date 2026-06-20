@@ -94,7 +94,7 @@ test("browser diagnostics host service inspects workspace stack metadata without
     assert.ok(report.runtimes.some((entry) => entry.label === "Chromium extension runtime"));
     assert.ok(report.packageManagers.some((entry) => entry.label === "npm"));
     assert.ok(report.packageManagers.some((entry) => entry.label === "Cargo"));
-    assert.match(report.project.root, /^~\/repo$/);
+    assert.match(report.project.root.replace(/\\/g, "/"), /^~\/repo$/);
     assert.match(report.boundary, /Read-only metadata inspection/);
   } finally {
     await rm(root, { recursive: true, force: true });
