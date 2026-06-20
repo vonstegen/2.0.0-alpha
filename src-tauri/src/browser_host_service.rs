@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
+use crate::scoped_env::apply_scoped_env;
+
 static BROWSER_HOST: OnceLock<Mutex<Option<BrowserHostProcess>>> = OnceLock::new();
 static BROWSER_VISIBLE_HOST: OnceLock<Mutex<Option<BrowserHostProcess>>> = OnceLock::new();
 
@@ -191,18 +193,19 @@ fn send_rpc(
 fn start_browser_host_process(app: &AppHandle) -> Result<BrowserHostProcess, String> {
     let script = resolve_browser_host_script(app)?;
     let node = env::var("RESONANTOS_NODE").unwrap_or_else(|_| "node".to_string());
-    let mut child = Command::new(node)
+    let mut command = Command::new(node);
+    command
         .arg(&script)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| {
-            format!(
-                "Failed to start Browser host service at {}: {error}",
-                script.display()
-            )
-        })?;
+        .stderr(Stdio::null());
+    apply_scoped_env(&mut command, "browser-host");
+    let mut child = command.spawn().map_err(|error| {
+        format!(
+            "Failed to start Browser host service at {}: {error}",
+            script.display()
+        )
+    })?;
     let stdin = child
         .stdin
         .take()
@@ -222,19 +225,20 @@ fn start_browser_visible_host_process(app: &AppHandle) -> Result<BrowserHostProc
     let script = resolve_browser_visible_host_script(app)?;
     let electron = resolve_browser_visible_host_electron(app)?;
     repair_macos_electron_framework_layout(&electron)?;
-    let mut child = Command::new(&electron)
+    let mut command = Command::new(&electron);
+    command
         .arg(&script)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| {
-            format!(
-                "Failed to start visible Browser host service with {} at {}: {error}",
-                electron.display(),
-                script.display()
-            )
-        })?;
+        .stderr(Stdio::null());
+    apply_scoped_env(&mut command, "browser-host");
+    let mut child = command.spawn().map_err(|error| {
+        format!(
+            "Failed to start visible Browser host service with {} at {}: {error}",
+            electron.display(),
+            script.display()
+        )
+    })?;
     let stdin = child
         .stdin
         .take()
