@@ -2746,11 +2746,10 @@ pub(crate) async fn execute_archive_ingest_probe(
 #[cfg(test)]
 mod tests {
     use super::{
-        append_provider_request_audit_to_logs_root, audit_error_summary, build_codex_exec_command,
-        bounded_http_client,
-        endpoint_host, ensure_runtime_kind_supported, extract_assistant_content,
-        extract_cloud_usage, extract_local_assistant_content, extract_local_usage,
-        extract_ollama_tag_model_ids, extract_openai_compatible_model_ids,
+        append_provider_request_audit_to_logs_root, audit_error_summary, bounded_http_client,
+        build_codex_exec_command, endpoint_host, ensure_runtime_kind_supported,
+        extract_assistant_content, extract_cloud_usage, extract_local_assistant_content,
+        extract_local_usage, extract_ollama_tag_model_ids, extract_openai_compatible_model_ids,
         filter_think_stream_delta, http_probe_outcome, lan_discovery_consent,
         local_subnet_http_candidates, models_endpoint_for_openai_compatible, ollama_tags_endpoint,
         parse_ollama_model_names, request_messages_with_system_prompt, resolve_local_runtime_model,

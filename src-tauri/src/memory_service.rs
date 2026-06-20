@@ -222,7 +222,7 @@ pub(crate) fn start_memory_service(
     if host_requires_unsafe_optin(&host) {
         command.arg("--unsafe-host");
     }
-    let child = command
+    command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
