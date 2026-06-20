@@ -7,6 +7,7 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { cefArchiveName, cefBuild, cefBuildDirectoryName } from "./cef-build-config.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cefIndexUrl = "https://cef-builds.spotifycdn.com/index.json";
@@ -18,8 +19,8 @@ const argValue = (name, fallback) => {
 };
 
 const platform = argValue("--platform", detectCefPlatform());
-const fileType = argValue("--type", "standard");
-const channel = argValue("--channel", "stable");
+const fileType = argValue("--type", cefBuild.fileType);
+const channel = argValue("--channel", cefBuild.channel);
 const download = args.has("--download");
 const outDir = path.resolve(argValue("--out", path.join(root, "vendor", "cef")));
 
@@ -34,8 +35,10 @@ const manifest = {
   platform,
   fileType,
   channel,
+  pinned: true,
   cefVersion: selection.version.cef_version,
   chromiumVersion: selection.version.chromium_version,
+  buildDirectory: cefBuildDirectoryName(platform),
   file: selection.file,
   url: `https://cef-builds.spotifycdn.com/${selection.file.name}`,
 };
@@ -71,16 +74,21 @@ function selectCefBuild(index, input) {
   if (!platformIndex) {
     throw new Error(`CEF platform ${input.platform} is not present in the build index.`);
   }
+  const expectedArchive = cefArchiveName(input.platform);
   for (const version of platformIndex.versions) {
-    if (version.channel !== input.channel) {
+    if (
+      version.channel !== input.channel ||
+      version.cef_version !== cefBuild.cefVersion ||
+      version.chromium_version !== cefBuild.chromiumVersion
+    ) {
       continue;
     }
-    const file = version.files.find((candidate) => candidate.type === input.fileType);
+    const file = version.files.find((candidate) => candidate.type === input.fileType && candidate.name === expectedArchive);
     if (file) {
       return { version, file };
     }
   }
-  throw new Error(`No ${input.channel} ${input.fileType} CEF build found for ${input.platform}.`);
+  throw new Error(`Pinned CEF archive ${expectedArchive} was not found in the build index.`);
 }
 
 function fetchJson(url) {

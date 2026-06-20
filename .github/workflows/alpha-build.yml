@@ -78,11 +78,41 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
+
+      - name: Install browser host dependencies
+        run: npm ci --prefix addons/resonant-browser-host
+
+      - name: Audit browser host dependencies
+        run: npm audit --prefix addons/resonant-browser-host --audit-level=high
+
       - name: Run frontend tests
         run: npm test -- --run
 
+      - name: Run browser host tests
+        run: npm run test:browser-host
+
+      - name: Run Electron host tests
+        run: npm run test:electron-host
+
+      - name: Run native browser tests
+        run: npm run test:browser-native
+
       - name: Run browser-first tests
         run: npm run test:browser-first
+
+      - name: Run Living Archive memory service tests
+        run: npm run test:living-archive-memory-service
+
+      - name: Run Living Archive MCP tests
+        run: npm run test:living-archive-mcp
+
+      - name: Run health checks
+        run: npm run test:health
+
+      - name: Run engineer runner tests
+        run: npm run test:engineer-runner
 
       - name: Package browser-first extension
         run: |

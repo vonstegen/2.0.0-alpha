@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
+import { cefBuildDirectoryName } from "../scripts/cef-build-config.mjs";
 
 const execFileAsync = promisify(execFile);
 const addonRoot = path.resolve(import.meta.dirname, "..");
@@ -14,7 +15,7 @@ const cefFramework = path.join(
   addonRoot,
   "vendor",
   "cef",
-  "cef_binary_147.0.10+gd58e84d+chromium-147.0.7727.118_macosarm64",
+  cefBuildDirectoryName("macosarm64"),
   "Release",
   "Chromium Embedded Framework.framework",
 );
@@ -55,6 +56,12 @@ const latestPhantomExtensionDir = existsSync(phantomExtensionRoot)
 function nativeBridgeLiveSkipReason(testName) {
   if (process.env.CODEX_SANDBOX) {
     return `${testName} requires an unsandboxed macOS desktop session; Codex sandbox blocks Chromium profile sockets and helper process IPC.`;
+  }
+  if (
+    !process.env.RESONANTOS_CEF_NO_SANDBOX &&
+    (process.env.CODEX_CI || process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE)
+  ) {
+    return `${testName} requires a normal macOS Terminal/Finder session; Codex Desktop's app sandbox blocks CEF helper framework loads.`;
   }
   if (process.platform !== "darwin" || !existsSync(bridgeDylib) || !existsSync(cefFramework) || !existsSync(helper)) {
     return "macOS native bridge, CEF framework, and helper app are required for embedded smoke.";

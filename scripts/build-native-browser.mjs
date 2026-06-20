@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { cefBuildDirectoryName } from "../addons/resonant-browser-native/scripts/cef-build-config.mjs";
 
 const root = process.cwd();
 const args = new Set(process.argv.slice(2));
@@ -14,7 +15,7 @@ const cefRoot = path.join(
   addonRoot,
   "vendor",
   "cef",
-  `cef_binary_147.0.10+gd58e84d+chromium-147.0.7727.118_${cefPlatform ?? "unsupported"}`,
+  cefBuildDirectoryName(cefPlatform ?? "unsupported"),
 );
 const nativeHostSource = path.join(addonRoot, "native_host");
 const buildDir = path.join(addonRoot, "build");
