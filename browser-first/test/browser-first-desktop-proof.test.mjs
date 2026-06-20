@@ -9,26 +9,47 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 
+async function writeNpmShim(bin, rules) {
+  const shimPath = path.join(bin, process.platform === "win32" ? "npm.cmd" : "npm");
+  if (process.platform === "win32") {
+    await writeFile(shimPath, [
+      "@echo off",
+      ...rules.flatMap(({ script, stdout, exitCode }) => [
+        `if "%2"=="${script}" (`,
+        stdout ? `  echo ${stdout}` : "",
+        `  exit /b ${exitCode}`,
+        ")",
+      ]),
+      "echo unexpected npm command: %* 1>&2",
+      "exit /b 9",
+      "",
+    ].filter((line) => line !== "").join("\r\n"));
+  } else {
+    await writeFile(shimPath, [
+      "#!/bin/sh",
+      ...rules.flatMap(({ script, stdout, exitCode }) => [
+        `if [ "$2" = "${script}" ]; then`,
+        stdout ? `  echo '${stdout}'` : "",
+        `  exit ${exitCode}`,
+        "fi",
+      ]),
+      "echo \"unexpected npm command: $@\" >&2",
+      "exit 9",
+      "",
+    ].join("\n"));
+    await chmod(shimPath, 0o755);
+  }
+}
+
 test("desktop proof runner passes only when verification and audit pass", async () => {
   const tmp = await mkdtemp(path.join(os.tmpdir(), "resonantos-desktop-proof-"));
   try {
     const bin = path.join(tmp, "bin");
     await mkdir(bin, { recursive: true });
-    await writeFile(path.join(bin, "npm"), [
-      "#!/bin/sh",
-      "if [ \"$2\" = \"browser-first:verify-desktop\" ]; then",
-      "  echo '{\"status\":\"ready\",\"step\":\"verify\"}'",
-      "  exit 0",
-      "fi",
-      "if [ \"$2\" = \"browser-first:audit-desktop\" ]; then",
-      "  echo '{\"status\":\"ready\",\"step\":\"audit\"}'",
-      "  exit 0",
-      "fi",
-      "echo \"unexpected npm command: $@\" >&2",
-      "exit 9",
-      ""
-    ].join("\n"));
-    await chmod(path.join(bin, "npm"), 0o755);
+    await writeNpmShim(bin, [
+      { script: "browser-first:verify-desktop", stdout: "{\"status\":\"ready\",\"step\":\"verify\"}", exitCode: 0 },
+      { script: "browser-first:audit-desktop", stdout: "{\"status\":\"ready\",\"step\":\"audit\"}", exitCode: 0 },
+    ]);
 
     const { stdout } = await execFileAsync("node", [
       path.join(repoRoot, "scripts", "prove-browser-first-desktop.mjs"),
@@ -51,20 +72,10 @@ test("desktop proof runner fails when audit fails after verification", async () 
   try {
     const bin = path.join(tmp, "bin");
     await mkdir(bin, { recursive: true });
-    await writeFile(path.join(bin, "npm"), [
-      "#!/bin/sh",
-      "if [ \"$2\" = \"browser-first:verify-desktop\" ]; then",
-      "  echo '{\"status\":\"ready\",\"step\":\"verify\"}'",
-      "  exit 0",
-      "fi",
-      "if [ \"$2\" = \"browser-first:audit-desktop\" ]; then",
-      "  echo '{\"status\":\"attention\",\"issues\":[\"missing proof\"]}'",
-      "  exit 2",
-      "fi",
-      "exit 9",
-      ""
-    ].join("\n"));
-    await chmod(path.join(bin, "npm"), 0o755);
+    await writeNpmShim(bin, [
+      { script: "browser-first:verify-desktop", stdout: "{\"status\":\"ready\",\"step\":\"verify\"}", exitCode: 0 },
+      { script: "browser-first:audit-desktop", stdout: "{\"status\":\"attention\",\"issues\":[\"missing proof\"]}", exitCode: 2 },
+    ]);
 
     await assert.rejects(
       execFileAsync("node", [

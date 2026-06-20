@@ -91,6 +91,6 @@ async function main() {
   process.exit(audit.status === "ready" ? 0 : 2);
 }
 
-if (process.argv[1] && import.meta.url === new URL(process.argv[1], "file:").href) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await main();
 }

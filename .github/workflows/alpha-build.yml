@@ -115,6 +115,8 @@ jobs:
         run: npm run test:browser-host
 
       - name: Run Electron host tests
+        env:
+          RESONANTOS_WALLET_BROWSER_HEADLESS: "1"
         run: npm run test:electron-host
 
       - name: Run native browser tests

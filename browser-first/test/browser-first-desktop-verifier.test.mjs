@@ -9,6 +9,36 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 
+async function writeNpmShim(bin) {
+  const shimPath = path.join(bin, process.platform === "win32" ? "npm.cmd" : "npm");
+  if (process.platform === "win32") {
+    await writeFile(shimPath, [
+      "@echo off",
+      "if \"%2\"==\"browser-first:verify-installed\" (",
+      "  echo ^> fake npm wrapper",
+      "  echo {\"status\":\"ready\",\"step\":\"installed\"}",
+      "  exit /b 0",
+      ")",
+      "echo {\"status\":\"ready\",\"step\":\"native\"}",
+      "exit /b 0",
+      "",
+    ].join("\r\n"));
+  } else {
+    await writeFile(shimPath, [
+      "#!/bin/sh",
+      "if [ \"$2\" = \"browser-first:verify-installed\" ]; then",
+      "  echo '> fake npm wrapper'",
+      "  echo '{\"status\":\"ready\",\"step\":\"installed\"}'",
+      "  exit 0",
+      "fi",
+      "echo '{\"status\":\"ready\",\"step\":\"native\"}'",
+      "exit 0",
+      ""
+    ].join("\n"));
+    await chmod(shimPath, 0o755);
+  }
+}
+
 test("desktop verifier dry-run writes the command plan and report path", async () => {
   const tmp = await mkdtemp(path.join(os.tmpdir(), "resonantos-desktop-verifier-"));
   try {
@@ -33,23 +63,12 @@ test("desktop verifier dry-run writes the command plan and report path", async (
 });
 
 test("desktop verifier captures parsed child verifier JSON in the durable report", async () => {
-    const tmp = await mkdtemp(path.join(os.tmpdir(), "resonantos-desktop-verifier-parse-"));
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "resonantos-desktop-verifier-parse-"));
   try {
     const bin = path.join(tmp, "bin");
     const reportPath = path.join(tmp, "desktop-report.json");
     await mkdir(bin, { recursive: true });
-    await writeFile(path.join(bin, "npm"), [
-      "#!/bin/sh",
-      "if [ \"$2\" = \"browser-first:verify-installed\" ]; then",
-      "  echo '> fake npm wrapper'",
-      "  echo '{\"status\":\"ready\",\"step\":\"installed\"}'",
-      "  exit 0",
-      "fi",
-      "echo '{\"status\":\"ready\",\"step\":\"native\"}'",
-      "exit 0",
-      ""
-    ].join("\n"));
-    await chmod(path.join(bin, "npm"), 0o755);
+    await writeNpmShim(bin);
 
     const { stdout } = await execFileAsync("node", [
       path.join(repoRoot, "scripts", "verify-browser-first-desktop.mjs"),
