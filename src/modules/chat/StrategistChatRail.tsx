@@ -39,6 +39,7 @@ import { formatBytes } from "./utils";
 const modelLabel = (model: string): string => {
   const labels: Record<string, string> = {
     "MiniMax-M3": "MiniMax M3",
+    "zai/glm-5.2": "Z.AI GLM 5.2",
     "gpt-5.5": "GPT 5.5",
     "gpt-5.4-mini": "GPT 5.4 Mini",
     "batiai/gemma4-e2b:q4": "Gemma 4 2B (Mac Mini)",
@@ -51,6 +52,7 @@ const supportsThinkingDepth = (model: string): boolean => model.startsWith("gpt-
 
 type StrategistChatRailProps = {
   isOpen: boolean;
+  showCollapsedToggle?: boolean;
   mode: "strategist" | "emergency";
   title: string;
   eyebrow: string;
@@ -502,6 +504,9 @@ export function StrategistChatRail(props: StrategistChatRailProps) {
   };
 
   if (!props.isOpen) {
+    if (props.showCollapsedToggle === false) {
+      return null;
+    }
     return (
       <aside className={`chat-sidebar closed ${props.mode === "emergency" ? "emergency" : ""}`}>
         <button type="button" className="chat-collapsed-toggle" onClick={props.onToggleSidebar}>

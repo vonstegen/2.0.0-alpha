@@ -2950,6 +2950,23 @@ describe("App boot flow", () => {
     expect(screen.getByRole("button", { name: "Move chat back to the right" })).toBeTruthy();
   });
 
+  it("opens the main chat rail from Living Archive instead of toggling hidden archive chat layout", async () => {
+    const { container } = render(<App />);
+
+    expect((await screen.findAllByText("Launch your AI tools from one workbench.")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole("button", { name: /Archive/i })[0]);
+    expect(await screen.findByText("Current memory configuration")).toBeTruthy();
+    expect(container.querySelector(".shell.chat-closed")).toBeTruthy();
+    expect(container.querySelector(".shell.center-chat-owner")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Chat" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open main chat" }));
+
+    await waitFor(() => expect(screen.getByText("Launch your AI tools from one workbench.")).toBeTruthy());
+    expect(container.querySelector(".shell.chat-open")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Move chat beside the launcher" })).toBeTruthy();
+  });
+
   it("detaches chat by opening the floating window and hiding the dashboard rail/history", async () => {
     const { container } = render(<App />);
 
@@ -3952,7 +3969,10 @@ describe("App boot flow", () => {
   });
 
   it("shows string backend errors instead of collapsing them into a generic message", async () => {
-    requestProviderServiceChatCompletionMock.mockRejectedValue("You exceeded your current quota.");
+    requestProviderServiceChatCompletionMock
+      .mockRejectedValueOnce("You exceeded your current quota.")
+      .mockRejectedValueOnce("You exceeded your current quota.")
+      .mockResolvedValueOnce("Recovered after provider failure.");
 
     render(<App />);
 
@@ -3964,6 +3984,14 @@ describe("App boot flow", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Send message" })[0]);
 
     expect((await screen.findAllByText("You exceeded your current quota.")).length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getAllByPlaceholderText("Message Augmentor")[0], {
+      target: { value: "try again" },
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Send message" })[0]);
+
+    expect(await screen.findByText("Recovered after provider failure.")).toBeTruthy();
+    expect(requestProviderServiceChatCompletionMock).toHaveBeenCalledTimes(3);
   });
 
   it("injects Living Archive context into Strategist chat turns", async () => {

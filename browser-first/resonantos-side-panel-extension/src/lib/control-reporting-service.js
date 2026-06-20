@@ -6,11 +6,13 @@ import {
 export function createControlReportingService({
   addMessage,
   bridgeRequest,
+  getBridgeRequest,
   controlStepLabel,
   getCurrentControlRun,
   getLastSnapshot,
   getPendingApproval
 }) {
+  const bridge = () => (typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest);
   const formatDurationMs = (value) => {
     const ms = Number(value);
     if (!Number.isFinite(ms) || ms < 0) return "";
@@ -127,7 +129,7 @@ export function createControlReportingService({
     const lastSnapshot = getLastSnapshot();
     const content = buildControlReport(results, status);
     if (!content) return null;
-    return bridgeRequest("/archive/intake", {
+    return bridge()("/archive/intake", {
       method: "POST",
       body: {
         title: `Browser control ${status}: ${currentControlRun?.goal ?? "task"}`.slice(0, 160),
@@ -245,7 +247,7 @@ export function createControlReportingService({
   const saveBrowserJobReportToArchive = async (job) => {
     const content = buildBrowserJobReport(job);
     if (!content) return null;
-    return bridgeRequest("/archive/intake", {
+    return bridge()("/archive/intake", {
       method: "POST",
       body: {
         title: `Browser job ${job.status}: ${job.goal ?? "task"}`.slice(0, 160),
@@ -261,7 +263,7 @@ export function createControlReportingService({
     const currentControlRun = getCurrentControlRun();
     if (!pendingApproval && !currentControlRun) return;
     const step = pendingApproval?.step;
-    const result = await bridgeRequest("/addons/delegate", {
+    const result = await bridge()("/addons/delegate", {
       method: "POST",
       body: {
         target: "engineer",

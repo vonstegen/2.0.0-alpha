@@ -8,10 +8,46 @@ import {
   buildProviderDraftHandoff,
   parseDraftPacketMarkdown,
 } from "./addon-draft-connectors.mjs";
+import { dashboardProxyUrl } from "./bridge-server.mjs";
+
+// When the bridge runs on a multi-homed host (e.g. the Pi5 has loopback,
+// LAN 192.168.1.100, and Tailscale 100.100.100.100), it has to publish URLs
+// that a remote extension can actually reach. `dashboardTarget()` returns
+// the loopback URL the dashboard process binds to (correct for the bridge
+// to manage the process), but the URL the extension displays to the user
+// must be the one that resolves on the *client* machine — same port, but
+// the host the bridge has told clients to dial. We use the same env var
+// the bridge config file uses (RESONANTOS_BRIDGE_PUBLIC_URL) so the two
+// stay in lockstep.
+function clientReachableHost() {
+  const explicit = process.env.RESONANTOS_BRIDGE_PUBLIC_URL;
+  if (explicit) {
+    try {
+      const u = new URL(explicit);
+      return u.hostname || "127.0.0.1";
+    } catch {
+      /* fall through to RESONANTOS_BRIDGE_HOST */
+    }
+  }
+  const host = process.env.RESONANTOS_BRIDGE_HOST ?? "127.0.0.1";
+  // Don't expose a bind-everything address as a client-facing URL.
+  if (host === "0.0.0.0" || host === "::") return "127.0.0.1";
+  return host;
+}
+
+function clientReachableUrl(loopbackUrl) {
+  try {
+    const u = new URL(loopbackUrl);
+    return `${u.protocol}//${clientReachableHost()}:${u.port}`;
+  } catch {
+    return loopbackUrl;
+  }
+}
 
 export function createAddonDelegationService(dependencies) {
   const {
     browserFirstRoot,
+    bridgePublicUrl,
     dashboardTarget,
     execFileStdout,
     expandUserPath,
@@ -28,6 +64,18 @@ export function createAddonDelegationService(dependencies) {
     uniqueRuntimeId,
     userRoot,
   } = dependencies;
+
+  // Reverse-proxy URL the extension can embed in an iframe without tripping
+  // Chrome's mixed-content blocker. The proxy lives at the bridge origin
+  // (same origin as the bridge request itself), and the bridge streams the
+  // Hermes dashboard (running on 127.0.0.1:9119 on the Pi) through it. The
+  // dependency is a getter (not a static string) because the bridge host URL
+  // is only known after the server actually binds a port.
+  function clientReachableProxyUrl() {
+    return dashboardProxyUrl({
+      publicUrl: typeof bridgePublicUrl === "function" ? bridgePublicUrl() : bridgePublicUrl,
+    });
+  }
 
   async function executeGoalRecord(payload) {
     const mission = String(payload.mission ?? "").trim();
@@ -1049,14 +1097,21 @@ export function createAddonDelegationService(dependencies) {
     const running = await socketOpen(target.host, target.port);
     return {
       running,
-      url: target.url,
+      url: clientReachableUrl(target.url),
+      // Same-origin URL the extension hits to fetch the dashboard HTML,
+      // which it then inlines into a sandboxed <iframe srcdoc> on its own
+      // secure extension page. This avoids Chrome's mixed-content rule
+      // (which would block any http:// iframe src inside a
+      // chrome-extension:// page). Works for any addon, no TLS, no certs.
+      dashboardProxyUrl: clientReachableProxyUrl(),
       host: target.host,
       port: target.port,
+      clientHost: clientReachableHost(),
       command,
       profileHome: hermesHome(payload.profileHome),
       detail: running
-        ? `Hermes dashboard is reachable at ${target.url}.`
-        : `Hermes dashboard is not reachable at ${target.url}.`,
+        ? `Hermes dashboard is reachable at ${clientReachableUrl(target.url)}.`
+        : `Hermes dashboard is not reachable at ${clientReachableUrl(target.url)}.`,
       rawStatus: command ? "Hermes CLI found." : "Hermes CLI was not found.",
     };
   }
@@ -1070,7 +1125,11 @@ export function createAddonDelegationService(dependencies) {
     }
     const alreadyRunning = await socketOpen(target.host, target.port);
     if (!alreadyRunning) {
-      const args = ["dashboard", "--host", target.host, "--port", String(target.port), "--no-open"];
+      // Bind Hermes to the bridge's public interface so remote clients
+      // (Mac/Windows extension over LAN or Tailscale) can reach the
+      // dashboard. Falls back to loopback if the bridge is loopback-only.
+      const bindHost = clientReachableHost();
+      const args = ["dashboard", "--host", bindHost, "--port", String(target.port), "--no-open"];
       if (payload.includeTui !== false) {
         args.push("--tui");
       }

@@ -246,20 +246,23 @@ function runNativeLiveVerifier() {
 }
 
 await mkdir(path.dirname(logPath), { recursive: true });
-const nativeAssets = await validateBrowserFirstNativeAssets({ repoRoot });
-if (!nativeAssets.ok) {
-  console.log(JSON.stringify({
-    appPath,
-    elapsedMs: 0,
-    logPath,
-    status: "attention",
-    issues: nativeAssets.issues,
-    nativeAssets: {
-      status: "failed",
-      nextAction: nativeAssets.nextAction,
-    },
-  }, null, 2));
-  process.exit(2);
+let nativeAssets = null;
+if (!skipLaunch) {
+  nativeAssets = await validateBrowserFirstNativeAssets({ repoRoot });
+  if (!nativeAssets.ok) {
+    console.log(JSON.stringify({
+      appPath,
+      elapsedMs: 0,
+      logPath,
+      status: "attention",
+      issues: nativeAssets.issues,
+      nativeAssets: {
+        status: "failed",
+        nextAction: nativeAssets.nextAction,
+      },
+    }, null, 2));
+    process.exit(2);
+  }
 }
 
 let launchResult = { ok: true };

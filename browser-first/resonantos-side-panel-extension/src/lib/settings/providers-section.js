@@ -109,7 +109,8 @@ function providerAccountForm(provider = {}) {
   return form;
 }
 
-function openProviderAccountModal({ bridgeRequest, statusNode, reload }) {
+function openProviderAccountModal({ bridgeRequest, getBridgeRequest, statusNode, reload }) {
+  const bridge = () => (typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest);
   const overlay = document.createElement("div");
   overlay.className = "settings-provider-modal";
   const panel = document.createElement("section");
@@ -146,7 +147,7 @@ function openProviderAccountModal({ bridgeRequest, statusNode, reload }) {
     save.disabled = true;
     setStatus(statusNode, "Saving provider account...");
     try {
-      await bridgeRequest("/providers/accounts", {
+      await bridge()("/providers/accounts", {
         method: "POST",
         capability: "provider-credential-write",
         body: providerAccountPayload(form),
@@ -319,7 +320,8 @@ function diagnosticsHistoryPanel() {
   };
 }
 
-function providerCard({ provider, bridgeRequest, statusNode, reload, onSelectSection }) {
+function providerCard({ provider, bridgeRequest, getBridgeRequest, statusNode, reload, onSelectSection }) {
+  const bridge = () => (typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest);
   const card = document.createElement("article");
   card.className = "settings-provider-card";
   card.dataset.configured = String(Boolean(provider.configured));
@@ -375,7 +377,7 @@ function providerCard({ provider, bridgeRequest, statusNode, reload, onSelectSec
     save.disabled = true;
     setStatus(statusNode, `Saving ${provider.label} credential...`);
     try {
-      await bridgeRequest("/providers/credentials", {
+      await bridge()("/providers/credentials", {
         method: "POST",
         capability: "provider-credential-write",
         body: { providerId: provider.id, credential }
@@ -432,7 +434,7 @@ function providerCard({ provider, bridgeRequest, statusNode, reload, onSelectSec
     savePolicy.disabled = true;
     setStatus(statusNode, `Saving ${provider.label} allowed-model policy...`);
     try {
-      await bridgeRequest("/providers/model-preferences", {
+      await bridge()("/providers/model-preferences", {
         method: "POST",
         capability: "provider-routing-write",
         body: { providerId: provider.id, allowedModels }
@@ -462,7 +464,7 @@ function providerCard({ provider, bridgeRequest, statusNode, reload, onSelectSec
     editSave.disabled = true;
     setStatus(statusNode, `Saving ${provider.label} account settings...`);
     try {
-      await bridgeRequest("/providers/accounts", {
+      await bridge()("/providers/accounts", {
         method: "POST",
         capability: "provider-credential-write",
         body: providerAccountPayload(editForm, provider)
@@ -512,7 +514,7 @@ function providerCard({ provider, bridgeRequest, statusNode, reload, onSelectSec
     health.disabled = true;
     setStatus(statusNode, `Checking ${provider.label} readiness...`);
     try {
-      const result = await bridgeRequest("/providers/health", {
+      const result = await bridge()("/providers/health", {
         method: "POST",
         body: { providerId: provider.id }
       });
@@ -532,7 +534,7 @@ function providerCard({ provider, bridgeRequest, statusNode, reload, onSelectSec
     connectivity.disabled = true;
     setStatus(statusNode, `Testing ${provider.label} endpoint reachability...`);
     try {
-      const result = await bridgeRequest("/providers/connectivity-test", {
+      const result = await bridge()("/providers/connectivity-test", {
         method: "POST",
         body: { providerId: provider.id }
       });
@@ -563,7 +565,8 @@ function providerCard({ provider, bridgeRequest, statusNode, reload, onSelectSec
   return card;
 }
 
-export function renderProvidersSection(container, { bridgeRequest, onSelectSection }) {
+export function renderProvidersSection(container, { bridgeRequest, getBridgeRequest, onSelectSection }) {
+  const bridge = () => (typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest);
   const statusNode = document.createElement("p");
   statusNode.className = "settings-status";
   statusNode.textContent = "Loading provider profiles...";
@@ -608,14 +611,15 @@ export function renderProvidersSection(container, { bridgeRequest, onSelectSecti
 
   addProvider.addEventListener("click", () => openProviderAccountModal({
     bridgeRequest,
+    getBridgeRequest: () => bridgeRequest,
     statusNode,
     reload: load,
   }));
 
   const load = async () => {
     const [result, historyResult] = await Promise.all([
-      bridgeRequest("/providers/status", { method: "GET" }),
-      bridgeRequest("/providers/diagnostics-history", { method: "GET" }).catch(() => ({ entries: [] }))
+      bridge()("/providers/status", { method: "GET" }),
+      bridge()("/providers/diagnostics-history", { method: "GET" }).catch(() => ({ entries: [] }))
     ]);
     const providers = [...(result.providers ?? [])].sort(providerSort);
     const configuredCount = providers.filter((provider) => provider.configured).length;
@@ -642,6 +646,7 @@ export function renderProvidersSection(container, { bridgeRequest, onSelectSecti
     grid.replaceChildren(...providers.map((provider) => providerCard({
       provider,
       bridgeRequest,
+      getBridgeRequest: () => bridgeRequest,
       statusNode,
       reload: load,
       onSelectSection

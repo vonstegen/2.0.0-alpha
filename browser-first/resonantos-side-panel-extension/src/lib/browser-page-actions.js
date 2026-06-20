@@ -11,6 +11,11 @@ export function createBrowserPageActions(deps) {
   const {
     addMessage,
     bridgeRequest,
+    // Optional getter for the late-bound bridge client. The rebind
+    // chain sets the module-level `bridgeRequest` *after* this
+    // controller is constructed, so passing a value here captures a
+    // stale `null`. When a getter is provided, it wins.
+    getBridgeRequest,
     chrome,
     getModel = () => "MiniMax-M3",
     getThinkingDepth = () => "minimal",
@@ -26,6 +31,7 @@ export function createBrowserPageActions(deps) {
     siteKeyForUrl,
     sleep
   } = deps;
+  const bridge = () => (typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest);
 
   const reviewQueueGuidance = "Next: open Living Archive > Review Queue to inspect, draft, verify, and promote it if it should become trusted AI Memory.";
 
@@ -96,7 +102,7 @@ export function createBrowserPageActions(deps) {
     setLastSnapshot(null);
     setContextMeter(null);
     if (action === "news") {
-      const news = await bridgeRequest("/web/news", {
+      const news = await bridge()("/web/news", {
         method: "POST",
         body: { query, limit: 5 }
       }).catch((error) => ({ error: error instanceof Error ? error.message : String(error), items: [] }));
@@ -519,7 +525,7 @@ export function createBrowserPageActions(deps) {
       return { ok: false, error: walletResult?.error ?? "Wallet detection unavailable." };
     }
     const { fields, visibleControls } = daoAffordances(snapshot);
-    const result = await bridgeRequest("/archive/intake", {
+    const result = await bridge()("/archive/intake", {
       method: "POST",
       body: {
         title: `Wallet / DAO Audit: ${snapshot.title || snapshot.url || "Active page"}`,
@@ -537,7 +543,7 @@ export function createBrowserPageActions(deps) {
         }
       }
     });
-    const review = await bridgeRequest("/archive/review/request", {
+    const review = await bridge()("/archive/review/request", {
       method: "POST",
       body: {
         path: result.path,
@@ -668,7 +674,7 @@ export function createBrowserPageActions(deps) {
     let model = "";
     let fallback = false;
     try {
-      const result = await bridgeRequest("/augmentor/chat", {
+      const result = await bridge()("/augmentor/chat", {
         method: "POST",
         body: {
           model: getModel(),
@@ -703,7 +709,7 @@ export function createBrowserPageActions(deps) {
         `Provider error: ${error instanceof Error ? error.message : String(error)}`
       ].join("\n");
     }
-    const result = await bridgeRequest("/archive/intake", {
+    const result = await bridge()("/archive/intake", {
       method: "POST",
       body: {
         title: `Summary: ${snapshot.title || snapshot.url || "Untitled"}`,
@@ -712,7 +718,7 @@ export function createBrowserPageActions(deps) {
         content: pageSummaryIntakeMarkdown(snapshot, summary, { model, fallback })
       }
     });
-    const review = await bridgeRequest("/archive/review/request", {
+    const review = await bridge()("/archive/review/request", {
       method: "POST",
       body: {
         path: result.path,
@@ -753,7 +759,7 @@ export function createBrowserPageActions(deps) {
       setActivity("failed", "No readable tab content", "Research trail");
       return { ok: false, error: "No readable tab content available.", skipped };
     }
-    const result = await bridgeRequest("/archive/intake", {
+    const result = await bridge()("/archive/intake", {
       method: "POST",
       body: {
         title: `Research Trail: ${title}`,
@@ -762,7 +768,7 @@ export function createBrowserPageActions(deps) {
         content: researchTrailIntakeMarkdown({ title, snapshots, skipped })
       }
     });
-    const review = await bridgeRequest("/archive/review/request", {
+    const review = await bridge()("/archive/review/request", {
       method: "POST",
       body: {
         path: result.path,
@@ -787,7 +793,7 @@ export function createBrowserPageActions(deps) {
       return { ok: false, error: "No browser page context available." };
     }
     setActivity("tool-running", "Saving page to Living Archive intake", snapshot.title || snapshot.url);
-    const result = await bridgeRequest("/archive/intake", {
+    const result = await bridge()("/archive/intake", {
       method: "POST",
       body: {
         title: `Page: ${snapshot.title || snapshot.url || "Untitled"}`,
@@ -796,7 +802,7 @@ export function createBrowserPageActions(deps) {
         content: pageIntakeMarkdown(snapshot)
       }
     });
-    const review = await bridgeRequest("/archive/review/request", {
+    const review = await bridge()("/archive/review/request", {
       method: "POST",
       body: {
         path: result.path,
@@ -825,7 +831,7 @@ export function createBrowserPageActions(deps) {
     }
     const title = response.title || selection.title || "Selected browser text";
     const url = response.url || selection.url || "";
-    const result = await bridgeRequest("/archive/intake", {
+    const result = await bridge()("/archive/intake", {
       method: "POST",
       body: {
         title: `Selection: ${title}`,
@@ -839,7 +845,7 @@ export function createBrowserPageActions(deps) {
         ].join("\n")
       }
     });
-    const review = await bridgeRequest("/archive/review/request", {
+    const review = await bridge()("/archive/review/request", {
       method: "POST",
       body: {
         path: result.path,

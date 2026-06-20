@@ -726,6 +726,11 @@ export function App() {
 
   const toggleWorkspaceLayout = () => {
     updateRuntimeState((draft) => {
+      if (currentSection === "archive" && !isFloatingChatSurface) {
+        draft.uiPreferences.activeSection = "overview";
+        draft.uiPreferences.chatSidebarOpen = true;
+        return draft;
+      }
       draft.uiPreferences.workspaceLayout = draft.uiPreferences.workspaceLayout === "chat-main" ? "main-chat" : "chat-main";
       draft.uiPreferences.chatSidebarOpen = true;
       return draft;
@@ -1280,30 +1285,33 @@ export function App() {
       setChatNotice("Stop the current response before sending a follow-up correction.");
       return;
     }
-    await executeChatTurn({
-      snapshot: { state, bundled, sideloaded },
-      activeThread,
-      composer,
-      attachments,
-      activeChatModel,
-      thinkingDepth,
-      overrideMessage,
-      commitReadyState,
-      setComposer,
-      setAttachments,
-      setChatNotice,
-      setChatBusy,
-      setChatRunPhase,
-      setChatRunEvents,
-      setAgentActivityLabel,
-      setProviderDiagnostics,
-      setRecoveryRuntimeStatus,
-      runToken,
-      isRunCurrent: (token) => activeChatRunTokenRef.current === token,
-      errorMessageOf,
-    });
-    if (releaseChatRun(activeChatRunTokenRef, runToken)) {
-      setChatRunPhase("idle");
+    try {
+      await executeChatTurn({
+        snapshot: { state, bundled, sideloaded },
+        activeThread,
+        composer,
+        attachments,
+        activeChatModel,
+        thinkingDepth,
+        overrideMessage,
+        commitReadyState,
+        setComposer,
+        setAttachments,
+        setChatNotice,
+        setChatBusy,
+        setChatRunPhase,
+        setChatRunEvents,
+        setAgentActivityLabel,
+        setProviderDiagnostics,
+        setRecoveryRuntimeStatus,
+        runToken,
+        isRunCurrent: (token) => activeChatRunTokenRef.current === token,
+        errorMessageOf,
+      });
+    } finally {
+      if (releaseChatRun(activeChatRunTokenRef, runToken)) {
+        setChatRunPhase("idle");
+      }
     }
   };
 
@@ -1366,31 +1374,34 @@ export function App() {
       return;
     }
 
-    await executeChatTurn({
-      snapshot: { state: stateWithThread, bundled, sideloaded },
-      activeThread: thread,
-      composer: "",
-      attachments: [],
-      activeChatModel,
-      thinkingDepth,
-      overrideMessage: message,
-      overrideContextPrompt: contextPrompt,
-      commitReadyState,
-      setComposer,
-      setAttachments,
-      setChatNotice,
-      setChatBusy,
-      setChatRunPhase,
-      setChatRunEvents,
-      setAgentActivityLabel,
-      setProviderDiagnostics,
-      setRecoveryRuntimeStatus,
-      runToken,
-      isRunCurrent: (token) => activeChatRunTokenRef.current === token,
-      errorMessageOf,
-    });
-    if (releaseChatRun(activeChatRunTokenRef, runToken)) {
-      setChatRunPhase("idle");
+    try {
+      await executeChatTurn({
+        snapshot: { state: stateWithThread, bundled, sideloaded },
+        activeThread: thread,
+        composer: "",
+        attachments: [],
+        activeChatModel,
+        thinkingDepth,
+        overrideMessage: message,
+        overrideContextPrompt: contextPrompt,
+        commitReadyState,
+        setComposer,
+        setAttachments,
+        setChatNotice,
+        setChatBusy,
+        setChatRunPhase,
+        setChatRunEvents,
+        setAgentActivityLabel,
+        setProviderDiagnostics,
+        setRecoveryRuntimeStatus,
+        runToken,
+        isRunCurrent: (token) => activeChatRunTokenRef.current === token,
+        errorMessageOf,
+      });
+    } finally {
+      if (releaseChatRun(activeChatRunTokenRef, runToken)) {
+        setChatRunPhase("idle");
+      }
     }
   };
 
@@ -1452,30 +1463,33 @@ export function App() {
       setChatNotice("Hermes is already working on a response. Please wait.");
       return;
     }
-    await executeChatTurn({
-      snapshot: { state: nextState, bundled, sideloaded },
-      activeThread: thread,
-      composer: "",
-      attachments: [],
-      activeChatModel,
-      thinkingDepth,
-      overrideMessage: buildArchivePreflightAugmentorPrompt(report),
-      commitReadyState,
-      setComposer,
-      setAttachments,
-      setChatNotice,
-      setChatBusy,
-      setChatRunPhase,
-      setChatRunEvents,
-      setAgentActivityLabel,
-      setProviderDiagnostics,
-      setRecoveryRuntimeStatus,
-      runToken,
-      isRunCurrent: (token) => activeChatRunTokenRef.current === token,
-      errorMessageOf,
-    });
-    if (releaseChatRun(activeChatRunTokenRef, runToken)) {
-      setChatRunPhase("idle");
+    try {
+      await executeChatTurn({
+        snapshot: { state: nextState, bundled, sideloaded },
+        activeThread: thread,
+        composer: "",
+        attachments: [],
+        activeChatModel,
+        thinkingDepth,
+        overrideMessage: buildArchivePreflightAugmentorPrompt(report),
+        commitReadyState,
+        setComposer,
+        setAttachments,
+        setChatNotice,
+        setChatBusy,
+        setChatRunPhase,
+        setChatRunEvents,
+        setAgentActivityLabel,
+        setProviderDiagnostics,
+        setRecoveryRuntimeStatus,
+        runToken,
+        isRunCurrent: (token) => activeChatRunTokenRef.current === token,
+        errorMessageOf,
+      });
+    } finally {
+      if (releaseChatRun(activeChatRunTokenRef, runToken)) {
+        setChatRunPhase("idle");
+      }
     }
   };
 
@@ -2062,7 +2076,7 @@ export function App() {
     <div className="app-zoom-viewport" style={zoomStyle}>
       <div className="app-zoom-stage">
         <div
-          className={`shell ${effectiveChatOpen ? "chat-open" : "chat-closed"} ${chatInterfaceAvailable ? "" : "chat-unavailable"} ${isFloatingChatSurface ? "floating-chat-surface" : ""} ${homeChatSurface ? "home-chat-surface" : ""} layout-${state.uiPreferences.workspaceLayout}`}
+          className={`shell ${effectiveChatOpen ? "chat-open" : "chat-closed"} ${chatInterfaceAvailable ? "" : "chat-unavailable"} ${isFloatingChatSurface ? "floating-chat-surface" : ""} ${homeChatSurface ? "home-chat-surface" : ""} ${centerWorkspaceOwnsAgentChat ? "center-chat-owner" : ""} layout-${state.uiPreferences.workspaceLayout}`}
           style={shellStyle}
         >
       <header className="system-topbar" aria-label="ResonantOS system bar">
@@ -2079,12 +2093,16 @@ export function App() {
             type="button"
             className="system-icon-button"
             title={
-              state.uiPreferences.workspaceLayout === "chat-main"
+              centerWorkspaceOwnsAgentChat
+                ? "Open main chat"
+                : state.uiPreferences.workspaceLayout === "chat-main"
                 ? "Move chat back to the right"
                 : "Move chat beside the launcher"
             }
             aria-label={
-              state.uiPreferences.workspaceLayout === "chat-main"
+              centerWorkspaceOwnsAgentChat
+                ? "Open main chat"
+                : state.uiPreferences.workspaceLayout === "chat-main"
                 ? "Move chat back to the right"
                 : "Move chat beside the launcher"
             }
@@ -2093,7 +2111,9 @@ export function App() {
           >
             <VendorIcon
               icon={
-                state.uiPreferences.workspaceLayout === "chat-main"
+                centerWorkspaceOwnsAgentChat
+                  ? "layout-sidebar-left-expand"
+                  : state.uiPreferences.workspaceLayout === "chat-main"
                   ? "layout-sidebar-right-collapse"
                   : "layout-sidebar-left-expand"
               }
@@ -2703,6 +2723,7 @@ export function App() {
       {chatInterfaceAvailable && (
       <StrategistChatRail
         isOpen={effectiveChatOpen}
+        showCollapsedToggle={!centerWorkspaceOwnsAgentChat}
         mode={recoveryModeActive ? "emergency" : "strategist"}
         title={activeChatAgentName}
         eyebrow={

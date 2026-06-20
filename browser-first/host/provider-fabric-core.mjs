@@ -8,6 +8,16 @@ export const providerProfiles = [
     role: "Default Augmentor and agent-control provider",
   },
   {
+    id: "shared-zai-glm",
+    label: "Z.AI GLM",
+    providerType: "openai-compatible",
+    templateId: "zai",
+    authType: "api-key",
+    apiBaseUrl: "http://127.0.0.1:18789/v1",
+    models: ["zai/glm-5.2"],
+    role: "OpenClaw/Z.AI GLM fallback provider",
+  },
+  {
     id: "shared-openai",
     label: "OpenAI",
     providerType: "openai",
@@ -26,6 +36,15 @@ export const modelCatalog = [
     runtime: "cloud",
     costTier: "subscription",
     qualityTier: "daily strategic and agentic work",
+  },
+  {
+    model: "zai/glm-5.2",
+    label: "Z.AI GLM 5.2",
+    providerId: "shared-zai-glm",
+    providerLabel: "Z.AI GLM",
+    runtime: "cloud",
+    costTier: "paid-per-call",
+    qualityTier: "general coding fallback",
   },
   {
     model: "gpt-5.5",
@@ -62,7 +81,7 @@ export const defaultRoutingStrategies = [
     label: "Augmentor Chat",
     workload: "trusted_conversation",
     primaryModel: "MiniMax-M3",
-    fallbackModels: ["gpt-5.5", "gpt-5.4-mini", "batiai/gemma4-e2b:q4"],
+    fallbackModels: ["zai/glm-5.2", "gpt-5.5", "gpt-5.4-mini", "batiai/gemma4-e2b:q4"],
     costPosture: "subscription-first",
     hardStop: false,
     notes: "Use fast subscription capacity first, then higher reasoning only when subscription routes fail.",
@@ -72,7 +91,7 @@ export const defaultRoutingStrategies = [
     label: "Agent Control",
     workload: "browser_execution",
     primaryModel: "MiniMax-M3",
-    fallbackModels: ["gpt-5.4-mini", "gpt-5.5"],
+    fallbackModels: ["zai/glm-5.2", "gpt-5.4-mini", "gpt-5.5"],
     costPosture: "responsive-subscription",
     hardStop: false,
     notes: "Browser control needs a responsive model, but high-cost escalation should remain visible.",
@@ -82,7 +101,7 @@ export const defaultRoutingStrategies = [
     label: "Archive Ingest",
     workload: "knowledge_promotion",
     primaryModel: "gpt-5.5",
-    fallbackModels: ["gpt-5.4-mini", "MiniMax-M3"],
+    fallbackModels: ["zai/glm-5.2", "gpt-5.4-mini", "MiniMax-M3"],
     costPosture: "quality-first",
     hardStop: true,
     notes: "Knowledge writes should prefer the strongest verifier route and stop if no trusted model is available.",
@@ -92,17 +111,17 @@ export const defaultRoutingStrategies = [
     label: "Routine Delegation",
     workload: "delegated_routine_work",
     primaryModel: "MiniMax-M3",
-    fallbackModels: ["batiai/gemma4-e2b:q4"],
+    fallbackModels: ["zai/glm-5.2", "batiai/gemma4-e2b:q4"],
     costPosture: "low-cost-first",
     hardStop: false,
-    notes: "Routine background work should avoid expensive routes unless explicitly escalated.",
+    notes: "Routine background work uses subscription capacity first, then Z.AI GLM before the local floor.",
   },
   {
     id: "recovery-engineer",
     label: "Recovery Engineer",
     workload: "resurrect_mode",
     primaryModel: "MiniMax-M3",
-    fallbackModels: ["gpt-5.5", "batiai/gemma4-e2b:q4"],
+    fallbackModels: ["zai/glm-5.2", "gpt-5.5", "batiai/gemma4-e2b:q4"],
     costPosture: "best-available-in-emergency",
     hardStop: false,
     notes: "Emergency recovery should find the best reachable brain, with Gemma 4 2B as the final local fallback.",
@@ -119,6 +138,7 @@ export function modelById(model) {
 
 export function inferProviderType(providerId) {
   if (providerId === "shared-openai" || String(providerId ?? "").includes("openai")) return "openai";
+  if (providerId === "shared-zai-glm" || String(providerId ?? "").toLowerCase().includes("zai")) return "openai-compatible";
   if (providerId === "desktop-local" || String(providerId ?? "").includes("local")) return "openai-compatible";
   return "minimax";
 }
@@ -244,6 +264,15 @@ export function providerRouteForModel(model, { localRuntimeUrl = "" } = {}) {
       label: "Shared OpenAI",
     };
   }
+  if (model === "zai/glm-5.2" || model?.toLowerCase().startsWith("zai/glm")) {
+    return {
+      providerId: "shared-zai-glm",
+      providerType: "openai-compatible",
+      apiBaseUrl: "http://127.0.0.1:18789/v1",
+      wireModel: model || "zai/glm-5.2",
+      label: "Shared Z.AI GLM",
+    };
+  }
   return {
     providerId: "shared-minimax",
     providerType: "minimax",
@@ -267,6 +296,14 @@ export function providerConnectivityTarget(providerId, { localRuntimeUrl = "" } 
       providerId,
       url: "https://api.openai.com/v1/models",
       label: "Shared OpenAI",
+      sendsCredential: true,
+    };
+  }
+  if (providerId === "shared-zai-glm") {
+    return {
+      providerId,
+      url: "http://127.0.0.1:18789/v1/models",
+      label: "Shared Z.AI GLM",
       sendsCredential: true,
     };
   }

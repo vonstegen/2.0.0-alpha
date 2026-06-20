@@ -19,6 +19,8 @@
     "test:electron-host": "node --test electron-host/test/*.test.mjs",
     "electron-host:smoke": "node electron-host/run-smoke.mjs",
     "electron-host:rust-ipc": "node electron-host/rust-core-ipc-smoke.mjs",
+    "configure:local-provider": "node scripts/configure-local-test-provider.mjs",
+    "smoke:local-provider": "node scripts/smoke-local-provider.mjs",
     "electron:dev": "npm run build && node electron-host/run-product.mjs",
     "electron:smoke": "npm run build && node electron-host/run-product-smoke.mjs",
     "test:browser-native": "node --test addons/resonant-browser-native/test/*.test.mjs",

@@ -37,6 +37,7 @@ const MESSAGE_OVERHEAD_TOKENS = 6;
 const ATTACHMENT_OVERHEAD_TOKENS = 12;
 
 const knownModelBudgets: Record<string, number> = {
+  "zai/glm-5.2": 195_000,
   "batiai/gemma4-e2b:q4": 8_192,
   "llama3.2:1b": 8_192,
   "qwen3:4b": 32_000,

@@ -65,11 +65,19 @@ test("ResonantOS browser layer is packaged as a Chromium side-panel extension", 
 
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.name, "ResonantOS Browser Layer");
-  assert.equal(manifest.version, "0.1.1");
+  // Version is bumped to 0.1.14 to ship the v0.1.13 race-condition fix
+  // (bridge()() lazy getter in 30+ controllers) and the v0.1.14 audioCapture
+  // permission removal. See CHANGELOG for the full list.
+  assert.equal(manifest.version, "0.1.14");
   assert.equal(manifest.key.length > 100, true);
   assert.ok(manifest.permissions.includes("sidePanel"));
   assert.ok(manifest.permissions.includes("activeTab"));
-  assert.ok(manifest.permissions.includes("audioCapture"));
+  // audioCapture was removed in v0.1.14: it is deprecated (ChromeOS packaged
+  // apps only) and tripped Chrome's "Issues 1 found" warning. ResonantOS
+  // uses navigator.mediaDevices.getUserMedia for mic capture, which does
+  // not need a manifest permission.
+  assert.ok(!manifest.permissions.includes("audioCapture"),
+    "audioCapture permission must not be requested (deprecated; not needed for getUserMedia)");
   assert.ok(manifest.permissions.includes("clipboardRead"));
   assert.ok(manifest.permissions.includes("clipboardWrite"));
   assert.ok(manifest.permissions.includes("history"));
@@ -323,6 +331,13 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(hermesWorkspace, /\/hermes\/dashboard\/status/);
   assert.match(hermesWorkspace, /\/hermes\/dashboard\/start/);
   assert.match(hermesWorkspace, /\/hermes\/dashboard\/stop/);
+  // The dashboard is now embedded in-frame (no more "open in new tab"
+  // link). The workspace delegates to the generic addon-iframe component
+  // which fetches the addon's HTML through the bridge proxy and inlines
+  // it as a sandboxed <iframe srcdoc>. Works for ANY addon (Hermes,
+  // OpenCode, OpenClaw, ...) without per-machine TLS or certs.
+  assert.match(hermesWorkspace, /createAddonIframe/);
+  assert.match(hermesWorkspace, /\/hermes-dashboard\//);
   assert.match(workspaceActionController, /startDelegationLifecycle/);
   assert.match(delegationLifecycle, /\/\$\{result\.target\}\/delegation\/start/);
   assert.match(workspaceActionController, /\/addons\/delegate/);
@@ -354,8 +369,15 @@ test("browser-first main workspace owns new-tab AI chat and hands browser tasks 
   assert.match(workspaceScript, /Search AI memory/);
   assert.match(workspaceScript, /Send to Hermes/);
   assert.match(workspaceScript, /commandInput\.value = button\.dataset\.prompt/);
-  assert.match(workspaceScript, /renderHermesDashboardWorkspace/);
-  assert.match(hermesWorkspace, /iframe\.src = dashboard\.url/);
+  assert.match(hermesWorkspace, /renderHermesDashboardWorkspace/);
+  // As of v0.1.12 the Hermes dashboard is embedded in-frame via the generic
+  // addon-iframe component (createAddonIframe) — no more "open in new tab"
+  // link. The bridge proxies /hermes-dashboard/* through
+  // RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES, and the iframe loads the SPA
+  // in src mode (not srcdoc) so its own CSP applies and avoids the
+  // extension's MV3 restrictions on inline-script and blob: URIs.
+  assert.match(hermesWorkspace, /createAddonIframe/);
+  assert.match(hermesWorkspace, /proxyPath:\s*"\/hermes-dashboard\/"/);
   assert.match(hermesWorkspace, /\/hermes\/status/);
   assert.match(hermesWorkspace, /CLI detected/);
   assert.match(workspaceScript, /augmentorMainWorkspace/);
@@ -783,7 +805,8 @@ test("browser layer exposes Augmentor chat as the side-panel surface without ste
   assert.match(tabContextController, /bindBrowserListeners/);
   assert.match(tabContextController, /hydrateInitialContext/);
   assert.match(script, /createBridgeClient/);
-  assert.match(bridgeClient, /bridgeUrl = config\.bridgeUrl \?\? "http:\/\/127\.0\.0\.1:47773"/);
+  assert.match(bridgeClient, /DEFAULT_BRIDGE_URL = "http:\/\/127\.0\.0\.1:47773"/);
+  assert.match(bridgeClient, /bridgeUrl = config\.bridgeUrl \?\? DEFAULT_BRIDGE_URL/);
   assert.match(bridgeClient, /__RESONANTOS_BRIDGE_CONFIG__/);
   assert.match(bridgeClient, /X-ResonantOS-Bridge-Token/);
   assert.match(background, /bridge-config\.generated\.js/);
@@ -1097,6 +1120,7 @@ test("browser-first host is a runnable app path, not documentation-only scaffold
   const addonDelegationService = await readText(path.join(browserFirstRoot, "host", "addon-delegation-service.mjs"));
   const addonDelegationHostService = await readText(path.join(browserFirstRoot, "host", "addon-delegation-host-service.mjs"));
   const profileService = await readText(path.join(browserFirstRoot, "host", "browser-profile-service.mjs"));
+  const browserLaunchConfig = await readText(path.join(browserFirstRoot, "host", "browser-launch-config.mjs"));
   const providerHostService = await readText(path.join(browserFirstRoot, "host", "provider-host-service.mjs"));
   const providerBridgeService = await readText(path.join(browserFirstRoot, "host", "provider-bridge-service.mjs"));
   const memoryHostService = await readText(path.join(browserFirstRoot, "host", "memory-host-service.mjs"));
@@ -1199,8 +1223,9 @@ test("browser-first host is a runnable app path, not documentation-only scaffold
   assert.match(launcher, /cdpdmmalhmokbfcfgogoepnjplaakgnl/);
   assert.match(launcher, /auto-open-side-panel/);
   assert.doesNotMatch(installer, /--auto-open-side-panel=true/);
-  assert.match(launcher, /remote-debugging-port/);
-  assert.match(launcher, /resonantos-remote-debugging-port/);
+  assert.match(launcher, /resolveRemoteDebugging/);
+  assert.match(browserLaunchConfig, /remote-debugging-port/);
+  assert.match(browserLaunchConfig, /resonantos-remote-debugging-port/);
   assert.match(launcher, /createBridgeToken/);
   assert.match(launcher, /writeBridgeConfig/);
   assert.match(launcher, /startBridgeServer/);

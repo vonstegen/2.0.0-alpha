@@ -9,6 +9,19 @@ import { validateBrowserFirstNativeAssets } from "../../scripts/browser-first-na
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
+const repoNativeAssets = await validateBrowserFirstNativeAssets({ repoRoot }).catch((error) => ({
+  ok: false,
+  issues: [error instanceof Error ? error.message : String(error)],
+}));
+const nativeAssetsMissing = !repoNativeAssets.ok
+  && repoNativeAssets.issues.every((issue) => /^Missing /.test(issue));
+const nativeInstallerSkip = process.platform !== "darwin"
+  ? "macOS app bundle installer is only meaningful on darwin."
+  : repoNativeAssets.ok
+    ? false
+    : nativeAssetsMissing
+      ? "Native browser assets are not built in this checkout."
+      : false;
 
 const readyLaunchLog = [
   '{"event":"browser.first.launch_mode","mode":"mac-app-bundle","appBundle":"/tmp/ResonantBrowserNativeHost.app"}',
@@ -111,7 +124,7 @@ test("native live verifier refuses sandboxed desktop verification", async () => 
 });
 
 test("browser-first installer creates a launchable macOS app bundle with a compatible launcher", {
-  skip: process.platform !== "darwin" ? "macOS app bundle installer is only meaningful on darwin." : false,
+  skip: nativeInstallerSkip,
 }, async () => {
   const tmp = await mkdtemp(path.join(os.tmpdir(), "resonantos-install-root-"));
   try {
@@ -164,7 +177,7 @@ test("browser-first installer creates a launchable macOS app bundle with a compa
 });
 
 test("installed-app verifier rejects fork-and-exit launchers before launch", {
-  skip: process.platform !== "darwin" ? "macOS app bundle installer is only meaningful on darwin." : false,
+  skip: nativeInstallerSkip,
 }, async () => {
   const tmp = await mkdtemp(path.join(os.tmpdir(), "resonantos-fork-launcher-"));
   try {
@@ -208,7 +221,7 @@ test("installed-app verifier rejects fork-and-exit launchers before launch", {
 });
 
 test("installed-app verifier rejects stale installed launcher source before launch", {
-  skip: process.platform !== "darwin" ? "macOS app bundle installer is only meaningful on darwin." : false,
+  skip: nativeInstallerSkip,
 }, async () => {
   const tmp = await mkdtemp(path.join(os.tmpdir(), "resonantos-stale-launcher-"));
   try {

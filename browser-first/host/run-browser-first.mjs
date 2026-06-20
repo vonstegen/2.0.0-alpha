@@ -6,6 +6,8 @@ import process from "node:process";
 import { spawn } from "node:child_process";
 import {
   createBridgeToken,
+  getBridgeHost,
+  getBridgePublicUrl,
   startBridgeServerWithFallback,
   writeBridgeConfig,
 } from "./bridge-server.mjs";
@@ -33,6 +35,7 @@ import { createAddonDelegationHostService } from "./addon-delegation-host-servic
 import { createAddonDelegationService } from "./addon-delegation-service.mjs";
 import { createArchiveReviewHostService } from "./archive-review-host-service.mjs";
 import { createBrowserDiagnosticsHostService } from "./browser-diagnostics-host-service.mjs";
+import { createExtensionPrefsHostService } from "./extension-prefs-host-service.mjs";
 import { createMemoryHostService } from "./memory-host-service.mjs";
 import { createMemorySourceIntakeHostService } from "./memory-source-intake-host-service.mjs";
 import {
@@ -42,6 +45,7 @@ import {
   seedResonantStartupExperience,
 } from "./browser-profile-service.mjs";
 import { createMemorySourceSettingsService } from "./memory-source-settings-service.mjs";
+import { resolveBrowserProfile, resolveRemoteDebugging } from "./browser-launch-config.mjs";
 import { createProviderHostService } from "./provider-host-service.mjs";
 import {
   memorySourceMoveHistoryPath as sourceMoveHistoryPath,
@@ -124,7 +128,13 @@ function browserLaunchLogPath() {
   return path.join(repoRoot, "logs", "browser-first-installed-app.log");
 }
 
-const profileDir = path.resolve(args.get("profile") ?? process.env.RESONANTOS_BROWSER_FIRST_PROFILE ?? defaultProfile);
+const browserProfile = resolveBrowserProfile({
+  args,
+  env: process.env,
+  persistentDefaultProfile: defaultProfile,
+  userRoot: userRoot(),
+});
+const profileDir = browserProfile.profileDir;
 
 function hermesHome(profileHome) {
   const value = String(profileHome ?? process.env.HERMES_HOME ?? "~/.hermes").trim();
@@ -199,8 +209,23 @@ function extractJsonObject(value) {
   }
 }
 
+// Mutable holder for the bridge public URL. The URL depends on the port
+// the bridge actually binds to (and the bridge starts after this module's
+// top-level code runs), so we leave it undefined and populate it after
+// startBridgeServer completes. The addon service reads this holder at
+// request time. If a request arrives before the holder is populated
+// (e.g. during the in-process self-test), the addon service gracefully
+// returns null for the proxy URL and falls back to the direct URL.
+const bridgePublicUrlHolder = { value: undefined };
+function getBridgePublicUrlValue() {
+  return bridgePublicUrlHolder.value;
+}
+
 const addonDelegationService = createAddonDelegationService({
   browserFirstRoot,
+  // The bridge public URL is only known after the server binds a port, so
+  // pass a getter rather than a string. Resolved at request time.
+  bridgePublicUrl: getBridgePublicUrlValue,
   dashboardTarget,
   execFileStdout,
   expandUserPath,
@@ -381,12 +406,17 @@ const { agentControlRoutes } = createAgentControlHostService({
   sanitizeAssistantContent,
 });
 
+const { extensionPrefsRoutes, flushPendingExtensionPrefs } = createExtensionPrefsHostService({
+  userRoot,
+});
+
 const bridgeRoutes = [
   ...browserDiagnosticsRoutes,
   ...providerBridgeRoutes,
   ...agentControlRoutes,
   ...memoryBridgeRoutes,
   ...addonDelegationRoutes,
+  ...extensionPrefsRoutes,
 ];
 
 const bridgeToken = args.get("bridge-token") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? createBridgeToken();
@@ -476,7 +506,7 @@ if (selfTestHandled) {
 const url = args.get("url") ?? defaultMainWorkspaceUrl;
 const autoOpenSidePanel = args.get("auto-open-side-panel") === "true";
 const bridgePort = Number(args.get("bridge-port") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_PORT ?? defaultBridgePort);
-const remoteDebuggingPort = args.get("remote-debugging-port") ?? process.env.RESONANTOS_BROWSER_FIRST_REMOTE_DEBUGGING_PORT;
+const remoteDebugging = resolveRemoteDebugging({ args, env: process.env });
 
 if (!existsSync(hostBinary)) {
   console.error(`Browser-first host binary is missing: ${hostBinary}`);
@@ -505,7 +535,7 @@ const hostArgs = [
   `--resonantos-user-data-dir=${profileDir}`,
   `--resonantos-extension-dirs=${extensionDirs.join(",")}`,
   `--resonantos-log-path=${browserLaunchLogPath()}`,
-  ...(remoteDebuggingPort ? [`--resonantos-remote-debugging-port=${remoteDebuggingPort}`] : []),
+  ...remoteDebugging.hostArgs,
 ];
 
 const launchThroughMacAppBundle = process.platform === "darwin" && args.get("launch-mode") !== "direct";
@@ -524,6 +554,7 @@ try {
     bridgeCapabilityTokens,
     extensionOrigin: resonantExtensionOrigin,
     routes: bridgeRoutes,
+    host: getBridgeHost(),
   });
 } catch (error) {
   console.error(JSON.stringify({
@@ -536,11 +567,14 @@ try {
 }
 const bridgeServer = bridgeInfo.server;
 const activeBridgePort = bridgeInfo.actualPort;
+const bridgePublicUrl = getBridgePublicUrl(activeBridgePort);
+bridgePublicUrlHolder.value = bridgePublicUrl;
 const bridgeConfigPath = await writeBridgeConfig({
   extensionRoot: resonantExtension,
   bridgePort: activeBridgePort,
   bridgeToken,
   bridgeCapabilityTokens,
+  publicUrl: bridgePublicUrl,
 });
 console.log(JSON.stringify({
   event: "browser.first.bridge_started",
@@ -551,7 +585,21 @@ console.log(JSON.stringify({
 }));
 
 console.log("Launching ResonantOS Browser-First host");
-console.log(JSON.stringify({ hostBinary, hostAppBundle, url, profileDir, extensionDirs, phantomLoaded: Boolean(phantomExtension), pinnedExtensions: [resonantExtensionId, phantomExtension ? phantomExtensionId : null].filter(Boolean), bridgeUrl: `http://127.0.0.1:${activeBridgePort}`, bridgeConfigPath, remoteDebuggingPort: remoteDebuggingPort ?? "ephemeral" }, null, 2));
+console.log(JSON.stringify({
+  hostBinary,
+  hostAppBundle,
+  url,
+  profileDir,
+  extensionDirs,
+  phantomLoaded: Boolean(phantomExtension),
+  pinnedExtensions: [resonantExtensionId, phantomExtension ? phantomExtensionId : null].filter(Boolean),
+  bridgeUrl: bridgePublicUrl,
+  bridgeConfigPath,
+  profileMode: browserProfile.mode,
+  remoteDebugging: remoteDebugging.enabled
+    ? { port: remoteDebugging.port, address: "127.0.0.1", requested: remoteDebugging.requestedPort }
+    : "disabled",
+}, null, 2));
 
 function launchNativeHostDirect() {
   return spawn(hostBinary, hostArgs, {
