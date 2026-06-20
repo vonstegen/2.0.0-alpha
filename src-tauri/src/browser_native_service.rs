@@ -1093,6 +1093,10 @@ mod tests {
     #[test]
     fn accepts_absolute_system_native_library_load() {
         // An absolute path outside the CWD (e.g. a system/install prefix) is pinned.
+        #[cfg(windows)]
+        let absolute =
+            PathBuf::from(r"C:\Program Files\ResonantOS\lib\ResonantBrowserNativeBridgeShared.dll");
+        #[cfg(not(windows))]
         let absolute = PathBuf::from("/opt/resonantos/lib/libResonantBrowserNativeBridgeShared.so");
         assert!(
             native_load_root_is_pinned(&absolute, false),
