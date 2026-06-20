@@ -86,8 +86,8 @@ describe("captureEvidence artifactsDir containment (P1-d, browser-host)", () => 
     const host = hostWithFakePage(captured);
     const evidence = await host.captureEvidence({ artifactsDir, reason: "ok" });
     assert.equal(captured.length, 1);
-    assert.ok(captured[0].startsWith(`${artifactsDir}${path.sep}`));
-    assert.ok(evidence.evidenceRef.startsWith(`${artifactsDir}${path.sep}`));
+    assert.equal(pathContains(artifactsDir, captured[0]).result, "pass");
+    assert.equal(pathContains(artifactsDir, evidence.evidenceRef).result, "pass");
   });
 
   it("rejects a screenshot leaf that traverses out of the artifacts root", async () => {
