@@ -297,8 +297,9 @@ export function createAddonDelegationService(dependencies) {
   }
 
   function sectionFromMarkdown(content, heading) {
+    const normalizedContent = String(content ?? "").replace(/\r\n?/g, "\n");
     const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const match = new RegExp(`## ${escaped}\\n([\\s\\S]*?)(?=\\n## |$)`, "i").exec(content);
+    const match = new RegExp(`## ${escaped}\\n([\\s\\S]*?)(?=\\n## |$)`, "i").exec(normalizedContent);
     return match ? match[1].trim() : "";
   }
 
