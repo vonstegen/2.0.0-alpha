@@ -50,6 +50,11 @@ export const parseIntakeSlashCommand = (value) => {
   return { action: "page", body };
 };
 
+export const parseControlSlashCommand = (value) => {
+  const match = /^\/\s*control(?:\s+([\s\S]*))?$/i.exec(String(value ?? "").trim());
+  return match ? (match[1] ?? "").trim() : null;
+};
+
 export const parseWalletSlashCommand = (value) => {
   const match = /^\/\s*wallet(?:\s+([\s\S]*))?$/i.exec(String(value ?? "").trim());
   if (!match) return null;
@@ -73,6 +78,8 @@ export const parseDaoSlashCommand = (value) => {
 export function planMainWorkspacePrompt(value) {
   const prompt = String(value ?? "").trim();
   if (!prompt) return { action: "empty" };
+  const controlGoal = parseControlSlashCommand(prompt);
+  if (controlGoal !== null) return { action: "control", goal: controlGoal };
   const memoryQuery = parseMemorySlashCommand(prompt);
   if (memoryQuery !== null) return { action: "memory", query: memoryQuery };
   const openCodeMission = parseOpenCodeSlashCommand(prompt);

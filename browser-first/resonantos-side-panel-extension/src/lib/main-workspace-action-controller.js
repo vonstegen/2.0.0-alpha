@@ -16,6 +16,7 @@ import {
   parseHermesSlashCommand,
   parseMemorySlashCommand,
   parseOpenCodeSlashCommand,
+  parseControlSlashCommand,
   planMainWorkspacePrompt
 } from "./main-workspace-prompt-router.js";
 
@@ -60,12 +61,14 @@ export function createMainWorkspaceActionController({
   let activeChatAbortController = null;
 
   async function handoffToBrowserControl(prompt) {
-    const amazon = parseAmazonShoppingTask(prompt);
-    const browserIntent = parseNaturalBrowserIntent(prompt);
+    const controlGoal = parseControlSlashCommand(prompt);
+    const goal = controlGoal !== null ? controlGoal : prompt;
+    const amazon = parseAmazonShoppingTask(goal);
+    const browserIntent = parseNaturalBrowserIntent(goal);
     const target = amazon?.url || browserIntent?.target || "";
     await chromeApi.storage.local.set({
       augmentorPendingSidebarPrompt: {
-        prompt: `/control ${prompt}`,
+        prompt: `/control ${goal}`.trim(),
         createdAt: new Date().toISOString()
       }
     });
