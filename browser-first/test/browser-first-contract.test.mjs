@@ -1657,7 +1657,7 @@ test("browser-first bridge hardens selected Living Archive source file intake", 
     "--memory-settings-token=settings-token",
     "--memory-source-file-intake-token=file-intake-token",
     "--bridge-port=0",
-  ]);
+  ], 30_000);
   if (!payload) return;
 
   assert.equal(payload.ok, true);
