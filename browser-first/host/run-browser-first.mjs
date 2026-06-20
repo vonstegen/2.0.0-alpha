@@ -14,7 +14,6 @@ import {
 import {
   countFiles,
   dashboardTarget,
-  executableCandidates,
   execFileStdout,
   expandUserPath,
   firstExistingExecutable,
@@ -38,6 +37,7 @@ import { createBrowserDiagnosticsHostService } from "./browser-diagnostics-host-
 import { createExtensionPrefsHostService } from "./extension-prefs-host-service.mjs";
 import { createMemoryHostService } from "./memory-host-service.mjs";
 import { createMemorySourceIntakeHostService } from "./memory-source-intake-host-service.mjs";
+import { opencodeCommand, opencodeRuntimeDiagnostics } from "./opencode-runtime.mjs";
 import {
   findChromiumExtension,
   removeCachedUnpackedExtension,
@@ -156,24 +156,6 @@ function hermesCommand(profileHome) {
   return candidates.find((candidate) => existsSync(candidate)) ?? firstExistingExecutable("hermes");
 }
 
-function opencodeCommand() {
-  if (process.env.OPENCODE_COMMAND && existsSync(process.env.OPENCODE_COMMAND)) {
-    return process.env.OPENCODE_COMMAND;
-  }
-  const home = os.homedir();
-  const candidates = [
-    ...executableCandidates("opencode"),
-    ...executableCandidates("opencode-ai"),
-    path.join(home, ".local", "bin", "opencode"),
-    path.join(home, ".npm-global", "bin", "opencode"),
-    path.join(home, "node_modules", ".bin", process.platform === "win32" ? "opencode.cmd" : "opencode"),
-    ...(process.platform === "darwin"
-      ? ["/Applications/OpenCode.app/Contents/MacOS/opencode-cli"]
-      : []),
-  ];
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
-}
-
 const {
   executeProviderStatus,
   extractAssistantContent,
@@ -235,6 +217,7 @@ const addonDelegationService = createAddonDelegationService({
   listFilesRecursive,
   memoryRoot,
   opencodeCommand,
+  opencodeRuntimeDiagnostics,
   redactPathForDiagnostics,
   repoRoot,
   safeFileSlug,

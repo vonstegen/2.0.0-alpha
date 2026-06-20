@@ -14,6 +14,34 @@ function boundaryItem(text) {
   return item;
 }
 
+function openCodeRuntimeSetupText(status = {}) {
+  const lines = [];
+  if (status.installHint) {
+    lines.push(`Setup: ${status.installHint}`);
+  }
+  if (status.installCommand) {
+    lines.push(`Primary command: ${status.installCommand}`);
+  }
+  if (Array.isArray(status.alternativeInstallCommands) && status.alternativeInstallCommands.length) {
+    lines.push(`Alternatives: ${status.alternativeInstallCommands.join(" | ")}`);
+  }
+  if (status.configureCommand) {
+    lines.push(`Existing install override: ${status.configureCommand}`);
+  }
+  if (status.overrideConfigured && !status.overrideFound) {
+    lines.push(`Configured override was not found: ${status.overridePath || "OPENCODE_COMMAND"}`);
+  }
+  if (Array.isArray(status.searchedCommands) && status.searchedCommands.length) {
+    lines.push(`Command names checked: ${status.searchedCommands.join(", ")}`);
+  }
+  if (Array.isArray(status.searchedPaths) && status.searchedPaths.length) {
+    const suffix = status.searchedPathOmitted > 0 ? ` (+${status.searchedPathOmitted} more)` : "";
+    lines.push(`Searched paths${suffix}:`);
+    lines.push(...status.searchedPaths.slice(0, 12).map((candidate) => `- ${candidate}`));
+  }
+  return lines.join("\n");
+}
+
 export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeRequest, initialMission = "" }) {
   // Resolve at call time. The module-level `bridgeRequest` may be
   // null at construction (rebind still in flight); the getter lets
@@ -83,17 +111,20 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
       const status = await bridge()("/opencode/status", { method: "GET" });
       const executionEnabled = status.executionEnabled !== false;
       statusBody.textContent = status.detail;
-      statusMeta.textContent = status.command || "OpenCode command not detected";
+      statusMeta.textContent = status.command || status.installCommand || "OpenCode command not detected";
       statusCard.dataset.ready = status.installed ? "true" : "false";
       if (!status.installed || !executionEnabled) {
         const guidance = statusCard.querySelector(".delegation-guidance") ?? document.createElement("pre");
         guidance.className = "delegation-guidance";
-        guidance.textContent = delegationGuidanceText({
-          blockedReason: status.blockedReason || status.detail,
-          executionEnabled,
-          runtimeAvailable: Boolean(status.installed),
-          target: "opencode"
-        });
+        guidance.textContent = [
+          delegationGuidanceText({
+            blockedReason: status.blockedReason || status.detail,
+            executionEnabled,
+            runtimeAvailable: Boolean(status.installed),
+            target: "opencode"
+          }),
+          !status.installed ? openCodeRuntimeSetupText(status) : ""
+        ].filter(Boolean).join("\n\n");
         statusCard.append(guidance);
       } else {
         statusCard.querySelector(".delegation-guidance")?.remove();
@@ -139,12 +170,15 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
       const lifecycle = started.status === "completed"
         ? `Completed · ${started.resultArtifactPath || "result artifact ready"}`
         : started.status === "blocked"
-          ? delegationGuidanceText({
-              blockedReason: started.blockedReason || "OpenCode runtime unavailable",
-              executionEnabled: false,
-              runtimeAvailable: false,
-              target: "opencode"
-            })
+          ? [
+              delegationGuidanceText({
+                blockedReason: started.blockedReason || "OpenCode runtime unavailable",
+                executionEnabled: false,
+                runtimeAvailable: false,
+                target: "opencode"
+              }),
+              openCodeRuntimeSetupText(started)
+            ].filter(Boolean).join("\n\n")
           : `Status ${started.status || "queued"}`;
       setStatus(taskStatus, `Delegation queued: ${result.id} · ${result.path}\n${lifecycle}`, started.status === "blocked" ? "warning" : "success");
       missionInput.value = "";
