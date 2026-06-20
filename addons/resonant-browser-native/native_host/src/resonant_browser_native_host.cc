@@ -18,6 +18,9 @@
 #include <mach-o/dyld.h>
 #include <unistd.h>
 #endif
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 #if defined(__APPLE__)
 extern "C" void resonant_browser_native_install_appkit_menu();
@@ -46,6 +49,7 @@ constexpr const char* kChromeExtensionsUrl = "chrome://extensions";
 constexpr const char* kChromeNewTabFooterUrl = "chrome://newtab-footer";
 constexpr const char* kChromeWebStoreUrl = "https://chromewebstore.google.com/category/extensions";
 constexpr const char* kBrowserFirstCommand = "browser.first.start";
+constexpr const char* kPhantomExtensionId = "bfnaelmomeimhlpmgjnjophhpkkoljpa";
 constexpr const char* kProbeCommand = "browser.native.probe";
 constexpr const char* kBridgeProbeCommand = "browser.native.bridge_probe";
 constexpr const char* kStartCommand = "browser.native.start";
@@ -141,6 +145,111 @@ std::vector<std::string> SplitCsv(const std::string& value) {
     }
   }
   return parts;
+}
+
+std::string JoinCsv(const std::vector<std::string>& values) {
+  std::ostringstream out;
+  for (std::size_t index = 0; index < values.size(); ++index) {
+    if (index > 0) {
+      out << ",";
+    }
+    out << values[index];
+  }
+  return out.str();
+}
+
+std::filesystem::path SafeWeaklyCanonical(const std::filesystem::path& input) {
+  std::error_code error;
+  auto canonical = std::filesystem::weakly_canonical(input, error);
+  return error ? std::filesystem::absolute(input) : canonical;
+}
+
+bool PathExists(const std::filesystem::path& input) {
+  std::error_code error;
+  return std::filesystem::exists(input, error);
+}
+
+bool HasManifest(const std::filesystem::path& directory) {
+  return PathExists(directory / "manifest.json");
+}
+
+std::filesystem::path HomePath() {
+  const char* home = std::getenv("HOME");
+  if (home && *home) {
+    return std::filesystem::path(home);
+  }
+  return std::filesystem::temp_directory_path();
+}
+
+std::filesystem::path OwnedProfileRoot() {
+  return SafeWeaklyCanonical(
+      HomePath() / "ResonantOS_User" / "BrowserFirst" / "Profiles" / "ephemeral");
+}
+
+bool IsInsidePath(const std::filesystem::path& child, const std::filesystem::path& parent) {
+  const auto child_path = SafeWeaklyCanonical(child);
+  const auto parent_path = SafeWeaklyCanonical(parent);
+  auto child_it = child_path.begin();
+  auto parent_it = parent_path.begin();
+  for (; parent_it != parent_path.end(); ++parent_it, ++child_it) {
+    if (child_it == child_path.end() || *child_it != *parent_it) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::filesystem::path FallbackBrowserUserDataDir() {
+  std::ostringstream cache_name;
+  cache_name << "resonantos-native-browser-cef-cache-" << getpid();
+  return std::filesystem::temp_directory_path() / cache_name.str();
+}
+
+std::filesystem::path SafeBrowserUserDataDir(const std::string& requested) {
+  if (!requested.empty()) {
+    const auto candidate = SafeWeaklyCanonical(std::filesystem::path(requested));
+    if (IsInsidePath(candidate, OwnedProfileRoot())) {
+      return candidate;
+    }
+    std::cout << "{\"event\":\"browser.native.launch_arg_rejected\","
+              << "\"arg\":\"resonantos-user-data-dir\"}" << std::endl;
+  }
+  return FallbackBrowserUserDataDir();
+}
+
+bool IsPhantomChromeProfileExtensionDir(const std::filesystem::path& directory) {
+  if (!HasManifest(directory)) {
+    return false;
+  }
+  std::vector<std::string> parts;
+  for (const auto& part : SafeWeaklyCanonical(directory)) {
+    parts.push_back(part.string());
+  }
+  for (std::size_t index = 0; index + 2 < parts.size(); ++index) {
+    if (parts[index] == "Extensions" && parts[index + 1] == kPhantomExtensionId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool IsResonantSidePanelExtensionDir(const std::filesystem::path& directory) {
+  return directory.filename() == "resonantos-side-panel-extension" && HasManifest(directory);
+}
+
+std::string SafeExtensionDirs(const std::string& requested_csv) {
+  std::vector<std::string> accepted;
+  for (const auto& entry : SplitCsv(requested_csv)) {
+    const auto candidate = SafeWeaklyCanonical(std::filesystem::path(entry));
+    if (IsResonantSidePanelExtensionDir(candidate) ||
+        IsPhantomChromeProfileExtensionDir(candidate)) {
+      accepted.push_back(candidate.string());
+      continue;
+    }
+    std::cout << "{\"event\":\"browser.native.launch_arg_rejected\","
+              << "\"arg\":\"resonantos-extension-dirs\"}" << std::endl;
+  }
+  return JoinCsv(accepted);
 }
 
 std::filesystem::path CurrentExecutablePath() {
@@ -1161,6 +1270,7 @@ class ResonantBrowserApp final : public CefApp, public CefBrowserProcessHandler 
       if (extension_dirs.empty()) {
         extension_dirs = extension_dir;
       }
+      extension_dirs = SafeExtensionDirs(extension_dirs);
       command_line->AppendSwitch("enable-chrome-runtime");
       command_line->AppendSwitch("no-first-run");
       command_line->AppendSwitch("no-default-browser-check");
@@ -1171,19 +1281,15 @@ class ResonantBrowserApp final : public CefApp, public CefBrowserProcessHandler 
       command_line->AppendSwitch("disable-gpu-compositing");
       command_line->AppendSwitch("use-mock-keychain");
       command_line->AppendSwitchWithValue("password-store", "basic");
-      const std::string requested_debug_port =
-          command_line->GetSwitchValue("resonantos-remote-debugging-port");
-      command_line->AppendSwitchWithValue(
-          "remote-debugging-port",
-          requested_debug_port.empty() ? "0" : requested_debug_port);
+      command_line->AppendSwitchWithValue("remote-debugging-port", "0");
+      command_line->AppendSwitchWithValue("remote-debugging-address", "127.0.0.1");
       if (!extension_dirs.empty()) {
         command_line->AppendSwitchWithValue("disable-extensions-except", extension_dirs);
         command_line->AppendSwitchWithValue("load-extension", extension_dirs);
       }
-      const std::string user_data_dir = command_line->GetSwitchValue("resonantos-user-data-dir");
-      if (!user_data_dir.empty()) {
-        command_line->AppendSwitchWithValue("user-data-dir", user_data_dir);
-      }
+      const auto user_data_dir =
+          SafeBrowserUserDataDir(command_line->GetSwitchValue("resonantos-user-data-dir"));
+      command_line->AppendSwitchWithValue("user-data-dir", user_data_dir.string());
     }
   }
 
@@ -1376,18 +1482,8 @@ int resonant_browser_native_cef_main(int argc, char* argv[]) {
               << "\"}" << std::endl;
   }
 #endif
-  std::filesystem::path cache_root;
-  const std::string user_data_dir = initial_command_line->GetSwitchValue("resonantos-user-data-dir");
-  if (!user_data_dir.empty()) {
-    cache_root = std::filesystem::path(user_data_dir);
-  } else {
-    std::ostringstream cache_name;
-    cache_name << "resonantos-native-browser-cef-cache";
-    if (initial_command_line->HasSwitch("resonantos-smoke")) {
-      cache_name << "-smoke-" << getpid();
-    }
-    cache_root = std::filesystem::temp_directory_path() / cache_name.str();
-  }
+  const auto cache_root =
+      resonantos::SafeBrowserUserDataDir(initial_command_line->GetSwitchValue("resonantos-user-data-dir"));
   std::filesystem::create_directories(cache_root);
   CefString(&settings.cache_path) = cache_root.string();
   CefString(&settings.root_cache_path) = cache_root.string();

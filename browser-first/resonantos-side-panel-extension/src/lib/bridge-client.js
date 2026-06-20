@@ -87,6 +87,36 @@ export async function resolveBridgeConfig() {
 
 export const BRIDGE_STORAGE_OVERRIDE_KEY = STORAGE_OVERRIDE_KEY;
 
+// SECURITY: Runtime capability tokens are fetched lazily and one-at-a-time.
+// The bridge endpoint must never return the full capability-token set to a
+// caller that merely holds the bridge token.
+const _capabilityTokens = {};
+
+function normalizeCapabilityName(value) {
+  const capability = typeof value === "string" ? value.trim() : "";
+  return /^[a-z0-9][a-z0-9.-]{0,79}$/i.test(capability) ? capability : "";
+}
+
+async function runtimeCapabilityTokenFor({ bridgeUrl, bridgeToken, capability, fetchImpl }) {
+  const scopedCapability = normalizeCapabilityName(capability);
+  if (!scopedCapability || !bridgeToken) return null;
+  if (_capabilityTokens[scopedCapability]) return _capabilityTokens[scopedCapability];
+  const response = await fetchImpl(`${bridgeUrl}/api/capability-tokens`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-ResonantOS-Bridge-Token": bridgeToken,
+    },
+    body: JSON.stringify({ capability: scopedCapability }),
+  });
+  if (!response.ok) return null;
+  const payload = await response.json().catch(() => ({}));
+  if (payload?.ok && payload?.capabilityTokens && typeof payload.capabilityTokens === "object") {
+    Object.assign(_capabilityTokens, payload.capabilityTokens);
+  }
+  return _capabilityTokens[scopedCapability] ?? null;
+}
+
 export function createBridgeClient(config = globalThis.__RESONANTOS_BRIDGE_CONFIG__ ?? {}) {
   const bridgeUrl = config.bridgeUrl ?? DEFAULT_BRIDGE_URL;
   const bridgeToken = config.bridgeToken ?? "";
@@ -98,8 +128,17 @@ export function createBridgeClient(config = globalThis.__RESONANTOS_BRIDGE_CONFI
     if (bridgeToken) {
       headers["X-ResonantOS-Bridge-Token"] = bridgeToken;
     }
-    if (options.capability && bridgeCapabilityTokens[options.capability]) {
-      headers["X-ResonantOS-Bridge-Capability-Token"] = bridgeCapabilityTokens[options.capability];
+    if (options.capability) {
+      const capabilityToken = bridgeCapabilityTokens[options.capability]
+        ?? await runtimeCapabilityTokenFor({
+          bridgeUrl,
+          bridgeToken,
+          capability: options.capability,
+          fetchImpl,
+        });
+      if (capabilityToken) {
+        headers["X-ResonantOS-Bridge-Capability-Token"] = capabilityToken;
+      }
     }
     const response = await fetchImpl(`${bridgeUrl}${route}`, {
       method: options.method ?? "GET",
@@ -131,8 +170,17 @@ export function createRawBridgeFetch(config = globalThis.__RESONANTOS_BRIDGE_CON
     if (bridgeToken) {
       headers["X-ResonantOS-Bridge-Token"] = bridgeToken;
     }
-    if (options.capability && bridgeCapabilityTokens[options.capability]) {
-      headers["X-ResonantOS-Bridge-Capability-Token"] = bridgeCapabilityTokens[options.capability];
+    if (options.capability) {
+      const capabilityToken = bridgeCapabilityTokens[options.capability]
+        ?? await runtimeCapabilityTokenFor({
+          bridgeUrl,
+          bridgeToken,
+          capability: options.capability,
+          fetchImpl,
+        });
+      if (capabilityToken) {
+        headers["X-ResonantOS-Bridge-Capability-Token"] = capabilityToken;
+      }
     }
     return fetchImpl(`${bridgeUrl}${path}`, {
       method: options.method ?? "GET",
@@ -235,42 +283,32 @@ export async function detectLoopbackBridge(config, { fetchImpl: fetchOverride } 
   return config;
 }
 
-// SECURITY: Capability tokens issued at runtime by the bridge's authenticated
-// /api/capability-tokens endpoint populate this module-level map on
-// service-worker startup. Config-supplied tokens (bridgeCapabilityTokens in
-// the createBridgeClient config, or globalThis.__RESONANTOS_BRIDGE_CONFIG__)
-// take precedence — they are typically the higher-privilege tokens baked
-// into the build. The runtime-fetched tokens are an additional layer for
-// tokens that should NOT appear in the generated config file.
-const _capabilityTokens = {};
-
 /**
- * Fetches capability tokens from the bridge server's authenticated endpoint
- * and merges them into the shared _capabilityTokens map. Must be called
- * once on service-worker startup so that subsequent bridgeRequest() calls
- * can attach the right capability headers.
+ * Pre-fetches named capability tokens from the bridge server's authenticated
+ * endpoint and merges them into the shared _capabilityTokens map.
  *
- * The endpoint requires a valid X-ResonantOS-Bridge-Token header; raw
- * capability tokens are never written to the generated config file.
+ * This is optional. Normal bridge requests fetch the single needed capability
+ * lazily, which avoids exposing every capability token at startup.
  */
-export async function initCapabilityTokens(config) {
+export async function initCapabilityTokens(config, capabilities = []) {
   const cfg = config ?? globalThis.__RESONANTOS_BRIDGE_CONFIG__ ?? {};
   const bridgeUrl = cfg.bridgeUrl ?? DEFAULT_BRIDGE_URL;
   const bridgeToken = cfg.bridgeToken ?? "";
   if (!bridgeToken) return;
-  try {
-    const response = await fetch(`${bridgeUrl}/api/capability-tokens`, {
-      headers: { "X-ResonantOS-Bridge-Token": bridgeToken },
-    });
-    if (response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      if (payload?.ok && payload?.capabilityTokens && typeof payload.capabilityTokens === "object") {
-        Object.assign(_capabilityTokens, payload.capabilityTokens);
-      }
+  const requested = Array.isArray(capabilities)
+    ? capabilities.map(normalizeCapabilityName).filter(Boolean)
+    : [];
+  for (const capability of requested) {
+    try {
+      await runtimeCapabilityTokenFor({
+        bridgeUrl,
+        bridgeToken,
+        capability,
+        fetchImpl: cfg.fetchImpl ?? fetch,
+      });
+    } catch {
+      // Bridge may not be reachable yet (e.g. host not started). Capability
+      // requests will be retried lazily when a bridge route needs them.
     }
-  } catch {
-    // Bridge may not be reachable yet (e.g. host not started). Capability
-    // requests will fall back to config-supplied tokens until the bridge
-    // is up.
   }
 }

@@ -21,6 +21,30 @@ test("native Browser host source satisfies the ADR-025 contract markers", async 
   assert.deepEqual(result.failures, []);
 });
 
+test("native Browser host contains unsafe caller launch arguments before Chromium sees them", async () => {
+  const source = await readFile(
+    path.join(addonRoot, "native_host", "src", "resonant_browser_native_host.cc"),
+    "utf8",
+  );
+
+  assert.match(source, /SafeBrowserUserDataDir/);
+  assert.match(source, /SafeExtensionDirs/);
+  assert.match(source, /extension_dirs = SafeExtensionDirs\(extension_dirs\)/);
+  assert.match(source, /AppendSwitchWithValue\("remote-debugging-port", "0"\)/);
+  assert.match(source, /AppendSwitchWithValue\("remote-debugging-address", "127\.0\.0\.1"\)/);
+  assert.match(
+    source,
+    /SafeBrowserUserDataDir\(command_line->GetSwitchValue\("resonantos-user-data-dir"\)\)/,
+  );
+  assert.match(
+    source,
+    /SafeBrowserUserDataDir\(initial_command_line->GetSwitchValue\("resonantos-user-data-dir"\)\)/,
+  );
+  assert.doesNotMatch(source, /requested_debug_port/);
+  assert.doesNotMatch(source, /AppendSwitchWithValue\("remote-debugging-port",\s*requested/);
+  assert.doesNotMatch(source, /AppendSwitchWithValue\("user-data-dir",\s*user_data_dir\)/);
+});
+
 test("bundled Browser add-on manifest stays aligned with the native product path", async () => {
   const { stdout } = await execFileAsync("node", [path.join(addonRoot, "scripts", "audit-browser-addon-drift.mjs")], {
     cwd: addonRoot,

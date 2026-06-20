@@ -78,3 +78,26 @@ test("browser-first host utils execute bounded stdout commands", async () => {
     await rm(tempRoot, { recursive: true, force: true });
   }
 });
+
+test("browser-first host utils can pipe sensitive input off argv", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "resonantos-host-utils-stdin-"));
+  try {
+    const script = path.join(tempRoot, "stdin.mjs");
+    await writeFile(script, [
+      "let input = '';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', (chunk) => { input += chunk; });",
+      "process.stdin.on('end', () => {",
+      "  if (process.argv.slice(2).some((arg) => arg.includes('SECRET-PROMPT'))) process.exit(42);",
+      "  console.log(input.trim());",
+      "});",
+      "",
+    ].join("\n"));
+    assert.equal(
+      await execFileStdout(process.execPath, [script, "-q", "-"], { input: "SECRET-PROMPT" }),
+      "SECRET-PROMPT",
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});

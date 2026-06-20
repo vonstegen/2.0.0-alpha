@@ -26,7 +26,7 @@ async function loadBridgeConfig() {
   }
   return __bridgeConfigPromise;
 }
-import { createBridgeClient, detectLoopbackBridge, resolveBridgeConfig, initCapabilityTokens } from "./lib/bridge-client.js";
+import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, resolveBridgeConfig, initCapabilityTokens } from "./lib/bridge-client.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 
 const APPROVAL_REQUIRED_ACTIONS = new Set([
@@ -186,9 +186,9 @@ const handoffToResonantSidePanel = async ({ senderTab, targetUrl = "" } = {}) =>
   return { ok: true, opened: true, navigated: Boolean(targetUrl), tabId: tab.id };
 };
 
-// Fetch capability tokens from the bridge on service-worker startup.
-// Tokens are NOT stored in the generated config (security boundary); they
-// are delivered via the authenticated /api/capability-tokens endpoint.
+// Capability tokens are NOT stored in the generated config (security boundary).
+// They are fetched lazily, one capability at a time, by bridge-client.js when a
+// privileged route is called.
 void initCapabilityTokens();
 
 chrome.runtime.onInstalled.addListener(() => {

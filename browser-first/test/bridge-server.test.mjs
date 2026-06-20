@@ -132,6 +132,130 @@ test("bridge client sends scoped capability headers without localhost binding", 
   assert.equal(saved.saved, true);
 });
 
+test("bridge client lazily fetches one scoped capability token", async () => {
+  const bridgeToken = "general-test-token";
+  const capabilityToken = "credential-write-test-token";
+  const calls = [];
+  const routes = [
+    {
+      method: "POST",
+      path: "/providers/credentials",
+      requiredCapability: "provider-credential-write",
+      handler: async (payload) => ({ saved: payload.providerId === "shared-minimax" }),
+    },
+  ];
+  const client = createBridgeClient({
+    bridgeUrl: "http://127.0.0.1:47773",
+    bridgeToken,
+    bridgeCapabilityTokens: {},
+    fetchImpl: async (url, options = {}) => {
+      const pathname = new URL(url).pathname;
+      calls.push({
+        pathname,
+        method: options.method ?? "GET",
+        body: options.body ? JSON.parse(options.body) : {},
+        capabilityHeader: options.headers?.["X-ResonantOS-Bridge-Capability-Token"],
+      });
+      if (pathname === "/api/capability-tokens") {
+        assert.equal(options.method, "POST");
+        assert.deepEqual(JSON.parse(options.body), { capability: "provider-credential-write" });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            capabilityTokens: { "provider-credential-write": capabilityToken },
+          }),
+        };
+      }
+      const result = await evaluateBridgeRequestForSelfTest({
+        method: options.method,
+        url: pathname,
+        headers: options.headers,
+        body: options.body ? JSON.parse(options.body) : {},
+        bridgeToken,
+        bridgeCapabilityTokens: {
+          "provider-credential-write": capabilityToken,
+        },
+        routes,
+      });
+      return {
+        ok: result.status >= 200 && result.status < 300,
+        status: result.status,
+        json: async () => result.payload,
+      };
+    },
+  });
+
+  const saved = await client("/providers/credentials", {
+    method: "POST",
+    capability: "provider-credential-write",
+    body: { providerId: "shared-minimax", credential: "minimax-test-credential" },
+  });
+
+  assert.equal(saved.saved, true);
+  assert.equal(calls.filter((call) => call.pathname === "/api/capability-tokens").length, 1);
+  assert.equal(calls.at(-1).capabilityHeader, capabilityToken);
+});
+
+test("capability token endpoint never returns the full token set", async (t) => {
+  const bridgeToken = "general-test-token";
+  let server;
+  try {
+    server = await startBridgeServer({
+      port: 0,
+      bridgeToken,
+      bridgeCapabilityTokens: {
+        "provider-credential-write": "credential-write-test-token",
+        "provider-routing-write": "routing-write-test-token",
+      },
+      extensionOrigin: "chrome-extension://test",
+      routes: [],
+    });
+  } catch (error) {
+    if (error?.code === "EPERM" && error?.address === "127.0.0.1") {
+      t.skip("localhost bind is denied in this sandbox; bridge capability endpoint must be verified outside sandboxed CI.");
+      return;
+    }
+    throw error;
+  }
+  const address = server.address();
+  const bridgeUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    const getDump = await fetch(`${bridgeUrl}/api/capability-tokens`, {
+      headers: { "X-ResonantOS-Bridge-Token": bridgeToken },
+    });
+    assert.equal(getDump.status, 404);
+
+    const multi = await fetch(`${bridgeUrl}/api/capability-tokens`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-ResonantOS-Bridge-Token": bridgeToken,
+      },
+      body: JSON.stringify({ capabilities: ["provider-credential-write", "provider-routing-write"] }),
+    });
+    assert.equal(multi.status, 400);
+
+    const scoped = await fetch(`${bridgeUrl}/api/capability-tokens`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-ResonantOS-Bridge-Token": bridgeToken,
+      },
+      body: JSON.stringify({ capability: "provider-credential-write" }),
+    });
+    assert.equal(scoped.status, 200);
+    const payload = await scoped.json();
+    assert.deepEqual(payload.capabilityTokens, {
+      "provider-credential-write": "credential-write-test-token",
+    });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("bridge privileged routes require a route-scoped capability token", async (t) => {
   const bridgeToken = "general-test-token";
   const capabilityToken = "credential-write-test-token";

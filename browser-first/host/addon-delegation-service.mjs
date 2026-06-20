@@ -525,7 +525,7 @@ export function createAddonDelegationService(dependencies) {
   async function runHermesCliDelegation(command, packet, payload = {}) {
     const prompt = buildHermesExecutionPrompt(packet);
     const toolsets = String(payload.toolsets ?? process.env.RESONANTOS_HERMES_TOOLSETS ?? "memory").trim();
-    const args = ["chat", "-q", prompt, "-Q", "--source", "resonantos", "--max-turns", "8"];
+    const args = ["chat", "-q", "-", "-Q", "--source", "resonantos", "--max-turns", "8"];
     if (toolsets) args.push("--toolsets", toolsets);
     const output = await execFileStdout(command, args, {
       cwd: browserFirstRoot(),
@@ -533,6 +533,7 @@ export function createAddonDelegationService(dependencies) {
         ...process.env,
         HERMES_HOME: hermesHome(payload.profileHome),
       },
+      input: prompt,
       timeout: Math.min(600_000, Math.max(30_000, Number(payload.timeoutMs ?? 180_000))),
     });
     return parseHermesCliResult(output);

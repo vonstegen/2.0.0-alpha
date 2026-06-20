@@ -2,6 +2,7 @@
 
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -298,15 +299,28 @@ pub(crate) fn execute_hermes_chat(request: HermesChatRequest) -> Result<HermesCh
     }
     process
         .arg("-q")
-        .arg(prompt)
+        .arg("-")
         .env("HERMES_HOME", &home)
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     apply_scoped_env(&mut process, "hermes");
-    let output = process
-        .output()
+    let mut child = process
+        .spawn()
         .map_err(|error| format!("Failed to run Hermes chat: {error}"))?;
+    {
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| "Hermes chat stdin was not available.".to_string())?;
+        stdin
+            .write_all(prompt.as_bytes())
+            .map_err(|error| format!("Failed to send Hermes chat prompt: {error}"))?;
+    }
+    drop(child.stdin.take());
+    let output = child
+        .wait_with_output()
+        .map_err(|error| format!("Failed to read Hermes chat output: {error}"))?;
 
     if !output.status.success() {
         let failure = clean_hermes_failure_output(
@@ -1430,10 +1444,11 @@ fn chrono_like_now() -> String {
 mod tests {
     use super::{
         clean_hermes_chat_output, clean_hermes_failure_output, dashboard_target, hermes_command,
-        install_hermes, parse_available_models_from_config, parse_current_model_from_config,
-        parse_kanban_counts, parse_kanban_tasks, parse_profile_list, query_hermes_status,
-        resolve_hermes_command, start_hermes_dashboard, validate_selected_model,
-        HermesDashboardRequest, HermesInstallRequest, HermesStatusMode,
+        execute_hermes_chat, install_hermes, parse_available_models_from_config,
+        parse_current_model_from_config, parse_kanban_counts, parse_kanban_tasks,
+        parse_profile_list, query_hermes_status, resolve_hermes_command,
+        start_hermes_dashboard, validate_selected_model, HermesChatRequest, HermesDashboardRequest,
+        HermesInstallRequest, HermesStatusMode,
         DEFAULT_HERMES_DASHBOARD_PORT,
     };
     use std::fs;
@@ -1638,6 +1653,55 @@ providers:
         let command = hermes_command(&main.display().to_string());
 
         assert_eq!(command.get_program(), venv_bin.join("python").as_os_str());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hermes_chat_keeps_prompt_off_argv() {
+        let root = std::env::temp_dir().join(format!(
+            "resonantos-hermes-no-argv-prompt-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let venv_bin = root.join("hermes-agent").join("venv").join("bin");
+        fs::create_dir_all(&venv_bin).expect("venv bin should be created");
+        let hermes_path = venv_bin.join("hermes");
+        let argv_log = root.join("argv.log");
+        let stdin_log = root.join("stdin.log");
+        fs::write(
+            &hermes_path,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\ncat > '{}'\necho 'SAFE_HERMES_REPLY'\n",
+                argv_log.display(),
+                stdin_log.display()
+            ),
+        )
+        .expect("fake hermes should be written");
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&hermes_path, fs::Permissions::from_mode(0o755))
+                .expect("hermes should be executable");
+        }
+
+        let secret_prompt = "SECRET-HERMES-PROMPT-do-not-leak-on-argv";
+        let result = execute_hermes_chat(HermesChatRequest {
+            prompt: secret_prompt.to_string(),
+            profile_home: Some(root.display().to_string()),
+            model: None,
+        })
+        .expect("fake Hermes chat should complete");
+
+        assert_eq!(result.reply, "SAFE_HERMES_REPLY");
+        let argv = fs::read_to_string(&argv_log).expect("argv log should exist");
+        assert!(
+            !argv.contains(secret_prompt),
+            "Hermes argv must not contain the prompt text: {argv}"
+        );
+        assert!(argv.lines().any(|line| line == "-q"));
+        assert!(argv.lines().any(|line| line == "-"));
+        let stdin = fs::read_to_string(&stdin_log).expect("stdin log should exist");
+        assert_eq!(stdin, secret_prompt);
         let _ = fs::remove_dir_all(root);
     }
 

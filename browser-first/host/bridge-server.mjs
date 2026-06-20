@@ -980,6 +980,34 @@ function isAuthorizedCapabilityRequest(request, bridgeCapabilityTokens, required
   return Boolean(expectedToken) && constantTimeEqual(request.headers[bridgeCapabilityHeader], expectedToken);
 }
 
+function bridgeRouteError(message, statusCode = 400) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function requestedCapabilityFromPayload(payload = {}) {
+  const single = typeof payload.capability === "string" ? payload.capability.trim() : "";
+  const list = Array.isArray(payload.capabilities)
+    ? payload.capabilities.map((capability) => String(capability ?? "").trim()).filter(Boolean)
+    : [];
+  const requested = single ? [single] : list;
+  if (requested.length !== 1) {
+    throw bridgeRouteError("Capability token requests must name exactly one capability.");
+  }
+  const capability = requested[0];
+  if (!/^[a-z0-9][a-z0-9.-]{0,79}$/i.test(capability)) {
+    throw bridgeRouteError("Capability token request contains an invalid capability name.");
+  }
+  return capability;
+}
+
+function issueScopedCapabilityToken(bridgeCapabilityTokens, payload) {
+  const capability = requestedCapabilityFromPayload(payload);
+  const token = bridgeCapabilityTokens?.[capability];
+  return token ? { [capability]: token } : {};
+}
+
 export async function evaluateBridgeRequestForSelfTest({
   method = "GET",
   url = "/",
@@ -1012,7 +1040,8 @@ export async function evaluateBridgeRequestForSelfTest({
     const result = await route.handler(payload, request);
     return { status: 200, payload: { ok: true, ...result } };
   } catch (error) {
-    return { status: 500, payload: { ok: false, error: error instanceof Error ? error.message : String(error) } };
+    const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+    return { status, payload: { ok: false, error: error instanceof Error ? error.message : String(error) } };
   }
 }
 
@@ -1028,14 +1057,17 @@ export function createBridgeRequestHandler({
   allowedCidrs = getBridgeAllowedCidrs(),
   dashboardProxyHandler = null,
 } = {}) {
-  // SECURITY: /api/capability-tokens is a built-in internal route that delivers capability
-  // tokens only to callers who already hold a valid bridge token. Capability tokens are
-  // never written to the generated config file; the extension fetches them at runtime.
+  // SECURITY: /api/capability-tokens is a built-in internal route that delivers
+  // exactly one requested capability token to callers who already hold a valid
+  // bridge token. Capability tokens are never written to the generated config
+  // file, and the endpoint must not dump the full token set.
   const internalRoutes = [
     {
-      method: "GET",
+      method: "POST",
       path: "/api/capability-tokens",
-      handler: async () => ({ capabilityTokens: bridgeCapabilityTokens }),
+      handler: async (payload) => ({
+        capabilityTokens: issueScopedCapabilityToken(bridgeCapabilityTokens, payload),
+      }),
     },
     ...routes,
   ];
@@ -1073,7 +1105,8 @@ export function createBridgeRequestHandler({
       // proxy for any path that matches one of the dashboard proxy's mirror
       // entries (e.g. /hermes-dashboard/*, /api/*, /assets/*, etc.).
       const proxyPath = (request.url ?? "/").split("?")[0] ?? "/";
-      if (proxyHandler && dashboardProxyPathMatches(proxyPath)) {
+      const isInternalBridgeApi = proxyPath === "/api/capability-tokens";
+      if (proxyHandler && dashboardProxyPathMatches(proxyPath) && !isInternalBridgeApi) {
         proxyHandler(request, response);
         return;
       }

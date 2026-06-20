@@ -53,11 +53,12 @@ export function executableCandidates(commandName) {
 export async function execFileStdout(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const needsWindowsCommandShell = process.platform === "win32" && /\.(?:cmd|bat)$/i.test(String(command));
-    execFile(command, args, {
+    const { input, ...execOptions } = options;
+    const child = execFile(command, args, {
       timeout: 120_000,
       windowsHide: true,
       shell: needsWindowsCommandShell,
-      ...options,
+      ...execOptions,
     }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(String(stderr || error.message || "Command failed.").trim()));
@@ -65,6 +66,9 @@ export async function execFileStdout(command, args, options = {}) {
       }
       resolve(String(stdout ?? "").trim());
     });
+    if (input !== undefined) {
+      child.stdin?.end(String(input));
+    }
   });
 }
 
