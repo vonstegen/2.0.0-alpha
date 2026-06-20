@@ -1364,6 +1364,56 @@ fn strip_think_blocks(content: &str) -> String {
     cleaned
 }
 
+/// Write a single `Authorization: Bearer <token>` header line to `path` with
+/// owner-only (0600) permissions on Unix so the credential is readable only by
+/// the current user and never appears on a child process argv.
+fn write_curl_header_file(path: &Path, api_key: &str) -> Result<(), String> {
+    let contents = format!("Authorization: Bearer {api_key}\n");
+    fs::write(path, contents.as_bytes())
+        .map_err(|error| format!("Could not write temporary LLM auth header: {error}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .map_err(|error| format!("Could not secure temporary LLM auth header: {error}"))?;
+    }
+    Ok(())
+}
+
+/// Build the curl `Command` for an LLM request. The Authorization header, when
+/// present, is referenced via `-H @<header_path>` so the bearer credential is
+/// never inlined as an argv value.
+fn build_curl_command(
+    url: &str,
+    payload_path: &Path,
+    response_path: &Path,
+    header_path: Option<&Path>,
+) -> Command {
+    let mut command = Command::new("curl");
+    command
+        .arg("-sS")
+        .arg("-L")
+        .arg("-o")
+        .arg(response_path)
+        .arg("-w")
+        .arg("%{http_code}")
+        .arg("--connect-timeout")
+        .arg("30")
+        .arg("--max-time")
+        .arg("300")
+        .arg(url)
+        .arg("-H")
+        .arg("Content-Type: application/json")
+        .arg("--data-binary")
+        .arg(format!("@{}", payload_path.display()));
+
+    if let Some(header_path) = header_path {
+        command.arg("-H").arg(format!("@{}", header_path.display()));
+    }
+
+    command
+}
+
 fn post_json_with_curl(
     url: &str,
     api_key: &str,
@@ -1391,34 +1441,34 @@ fn post_json_with_curl(
     )
     .map_err(|error| format!("Could not write temporary LLM payload: {error}"))?;
 
-    let mut command = Command::new("curl");
-    command
-        .arg("-sS")
-        .arg("-L")
-        .arg("-o")
-        .arg(&response_path)
-        .arg("-w")
-        .arg("%{http_code}")
-        .arg("--connect-timeout")
-        .arg("30")
-        .arg("--max-time")
-        .arg("300")
-        .arg(url)
-        .arg("-H")
-        .arg("Content-Type: application/json")
-        .arg("--data-binary")
-        .arg(format!("@{}", payload_path.display()));
+    // Keep the bearer credential off the child argv (visible via /proc, ps,
+    // shell history). curl reads extra headers from a file with `-H @file`, so
+    // we write the Authorization header to a 0600 temp file and reference it by
+    // path instead of inlining the secret as a command-line argument.
+    let header_path = if api_key.trim().is_empty() {
+        None
+    } else {
+        let header_path = std::env::temp_dir().join(format!(
+            "audio2tol-llm-header-{}-{}.txt",
+            std::process::id(),
+            chrono::Local::now()
+                .timestamp_nanos_opt()
+                .unwrap_or_default()
+        ));
+        write_curl_header_file(&header_path, api_key.trim())?;
+        Some(header_path)
+    };
 
-    if !api_key.trim().is_empty() {
-        command
-            .arg("-H")
-            .arg(format!("Authorization: Bearer {}", api_key.trim()));
-    }
+    let mut command =
+        build_curl_command(url, &payload_path, &response_path, header_path.as_deref());
 
     let output = command
         .output()
         .map_err(|error| format!("Could not start curl for LLM request: {error}"));
     let _ = fs::remove_file(&payload_path);
+    if let Some(header_path) = header_path.as_ref() {
+        let _ = fs::remove_file(header_path);
+    }
     let output = output?;
     let status_text = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let response_body = fs::read_to_string(&response_path).unwrap_or_default();
@@ -1743,4 +1793,80 @@ fn scan_folder(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_curl_command, write_curl_header_file};
+    use std::path::Path;
+
+    /// Mirrors the no-argv-secret rule set: no argv value may contain an inline
+    /// `Authorization: Bearer` header shape. The bearer credential must travel
+    /// via a `-H @file` reference, never as a literal argv value.
+    #[test]
+    fn curl_command_keeps_bearer_off_argv() {
+        let secret = "sk-super-secret-token-value";
+        let payload_path = Path::new("/tmp/audio2tol-payload.json");
+        let response_path = Path::new("/tmp/audio2tol-response.json");
+        let header_path = std::env::temp_dir().join(format!(
+            "audio2tol-llm-header-test-{}.txt",
+            std::process::id()
+        ));
+        write_curl_header_file(&header_path, secret).expect("header file should be written");
+
+        let command = build_curl_command(
+            "https://example.test/v1",
+            payload_path,
+            response_path,
+            Some(&header_path),
+        );
+
+        let args: Vec<String> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect();
+
+        assert!(
+            args.iter()
+                .all(|arg| !arg.contains("Authorization: Bearer")),
+            "curl argv must not inline the Authorization: Bearer header: {args:?}"
+        );
+        assert!(
+            args.iter().all(|arg| !arg.contains(secret)),
+            "curl argv must not contain the bearer token value: {args:?}"
+        );
+        assert!(
+            args.iter()
+                .any(|arg| arg == &format!("@{}", header_path.display())),
+            "curl argv must reference the header file via @path: {args:?}"
+        );
+
+        // The header file itself carries the credential.
+        let contents = std::fs::read_to_string(&header_path).expect("header file should be read");
+        assert!(contents.contains("Authorization: Bearer"));
+        assert!(contents.contains(secret));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&header_path)
+                .expect("header file metadata should be read")
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600, "header file must be owner-only (0600)");
+        }
+        let _ = std::fs::remove_file(&header_path);
+    }
+
+    #[test]
+    fn curl_command_without_api_key_has_no_auth_header() {
+        let payload_path = Path::new("/tmp/audio2tol-payload.json");
+        let response_path = Path::new("/tmp/audio2tol-response.json");
+        let command =
+            build_curl_command("https://example.test/v1", payload_path, response_path, None);
+        let args: Vec<String> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect();
+        assert!(args.iter().all(|arg| !arg.contains("Authorization")));
+    }
 }
