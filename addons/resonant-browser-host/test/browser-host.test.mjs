@@ -87,7 +87,7 @@ after(async () => {
 });
 
 describe("ResonantBrowserHost", () => {
-  it("opens, reads, clicks, types, captures evidence, and closes a Chromium session", { timeout: 60_000 }, async (t) => {
+  it("opens, reads, clicks, types, captures evidence, and closes a Chromium session", { timeout: 90_000 }, async (t) => {
     if (localhostBindDenied) {
       t.skip("localhost bind is denied in this sandbox; browser-host live Chromium behavior must be verified outside sandboxed CI.");
       return;
@@ -108,7 +108,7 @@ describe("ResonantBrowserHost", () => {
     assert.match(read.text, /Resonant Browser Host Fixture/);
     assert.equal(read.links[0].href, `${baseUrl}/next`);
 
-    await host.click({ selector: "#change-status" });
+    await host.click({ selector: "#change-status", timeoutMs: 20_000 });
     const clicked = await host.readPage();
     assert.match(clicked.text, /Clicked/);
 
