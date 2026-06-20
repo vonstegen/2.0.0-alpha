@@ -6,7 +6,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
-import { ResonantBrowserHost, handleJsonRpcLine } from "../src/browser-host.mjs";
+import { ResonantBrowserHost, handleJsonRpcLine, resolveChromiumLaunchOptions } from "../src/browser-host.mjs";
 
 let server;
 let baseUrl;
@@ -114,6 +114,25 @@ describe("ResonantBrowserHost", () => {
     const host = new ResonantBrowserHost({ headless: true });
 
     await assert.rejects(() => host.start({ defaultUrl: "file:///etc/passwd" }), /http and https URLs/);
+  });
+
+  it("supports a configured Chrome channel without requiring a bundled Chromium download", () => {
+    const channelOptions = resolveChromiumLaunchOptions({
+      headless: true,
+      params: {},
+      env: { RESONANTOS_BROWSER_HOST_CHANNEL: "chrome" },
+    });
+    assert.equal(channelOptions.channel, "chrome");
+    assert.equal(channelOptions.executablePath, undefined);
+    assert.deepEqual(channelOptions.args, ["--password-store=basic", "--use-mock-keychain"]);
+
+    const executableOptions = resolveChromiumLaunchOptions({
+      headless: true,
+      params: { executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" },
+      env: { RESONANTOS_BROWSER_HOST_CHANNEL: "chrome" },
+    });
+    assert.equal(executableOptions.channel, undefined);
+    assert.equal(executableOptions.executablePath, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
   });
 
   it("handles stdio JSON-RPC method lines", async (t) => {
