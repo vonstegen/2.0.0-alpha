@@ -105,11 +105,13 @@ jobs:
 
       - name: Install browser host Playwright browser and Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
-        run: npm --prefix addons/resonant-browser-host exec playwright -- install --with-deps chromium
+        working-directory: addons/resonant-browser-host
+        run: node node_modules/playwright/cli.js install --with-deps chromium
 
       - name: Install browser host Playwright browser
         if: matrix.platform != 'ubuntu-22.04'
-        run: npm --prefix addons/resonant-browser-host exec playwright -- install chromium
+        working-directory: addons/resonant-browser-host
+        run: node node_modules/playwright/cli.js install chromium
 
       - name: Audit browser host dependencies
         run: npm audit --prefix addons/resonant-browser-host --audit-level=high
