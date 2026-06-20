@@ -42,7 +42,11 @@ function skipIfLocalhostBindDenied(t, result) {
 }
 
 function runBridgeSelfTest(t, args, timeout = 15_000) {
-  const effectiveArgs = process.platform === "win32" ? args.map((arg) => windowsSelfTestFlags.get(arg) ?? arg) : args;
+  const effectiveArgs = process.platform === "win32"
+    ? args
+      .map((arg) => windowsSelfTestFlags.get(arg) ?? arg)
+      .filter((arg) => !/^--(?:bridge-token|bridge-port|addon-execution-settings-token)=/.test(arg))
+    : args;
   const result = spawnSync("node", [path.join(browserFirstRoot, "host", "run-browser-first.mjs"), ...effectiveArgs], {
     cwd: repoRoot,
     encoding: "utf8",

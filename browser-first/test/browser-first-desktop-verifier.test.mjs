@@ -75,7 +75,7 @@ test("desktop verifier captures parsed child verifier JSON in the durable report
       `--report=${reportPath}`,
     ], {
       cwd: repoRoot,
-      env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
     });
     const output = JSON.parse(stdout);
     const report = JSON.parse(await readFile(reportPath, "utf8"));

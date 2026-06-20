@@ -752,6 +752,12 @@ mod tests {
             .expect("HOME should exist")
             .join("Desktop")
             .join(format!("OpenCodeBridgeTest-{}", std::process::id()));
+        fs::create_dir_all(
+            target_root
+                .parent()
+                .expect("target folder should have a parent"),
+        )
+        .expect("target parent should exist");
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_dir_all(&target_root);
         create_task_workspace_with_root(

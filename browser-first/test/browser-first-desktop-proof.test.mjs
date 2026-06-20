@@ -55,7 +55,7 @@ test("desktop proof runner passes only when verification and audit pass", async 
       path.join(repoRoot, "scripts", "prove-browser-first-desktop.mjs"),
     ], {
       cwd: repoRoot,
-      env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
     });
     const output = JSON.parse(stdout);
 
@@ -82,7 +82,7 @@ test("desktop proof runner fails when audit fails after verification", async () 
         path.join(repoRoot, "scripts", "prove-browser-first-desktop.mjs"),
       ], {
         cwd: repoRoot,
-        env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+        env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
       }),
       (error) => {
         const output = JSON.parse(error.stdout);
