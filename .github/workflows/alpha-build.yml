@@ -138,9 +138,19 @@ jobs:
         run: npm run test:engineer-runner
 
       - name: Package browser-first extension
+        if: runner.os != 'Windows'
         run: |
           cd browser-first/resonantos-side-panel-extension
           zip -r ../../resonantos-side-panel-extension.zip . -x "*.DS_Store"
+
+      - name: Package browser-first extension (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path browser-first/resonantos-side-panel-extension/* `
+            -DestinationPath resonantos-side-panel-extension.zip `
+            -Force
 
       - name: Upload extension artifact
         uses: actions/upload-artifact@v4
