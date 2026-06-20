@@ -19,6 +19,13 @@ const DEFAULT_MEMORY_SERVICE_PORT: u16 = 4888;
 const MEMORY_SERVICE_HOSTNAME: &str = "127.0.0.1";
 const MEMORY_SERVICE_SESSION_ID: &str = "living-archive-memory-service";
 const MEMORY_SERVICE_HEALTH_TIMEOUT: Duration = Duration::from_secs(8);
+/// DD-3 (F6): default readonly so writes require an explicit opt-in *and* a token.
+const MEMORY_SERVICE_READONLY_DEFAULT: bool = true;
+/// Env vars consumed by the standalone listener (see
+/// examples/living-archive-memory-service.mjs).
+const MEMORY_SERVICE_TOKEN_ENV: &str = "RESONANTOS_MEMORY_SERVICE_TOKEN";
+const MEMORY_SERVICE_HOST_ENV: &str = "RESONANTOS_MEMORY_SERVICE_HOST";
+const MEMORY_SERVICE_UNSAFE_HOST_ENV: &str = "RESONANTOS_MEMORY_SERVICE_UNSAFE_HOST";
 
 static MEMORY_SERVICE_SESSIONS: OnceLock<Mutex<HashMap<String, MemoryServiceProcessSession>>> =
     OnceLock::new();
@@ -30,6 +37,7 @@ fn memory_service_sessions() -> &'static Mutex<HashMap<String, MemoryServiceProc
 struct MemoryServiceProcessSession {
     child: Child,
     memory_root: String,
+    host: String,
     port: u16,
     readonly: bool,
 }
@@ -124,7 +132,7 @@ pub(crate) fn query_memory_service_status(
         endpoint,
         memory_root: portable_state.memory_root,
         session_id,
-        readonly: false,
+        readonly: MEMORY_SERVICE_READONLY_DEFAULT,
         pid: None,
         command,
         status_detail: if available {
@@ -153,8 +161,16 @@ pub(crate) fn start_memory_service(
         Some(port) => port,
         None => available_local_port().unwrap_or(DEFAULT_MEMORY_SERVICE_PORT),
     };
-    let readonly = request.readonly.unwrap_or(false);
-    let endpoint = endpoint_for_port(port);
+    // DD-3 (F6): readonly is the default. Writes only enable when the caller
+    // explicitly opts out *and* a token is configured for the listener.
+    let token = memory_service_token();
+    let mut readonly = request.readonly.unwrap_or(MEMORY_SERVICE_READONLY_DEFAULT);
+    if !readonly && token.is_none() {
+        // No token means writes cannot be authenticated; fail closed to readonly.
+        readonly = true;
+    }
+    let host = resolve_memory_service_host()?;
+    let endpoint = endpoint_for_host_port(&host, port);
 
     let mut sessions = memory_service_sessions()
         .lock()
@@ -170,7 +186,7 @@ pub(crate) fn start_memory_service(
         {
             return Ok(MemoryServiceResult {
                 session_id,
-                endpoint: endpoint_for_port(existing.port),
+                endpoint: endpoint_for_host_port(&existing.host, existing.port),
                 memory_root: existing.memory_root.clone(),
                 readonly: existing.readonly,
                 command: command_label(&script),
@@ -181,15 +197,30 @@ pub(crate) fn start_memory_service(
         sessions.remove(&session_id);
     }
 
-    let child = Command::new(resolve_node_binary())
+    let mut command = Command::new(resolve_node_binary());
+    command
         .arg(&script)
         .arg("--memory-root")
         .arg(&portable_state.memory_root)
         .arg("--host")
-        .arg(MEMORY_SERVICE_HOSTNAME)
+        .arg(&host)
         .arg("--port")
-        .arg(port.to_string())
-        .args(if readonly { vec!["--readonly"] } else { vec![] })
+        .arg(port.to_string());
+    if readonly {
+        command.arg("--readonly");
+    } else {
+        // Writes enabled: the listener requires a bearer token (DD-3 F6). The
+        // token was confirmed present above before flipping readonly off; pass it
+        // via env (not argv) so it does not leak through the process table.
+        command.arg("--writable");
+        if let Some(ref token) = token {
+            command.env(MEMORY_SERVICE_TOKEN_ENV, token);
+        }
+    }
+    if host_requires_unsafe_optin(&host) {
+        command.arg("--unsafe-host");
+    }
+    let child = command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -202,11 +233,12 @@ pub(crate) fn start_memory_service(
         MemoryServiceProcessSession {
             child,
             memory_root: portable_state.memory_root.clone(),
+            host: host.clone(),
             port,
             readonly,
         },
     );
-    wait_for_memory_service_health(port)?;
+    wait_for_memory_service_health(&host, port)?;
 
     Ok(MemoryServiceResult {
         session_id,
@@ -236,7 +268,7 @@ pub(crate) fn stop_memory_service(
     let _ = session.child.wait();
     Ok(MemoryServiceResult {
         session_id,
-        endpoint: endpoint_for_port(session.port),
+        endpoint: endpoint_for_host_port(&session.host, session.port),
         memory_root: session.memory_root,
         readonly: session.readonly,
         command: "node examples/living-archive-memory-service.mjs".to_string(),
@@ -253,7 +285,70 @@ fn normalize_session_id(value: Option<String>) -> String {
 }
 
 fn endpoint_for_port(port: u16) -> String {
-    format!("http://{MEMORY_SERVICE_HOSTNAME}:{port}")
+    endpoint_for_host_port(MEMORY_SERVICE_HOSTNAME, port)
+}
+
+fn endpoint_for_host_port(host: &str, port: u16) -> String {
+    // Bracket IPv6 literals for a valid URL authority.
+    if host.contains(':') && !host.starts_with('[') {
+        format!("http://[{host}]:{port}")
+    } else {
+        format!("http://{host}:{port}")
+    }
+}
+
+fn memory_service_token() -> Option<String> {
+    std::env::var(MEMORY_SERVICE_TOKEN_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+/// DD-3 loopback-default. A non-loopback bind is only honored when the operator
+/// explicitly opts in via RESONANTOS_MEMORY_SERVICE_UNSAFE_HOST; otherwise the
+/// listener falls back to the loopback host so it can never be exposed by accident.
+fn resolve_memory_service_host() -> Result<String, String> {
+    let requested = std::env::var(MEMORY_SERVICE_HOST_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| MEMORY_SERVICE_HOSTNAME.to_string());
+    if is_loopback_host(&requested) {
+        return Ok(requested);
+    }
+    if unsafe_host_optin() {
+        return Ok(requested);
+    }
+    // Fail closed to loopback rather than exposing the listener.
+    Ok(MEMORY_SERVICE_HOSTNAME.to_string())
+}
+
+fn unsafe_host_optin() -> bool {
+    std::env::var(MEMORY_SERVICE_UNSAFE_HOST_ENV)
+        .map(|value| value.trim() == "1")
+        .unwrap_or(false)
+}
+
+fn host_requires_unsafe_optin(host: &str) -> bool {
+    !is_loopback_host(host)
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    let normalized = host
+        .trim()
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_ascii_lowercase();
+    if normalized.is_empty() {
+        return false;
+    }
+    if normalized == "localhost" || normalized.ends_with(".localhost") {
+        return true;
+    }
+    if normalized == "::1" {
+        return true;
+    }
+    normalized.starts_with("127.")
 }
 
 fn memory_service_script_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -301,22 +396,22 @@ fn available_local_port() -> Option<u16> {
         .and_then(|listener| listener.local_addr().ok().map(|address| address.port()))
 }
 
-fn wait_for_memory_service_health(port: u16) -> Result<(), String> {
+fn wait_for_memory_service_health(host: &str, port: u16) -> Result<(), String> {
     let deadline = Instant::now() + MEMORY_SERVICE_HEALTH_TIMEOUT;
     while Instant::now() < deadline {
-        if memory_service_health_ready(port) {
+        if memory_service_health_ready(host, port) {
             return Ok(());
         }
         thread::sleep(Duration::from_millis(150));
     }
     Err(format!(
-        "Living Archive memory service started but did not become healthy on {MEMORY_SERVICE_HOSTNAME}:{port} within {}s.",
+        "Living Archive memory service started but did not become healthy on {host}:{port} within {}s.",
         MEMORY_SERVICE_HEALTH_TIMEOUT.as_secs()
     ))
 }
 
-fn memory_service_health_ready(port: u16) -> bool {
-    let Ok(mut stream) = TcpStream::connect((MEMORY_SERVICE_HOSTNAME, port)) else {
+fn memory_service_health_ready(host: &str, port: u16) -> bool {
+    let Ok(mut stream) = TcpStream::connect((host, port)) else {
         return false;
     };
     let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
@@ -336,7 +431,10 @@ fn memory_service_health_ready(port: u16) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{endpoint_for_port, normalize_session_id};
+    use super::{
+        endpoint_for_host_port, endpoint_for_port, host_requires_unsafe_optin, is_loopback_host,
+        normalize_session_id, MEMORY_SERVICE_READONLY_DEFAULT,
+    };
 
     #[test]
     fn defaults_session_id_for_empty_input() {
@@ -349,5 +447,44 @@ mod tests {
     #[test]
     fn builds_loopback_endpoint() {
         assert_eq!(endpoint_for_port(4888), "http://127.0.0.1:4888");
+    }
+
+    #[test]
+    fn brackets_ipv6_authority() {
+        assert_eq!(endpoint_for_host_port("::1", 4888), "http://[::1]:4888");
+        assert_eq!(
+            endpoint_for_host_port("127.0.0.1", 4888),
+            "http://127.0.0.1:4888"
+        );
+    }
+
+    // DD-3 readonly-default: the spawner must default writes OFF.
+    #[test]
+    fn readonly_is_default_on() {
+        assert!(MEMORY_SERVICE_READONLY_DEFAULT);
+    }
+
+    // DD-3 loopback-default: loopback hosts need no opt-in; everything else does.
+    #[test]
+    fn loopback_classification_is_correct() {
+        assert!(is_loopback_host("127.0.0.1"));
+        assert!(is_loopback_host("127.5.5.5"));
+        assert!(is_loopback_host("localhost"));
+        assert!(is_loopback_host("app.localhost"));
+        assert!(is_loopback_host("::1"));
+        assert!(is_loopback_host("[::1]"));
+
+        assert!(!is_loopback_host("0.0.0.0"));
+        assert!(!is_loopback_host("::"));
+        assert!(!is_loopback_host("192.168.0.10"));
+        assert!(!is_loopback_host("example.com"));
+        assert!(!is_loopback_host(""));
+    }
+
+    #[test]
+    fn non_loopback_requires_unsafe_optin() {
+        assert!(!host_requires_unsafe_optin("127.0.0.1"));
+        assert!(host_requires_unsafe_optin("0.0.0.0"));
+        assert!(host_requires_unsafe_optin("192.168.0.10"));
     }
 }
