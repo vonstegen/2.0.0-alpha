@@ -1120,6 +1120,7 @@ test("browser-first host is a runnable app path, not documentation-only scaffold
   const addonDelegationService = await readText(path.join(browserFirstRoot, "host", "addon-delegation-service.mjs"));
   const addonDelegationHostService = await readText(path.join(browserFirstRoot, "host", "addon-delegation-host-service.mjs"));
   const profileService = await readText(path.join(browserFirstRoot, "host", "browser-profile-service.mjs"));
+  const browserLaunchConfig = await readText(path.join(browserFirstRoot, "host", "browser-launch-config.mjs"));
   const providerHostService = await readText(path.join(browserFirstRoot, "host", "provider-host-service.mjs"));
   const providerBridgeService = await readText(path.join(browserFirstRoot, "host", "provider-bridge-service.mjs"));
   const memoryHostService = await readText(path.join(browserFirstRoot, "host", "memory-host-service.mjs"));
@@ -1222,8 +1223,9 @@ test("browser-first host is a runnable app path, not documentation-only scaffold
   assert.match(launcher, /cdpdmmalhmokbfcfgogoepnjplaakgnl/);
   assert.match(launcher, /auto-open-side-panel/);
   assert.doesNotMatch(installer, /--auto-open-side-panel=true/);
-  assert.match(launcher, /remote-debugging-port/);
-  assert.match(launcher, /resonantos-remote-debugging-port/);
+  assert.match(launcher, /resolveRemoteDebugging/);
+  assert.match(browserLaunchConfig, /remote-debugging-port/);
+  assert.match(browserLaunchConfig, /resonantos-remote-debugging-port/);
   assert.match(launcher, /createBridgeToken/);
   assert.match(launcher, /writeBridgeConfig/);
   assert.match(launcher, /startBridgeServer/);

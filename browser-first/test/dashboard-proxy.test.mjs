@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import http from "node:http";
+import net from "node:net";
 import { test } from "node:test";
 
 import {
@@ -291,23 +292,30 @@ test("proxy: echoes CORS Allow-Origin for matching origin", async () => {
 
 test("proxy: forwards WebSocket upgrade to upstream and pipes both ways", async () => {
   // Fake upstream that performs a real WebSocket handshake and echoes
-  // any bytes back to the client. We use a raw net.Server (not
-  // http.createServer) because Node's built-in http.Server auto-handles
-  // "Connection: Upgrade" requests with a 200 OK before the request
-  // handler runs — that breaks the bridge's http.request upgrade event
-  // and would falsely fail this test.
+  // any bytes back to the client. The bridge does not interpret WebSocket
+  // frames; after the HTTP 101 response, it only needs to pipe bytes.
   // Proves the bridge proxy speaks the upgrade protocol, not just
   // plain HTTP — without this the dashboard iframe's chat / event
   // WebSockets fail to connect (close code 1006).
-  const WebSocket = (await import("ws")).WebSocket;
-  const { WebSocketServer } = await import("ws");
-  const net = await import("node:net");
-  const upstream = http.createServer();
-  const wss = new WebSocketServer({ server: upstream });
-  wss.on("connection", (ws) => {
-    ws.on("message", (data) => {
-      // Echo back. ws handles unmasking/fragmentation/etc. for us.
-      ws.send(data.toString());
+  const upstream = net.createServer((socket) => {
+    let upgraded = false;
+    socket.on("data", (chunk) => {
+      if (upgraded) {
+        socket.write(chunk);
+        return;
+      }
+      const request = chunk.toString("utf8");
+      if (!/upgrade:\s*websocket/i.test(request)) {
+        socket.destroy(new Error("missing websocket upgrade"));
+        return;
+      }
+      upgraded = true;
+      socket.write([
+        "HTTP/1.1 101 Switching Protocols",
+        "Connection: Upgrade",
+        "Upgrade: websocket",
+        "\r\n",
+      ].join("\r\n"));
     });
   });
   await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
@@ -319,25 +327,41 @@ test("proxy: forwards WebSocket upgrade to upstream and pipes both ways", async 
   try {
     await withBridgeServer(
       { bridgeToken: "proxy-test-token", routes: [] },
-      async ({ bridgeUrl }) => {
-        const ws = new WebSocket(
-          `${bridgeUrl.replace(/^http/, "ws")}/hermes-dashboard/api/ws`,
-          { perMessageDeflate: false },
-        );
-        const opened = new Promise((resolve, reject) => {
-          ws.once("open", resolve);
-          ws.once("error", reject);
-          setTimeout(() => reject(new Error("ws open timeout")), 3000);
-        });
-        await opened;
-        ws.send("ping");
-        const echoed = await new Promise((resolve, reject) => {
-          ws.once("message", (data) => resolve(data.toString()));
-          ws.once("error", reject);
-          setTimeout(() => reject(new Error("ws message timeout")), 3000);
-        });
-        assert.equal(echoed, "ping");
-        ws.close();
+      async ({ bridgePort }) => {
+        const client = net.createConnection({ host: "127.0.0.1", port: bridgePort });
+        try {
+          await new Promise((resolve, reject) => {
+            client.once("connect", resolve);
+            client.once("error", reject);
+            setTimeout(() => reject(new Error("ws open timeout")), 3000);
+          });
+          client.write([
+            "GET /hermes-dashboard/api/ws HTTP/1.1",
+            "Host: 127.0.0.1",
+            "Connection: Upgrade",
+            "Upgrade: websocket",
+            "Sec-WebSocket-Version: 13",
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+            "X-ResonantOS-Bridge-Token: proxy-test-token",
+            "\r\n",
+          ].join("\r\n"));
+          const upgraded = await new Promise((resolve, reject) => {
+            client.once("data", (chunk) => resolve(chunk.toString("utf8")));
+            client.once("error", reject);
+            setTimeout(() => reject(new Error("ws upgrade timeout")), 3000);
+          });
+          assert.match(upgraded, /^HTTP\/1\.1 101 /);
+
+          client.write("ping");
+          const echoed = await new Promise((resolve, reject) => {
+            client.once("data", (chunk) => resolve(chunk.toString("utf8")));
+            client.once("error", reject);
+            setTimeout(() => reject(new Error("ws message timeout")), 3000);
+          });
+          assert.equal(echoed, "ping");
+        } finally {
+          client.destroy();
+        }
       },
     );
   } finally {
