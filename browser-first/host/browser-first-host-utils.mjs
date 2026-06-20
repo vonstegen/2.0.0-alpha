@@ -50,30 +50,14 @@ export function executableCandidates(commandName) {
     .flatMap((entry) => names.map((name) => path.join(entry, name)));
 }
 
-function quoteWindowsCommandArg(value) {
-  const escaped = String(value ?? "")
-    .replace(/\r?\n/g, " ")
-    .replace(/%/g, "%%")
-    .replace(/\^/g, "^^")
-    .replace(/"/g, '^"')
-    .replace(/[&|<>]/g, (match) => `^${match}`);
-  return `"${escaped}"`;
-}
-
 export async function execFileStdout(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const needsWindowsCommandShell = process.platform === "win32" && /\.(?:cmd|bat)$/i.test(String(command));
-    const file = needsWindowsCommandShell ? process.env.ComSpec ?? "cmd.exe" : command;
-    const commandArgs = needsWindowsCommandShell
-      ? ["/d", "/s", "/c", ["call", command, ...args].map(quoteWindowsCommandArg).join(" ")]
-      : args;
-    const execOptions = needsWindowsCommandShell
-      ? (({ shell: _shell, ...rest }) => rest)(options)
-      : options;
-    execFile(file, commandArgs, {
+    execFile(command, args, {
       timeout: 120_000,
       windowsHide: true,
-      ...execOptions,
+      shell: needsWindowsCommandShell,
+      ...options,
     }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(String(stderr || error.message || "Command failed.").trim()));
