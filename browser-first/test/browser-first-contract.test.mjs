@@ -10,6 +10,16 @@ const extensionRoot = path.join(browserFirstRoot, "resonantos-side-panel-extensi
 
 const readJson = async (filePath) => JSON.parse(await readFile(filePath, "utf8"));
 const readText = (filePath) => readFile(filePath, "utf8");
+const toPortablePath = (value) => String(value ?? "").replace(/\\/g, "/");
+
+const windowsSelfTestFlags = new Map([
+  ["--bridge-auth-self-test=true", "--bridge-auth-inprocess-self-test=true"],
+  ["--hermes-delegation-self-test=true", "--hermes-delegation-inprocess-self-test=true"],
+  ["--hermes-cli-execution-self-test=true", "--hermes-cli-execution-inprocess-self-test=true"],
+  ["--opencode-delegation-self-test=true", "--opencode-delegation-inprocess-self-test=true"],
+  ["--opencode-cli-execution-self-test=true", "--opencode-cli-execution-inprocess-self-test=true"],
+  ["--addon-execution-settings-self-test=true", "--addon-execution-settings-inprocess-self-test=true"],
+]);
 
 async function readCssWithImports(filePath) {
   const css = await readText(filePath);
@@ -32,7 +42,12 @@ function skipIfLocalhostBindDenied(t, result) {
 }
 
 function runBridgeSelfTest(t, args, timeout = 15_000) {
-  const result = spawnSync("node", [path.join(browserFirstRoot, "host", "run-browser-first.mjs"), ...args], {
+  const effectiveArgs = process.platform === "win32"
+    ? args
+      .map((arg) => windowsSelfTestFlags.get(arg) ?? arg)
+      .filter((arg) => !/^--(?:bridge-token|bridge-port|addon-execution-settings-token)=/.test(arg))
+    : args;
+  const result = spawnSync("node", [path.join(browserFirstRoot, "host", "run-browser-first.mjs"), ...effectiveArgs], {
     cwd: repoRoot,
     encoding: "utf8",
     timeout,
@@ -1517,7 +1532,7 @@ test("browser-first bridge completes deterministic Hermes delegation lifecycle",
   if (!payload) return;
 
   assert.equal(payload.ok, true);
-  assert.match(payload.artifactPath, /BrowserFirst\/DelegationArtifacts\/hermes/);
+  assert.match(toPortablePath(payload.artifactPath), /BrowserFirst\/DelegationArtifacts\/hermes/);
   assert.equal(payload.statusAfter, "completed");
   assert.ok(payload.listed >= 1);
 });
@@ -1535,7 +1550,7 @@ test("browser-first bridge executes enabled Hermes CLI adapter through host boun
   assert.equal(payload.adapter, "hermes-cli");
   assert.equal(payload.hermesMode, "local-hermes-cli");
   assert.equal(payload.statusAfter, "completed");
-  assert.match(payload.artifactPath, /BrowserFirst\/DelegationArtifacts\/hermes/);
+  assert.match(toPortablePath(payload.artifactPath), /BrowserFirst\/DelegationArtifacts\/hermes/);
   assert.match(payload.summary, /Hermes CLI adapter completed/);
 });
 
@@ -1552,7 +1567,7 @@ test("browser-first bridge executes enabled OpenCode CLI adapter through host bo
   assert.equal(payload.adapter, "opencode-cli");
   assert.equal(payload.opencodeMode, "local-opencode-cli");
   assert.equal(payload.statusAfter, "completed");
-  assert.match(payload.artifactPath, /BrowserFirst\/DelegationArtifacts\/opencode/);
+  assert.match(toPortablePath(payload.artifactPath), /BrowserFirst\/DelegationArtifacts\/opencode/);
   assert.match(payload.summary, /OpenCode CLI adapter completed/);
 });
 
@@ -1565,7 +1580,7 @@ test("browser-first bridge completes deterministic OpenCode delegation lifecycle
   if (!payload) return;
 
   assert.equal(payload.ok, true);
-  assert.match(payload.artifactPath, /BrowserFirst\/DelegationArtifacts\/opencode/);
+  assert.match(toPortablePath(payload.artifactPath), /BrowserFirst\/DelegationArtifacts\/opencode/);
   assert.equal(payload.gatedStatus, "blocked");
   assert.equal(payload.statusAfter, "completed");
   assert.ok(payload.listed >= 1);
@@ -1642,7 +1657,7 @@ test("browser-first bridge hardens selected Living Archive source file intake", 
     "--memory-settings-token=settings-token",
     "--memory-source-file-intake-token=file-intake-token",
     "--bridge-port=0",
-  ]);
+  ], 30_000);
   if (!payload) return;
 
   assert.equal(payload.ok, true);

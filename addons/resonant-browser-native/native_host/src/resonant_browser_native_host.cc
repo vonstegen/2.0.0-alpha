@@ -400,8 +400,10 @@ class ResonantBrowserClient final : public CefClient,
                 << "\"providerInjected\":true,"
                 << "\"extensionId\":\"bfnaelmomeimhlpmgjnjophhpkkoljpa\","
                 << "\"verdict\":\"phantom-provider-ready\"}" << std::endl;
-      browser->GetHost()->CloseBrowser(true);
-      CefPostDelayedTask(TID_UI, new QuitMessageLoopTask(), 250);
+      // Phantom smoke is a one-shot hidden verification process; Chrome
+      // Runtime can keep extension helper surfaces alive after CloseBrowser().
+      std::cout.flush();
+      std::exit(0);
       return;
     }
     if (phantom_extension_smoke_ &&
@@ -412,8 +414,10 @@ class ResonantBrowserClient final : public CefClient,
                 << "\"providerInjected\":false,"
                 << "\"extensionId\":\"bfnaelmomeimhlpmgjnjophhpkkoljpa\","
                 << "\"verdict\":\"phantom-provider-blocked\"}" << std::endl;
-      browser->GetHost()->CloseBrowser(true);
-      CefPostDelayedTask(TID_UI, new QuitMessageLoopTask(), 250);
+      // Phantom smoke is a one-shot hidden verification process; Chrome
+      // Runtime can keep extension helper surfaces alive after CloseBrowser().
+      std::cout.flush();
+      std::exit(0);
       return;
     }
     if (local_extension_smoke_ && title_text.find("resonant-extension-loaded") != std::string::npos &&
@@ -422,8 +426,11 @@ class ResonantBrowserClient final : public CefClient,
       std::cout << "{\"event\":\"browser.native.local_extension_execution\","
                 << "\"contentScriptExecuted\":true,"
                 << "\"verdict\":\"local-extension-ready\"}" << std::endl;
-      browser->GetHost()->CloseBrowser(true);
-      CefPostDelayedTask(TID_UI, new QuitMessageLoopTask(), 250);
+      // Local extension smoke is a one-shot hidden verification process;
+      // exit after evidence is emitted so the test cannot hang on Chromium
+      // extension helper lifetime.
+      std::cout.flush();
+      std::exit(0);
     }
     if (permission_smoke_ && title_text.find("permission-denied") != std::string::npos && !quit_requested_) {
       quit_requested_ = true;
@@ -511,8 +518,11 @@ class ResonantBrowserClient final : public CefClient,
                     << "\"chromeWebStoreLoaded\":" << (web_store_loaded ? "true" : "false") << ","
                     << "\"chromeWebStoreConsentGate\":" << (web_store_consent_gate ? "true" : "false") << ","
                     << "\"verdict\":\"" << verdict << "\"}" << std::endl;
-          browser->GetHost()->CloseBrowser(true);
-          CefPostDelayedTask(TID_UI, new QuitMessageLoopTask(), 250);
+          // Extension entrypoint smoke is a one-shot hidden verification
+          // process; exit after evidence is emitted so Chrome Runtime helper
+          // surfaces cannot hold the test process open.
+          std::cout.flush();
+          std::exit(0);
         }
         return;
       }

@@ -52,7 +52,13 @@ export function executableCandidates(commandName) {
 
 export async function execFileStdout(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    execFile(command, args, { timeout: 120_000, windowsHide: true, ...options }, (error, stdout, stderr) => {
+    const needsWindowsCommandShell = process.platform === "win32" && /\.(?:cmd|bat)$/i.test(String(command));
+    execFile(command, args, {
+      timeout: 120_000,
+      windowsHide: true,
+      shell: needsWindowsCommandShell,
+      ...options,
+    }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(String(stderr || error.message || "Command failed.").trim()));
         return;

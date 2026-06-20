@@ -10,6 +10,23 @@ import {
   startBridgeServer,
 } from "./bridge-server.mjs";
 
+function cmdEchoLine(line) {
+  const escaped = String(line)
+    .replace(/\^/g, "^^")
+    .replace(/&/g, "^&")
+    .replace(/\|/g, "^|")
+    .replace(/</g, "^<")
+    .replace(/>/g, "^>");
+  return escaped ? `echo ${escaped}` : "echo.";
+}
+
+function fakeCliScript(output) {
+  if (process.platform === "win32") {
+    return ["@echo off", ...String(output).split("\n").map(cmdEchoLine), ""].join("\r\n");
+  }
+  return `#!/bin/sh\ncat <<'EOF'\n${output}\nEOF\n`;
+}
+
 export async function runBrowserFirstSelfTest(context) {
   const {
     args,
@@ -488,9 +505,7 @@ export async function runBrowserFirstSelfTest(context) {
         "- Local Hermes CLI process was invoked through the host boundary.",
       ].join("\n");
       await mkdir(path.dirname(fakeHermes), { recursive: true });
-      await writeFile(fakeHermes, process.platform === "win32"
-        ? `@echo off\r\necho ${fakeOutput.replaceAll("\n", "\r\necho ")}\r\n`
-        : `#!/bin/sh\ncat <<'EOF'\n${fakeOutput}\nEOF\n`);
+      await writeFile(fakeHermes, fakeCliScript(fakeOutput));
       await chmod(fakeHermes, 0o755).catch(() => undefined);
       process.env.HERMES_COMMAND = fakeHermes;
       server = await startBridgeServer({
@@ -599,9 +614,7 @@ export async function runBrowserFirstSelfTest(context) {
         "- Local Hermes CLI process was invoked through the host boundary.",
       ].join("\n");
       await mkdir(path.dirname(fakeHermes), { recursive: true });
-      await writeFile(fakeHermes, process.platform === "win32"
-        ? `@echo off\r\necho ${fakeOutput.replaceAll("\n", "\r\necho ")}\r\n`
-        : `#!/bin/sh\ncat <<'EOF'\n${fakeOutput}\nEOF\n`);
+      await writeFile(fakeHermes, fakeCliScript(fakeOutput));
       await chmod(fakeHermes, 0o755).catch(() => undefined);
       process.env.HERMES_COMMAND = fakeHermes;
       const request = async (routePath, { method = "POST", body = {}, capabilityToken = "" } = {}) => {
@@ -859,9 +872,7 @@ export async function runBrowserFirstSelfTest(context) {
         "- Local OpenCode CLI process was invoked through the host boundary.",
       ].join("\n");
       await mkdir(path.dirname(fakeOpenCode), { recursive: true });
-      await writeFile(fakeOpenCode, process.platform === "win32"
-        ? `@echo off\r\necho ${fakeOutput.replaceAll("\n", "\r\necho ")}\r\n`
-        : `#!/bin/sh\ncat <<'EOF'\n${fakeOutput}\nEOF\n`);
+      await writeFile(fakeOpenCode, fakeCliScript(fakeOutput));
       await chmod(fakeOpenCode, 0o755).catch(() => undefined);
       process.env.OPENCODE_COMMAND = fakeOpenCode;
       server = await startBridgeServer({
@@ -972,9 +983,7 @@ export async function runBrowserFirstSelfTest(context) {
         "- Local OpenCode CLI process was invoked through the host boundary.",
       ].join("\n");
       await mkdir(path.dirname(fakeOpenCode), { recursive: true });
-      await writeFile(fakeOpenCode, process.platform === "win32"
-        ? `@echo off\r\necho ${fakeOutput.replaceAll("\n", "\r\necho ")}\r\n`
-        : `#!/bin/sh\ncat <<'EOF'\n${fakeOutput}\nEOF\n`);
+      await writeFile(fakeOpenCode, fakeCliScript(fakeOutput));
       await chmod(fakeOpenCode, 0o755).catch(() => undefined);
       process.env.OPENCODE_COMMAND = fakeOpenCode;
       const request = async (routePath, { method = "POST", body = {}, capabilityToken = "" } = {}) => {

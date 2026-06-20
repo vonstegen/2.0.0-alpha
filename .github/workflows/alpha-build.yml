@@ -2,6 +2,25 @@ name: alpha-build
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+      - dev
+    paths:
+      - ".github/workflows/alpha-build.yml"
+      - "addons/**"
+      - "browser-first/**"
+      - "docs/**"
+      - "package-lock.json"
+      - "package.json"
+      - "public/**"
+      - "scripts/**"
+      - "src/**"
+      - "src/sdk/**"
+      - "src-tauri/**"
+      - "index.html"
+      - "vite.config.ts"
+      - "tsconfig*.json"
   push:
     branches:
       - main
@@ -78,16 +97,60 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
+
+      - name: Install browser host dependencies
+        run: npm ci --prefix addons/resonant-browser-host
+
+      - name: Audit browser host dependencies
+        run: npm audit --prefix addons/resonant-browser-host --audit-level=high
+
       - name: Run frontend tests
         run: npm test -- --run
+
+      - name: Run browser host tests
+        env:
+          RESONANTOS_BROWSER_HOST_CHANNEL: chrome
+        run: npm run test:browser-host
+
+      - name: Run Electron host tests
+        env:
+          RESONANTOS_WALLET_BROWSER_HEADLESS: "1"
+        run: npm run test:electron-host
+
+      - name: Run native browser tests
+        run: npm run test:browser-native
 
       - name: Run browser-first tests
         run: npm run test:browser-first
 
+      - name: Run Living Archive memory service tests
+        run: npm run test:living-archive-memory-service
+
+      - name: Run Living Archive MCP tests
+        run: npm run test:living-archive-mcp
+
+      - name: Run health checks
+        run: npm run test:health
+
+      - name: Run engineer runner tests
+        run: npm run test:engineer-runner
+
       - name: Package browser-first extension
+        if: runner.os != 'Windows'
         run: |
           cd browser-first/resonantos-side-panel-extension
           zip -r ../../resonantos-side-panel-extension.zip . -x "*.DS_Store"
+
+      - name: Package browser-first extension (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path browser-first/resonantos-side-panel-extension/* `
+            -DestinationPath resonantos-side-panel-extension.zip `
+            -Force
 
       - name: Upload extension artifact
         uses: actions/upload-artifact@v4

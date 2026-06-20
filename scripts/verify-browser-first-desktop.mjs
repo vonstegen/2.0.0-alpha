@@ -60,6 +60,7 @@ function runCommand(step) {
   const result = spawnSync(step.command, step.args, {
     cwd: repoRoot,
     encoding: "utf8",
+    shell: process.platform === "win32",
     env: {
       ...process.env,
       // Preserve normal desktop env; this marker is for downstream reports.

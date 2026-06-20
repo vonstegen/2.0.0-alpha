@@ -17,6 +17,7 @@ function runStep(id, args) {
   const result = spawnSync("npm", ["run", ...args], {
     cwd: repoRoot,
     encoding: "utf8",
+    shell: process.platform === "win32",
     env: {
       ...process.env,
       RESONANTOS_DESKTOP_PROOF: "1",

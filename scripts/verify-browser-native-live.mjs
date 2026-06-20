@@ -45,6 +45,22 @@ if (process.env.CODEX_SANDBOX) {
   process.exit(2);
 }
 
+if (
+  !process.env.RESONANTOS_CEF_NO_SANDBOX &&
+  (process.env.CODEX_CI || process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE)
+) {
+  console.log(JSON.stringify({
+    status: "attention",
+    reason: "native-live-verification-requires-normal-desktop-terminal",
+    issues: [
+      "Native Chromium live verification cannot be completed from Codex Desktop because the inherited macOS app sandbox blocks CEF helper framework loads during in-process NSView bridge tests.",
+      "Run this command from a normal macOS Terminal/Finder session for the production-sandbox gate, or set RESONANTOS_CEF_NO_SANDBOX=1 only for local bridge diagnostics.",
+    ],
+    command: "npm run browser-native:verify-live",
+  }, null, 2));
+  process.exit(2);
+}
+
 const result = spawnSync("node", ["--test", "--test-reporter=tap", ...testFiles], {
   cwd: repoRoot,
   encoding: "utf8",

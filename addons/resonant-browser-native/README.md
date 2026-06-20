@@ -96,6 +96,11 @@ Resolve the current CEF binary candidate without downloading it:
 npm run browser-native:cef:plan
 ```
 
+The fetch planner is pinned to the CEF/Chromium build declared in
+`scripts/cef-build-config.mjs`. If the upstream index no longer contains that
+archive, the planner fails instead of silently moving to a different Chromium
+build.
+
 Download/extract CEF only when ready to build the native host:
 
 ```bash
@@ -138,4 +143,19 @@ Run the native smoke directly:
 
 ```bash
 addons/resonant-browser-native/build/ResonantBrowserNativeHost.app/Contents/MacOS/ResonantBrowserNativeHost --resonantos-smoke --url=https://example.com
+```
+
+Strict production-sandbox verification must run from a normal macOS
+Terminal/Finder session:
+
+```bash
+npm run browser-native:verify-live
+```
+
+Codex Desktop can inherit a macOS app sandbox that blocks CEF helper framework
+loads during in-process `NSView` bridge tests. For local diagnostics only, the
+bridge path can be checked with:
+
+```bash
+RESONANTOS_CEF_NO_SANDBOX=1 npm run browser-native:verify-live
 ```

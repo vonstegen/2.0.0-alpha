@@ -85,6 +85,10 @@ function normalizeHttpUrl(value = DEFAULT_URL) {
   return parsed.toString();
 }
 
+function envFlag(value) {
+  return /^(1|true|yes)$/i.test(String(value ?? "").trim());
+}
+
 async function getFreePort() {
   const server = createServer();
   await new Promise((resolve, reject) => {
@@ -147,6 +151,7 @@ export async function startWalletBrowserHost(params = {}) {
   const userDataDir = String(params.profileDir || defaultProfilePath());
   await mkdir(userDataDir, { recursive: true });
   const endpoint = `http://127.0.0.1:${port}`;
+  const headless = params.headless ?? envFlag(process.env.RESONANTOS_WALLET_BROWSER_HEADLESS);
   const args = [
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${userDataDir}`,
@@ -154,6 +159,7 @@ export async function startWalletBrowserHost(params = {}) {
     "--no-default-browser-check",
     "--disable-backgrounding-occluded-windows",
     "--disable-renderer-backgrounding",
+    ...(headless ? ["--headless=new", "--disable-gpu", "--no-sandbox"] : []),
     "--new-window",
     url,
   ];

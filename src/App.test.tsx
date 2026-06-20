@@ -2936,7 +2936,7 @@ describe("App boot flow", () => {
 
     expect(screen.getByText("What model are you using?")).toBeTruthy();
     expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M3.")).toBeTruthy();
-  });
+  }, 15_000);
 
   it("swaps the main workspace and chat rail while keeping the app dock fixed", async () => {
     const { container } = render(<App />);

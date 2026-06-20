@@ -52,6 +52,17 @@ function setupDom() {
   };
 }
 
+async function waitForCondition(predicate, { timeout = 2_000, interval = 20 } = {}) {
+  const started = Date.now();
+  let lastValue;
+  while (Date.now() - started < timeout) {
+    lastValue = await predicate();
+    if (lastValue) return lastValue;
+    await new Promise((resolve) => setTimeout(resolve, interval));
+  }
+  return lastValue;
+}
+
 test("settings workspace renders provider status without exposing credentials", async () => {
   const { container, cleanup } = setupDom();
   const calls = [];
@@ -1273,7 +1284,7 @@ test("settings memory section completes real move-on-import and rollback against
     confirmationInput.value = `MOVE ${path.basename(source)}`;
     confirmationInput.dispatchEvent(new Event("input", { bubbles: true }));
     executeMoveButton.click();
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitForCondition(() => sources.length === 1 && !existsSync(source));
 
     assert.equal(existsSync(source), false);
     assert.equal(sources.length, 1);
@@ -1286,7 +1297,7 @@ test("settings memory section completes real move-on-import and rollback against
     assert.match(container.textContent, /Rollback/);
 
     [...container.querySelectorAll("button")].find((button) => button.textContent === "Rollback").click();
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitForCondition(() => sources.length === 0 && existsSync(path.join(source, "note.md")));
 
     assert.equal(sources.length, 0);
     assert.equal(existsSync(path.join(source, "note.md")), true);

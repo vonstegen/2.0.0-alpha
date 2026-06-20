@@ -355,8 +355,9 @@ pub(crate) fn finish_task_workspace_with_root(
 
 fn home_dir() -> Result<PathBuf, String> {
     std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
-        .ok_or_else(|| "Unable to resolve HOME for OpenCode task execution.".to_string())
+        .ok_or_else(|| "Unable to resolve user home for OpenCode task execution.".to_string())
 }
 
 fn expand_user_path(value: &str) -> Result<PathBuf, String> {
@@ -410,7 +411,7 @@ fn extract_safe_create_folder_target(mission: &str) -> Result<PathBuf, String> {
         .collect::<Vec<_>>();
     let candidate = tokens
         .iter()
-        .find(|token| token.starts_with("~/") || token.starts_with('/'))
+        .find(|token| token.starts_with("~/") || Path::new(token).is_absolute())
         .ok_or_else(|| {
             "Create-folder task must include an explicit ~/... or absolute path.".to_string()
         })?;
@@ -422,7 +423,7 @@ fn extract_safe_create_folder_target(mission: &str) -> Result<PathBuf, String> {
         .map_err(|error| format!("Failed to resolve create-folder parent: {error}"))?;
     let home = home_dir()?
         .canonicalize()
-        .map_err(|error| format!("Failed to resolve HOME: {error}"))?;
+        .map_err(|error| format!("Failed to resolve user home: {error}"))?;
     if !canonical_parent.starts_with(&home) {
         return Err(
             "OpenCode create-folder bridge only writes inside the user's home directory."
@@ -594,7 +595,7 @@ pub(crate) fn execute_opencode_task_workspace(
 mod tests {
     use super::{
         create_task_workspace_with_root, execute_opencode_task_workspace_with_root,
-        finish_task_workspace_with_root, list_task_workspaces_with_root,
+        finish_task_workspace_with_root, home_dir, list_task_workspaces_with_root,
         read_task_workspace_with_root, CreateTaskWorkspaceRequest, ExecuteOpenCodeTaskRequest,
         FinishTaskWorkspaceRequest, ReadTaskWorkspaceRequest,
     };
@@ -747,11 +748,16 @@ mod tests {
             "resonantos-opencode-task-workspace-test-{}",
             std::process::id()
         ));
-        let target_root = std::env::var_os("HOME")
-            .map(std::path::PathBuf::from)
-            .expect("HOME should exist")
+        let target_root = home_dir()
+            .expect("user home should exist")
             .join("Desktop")
             .join(format!("OpenCodeBridgeTest-{}", std::process::id()));
+        fs::create_dir_all(
+            target_root
+                .parent()
+                .expect("target folder should have a parent"),
+        )
+        .expect("target parent should exist");
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_dir_all(&target_root);
         create_task_workspace_with_root(
