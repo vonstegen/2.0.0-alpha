@@ -5,6 +5,7 @@
 
 import { createReadStream, existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import path from "node:path";
 import process from "node:process";
@@ -153,6 +154,9 @@ function portableUserStateRoot() {
 }
 
 function tauriAppStateRoot() {
+  if (process.env.RESONANTOS_APP_STATE_ROOT) {
+    return path.resolve(process.env.RESONANTOS_APP_STATE_ROOT);
+  }
   if (process.platform === "darwin") {
     return path.join(homeDir(), "Library", "Application Support", "com.resonantos.vnext");
   }
@@ -274,7 +278,7 @@ async function readJsonFile(filePath, fallback) {
 
 async function writeJsonFileAtomic(filePath, value, options = {}) {
   await mkdir(path.dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
   await writeFile(tempPath, JSON.stringify(value, null, 2), options);
   await rename(tempPath, filePath);
 }
