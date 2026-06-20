@@ -2,6 +2,25 @@ name: alpha-build
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+      - dev
+    paths:
+      - ".github/workflows/alpha-build.yml"
+      - "addons/**"
+      - "browser-first/**"
+      - "docs/**"
+      - "package-lock.json"
+      - "package.json"
+      - "public/**"
+      - "scripts/**"
+      - "src/**"
+      - "src/sdk/**"
+      - "src-tauri/**"
+      - "index.html"
+      - "vite.config.ts"
+      - "tsconfig*.json"
   push:
     branches:
       - main
