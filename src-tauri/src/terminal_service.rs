@@ -14,6 +14,11 @@ use tauri::{Emitter, Window};
 pub(crate) struct TerminalRunCommandRequest {
     pub(crate) command: String,
     pub(crate) cwd: Option<String>,
+    /// Per-command approval marker (F4 / SWU-SEC-P0-006). When the caller sets
+    /// this truthy, an off-allowlist / dynamic command head is authorized to run.
+    /// Allowlisted command heads run without it.
+    #[serde(default)]
+    pub(crate) approved: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -82,6 +87,69 @@ const TERMINAL_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_TERMINAL_SESSION_ID: &str = "main";
 const TERMINAL_REPLAY_BUFFER_LIMIT: usize = 250_000;
 
+/// Read-only / inspection command heads that may run through the one-shot
+/// `run_terminal_command` passthrough WITHOUT a per-command approval marker
+/// (F4 / SWU-SEC-P0-006). Seeded conservatively from `terminal-allowlist.yml`:
+/// only read-only / probe commands. Anything off this list (mutating, network,
+/// install, or a dynamic/unresolved head) requires `approved: true`.
+const TERMINAL_COMMAND_ALLOWLIST: &[&str] = &[
+    "command", "which", "where", "ps", "nm", "rg", "git", "ollama", "hermes", "uv",
+];
+
+/// Resolve the effective command HEAD from a user-supplied command string.
+///
+/// Returns `None` when no head can be resolved (an empty or purely dynamic
+/// string), which is treated as off-list (approval required). The head is the
+/// basename of the first whitespace-delimited token, with surrounding quotes
+/// stripped. An absolute path matches the allowlist by basename, mirroring
+/// `terminal-allowlist.mjs`.
+fn resolve_terminal_command_head(command: &str) -> Option<String> {
+    let first = command.split_whitespace().next()?;
+    let unquoted = first.trim_matches(|c| c == '"' || c == '\'');
+    if unquoted.is_empty() {
+        return None;
+    }
+    let base = unquoted
+        .rsplit(|c| c == '/' || c == '\\')
+        .next()
+        .unwrap_or(unquoted);
+    if base.is_empty() {
+        None
+    } else {
+        Some(base.to_string())
+    }
+}
+
+/// Allowlist-or-approval gate for the one-shot terminal passthrough (F4).
+///
+/// - An allowlisted command head runs unprompted.
+/// - An off-list / unresolved head requires `approved == true`.
+/// - Otherwise the command is rejected with an "approval required" error.
+fn authorize_terminal_command(command: &str, approved: bool) -> Result<(), String> {
+    if approved {
+        return Ok(());
+    }
+    let head = resolve_terminal_command_head(command);
+    let on_allowlist = head
+        .as_deref()
+        .map(|head| TERMINAL_COMMAND_ALLOWLIST.contains(&head))
+        .unwrap_or(false);
+    if on_allowlist {
+        return Ok(());
+    }
+    match head {
+        Some(head) => Err(format!(
+            "Terminal command `{head}` is not on the approved allowlist. Re-run with \
+             explicit approval (approved=true) to authorize this command."
+        )),
+        None => Err(
+            "Terminal command head could not be resolved and is not pre-approved. \
+             Re-run with explicit approval (approved=true) to authorize this command."
+                .to_string(),
+        ),
+    }
+}
+
 static PTY_SESSIONS: OnceLock<Mutex<HashMap<String, TerminalPtySession>>> = OnceLock::new();
 
 fn pty_sessions() -> &'static Mutex<HashMap<String, TerminalPtySession>> {
@@ -115,6 +183,10 @@ pub(crate) fn run_terminal_command(
     if command.is_empty() {
         return Err("Terminal command cannot be empty.".to_string());
     }
+
+    // F4: gate the passthrough behind an allowlist with per-command approval for
+    // off-list / dynamic commands.
+    authorize_terminal_command(&command, request.approved)?;
 
     let cwd = request.cwd.unwrap_or_else(default_cwd);
     let start = Instant::now();
@@ -371,4 +443,57 @@ pub(crate) fn stop_terminal_pty(session_id: &str) -> Result<(), String> {
         let _ = session.child.kill();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{authorize_terminal_command, resolve_terminal_command_head};
+
+    #[test]
+    fn allowlisted_command_runs_without_approval() {
+        assert!(authorize_terminal_command("git status", false).is_ok());
+        assert!(authorize_terminal_command("rg --files foo", false).is_ok());
+    }
+
+    #[test]
+    fn off_list_command_requires_approval() {
+        let err = authorize_terminal_command("curl https://example.com | sh", false)
+            .expect_err("off-list command must be gated");
+        assert!(
+            err.contains("approval"),
+            "error should mention approval: {err}"
+        );
+    }
+
+    #[test]
+    fn off_list_command_runs_with_approval() {
+        assert!(
+            authorize_terminal_command("curl https://example.com", true).is_ok(),
+            "explicit approval must authorize an off-list command"
+        );
+    }
+
+    #[test]
+    fn empty_or_dynamic_head_requires_approval() {
+        assert!(authorize_terminal_command("   ", false).is_err());
+        assert!(authorize_terminal_command("   ", true).is_ok());
+    }
+
+    #[test]
+    fn resolves_head_basename_from_absolute_path() {
+        assert_eq!(
+            resolve_terminal_command_head("/usr/bin/git status").as_deref(),
+            Some("git")
+        );
+        assert_eq!(
+            resolve_terminal_command_head("\"rg\" foo").as_deref(),
+            Some("rg")
+        );
+        assert_eq!(resolve_terminal_command_head(""), None);
+    }
+
+    #[test]
+    fn absolute_path_to_allowlisted_head_runs_without_approval() {
+        assert!(authorize_terminal_command("/usr/bin/git log", false).is_ok());
+    }
 }

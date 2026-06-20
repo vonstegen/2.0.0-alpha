@@ -11,6 +11,8 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::scoped_env::apply_scoped_env;
+
 const DEFAULT_HERMES_HOME: &str = ".hermes";
 const DEFAULT_HERMES_DASHBOARD_HOST: &str = "127.0.0.1";
 const DEFAULT_HERMES_DASHBOARD_PORT: u16 = 9119;
@@ -294,13 +296,15 @@ pub(crate) fn execute_hermes_chat(request: HermesChatRequest) -> Result<HermesCh
     if let Some(model) = selected_model.as_deref() {
         process.arg("-m").arg(model);
     }
-    let output = process
+    process
         .arg("-q")
         .arg(prompt)
         .env("HERMES_HOME", &home)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    apply_scoped_env(&mut process, "hermes");
+    let output = process
         .output()
         .map_err(|error| format!("Failed to run Hermes chat: {error}"))?;
 
@@ -366,10 +370,11 @@ pub(crate) fn install_hermes(request: HermesInstallRequest) -> Result<HermesInst
     curl.arg("-fsSL")
         .arg(HERMES_INSTALLER_URL)
         .arg("-o")
-        .arg(&installer_path);
-    let curl_output = curl
+        .arg(&installer_path)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    apply_scoped_env(&mut curl, "hermes");
+    let curl_output = curl
         .output()
         .map_err(|error| format!("Failed to download Hermes installer: {error}"))?;
     if !curl_output.status.success() {
@@ -394,6 +399,7 @@ pub(crate) fn install_hermes(request: HermesInstallRequest) -> Result<HermesInst
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    apply_scoped_env(&mut installer, "hermes");
     let output = installer
         .output()
         .map_err(|error| format!("Failed to run Hermes installer: {error}"))?;
@@ -523,6 +529,7 @@ pub(crate) fn start_hermes_dashboard(
     if request.include_tui.unwrap_or(true) {
         process.arg("--tui");
     }
+    apply_scoped_env(&mut process, "hermes");
     process
         .spawn()
         .map_err(|error| format!("Failed to start Hermes dashboard: {error}"))?;
@@ -706,10 +713,13 @@ fn resolve_hermes_command(home: &Path) -> Option<String> {
             .map(clean_output)
             .filter(|value| !value.is_empty())
             .or_else(|| {
-                Command::new("hermes")
+                let mut version_check = Command::new("hermes");
+                version_check
                     .arg("--version")
                     .stdout(Stdio::null())
-                    .stderr(Stdio::null())
+                    .stderr(Stdio::null());
+                apply_scoped_env(&mut version_check, "hermes");
+                version_check
                     .status()
                     .ok()
                     .filter(|status| status.success())
@@ -744,11 +754,12 @@ fn hermes_command(binary: &str) -> Command {
 }
 
 fn command_output(command: &mut Command) -> Result<String, String> {
-    let output = command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(|error| error.to_string())?;
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    // All command_output callers invoke the Hermes CLI (or its checkout via git /
+    // the `command -v hermes` probe) as part of Hermes runtime status; scope them
+    // under the hermes allowlist.
+    apply_scoped_env(command, "hermes");
+    let output = command.output().map_err(|error| error.to_string())?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {

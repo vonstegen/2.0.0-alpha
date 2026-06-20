@@ -774,6 +774,65 @@ impl NativeBrowserBridgeLibrary {
     }
 }
 
+/// Env opt-in (dev/build workflow) that allows loading the native bridge from a
+/// CWD-anchored build directory. Default OFF: in a packaged/production app the
+/// bridge must come from a pinned root (the app bundle's Resources, anchored on
+/// `current_exe`), never the process working directory.
+const ALLOW_CWD_BRIDGE_ENV: &str = "RESONANTOS_NATIVE_BROWSER_ALLOW_CWD_BRIDGE";
+
+/// Pinned-root validator for native shared-library loads (F3 / SWU-SEC-P0-006).
+///
+/// A native library is safe to `Library::new` only from a PINNED root: a path
+/// anchored under the running executable (the app bundle's Resources / lib /
+/// Frameworks dirs, derived from `env::current_exe()`), or an absolute system
+/// path that is NOT inside the process working directory. A path anchored on the
+/// CWD (`env::current_dir()`) is attacker-influenceable — anyone who can plant a
+/// file under, or launch the app from, a poisoned working directory controls the
+/// loaded code. Such CWD-anchored loads are rejected unless the dev opt-in
+/// (`ALLOW_CWD_BRIDGE_ENV`) is set.
+fn native_load_root_is_pinned(candidate: &Path, allow_cwd: bool) -> bool {
+    // Must be an absolute path. A relative path resolves against the CWD.
+    if !candidate.is_absolute() {
+        return false;
+    }
+
+    // Pinned: anchored under the running executable's bundle dirs.
+    if let Ok(current_exe) = env::current_exe() {
+        if let Some(exe_dir) = current_exe.parent() {
+            // `exe_dir` is .../Contents/MacOS; walk up to the bundle root and
+            // accept anything beneath it (Resources, Frameworks, lib, ...).
+            let bundle_roots = [
+                exe_dir.to_path_buf(),
+                exe_dir.parent().map(Path::to_path_buf).unwrap_or_default(),
+            ];
+            for root in bundle_roots
+                .iter()
+                .filter(|root| !root.as_os_str().is_empty())
+            {
+                if candidate.starts_with(root) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Unpinned: anchored under the process working directory.
+    if let Ok(current_dir) = env::current_dir() {
+        let under_cwd = candidate.starts_with(&current_dir)
+            || current_dir
+                .parent()
+                .map(|parent| candidate.starts_with(parent))
+                .unwrap_or(false);
+        if under_cwd {
+            return allow_cwd;
+        }
+    }
+
+    // Absolute, not under the CWD, not under the exe bundle: an absolute system
+    // path (e.g. an install prefix). Treated as pinned.
+    true
+}
+
 fn load_native_browser_bridge(
 ) -> Result<std::sync::MutexGuard<'static, Option<NativeBrowserBridgeLibrary>>, String> {
     let lock = NATIVE_BROWSER_BRIDGE.get_or_init(|| Mutex::new(None));
@@ -781,10 +840,21 @@ fn load_native_browser_bridge(
         .lock()
         .map_err(|_| "Native Browser bridge lock is poisoned.".to_string())?;
     if guard.is_none() {
+        let allow_cwd = env::var(ALLOW_CWD_BRIDGE_ENV).is_ok();
         let path = native_bridge_library_candidates()
             .into_iter()
             .find(|path| path.extension().map(|ext| ext == "dylib" || ext == "so").unwrap_or(false) && path.exists())
             .ok_or_else(|| "Native Browser shared bridge library was not found. Build ResonantBrowserNativeBridgeShared first.".to_string())?;
+        // F3: refuse to load native code from an unpinned (CWD-anchored) root.
+        if !native_load_root_is_pinned(&path, allow_cwd) {
+            return Err(format!(
+                "Refusing to load native Browser bridge from an unpinned root {}: \
+                 the shared library must resolve under the app bundle (Resources/lib) \
+                 or an absolute system path, not the process working directory. \
+                 Set {ALLOW_CWD_BRIDGE_ENV} to permit a development build directory.",
+                path.display()
+            ));
+        }
         let library = unsafe { Library::new(&path) }.map_err(|error| {
             format!(
                 "Failed to load native Browser bridge {}: {error}",
@@ -982,12 +1052,57 @@ fn json_status_is_allowed_progress(json: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_bridge_probe_result, query_native_browser_attach_smoke,
+        build_bridge_probe_result, native_load_root_is_pinned, query_native_browser_attach_smoke,
         query_native_browser_bridge_probe, query_native_browser_probe,
         NativeBrowserAttachSmokeRequest, NativeBrowserAttachSmokeStatus,
         NativeBrowserBridgeProbeRequest, NativeBrowserBridgeProbeStatus, NativeBrowserProbeRequest,
         NativeBrowserProbeStatus,
     };
+    use std::path::PathBuf;
+
+    #[test]
+    fn rejects_cwd_anchored_native_library_load() {
+        // A bridge resolved under the process working directory is unpinned and
+        // must be rejected (unless the dev opt-in allows it).
+        let cwd = std::env::current_dir().expect("current dir");
+        let cwd_bridge = cwd.join("addons/resonant-browser-native/build/libBridge.so");
+        assert!(
+            !native_load_root_is_pinned(&cwd_bridge, false),
+            "CWD-anchored native load must be rejected"
+        );
+        // Dev opt-in widens the allowlist to the build directory.
+        assert!(
+            native_load_root_is_pinned(&cwd_bridge, true),
+            "dev opt-in must permit the CWD build directory"
+        );
+    }
+
+    #[test]
+    fn rejects_relative_native_library_load() {
+        let relative = PathBuf::from("addons/resonant-browser-native/build/libBridge.so");
+        assert!(
+            !native_load_root_is_pinned(&relative, false),
+            "relative native load resolves against CWD and must be rejected"
+        );
+        assert!(
+            !native_load_root_is_pinned(&relative, true),
+            "a relative path is never a pinned root even with the dev opt-in"
+        );
+    }
+
+    #[test]
+    fn accepts_absolute_system_native_library_load() {
+        // An absolute path outside the CWD (e.g. a system/install prefix) is pinned.
+        #[cfg(windows)]
+        let absolute =
+            PathBuf::from(r"C:\Program Files\ResonantOS\lib\ResonantBrowserNativeBridgeShared.dll");
+        #[cfg(not(windows))]
+        let absolute = PathBuf::from("/opt/resonantos/lib/libResonantBrowserNativeBridgeShared.so");
+        assert!(
+            native_load_root_is_pinned(&absolute, false),
+            "absolute system path must be accepted as a pinned root"
+        );
+    }
 
     #[test]
     fn blocks_product_readiness_without_native_host() {
