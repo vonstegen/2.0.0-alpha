@@ -1443,13 +1443,12 @@ fn chrono_like_now() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        clean_hermes_chat_output, clean_hermes_failure_output, dashboard_target, hermes_command,
-        execute_hermes_chat, install_hermes, parse_available_models_from_config,
+        clean_hermes_chat_output, clean_hermes_failure_output, dashboard_target,
+        execute_hermes_chat, hermes_command, install_hermes, parse_available_models_from_config,
         parse_current_model_from_config, parse_kanban_counts, parse_kanban_tasks,
-        parse_profile_list, query_hermes_status, resolve_hermes_command,
-        start_hermes_dashboard, validate_selected_model, HermesChatRequest, HermesDashboardRequest,
-        HermesInstallRequest, HermesStatusMode,
-        DEFAULT_HERMES_DASHBOARD_PORT,
+        parse_profile_list, query_hermes_status, resolve_hermes_command, start_hermes_dashboard,
+        validate_selected_model, HermesChatRequest, HermesDashboardRequest, HermesInstallRequest,
+        HermesStatusMode, DEFAULT_HERMES_DASHBOARD_PORT,
     };
     use std::fs;
     use std::path::PathBuf;

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::net::{Ipv4Addr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{LazyLock, Mutex};
@@ -36,6 +36,26 @@ const CHAT_STREAM_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// probes the local subnet (hosts 1..=254) and must only run when the user has
 /// explicitly opted in. Absent or non-truthy => no scan.
 const LAN_DISCOVERY_CONSENT_ENV: &str = "RESONANTOS_LAN_DISCOVERY_CONSENT";
+
+const TRUSTED_PROVIDER_BASE_URLS: &[&str] = &[
+    "https://api.openai.com/v1",
+    "https://api.minimax.io/v1",
+    "https://api.x.ai/v1",
+    "https://api.deepseek.com/v1",
+    "https://api.mistral.ai/v1",
+    "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    "https://integrate.api.nvidia.com/v1",
+    "https://openrouter.ai/api/v1",
+    "https://api.together.xyz/v1",
+    "https://api.groq.com/openai/v1",
+    "https://api.fireworks.ai/inference/v1",
+    "https://api.hyperbolic.xyz/v1",
+    "https://api.anthropic.com",
+    "https://generativelanguage.googleapis.com",
+    "https://api.cohere.com",
+    "https://api.ai21.com/studio/v1",
+    "https://api.replicate.com",
+];
 
 /// Returns `true` only when the LAN-discovery consent flag is explicitly
 /// enabled. Default-off: a missing flag, or a flag set to anything other than a
@@ -851,14 +871,34 @@ fn resolve_provider_base_url(
     provider_type: &str,
     api_base_url: Option<String>,
     runtime_node_endpoint: Option<String>,
+    runtime_node_kind: Option<&str>,
 ) -> Result<String, String> {
+    let candidate = runtime_node_endpoint
+        .or(api_base_url)
+        .unwrap_or_else(|| match provider_type {
+            "minimax" => "https://api.minimax.io/v1".to_string(),
+            _ => "https://api.openai.com/v1".to_string(),
+        });
+    let base_url = normalize_provider_endpoint(&candidate)?;
+    if matches!(runtime_node_kind, Some("local" | "remote-user-owned")) {
+        ensure_local_or_private_endpoint(&base_url)?;
+        return Ok(base_url);
+    }
     match provider_type {
-        "openai" | "openai-compatible" => Ok(runtime_node_endpoint
-            .or(api_base_url)
-            .unwrap_or_else(|| "https://api.openai.com/v1".to_string())),
-        "minimax" => Ok(runtime_node_endpoint
-            .or(api_base_url)
-            .unwrap_or_else(|| "https://api.minimax.io/v1".to_string())),
+        "openai" => {
+            ensure_endpoint_matches_trusted_base(&base_url, "https://api.openai.com/v1")?;
+            Ok(base_url)
+        }
+        "minimax" => {
+            ensure_endpoint_matches_trusted_base(&base_url, "https://api.minimax.io/v1")?;
+            Ok(base_url)
+        }
+        "openai-compatible" => {
+            if is_local_or_private_endpoint(&base_url)? || is_trusted_provider_base_url(&base_url) {
+                return Ok(base_url);
+            }
+            Err("Provider endpoint is not authorized for cloud OpenAI-compatible routing. Use a known provider template or a local/private runtime endpoint.".to_string())
+        }
         unsupported => Err(format!(
             "Unsupported provider type for live provider service chat: {unsupported}"
         )),
@@ -873,8 +913,121 @@ fn resolve_local_runtime_model(model: &str) -> &str {
     }
 }
 
-fn local_runtime_base_url(runtime_node_endpoint: Option<String>) -> String {
-    runtime_node_endpoint.unwrap_or_else(|| "http://127.0.0.1:11434".to_string())
+fn local_runtime_base_url(runtime_node_endpoint: Option<String>) -> Result<String, String> {
+    let base_url = normalize_provider_endpoint(
+        &runtime_node_endpoint.unwrap_or_else(|| "http://127.0.0.1:11434".to_string()),
+    )?;
+    ensure_local_or_private_endpoint(&base_url)?;
+    Ok(base_url)
+}
+
+fn parse_provider_endpoint(endpoint: &str) -> Result<reqwest::Url, String> {
+    let url = reqwest::Url::parse(endpoint.trim())
+        .map_err(|error| format!("Invalid provider endpoint `{endpoint}`: {error}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("Provider endpoints must use http or https.".to_string());
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(
+            "Provider endpoints must not include username or password components.".to_string(),
+        );
+    }
+    if url.host_str().is_none() {
+        return Err("Provider endpoint must include a host.".to_string());
+    }
+    if url.query().is_some() || url.fragment().is_some() {
+        return Err("Provider endpoint must not include query strings or fragments.".to_string());
+    }
+    Ok(url)
+}
+
+fn normalize_provider_endpoint(endpoint: &str) -> Result<String, String> {
+    let trimmed = endpoint.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err("Provider endpoint is required.".to_string());
+    }
+    parse_provider_endpoint(trimmed)?;
+    Ok(trimmed.to_string())
+}
+
+fn endpoint_path(url: &reqwest::Url) -> &str {
+    let path = url.path().trim_end_matches('/');
+    if path.is_empty() {
+        "/"
+    } else {
+        path
+    }
+}
+
+fn endpoint_matches_base(endpoint: &str, trusted_base: &str) -> bool {
+    let Ok(endpoint_url) = parse_provider_endpoint(endpoint) else {
+        return false;
+    };
+    let Ok(trusted_url) = parse_provider_endpoint(trusted_base) else {
+        return false;
+    };
+    endpoint_url.scheme() == trusted_url.scheme()
+        && endpoint_url.host_str() == trusted_url.host_str()
+        && endpoint_url.port_or_known_default() == trusted_url.port_or_known_default()
+        && endpoint_path(&endpoint_url) == endpoint_path(&trusted_url)
+}
+
+fn ensure_endpoint_matches_trusted_base(endpoint: &str, trusted_base: &str) -> Result<(), String> {
+    if endpoint_matches_base(endpoint, trusted_base) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Provider endpoint `{endpoint}` is not authorized for this cloud provider."
+        ))
+    }
+}
+
+fn is_private_or_loopback_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),
+        IpAddr::V6(ip) => {
+            let segments = ip.segments();
+            ip.is_loopback() || (segments[0] & 0xfe00) == 0xfc00 || (segments[0] & 0xffc0) == 0xfe80
+        }
+    }
+}
+
+fn is_local_or_private_endpoint(endpoint: &str) -> Result<bool, String> {
+    let url = parse_provider_endpoint(endpoint)?;
+    let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+    if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") {
+        return Ok(true);
+    }
+    Ok(host
+        .parse::<IpAddr>()
+        .map(is_private_or_loopback_ip)
+        .unwrap_or(false))
+}
+
+fn ensure_local_or_private_endpoint(endpoint: &str) -> Result<(), String> {
+    if is_local_or_private_endpoint(endpoint)? {
+        Ok(())
+    } else {
+        Err(format!(
+            "Runtime endpoint `{endpoint}` must be loopback, mDNS local, or private LAN."
+        ))
+    }
+}
+
+fn is_trusted_provider_base_url(endpoint: &str) -> bool {
+    TRUSTED_PROVIDER_BASE_URLS
+        .iter()
+        .any(|trusted_base| endpoint_matches_base(endpoint, trusted_base))
+}
+
+fn ensure_probe_endpoint_authorized(endpoint: &str) -> Result<(), String> {
+    if is_local_or_private_endpoint(endpoint)? || is_trusted_provider_base_url(endpoint) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Provider setup probe endpoint `{endpoint}` is not authorized. Use a known provider template or a local/private runtime endpoint."
+        ))
+    }
 }
 
 fn endpoint_host(endpoint: Option<&str>) -> Option<String> {
@@ -1906,6 +2059,7 @@ async fn execute_cloud_provider_service_chat_with_usage(
         &request.provider_type,
         request.api_base_url.clone(),
         request.runtime_node_endpoint.clone(),
+        request.runtime_node_kind.as_deref(),
     )?;
 
     let request_messages =
@@ -1971,7 +2125,7 @@ async fn execute_cloud_provider_service_chat_with_usage(
 async fn execute_local_provider_service_chat_with_usage(
     request: &ProviderServiceChatRequest,
 ) -> Result<ProviderServiceChatResponse, String> {
-    let base_url = local_runtime_base_url(request.runtime_node_endpoint.clone());
+    let base_url = local_runtime_base_url(request.runtime_node_endpoint.clone())?;
     ensure_local_runtime_ready(&base_url).await?;
 
     let request_messages =
@@ -2033,6 +2187,7 @@ async fn execute_cloud_provider_service_chat_stream(
         &request.provider_type,
         request.api_base_url.clone(),
         request.runtime_node_endpoint.clone(),
+        request.runtime_node_kind.as_deref(),
     )?;
     let request_messages =
         request_messages_with_system_prompt(&request.system_prompt, request.messages.clone())?;
@@ -2162,7 +2317,7 @@ async fn execute_local_provider_service_chat_stream(
     window: &Window,
     request: &ProviderServiceChatStreamRequest,
 ) -> Result<ProviderServiceChatResponse, String> {
-    let base_url = local_runtime_base_url(request.runtime_node_endpoint.clone());
+    let base_url = local_runtime_base_url(request.runtime_node_endpoint.clone())?;
     ensure_local_runtime_ready(&base_url).await?;
     let request_messages =
         request_messages_with_system_prompt(&request.system_prompt, request.messages.clone())?;
@@ -2438,21 +2593,16 @@ pub(crate) async fn execute_provider_setup_probe(
                 .runtime_node_endpoint
                 .clone()
                 .or(request.api_base_url.clone()),
-        )
+        )?
     } else {
         resolve_provider_base_url(
             &request.provider_type,
             request.api_base_url.clone(),
             request.runtime_node_endpoint.clone(),
-        )
-        .unwrap_or_else(|_| {
-            request
-                .runtime_node_endpoint
-                .clone()
-                .or(request.api_base_url.clone())
-                .unwrap_or_default()
-        })
+            request.runtime_node_kind.as_deref(),
+        )?
     };
+    ensure_probe_endpoint_authorized(&base_url)?;
 
     if request.provider_type == "local" && !base_url.trim_end_matches('/').ends_with("/v1") {
         let discovery = if request.runtime_node_kind.as_deref() == Some("remote-user-owned") {
@@ -2751,8 +2901,9 @@ mod tests {
         extract_assistant_content, extract_cloud_usage, extract_local_assistant_content,
         extract_local_usage, extract_ollama_tag_model_ids, extract_openai_compatible_model_ids,
         filter_think_stream_delta, http_probe_outcome, lan_discovery_consent,
-        local_subnet_http_candidates, models_endpoint_for_openai_compatible, ollama_tags_endpoint,
-        parse_ollama_model_names, request_messages_with_system_prompt, resolve_local_runtime_model,
+        local_runtime_base_url, local_subnet_http_candidates,
+        models_endpoint_for_openai_compatible, ollama_tags_endpoint, parse_ollama_model_names,
+        request_messages_with_system_prompt, resolve_local_runtime_model,
         resolve_provider_base_url, resolve_provider_execution_adapter, sanitize_assistant_content,
         sanitize_stream_delta, streaming_http_client, strip_think_blocks, ChatMessageInput,
         ProviderExecutionAdapter, ProviderServiceChatRequest, LAN_DISCOVERY_CONSENT_ENV,
@@ -2976,14 +3127,58 @@ mod tests {
     }
 
     #[test]
-    fn prefers_runtime_node_endpoint_when_present() {
-        let base_url = resolve_provider_base_url(
+    fn rejects_public_runtime_override_for_cloud_provider_secrets() {
+        let error = resolve_provider_base_url(
             "minimax",
             Some("https://api.minimax.io/v1".to_string()),
-            Some("https://edge.minimax.example/v1".to_string()),
+            Some("https://attacker.example/v1".to_string()),
+            Some("cloud"),
         )
-        .expect("minimax base url should resolve");
-        assert_eq!(base_url, "https://edge.minimax.example/v1");
+        .expect_err("cloud provider credentials must not route to caller-supplied hosts");
+        assert!(error.contains("not authorized"));
+    }
+
+    #[test]
+    fn accepts_zai_loopback_gateway_for_openai_compatible_cloud_route() {
+        let base_url = resolve_provider_base_url(
+            "openai-compatible",
+            Some("http://127.0.0.1:18789/v1".to_string()),
+            None,
+            Some("cloud"),
+        )
+        .expect("Z.AI gateway is a loopback OpenAI-compatible route");
+        assert_eq!(base_url, "http://127.0.0.1:18789/v1");
+    }
+
+    #[test]
+    fn accepts_user_owned_lan_openai_compatible_runtime_endpoint() {
+        let base_url = resolve_provider_base_url(
+            "openai-compatible",
+            None,
+            Some("http://192.168.1.77:30004/v1".to_string()),
+            Some("remote-user-owned"),
+        )
+        .expect("user-owned LAN runtime should be routable after setup");
+        assert_eq!(base_url, "http://192.168.1.77:30004/v1");
+    }
+
+    #[test]
+    fn rejects_unknown_public_openai_compatible_endpoint() {
+        let error = resolve_provider_base_url(
+            "openai-compatible",
+            Some("https://attacker.example/v1".to_string()),
+            None,
+            Some("cloud"),
+        )
+        .expect_err("unknown public OpenAI-compatible endpoints need a trusted template");
+        assert!(error.contains("not authorized"));
+    }
+
+    #[test]
+    fn rejects_public_endpoint_for_local_runtime_route() {
+        let error = local_runtime_base_url(Some("https://api.example.test".to_string()))
+            .expect_err("local runtime endpoints must stay local/private");
+        assert!(error.contains("loopback"));
     }
 
     #[test]

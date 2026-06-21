@@ -1309,7 +1309,9 @@ test("browser-first host is a runnable app path, not documentation-only scaffold
   assert.match(agentControlHostService, /news\.google\.com\/rss/);
   assert.match(launcher, /keystroke \\"a\\" using \{option down, shift down\}/);
   assert.match(nativeHost, /resonantos-browser-first/);
-  assert.match(nativeHost, /resonantos-remote-debugging-port/);
+  assert.match(nativeHost, /AppendSwitchWithValue\("remote-debugging-port", "0"\)/);
+  assert.match(nativeHost, /AppendSwitchWithValue\("remote-debugging-address", "127\.0\.0\.1"\)/);
+  assert.doesNotMatch(nativeHost, /requested_debug_port/);
   assert.match(nativeHost, /CefKeyboardHandler/);
   assert.match(nativeHost, /EVENTFLAG_COMMAND_DOWN/);
   assert.match(nativeHost, /EVENTFLAG_CONTROL_DOWN/);
