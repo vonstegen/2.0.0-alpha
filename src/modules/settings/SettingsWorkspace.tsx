@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type {
   AddOnManifest,
+  DictationSettings,
   LivingArchiveMemoryServiceResult,
   LivingArchiveMemoryServiceStatus,
   ProviderDiagnosticReport,
@@ -11,6 +12,7 @@ import type {
   ProviderSmokeTestResult,
   ResonantShellState,
 } from "../../core/contracts";
+import { getEngineDevice, getEngineKind } from "../../dictation";
 import { requestProviderRequestAudit } from "../../core/runtime";
 import {
   buildStrategyRouteOptions,
@@ -30,7 +32,7 @@ import {
   type ProviderTemplateId,
 } from "./provider-templates";
 
-export type SettingsSection = "providers" | "strategy" | "memory" | "logician" | "defaults" | "shell";
+export type SettingsSection = "providers" | "strategy" | "memory" | "logician" | "defaults" | "dictation" | "shell";
 
 export const settingsItems: Array<{ id: SettingsSection; label: string; eyebrow: string }> = [
   { id: "providers", label: "Providers", eyebrow: "models + secrets" },
@@ -38,6 +40,7 @@ export const settingsItems: Array<{ id: SettingsSection; label: string; eyebrow:
   { id: "memory", label: "Memory Bridge", eyebrow: "MCP + local service" },
   { id: "logician", label: "Logician", eyebrow: "trust kernel" },
   { id: "defaults", label: "Defaults", eyebrow: "core behavior" },
+  { id: "dictation", label: "Dictation", eyebrow: "engine + language" },
   { id: "shell", label: "Shell", eyebrow: "layout + app" },
 ];
 
@@ -70,6 +73,7 @@ type SettingsWorkspaceProps = {
   onStartMemoryService: () => void;
   onStopMemoryService: () => void;
   onOpenLogicianAddOn: () => void;
+  onUpdateDictation: (patch: Partial<DictationSettings>) => void;
 };
 
 type LogicianFlowNodeType = "decision" | "action" | "delegation" | "gate";
@@ -943,6 +947,113 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
               <SettingNote label="Default Strategist name" value={props.state.strategistIdentity.defaultName} />
               <SettingNote label="Archive write authority" value={props.state.archivePolicy.ingestServiceId} />
               <SettingNote label="Telegram mode" value="Strategist channel add-on" />
+            </div>
+          </Panel>
+        )}
+
+        {props.settingsSection === "dictation" && (
+          <Panel title="Dictation" subtitle="Choose the local speech-to-text engine, language, and Whisper task.">
+            <div className="settings-grid">
+              <SettingNote
+                label="Loaded engine"
+                value={(() => {
+                  const engineKind = getEngineKind();
+                  const device = getEngineDevice();
+                  if (engineKind === "whisper" && device === "webgpu") return "Whisper (WebGPU)";
+                  if (engineKind === "whisper" && device === "wasm") return "Whisper (CPU)";
+                  if (engineKind === "parakeet" && (props.state.dictation?.engineSelection ?? "auto") === "auto") {
+                    return "Parakeet (Whisper unavailable)";
+                  }
+                  if (engineKind === "parakeet") return "Parakeet";
+                  return "Loading…";
+                })()}
+              />
+            </div>
+
+            <div className="setting-row">
+              <span className="setting-label">Engine</span>
+              <div className="setting-radio-group" role="radiogroup" aria-label="Dictation engine">
+                <label>
+                  <input
+                    type="radio"
+                    name="dictation-engine"
+                    checked={(props.state.dictation?.engineSelection ?? "auto") === "auto"}
+                    onChange={() => props.onUpdateDictation({ engineSelection: "auto" })}
+                  />
+                  Auto (default) — Whisper preferred, Parakeet fallback
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="dictation-engine"
+                    checked={(props.state.dictation?.engineSelection ?? "auto") === "whisper"}
+                    onChange={() => props.onUpdateDictation({ engineSelection: "whisper" })}
+                  />
+                  Whisper — faster, may fail on some setups
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="dictation-engine"
+                    checked={(props.state.dictation?.engineSelection ?? "auto") === "parakeet"}
+                    onChange={() => props.onUpdateDictation({ engineSelection: "parakeet" })}
+                  />
+                  Parakeet — slower, always works
+                </label>
+              </div>
+              <div className="setting-note">
+                <span>Changes to the engine take effect after a page reload.</span>
+              </div>
+            </div>
+
+            <div className="setting-row">
+              <label className="setting-label" htmlFor="dictation-language">Language</label>
+              <select
+                id="dictation-language"
+                disabled={(props.state.dictation?.engineSelection ?? "auto") === "parakeet"}
+                value={props.state.dictation?.language ?? "auto"}
+                onChange={(e) => props.onUpdateDictation({ language: e.target.value })}
+              >
+                <option value="auto">Auto-detect</option>
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="it">Italian</option>
+                <option value="pt">Portuguese</option>
+                <option value="ja">Japanese</option>
+                <option value="zh">Chinese</option>
+                <option value="ko">Korean</option>
+                <option value="ru">Russian</option>
+                <option value="hi">Hindi</option>
+                <option value="ar">Arabic</option>
+              </select>
+            </div>
+
+            <div className="setting-row">
+              <span className="setting-label">Task</span>
+              <div className="setting-radio-group" role="radiogroup" aria-label="Whisper task">
+                <label>
+                  <input
+                    type="radio"
+                    name="dictation-task"
+                    disabled={(props.state.dictation?.engineSelection ?? "auto") === "parakeet"}
+                    checked={(props.state.dictation?.task ?? "transcribe") === "transcribe"}
+                    onChange={() => props.onUpdateDictation({ task: "transcribe" })}
+                  />
+                  Transcribe (keep original language)
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="dictation-task"
+                    disabled={(props.state.dictation?.engineSelection ?? "auto") === "parakeet"}
+                    checked={(props.state.dictation?.task ?? "transcribe") === "translate"}
+                    onChange={() => props.onUpdateDictation({ task: "translate" })}
+                  />
+                  Translate (output English)
+                </label>
+              </div>
             </div>
           </Panel>
         )}

@@ -973,5 +973,10 @@ export const buildDefaultState = (manifests: AddOnManifest[]): ResonantShellStat
       theme: "resonant-dark",
     },
     distributionModel: "curated-plus-sideload",
+    dictation: {
+      engineSelection: "auto",
+      language: "auto",
+      task: "transcribe",
+    },
   };
 };

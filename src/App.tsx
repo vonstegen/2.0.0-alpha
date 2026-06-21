@@ -111,10 +111,19 @@ import { buildArchivePreflightAugmentorPrompt } from "./modules/archive/archive-
 import { inspectImportedLibraryCoverage } from "./modules/archive/archive-agent-tools";
 import {
   attachComposerFiles,
-  BrowserSpeechRecognition,
   removeComposerAttachment,
   toggleComposerDictation,
 } from "./modules/chat/composer-controller";
+import {
+  createDictationController,
+  DEFAULT_ENGINE_WASM_PATHS,
+  isDictationEngineAvailable,
+  preload as preloadDictationEngine,
+  subscribeDictationEngine,
+  type DictationController,
+} from "./dictation";
+import DictationWorker from "./dictation/worker.js?worker";
+import WhisperWorker from "./dictation/worker-whisper.js?worker";
 import { saveChatMessageToArchiveIntake } from "./modules/chat/archive-intake-controller";
 import { executeChatTurn } from "./modules/chat/controller";
 import { claimChatRun, releaseChatRun } from "./modules/chat/run-guard";
@@ -385,7 +394,9 @@ export function App() {
   } | null>(null);
   const chatScrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const dictationControllerRef = useRef<DictationController | null>(null);
+  const [dictationReady, setDictationReady] = useState(false);
   const activeChatRunTokenRef = useRef<string | null>(null);
   const deferredSearch = useDeferredValue(search);
   const activeProviderForSelection = resolveActiveProviderForSelection(
@@ -563,6 +574,88 @@ export function App() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  // Dictation engine — kick preload on mount, create the controller, and
+  // register the global Ctrl/Cmd+Space push-to-talk shortcut.
+  useEffect(() => {
+    if (!isDictationEngineAvailable()) {
+      return;
+    }
+
+    const unsubscribe = subscribeDictationEngine((state) => {
+      setDictationReady(state === "ready");
+    });
+
+    const controller = createDictationController({
+      input: () => composerRef.current,
+      button: null,
+      callbacks: {
+        onStateChange: (recording) => setDictating(recording),
+        onNotice: (message) => setChatNotice(message),
+        onEngineState: () => undefined,
+        onText: (text, context) => {
+          // Splice the final dictation result into the composer using the
+          // cursor and value captured at recording *start* (not completion).
+          // This avoids races with the React-controlled <textarea>
+          // re-rendering during the transcription window.
+          setComposer((current) => {
+            if (!context) {
+              return current ? `${current} ${text}`.trim() : text;
+            }
+            const before = current.slice(0, context.start);
+            const after = current.slice(context.end);
+            const prefix = before.length && !before.endsWith(" ") ? " " : "";
+            const suffix = after.length && !after.startsWith(" ") ? " " : "";
+            return `${before}${prefix}${text}${suffix}${after}`;
+          });
+          setChatNotice(null);
+        },
+      },
+    });
+    dictationControllerRef.current = controller;
+
+    void preloadDictationEngine({
+      createWorker: (kind) =>
+        kind === "whisper" ? new WhisperWorker() : new DictationWorker(),
+      engineSelection:
+        currentReadyStateRef.current?.dictation?.engineSelection ?? "auto",
+      wasmPaths: DEFAULT_ENGINE_WASM_PATHS,
+      // getDictationSettings is called at each stop() to pick up language/task
+      // changes without an engine reload. Reads from the ref so it always sees
+      // the current state, not the state captured at preload time.
+      getDictationSettings: () => ({
+        language: currentReadyStateRef.current?.dictation?.language ?? "auto",
+        task: currentReadyStateRef.current?.dictation?.task ?? "transcribe",
+      }),
+    }).catch((error) => {
+      setChatNotice(
+        error instanceof Error
+          ? `Dictation engine failed: ${error.message}`
+          : "Dictation engine failed to start.",
+      );
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (controller.handleKeyDown(event)) {
+        event.stopImmediatePropagation();
+      }
+    };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (controller.handleKeyUp(event)) {
+        event.stopImmediatePropagation();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keyup", handleKeyUp, true);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keyup", handleKeyUp, true);
+      controller.dispose();
+      dictationControllerRef.current = null;
+    };
+  }, [setChatNotice, setDictating]);
 
   useEffect(() => {
     if (loadState.phase !== "ready") {
@@ -2714,6 +2807,12 @@ export function App() {
                   setSection("addons");
                   setSelectedAddonId("addon.logician");
                 }}
+                onUpdateDictation={(patch) =>
+                  commitReadyState({
+                    ...state,
+                    dictation: { ...state.dictation, ...patch },
+                  })
+                }
               />
             </Suspense>
           )}
@@ -2775,6 +2874,7 @@ export function App() {
         attachments={attachments}
         dictating={dictating}
         dictationAvailable={dictationAvailable}
+        dictationReady={dictationReady}
         activeChatModel={activeChatModel}
         availableModels={selectableChatModels.length ? selectableChatModels : activeProvider?.allowedModels ?? []}
         thinkingDepth={thinkingDepth}
@@ -2800,6 +2900,7 @@ export function App() {
         }
         chatScrollAnchorRef={chatScrollAnchorRef}
         fileInputRef={fileInputRef}
+        composerRef={composerRef}
         onCreateNewChat={(agentId, projectId) =>
           createAgentChatThreadAction({
             agentId,
@@ -2965,12 +3066,8 @@ export function App() {
         }
         onToggleDictation={() =>
           toggleComposerDictation({
-            dictating,
-            speechRecognitionRef,
-            setDictating,
-            setComposer,
+            controller: dictationControllerRef.current,
             setChatNotice,
-            errorMessageOf,
           })
         }
         onModelChange={handleChatModelChange}

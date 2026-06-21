@@ -154,3 +154,14 @@ select {
   color: var(--text-primary);
   padding: 0.8rem 0.9rem;
 }
+
+/* Style the OS-rendered <select> popup. :root already sets color-scheme: dark,
+   but Chromium on Linux often ignores that for <select> popups and renders
+   them with the OS theme (white). The explicit option background/color pins
+   the popup to --text-muted per the user's request. */
+select option,
+select option:checked,
+select option:hover {
+  background: var(--text-muted);
+  color: var(--text-primary);
+}

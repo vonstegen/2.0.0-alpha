@@ -79,6 +79,7 @@ type StrategistChatRailProps = {
   attachments: ComposerAttachment[];
   dictating: boolean;
   dictationAvailable: boolean;
+  dictationReady: boolean;
   activeChatModel: string;
   availableModels: string[];
   thinkingDepth: ThinkingDepth;
@@ -100,6 +101,7 @@ type StrategistChatRailProps = {
   } | null;
   chatScrollAnchorRef: RefObject<HTMLDivElement | null>;
   fileInputRef: RefObject<HTMLInputElement | null>;
+  composerRef: RefObject<HTMLTextAreaElement | null>;
   onCreateNewChat: (agentId: string, projectId?: string) => void;
   onCreateProject: (title: string) => void;
   onSetHistoryOpen: (open: boolean) => void;
@@ -811,6 +813,7 @@ export function StrategistChatRail(props: StrategistChatRailProps) {
           />
         )}
         <textarea
+          ref={props.composerRef}
           value={props.composer}
           onChange={(event) => props.onComposerChange(event.target.value)}
           placeholder={`Message ${props.title}`}
@@ -885,15 +888,13 @@ export function StrategistChatRail(props: StrategistChatRailProps) {
             type="button"
             className={`chat-icon-button ${props.dictating ? "is-live" : ""}`}
             aria-label={props.dictating ? "Stop dictation" : "Start dictation"}
-            title={
-              props.dictationAvailable
-                ? props.dictating
-                  ? "Stop dictation"
-                  : "Start dictation"
-                : "Audio dictate is not available in the desktop runtime yet."
-            }
+            title={micButtonTitle({
+              available: props.dictationAvailable,
+              ready: props.dictationReady,
+              dictating: props.dictating,
+            })}
             onClick={props.onToggleDictation}
-            disabled={!props.dictationAvailable}
+            disabled={!props.dictationAvailable || !props.dictationReady}
           >
             <MicIcon />
           </button>
@@ -940,4 +941,17 @@ export function StrategistChatRail(props: StrategistChatRailProps) {
       </div>
     </aside>
   );
+}
+
+function micButtonTitle({ available, ready, dictating }: { available: boolean; ready: boolean; dictating: boolean }): string {
+  if (!available) {
+    return "Audio dictate is not available in the desktop runtime yet.";
+  }
+  if (!ready) {
+    return "Loading dictation model…";
+  }
+  if (dictating) {
+    return "Stop dictation";
+  }
+  return "Start dictation (or press Ctrl+Space while editing)";
 }

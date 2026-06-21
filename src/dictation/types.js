@@ -1,0 +1,114 @@
+// @ts-check
+
+/**
+ * Engine lifecycle. Loaded in `idle`, transitioning to `loading` on first
+ * `preload()` call, then to `ready` (success) or `error` (failure).
+ *
+ * @typedef {"idle" | "loading" | "ready" | "error"} EngineState
+ */
+
+/**
+ * Which on-device ASR engine the engine module has loaded. Set at preload
+ * time from the user's {@link DictationEngineSelection} (with Auto mode
+ * resolving to whichever engine actually initialized). The engine module
+ * is a singleton — switching kinds means `dispose()` then `preload()`
+ * with a new `engineSelection`.
+ *
+ * - `"parakeet"` — NVIDIA Parakeet TDT 0.6B v3 int8 via parakeet.js.
+ *   ~650 MB encoder, English-only. Used as the Auto-mode fallback when
+ *   Whisper init fails.
+ * - `"whisper"` — Whisper base multilingual via @huggingface/transformers
+ *   (`onnx-community/whisper-base_timestamped`). ~150 MB. Auto-mode
+ *   primary; per-utterance `language` / `task` apply only to this engine.
+ *
+ * @typedef {"parakeet" | "whisper"} DictationEngineKind
+ */
+
+/**
+ * @typedef {"auto" | "whisper" | "parakeet"} DictationEngineSelection
+ *   `"auto"` tries Whisper at preload and falls back to Parakeet if Whisper
+ *   init fails or times out (60s). `"whisper"` and `"parakeet"` force one
+ *   engine with no fallback.
+ */
+
+/**
+ * @typedef {Object} DictationSettings
+ * @property {DictationEngineSelection} [engineSelection="auto"]
+ * @property {string} [language="auto"] Whisper language code or `"auto"` for
+ *   auto-detect. Ignored by Parakeet (English-only model).
+ * @property {"transcribe" | "translate"} [task="transcribe"] Whisper task.
+ *   Ignored by Parakeet.
+ */
+
+/**
+ * @typedef {Object} EngineOptions
+ * @property {(kind: DictationEngineKind) => Worker} createWorker Returns a
+ *   fresh module Web Worker for the requested engine kind. The factory is
+ *   called once at preload; Auto mode calls it a second time with
+ *   `"parakeet"` if Whisper init fails.
+ * @property {DictationEngineSelection} [engineSelection="auto"] Engine
+ *   selection mode. Replaces the older `kind` field.
+ * @property {() => DictationSettings} [getDictationSettings] Returns the
+ *   current settings snapshot. Called at each `transcribe` to pick up
+ *   `language`/`task` changes without an engine reload.
+ * @property {string | null} [wasmPaths] Optional path to onnxruntime-web
+ *   WASM blobs.
+ * @property {"webgpu-hybrid" | "webgpu-strict" | "wasm"} [backend] Preferred
+ *   execution backend for Parakeet. Ignored by Whisper (Whisper auto-detects
+ *   WebGPU at the worker level).
+ * @property {boolean} [streaming] Reserved for future use.
+ */
+
+/**
+ * @typedef {Object} EngineStatus
+ * @property {EngineState} state
+ * @property {string | null} message Optional human-readable detail (only set on `error`).
+ */
+
+/**
+ * Worker → main thread messages.
+ *
+ * @typedef {{ type: "ready" }} WorkerReadyMessage
+ * @typedef {{ type: "result", id: number, text: string }} WorkerResultMessage
+ * @typedef {{ type: "chunk-result", id: number, sessionId: string, text: string }} WorkerChunkResultMessage
+ * @typedef {{ type: "partial", id: number, sessionId: string, text: string }} WorkerPartialMessage
+ * @typedef {{ type: "final", id: number, sessionId: string, text: string }} WorkerFinalMessage
+ * @typedef {{ type: "error", id: number, message: string }} WorkerErrorMessage
+ * @typedef {WorkerReadyMessage | WorkerResultMessage | WorkerChunkResultMessage | WorkerPartialMessage | WorkerFinalMessage | WorkerErrorMessage} WorkerOutbound
+ */
+
+/**
+ * Main thread → worker messages.
+ *
+ * @typedef {{ type: "init", wasmPaths: string | null, backend?: string }} WorkerInitMessage
+ * @typedef {{ type: "transcribe", id: number, pcm: Float32Array, sampleRate: number }} WorkerTranscribeMessage
+ * @typedef {{ type: "transcribe-chunk", id: number, sessionId: string, pcm: Float32Array, sampleRate: number }} WorkerTranscribeChunkMessage
+ * @typedef {{ type: "stream-finalize", id: number, sessionId: string }} WorkerStreamFinalizeMessage
+ * @typedef {{ type: "stream-cancel", id: number, sessionId: string }} WorkerStreamCancelMessage
+ * @typedef {WorkerInitMessage | WorkerTranscribeMessage | WorkerTranscribeChunkMessage | WorkerStreamFinalizeMessage | WorkerStreamCancelMessage} WorkerInbound
+ */
+
+/**
+ * Callbacks the controller fires while recording. Each is optional.
+ *
+ * @typedef {Object} ControllerCallbacks
+ * @property {(text: string, context: import("./controller.js").TextInsertionContext) => void} [onText]
+ *   Final transcript text from the most recent recording.
+ * @property {(recording: boolean) => void} [onStateChange] Recording state flipped on start/stop.
+ * @property {(message: string) => void} [onNotice] User-visible error/notice.
+ * @property {(state: EngineState) => void} [onEngineState] Engine load state changed.
+ */
+
+/**
+ * @typedef {Object} CreateControllerInput
+ * @property {HTMLTextAreaElement | HTMLInputElement | (() => HTMLTextAreaElement | HTMLInputElement | null) | null} [input]
+ *   Optional input to insert transcript into. May be a DOM element or a
+ *   function that returns one (useful for refs that mount later). If
+ *   omitted, the controller is button-only and the host handles the text.
+ * @property {HTMLElement} [button] Optional mic button to update aria/title/disabled.
+ * @property {ControllerCallbacks} [callbacks]
+ * @property {(target: Element | null) => boolean} [isEditableTarget]
+ *   Editable predicate override (defaults to {@link isEditableTarget}).
+ */
+
+export {};
