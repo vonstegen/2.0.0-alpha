@@ -51,6 +51,7 @@ const STORAGE_KEYS = {
   sitePermissionAudit: "augmentorSitePermissionAudit",
   taskConsents: "augmentorTaskConsents",
   taskConsentAudit: "augmentorTaskConsentAudit",
+  regenerationMode: "augmentorRegenerationMode",
   browserJobs: "augmentorBrowserJobs",
   activeBrowserJob: "augmentorActiveBrowserJob",
   appearance: "augmentorAppearancePreferences",
@@ -85,6 +86,7 @@ const saveSelectionButton = document.querySelector("#save-selection");
 const contextToggleButton = document.querySelector("#context-toggle");
 const modelSelect = document.querySelector("#model-select");
 const thinkingDepthSelect = document.querySelector("#thinking-depth");
+const regenerationModeSelect = document.querySelector("#regeneration-mode");
 const dictateButton = document.querySelector("#dictate-button");
 const contextMeter = document.querySelector("#context-meter");
 const contextPopover = document.querySelector("#context-popover");
@@ -177,6 +179,10 @@ let personalizationSettings = null;
 let initialSettingsSection = "overview";
 let messageActions = null;
 const allowedWorkspaces = new Set(["answer", "artifacts", "addons", "memory", "hermes", "opencode", "settings"]);
+
+function normalizeRegenerationMode(value) {
+  return value === "overwrite" ? "overwrite" : "branch";
+}
 
 function parseWorkspaceDeepLink(hash = window.location.hash) {
   const normalized = String(hash ?? "").replace(/^#/, "").trim();
@@ -387,6 +393,7 @@ messageActions = createMessageActionController({
   fileInput,
   flashCopied: (id) => chatRenderers.flashCopied(id),
   getLastSnapshot: () => lastSnapshot,
+  getRegenerationMode: () => normalizeRegenerationMode(regenerationModeSelect?.value),
   getRespondToCommand: () => mainWorkspaceActions.regenerate,
   navigator,
   renderAttachments,
@@ -547,6 +554,23 @@ async function setStarterPromptPreference(hidden) {
     [STORAGE_KEYS.starterPromptsHidden]: starterPromptsHidden
   }).catch(() => undefined);
   renderMessages();
+}
+
+async function hydrateRegenerationModePreference() {
+  const settings = await chrome.storage?.local?.get?.([STORAGE_KEYS.regenerationMode]).catch(() => ({}));
+  if (regenerationModeSelect) {
+    regenerationModeSelect.value = normalizeRegenerationMode(settings?.[STORAGE_KEYS.regenerationMode]);
+  }
+}
+
+async function setRegenerationModePreference(mode) {
+  const normalized = normalizeRegenerationMode(mode);
+  if (regenerationModeSelect) {
+    regenerationModeSelect.value = normalized;
+  }
+  await chrome.storage?.local?.set?.({
+    [STORAGE_KEYS.regenerationMode]: normalized
+  }).catch(() => undefined);
 }
 
 function renderAttachments() {
@@ -916,6 +940,7 @@ modelSelect.addEventListener("change", () => void chatSessionStore.persist().the
   updateContextMeter();
 }));
 thinkingDepthSelect.addEventListener("change", () => void chatSessionStore.persist());
+regenerationModeSelect?.addEventListener("change", () => void setRegenerationModePreference(regenerationModeSelect.value));
 dictateButton.addEventListener("click", () => {
   dictationController.toggle();
 });
@@ -952,6 +977,7 @@ await Promise.all([
   chatSessionStore.hydrate(),
   hydrateAppearancePreferences(),
   hydrateStarterPromptPreference(),
+  hydrateRegenerationModePreference(),
   hydrateActiveWorkspace()
 ]);
 const requestedDeepLink = parseWorkspaceDeepLink();

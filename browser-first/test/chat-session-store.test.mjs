@@ -288,6 +288,69 @@ test("chat session store trims to previous user message for regeneration", async
   assert.deepEqual(harness.store.getMessages().map((message) => message.id), [user.id]);
 });
 
+test("chat session store prepares overwrite regeneration without creating a branch", async () => {
+  const harness = createHarness();
+
+  const user = await harness.store.addMessage("user", "first");
+  const assistant = await harness.store.addMessage("assistant", "answer");
+
+  const prepared = await harness.store.prepareRegenerationFromMessage(assistant.id, { mode: "overwrite" });
+
+  assert.equal(prepared.mode, "overwrite");
+  assert.equal(prepared.userMessage.id, user.id);
+  assert.deepEqual(harness.store.getMessages().map((message) => message.id), [user.id]);
+  assert.equal(harness.store.getForks().length, 0);
+});
+
+test("chat session store prepares branch regeneration with compact state scoped to retained messages", async () => {
+  const harness = createHarness({
+    sessions: [{
+      id: "session-source",
+      title: "Source conversation",
+      workspaceId: "answer",
+      projectId: "project-a",
+      createdAt: "2026-05-25T00:00:00.000Z",
+      updatedAt: "2026-05-25T00:10:00.000Z",
+      messages: [
+        { id: "u1", role: "user", content: "first", createdAt: "2026-05-25T00:01:00.000Z" },
+        { id: "a1", role: "assistant", content: "answer", createdAt: "2026-05-25T00:02:00.000Z" },
+        { id: "u2", role: "user", content: "second", createdAt: "2026-05-25T00:03:00.000Z" },
+        { id: "a2", role: "assistant", content: "second answer", createdAt: "2026-05-25T00:04:00.000Z" }
+      ],
+      compactState: {
+        summary: "first turn retained as summary",
+        preservedRecentMessageIds: ["u1", "a1", "u2", "a2"],
+        sourceRange: {
+          fromMessageId: "u1",
+          toMessageId: "a2"
+        }
+      }
+    }],
+    projects: [{ id: "project-a", name: "Project A" }],
+    activeSessionId: "session-source"
+  });
+
+  await harness.store.hydrate();
+  const prepared = await harness.store.prepareRegenerationFromMessage("a2", { mode: "branch" });
+
+  assert.equal(prepared.mode, "branch");
+  assert.equal(prepared.userMessage.id, "u2");
+  assert.equal(prepared.fork.sourceSessionId, "session-source");
+  assert.equal(prepared.fork.sourceMessageId, "a2");
+  assert.deepEqual(harness.store.getMessages().map((message) => message.id), ["u1", "a1", "u2"]);
+
+  const active = harness.store.getActiveSession();
+  assert.notEqual(active.id, "session-source");
+  assert.equal(active.projectId, "project-a");
+  assert.match(active.title, /^Regenerate:/);
+  assert.equal(active.compactState.summary, "first turn retained as summary");
+  assert.deepEqual(active.compactState.preservedRecentMessageIds, ["u1", "a1", "u2"]);
+  assert.deepEqual(active.compactState.sourceRange, {
+    fromMessageId: "u1",
+    toMessageId: "u2"
+  });
+});
+
 test("chat session store manages attachments and persists selected provider settings", async () => {
   const harness = createHarness();
 

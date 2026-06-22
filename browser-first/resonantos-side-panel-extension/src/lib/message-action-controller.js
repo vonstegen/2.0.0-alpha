@@ -16,6 +16,7 @@ export function createMessageActionController({
   fileInput,
   flashCopied,
   getLastSnapshot,
+  getRegenerationMode,
   getRespondToCommand,
   navigator,
   renderAttachments,
@@ -31,6 +32,7 @@ export function createMessageActionController({
     const fn = typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest;
     return fn(...args);
   };
+  const selectedRegenerationMode = () => getRegenerationMode?.() === "overwrite" ? "overwrite" : "branch";
   async function clearAttachments() {
     await chatSessionStore.clearAttachments();
     renderAttachments();
@@ -114,13 +116,16 @@ export function createMessageActionController({
   }
 
   async function regenerateFromMessage(id) {
-    const userMessage = await chatSessionStore.trimToPreviousUserMessage(id);
-    if (!userMessage) {
+    const prepared = await chatSessionStore.prepareRegenerationFromMessage(id, {
+      mode: selectedRegenerationMode()
+    });
+    if (!prepared?.userMessage) {
       await addMessage("system", "No previous user message is available for regeneration.");
       return;
     }
     renderMessages();
-    await getRespondToCommand()(userMessage.content);
+    setStatus(prepared.mode === "overwrite" ? "Regenerating" : "Regenerating branch");
+    await getRespondToCommand()(prepared.userMessage.content);
   }
 
   async function attachFiles(fileList) {
