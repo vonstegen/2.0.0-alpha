@@ -27,6 +27,7 @@ const stagedChangedPaths = () =>
 const changedPaths = stagedOnly ? stagedChangedPaths() : worktreeChangedPaths();
 
 const includeDocs = new Set([
+  "docs/ALPHA_PREVIEW_AUDIT_2026-04-28.md",
   "docs/BROWSER_FIRST_STABILIZATION_2026-06-02.md",
   "docs/FEATURE_INVENTORY_2026-05-26.md",
   "docs/PRODUCT_GUIDE_BROWSER_FIRST.md",

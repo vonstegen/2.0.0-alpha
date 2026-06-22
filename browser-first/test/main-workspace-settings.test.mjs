@@ -209,7 +209,7 @@ test("settings workspace renders provider status without exposing credentials", 
     assert.match(container.textContent, /Provider Profiles/);
     assert.match(container.textContent, /MiniMax/);
     assert.match(container.textContent, /OpenAI/);
-    assert.match(container.textContent, /Vault/);
+    assert.match(container.textContent, /Credential store/);
     assert.match(container.textContent, /Created/);
     assert.equal(container.querySelector(".settings-provider-advanced").open, false);
     const initialMiniMaxCard = [...container.querySelectorAll(".settings-provider-card")].find((card) => /MiniMax/.test(card.textContent));

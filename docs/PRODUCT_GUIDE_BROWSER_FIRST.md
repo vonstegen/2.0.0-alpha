@@ -522,7 +522,7 @@ ResonantOS must be designed as a security-conscious AI browser, not as an automa
 
 Current core boundaries:
 
-- Provider secrets are stored under the user secrets root and should not be exposed to page JavaScript or add-ons.
+- Alpha provider credentials stay in session-only host memory or environment configuration; raw keys are not persisted by the extension host and should not be exposed to page JavaScript or add-ons.
 - The bridge requires a session token and restricted CORS in preview mode.
 - Production wallet/DAO readiness requires replacing the preview token bridge with native messaging, signed IPC, or equivalent authenticated browser-shell IPC.
 - Add-ons get explicit capability grants.
