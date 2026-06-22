@@ -93,6 +93,98 @@ export function createProviderBridgeService({
       .slice(0, 56);
   }
 
+  const localEndpointTemplates = new Set([
+    "asus-gx10",
+    "dgx-spark",
+    "litellm",
+    "llama-cpp",
+    "lm-studio",
+    "localai",
+    "ollama",
+    "text-generation-webui",
+    "vllm",
+    "zai",
+    "zai-glm",
+  ]);
+
+  function isPrivateOrLocalHostname(hostname) {
+    const host = String(hostname ?? "").toLowerCase();
+    if (!host) return true;
+    if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) return true;
+    if (host === "::1" || host === "[::1]" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return true;
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+      const octets = host.split(".").map((part) => Number(part));
+      if (octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
+      const [a, b] = octets;
+      return (
+        a === 0 ||
+        a === 10 ||
+        a === 127 ||
+        a === 169 && b === 254 ||
+        a === 172 && b >= 16 && b <= 31 ||
+        a === 192 && b === 168
+      );
+    }
+    return !host.includes(".");
+  }
+
+  function allowsLocalProviderEndpoint(profile = {}) {
+    const id = String(profile.id ?? "").toLowerCase();
+    const providerType = String(profile.providerType ?? "").toLowerCase();
+    const templateId = String(profile.templateId ?? "").toLowerCase();
+    const authType = String(profile.authType ?? "").toLowerCase();
+    return (
+      process.env.RESONANTOS_PROVIDER_ALLOW_LOCAL_ENDPOINTS === "1" ||
+      id === "desktop-local" ||
+      id === "shared-zai-glm" ||
+      authType === "local-runtime" ||
+      providerType === "local" ||
+      localEndpointTemplates.has(templateId)
+    );
+  }
+
+  function normalizeProviderEndpointUrl(value, profile = {}, { required = false } = {}) {
+    const raw = String(value ?? "").trim();
+    if (!raw) {
+      if (required) throw new Error("Provider endpoint URL is required.");
+      return "";
+    }
+    let url;
+    try {
+      url = new URL(raw);
+    } catch {
+      throw new Error("Provider endpoint must be an absolute http or https URL.");
+    }
+    if (!["http:", "https:"].includes(url.protocol)) {
+      throw new Error("Provider endpoint must use http or https.");
+    }
+    if (url.username || url.password) {
+      throw new Error("Provider endpoint must not contain embedded credentials.");
+    }
+    if (url.search || url.hash) {
+      throw new Error("Provider endpoint must not include query strings or fragments.");
+    }
+    const allowLocal = allowsLocalProviderEndpoint(profile);
+    const isLocal = isPrivateOrLocalHostname(url.hostname);
+    if (url.protocol !== "https:" && !allowLocal) {
+      throw new Error("Provider endpoint must use HTTPS unless it is a known local-runtime provider.");
+    }
+    const sendsCredential = String(profile.authType ?? "api-key").toLowerCase() !== "none";
+    if (sendsCredential && isLocal && !allowLocal) {
+      throw new Error("Credential-bearing provider endpoints cannot target local, private, or metadata-network hosts.");
+    }
+    return url.toString().replace(/\/+$/, "");
+  }
+
+  function providerRequestUrl(route, suffix, { sendsCredential = true } = {}) {
+    const apiBaseUrl = normalizeProviderEndpointUrl(
+      route?.apiBaseUrl,
+      { ...route, authType: sendsCredential ? (route?.authType ?? "api-key") : "none" },
+      { required: true },
+    );
+    return `${apiBaseUrl}${suffix}`;
+  }
+
   function providerPreset(rawProviderType, rawTemplateId = rawProviderType) {
     const templateId = String(rawTemplateId ?? rawProviderType ?? "").trim().toLowerCase();
     const type = String(rawProviderType ?? "").trim().toLowerCase();
@@ -219,6 +311,7 @@ export function createProviderBridgeService({
 
   function normalizeProviderAccount(raw, existingProfiles = []) {
     const preset = providerPreset(raw?.providerType, raw?.templateId);
+    const templateId = String(raw?.templateId ?? preset.providerType).trim().slice(0, 80);
     const label = String(raw?.label ?? raw?.name ?? "").trim().slice(0, 80);
     if (!label) {
       throw new Error("Provider account name is required.");
@@ -242,13 +335,26 @@ export function createProviderBridgeService({
     if (!models.length) {
       throw new Error("At least one model must be declared for a provider account.");
     }
+    const authType = String(raw?.authType ?? preset.authType).trim().slice(0, 40) || "api-key";
+    const rawEndpoint = String(raw?.apiBaseUrl ?? "").trim();
+    const allowsCustomEndpoint = ["custom", "local", "openai-compatible"].includes(preset.providerType);
+    if (rawEndpoint && !allowsCustomEndpoint && rawEndpoint !== preset.apiBaseUrl) {
+      throw new Error(`${preset.providerType} provider accounts must use the built-in provider endpoint.`);
+    }
+    const endpointProfile = {
+      id,
+      label,
+      providerType: preset.providerType,
+      templateId,
+      authType,
+    };
     return {
       id,
       label,
       providerType: preset.providerType,
-      templateId: String(raw?.templateId ?? preset.providerType).trim().slice(0, 80),
-      authType: String(raw?.authType ?? preset.authType).trim().slice(0, 40) || "api-key",
-      apiBaseUrl: String(raw?.apiBaseUrl ?? preset.apiBaseUrl).trim().slice(0, 240),
+      templateId,
+      authType,
+      apiBaseUrl: normalizeProviderEndpointUrl(rawEndpoint || preset.apiBaseUrl, endpointProfile).slice(0, 240),
       role: String(raw?.role ?? `${label} model account`).trim().slice(0, 160) || `${label} model account`,
       models,
       source: raw?.source === "built-in" ? "built-in" : "user",
@@ -528,11 +634,16 @@ export function createProviderBridgeService({
     if (!target) {
       throw new Error("No connectivity diagnostic target exists for this provider.");
     }
+    const targetUrl = normalizeProviderEndpointUrl(
+      target.url,
+      { ...profile, id: target.providerId, authType: target.sendsCredential ? (profile.authType ?? "api-key") : "none" },
+      { required: true },
+    );
     const startedAt = Date.now();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 7000);
     try {
-      const response = await fetch(target.url, {
+      const response = await fetch(targetUrl, {
         method: "GET",
         headers: target.sendsCredential ? { Authorization: `Bearer ${credential}` } : {},
         signal: controller.signal,
@@ -792,7 +903,7 @@ export function createProviderBridgeService({
       proposedContent: String(proposedContent ?? "").slice(0, 10_000),
     });
     try {
-      const response = await fetch(`${route.apiBaseUrl.replace(/\/$/, "")}/chat/completions`, {
+      const response = await fetch(providerRequestUrl(route, "/chat/completions"), {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${secrets[route.providerId]}`,
@@ -902,7 +1013,7 @@ export function createProviderBridgeService({
         failures.push(`${route.label} credential missing`);
         continue;
       }
-      const response = await fetch(`${route.apiBaseUrl.replace(/\/$/, "")}/chat/completions`, {
+      const response = await fetch(providerRequestUrl(route, "/chat/completions", { sendsCredential: route.providerId !== "desktop-local" }), {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${apiKey}`,
@@ -982,7 +1093,7 @@ export function createProviderBridgeService({
       selectedText: selection,
       pageContext,
     });
-    const response = await fetch(`${route.apiBaseUrl.replace(/\/$/, "")}/chat/completions`, {
+    const response = await fetch(providerRequestUrl(route, "/chat/completions"), {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,

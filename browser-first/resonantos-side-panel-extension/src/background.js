@@ -64,7 +64,9 @@ const resonantContextSnapshots = new Map();
 //      times out and the original LAN URL is kept.
 //   3. createBridgeClient() / createRawBridgeFetch() build the
 //      final request functions from the resolved config.
-//   4. prefsSync.hydrate() pulls cross-machine preferences — but
+//   4. initCapabilityTokens() asks the resolved bridge target for only
+//      the scoped route capabilities the extension needs.
+//   5. prefsSync.hydrate() pulls cross-machine preferences — but
 //      only AFTER the rebind has settled, so the hydrate uses the
 //      loopback-resolved client. (If we hydrate first with the LAN
 //      URL on a Pi5 host, the first pull fails until the rebind
@@ -87,9 +89,11 @@ function rebindAndHydrate() {
     .then((cfg) => {
       bridgeRequest = createBridgeClient(cfg);
       rawFetch = createRawBridgeFetch(cfg);
-      return { cfg, bridgeRequest, rawFetch };
+      return initCapabilityTokens(cfg)
+        .catch(() => undefined)
+        .then(() => ({ cfg, bridgeRequest, rawFetch }));
     })
-    .then(({ cfg, bridgeRequest: req, rawFetch: raw }) => {
+    .then(({ bridgeRequest: req, rawFetch: raw }) => {
       // Prefs hydrate is fire-and-forget — the hydration state is
       // visible to the user via the Bridge Target settings card and
       // doesn't need to gate any other startup work.
@@ -207,8 +211,8 @@ const rememberResonantContextSnapshot = (message, sender) => {
 };
 
 // Fetch capability tokens from the bridge on service-worker startup.
-// Tokens are NOT stored in the generated config (security boundary); they
-// are delivered via the authenticated /api/capability-tokens endpoint.
+// Tokens are NOT stored in the generated config; the endpoint requires the
+// bridge token plus a separate capability-bootstrap token.
 void initCapabilityTokens();
 
 chrome.runtime.onInstalled.addListener(() => {

@@ -339,12 +339,24 @@ const bridgeRoutes = [
 ];
 
 const bridgeToken = args.get("bridge-token") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? createBridgeToken();
+const capabilityBootstrapToken = args.get("capability-bootstrap-token") ??
+  process.env.RESONANTOS_BROWSER_FIRST_CAPABILITY_BOOTSTRAP_TOKEN ??
+  createBridgeToken();
 const bridgeCapabilityTokens = {
   "provider-credential-write": args.get("provider-credential-token") ??
     process.env.RESONANTOS_BROWSER_FIRST_PROVIDER_CREDENTIAL_TOKEN ??
     createBridgeToken(),
   "provider-routing-write": args.get("provider-routing-token") ??
     process.env.RESONANTOS_BROWSER_FIRST_PROVIDER_ROUTING_TOKEN ??
+    createBridgeToken(),
+  "provider-diagnostics-read": args.get("provider-diagnostics-token") ??
+    process.env.RESONANTOS_BROWSER_FIRST_PROVIDER_DIAGNOSTICS_TOKEN ??
+    createBridgeToken(),
+  "provider-model-invoke": args.get("provider-model-invoke-token") ??
+    process.env.RESONANTOS_BROWSER_FIRST_PROVIDER_MODEL_INVOKE_TOKEN ??
+    createBridgeToken(),
+  "agent-control-plan": args.get("agent-control-plan-token") ??
+    process.env.RESONANTOS_BROWSER_FIRST_AGENT_CONTROL_PLAN_TOKEN ??
     createBridgeToken(),
   "memory-settings-write": args.get("memory-settings-token") ??
     process.env.RESONANTOS_BROWSER_FIRST_MEMORY_SETTINGS_TOKEN ??
@@ -370,6 +382,12 @@ const bridgeCapabilityTokens = {
   "memory-source-file-intake": args.get("memory-source-file-intake-token") ??
     process.env.RESONANTOS_BROWSER_FIRST_MEMORY_SOURCE_FILE_INTAKE_TOKEN ??
     createBridgeToken(),
+  "archive-read": args.get("archive-read-token") ??
+    process.env.RESONANTOS_BROWSER_FIRST_ARCHIVE_READ_TOKEN ??
+    createBridgeToken(),
+  "archive-write": args.get("archive-write-token") ??
+    process.env.RESONANTOS_BROWSER_FIRST_ARCHIVE_WRITE_TOKEN ??
+    createBridgeToken(),
   "diagnostics-report-export": args.get("diagnostics-report-token") ??
     process.env.RESONANTOS_BROWSER_FIRST_DIAGNOSTICS_REPORT_TOKEN ??
     createBridgeToken(),
@@ -378,6 +396,21 @@ const bridgeCapabilityTokens = {
     createBridgeToken(),
   "addon-execution-settings-write": args.get("addon-execution-settings-token") ??
     process.env.RESONANTOS_BROWSER_FIRST_ADDON_EXECUTION_SETTINGS_TOKEN ??
+    createBridgeToken(),
+  "addon-runtime-read": args.get("addon-runtime-read-token") ??
+    process.env.RESONANTOS_BROWSER_FIRST_ADDON_RUNTIME_READ_TOKEN ??
+    createBridgeToken(),
+  "addon-runtime-control": args.get("addon-runtime-control-token") ??
+    process.env.RESONANTOS_BROWSER_FIRST_ADDON_RUNTIME_CONTROL_TOKEN ??
+    createBridgeToken(),
+  "addon-record-read": args.get("addon-record-read-token") ??
+    process.env.RESONANTOS_BROWSER_FIRST_ADDON_RECORD_READ_TOKEN ??
+    createBridgeToken(),
+  "addon-record-write": args.get("addon-record-write-token") ??
+    process.env.RESONANTOS_BROWSER_FIRST_ADDON_RECORD_WRITE_TOKEN ??
+    createBridgeToken(),
+  "extension-prefs-write": args.get("extension-prefs-write-token") ??
+    process.env.RESONANTOS_BROWSER_FIRST_EXTENSION_PREFS_WRITE_TOKEN ??
     createBridgeToken(),
 };
 
@@ -427,6 +460,7 @@ const bridgeInfo = await startBridgeServerWithFallback({
   port: bridgePort,
   bridgeToken,
   bridgeCapabilityTokens,
+  capabilityBootstrapToken,
   extensionOrigin: resonantExtensionOrigin,
   routes: bridgeRoutes,
   host: getBridgeHost(),
@@ -439,7 +473,7 @@ const bridgeConfigPath = await writeBridgeConfig({
   extensionRoot: resonantExtension,
   bridgePort: activeBridgePort,
   bridgeToken,
-  bridgeCapabilityTokens,
+  capabilityBootstrapToken,
   publicUrl: bridgePublicUrl,
 });
 

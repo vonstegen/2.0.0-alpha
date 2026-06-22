@@ -7,7 +7,7 @@ import { activateBrowserJobPage } from "./lib/browser-job-activation.js";
 import { createBrowserJobScheduler } from "./lib/browser-job-scheduler.js";
 import { createBrowserJobStore } from "./lib/browser-job-store.js";
 import { createBrowserPageActions } from "./lib/browser-page-actions.js";
-import { createBridgeClient, detectLoopbackBridge, resolveBridgeConfig } from "./lib/bridge-client.js";
+import { createBridgeClient, detectLoopbackBridge, initCapabilityTokens, resolveBridgeConfig } from "./lib/bridge-client.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 import { createChatSessionStore } from "./lib/chat-session-store.js";
 import { createChatTurnController } from "./lib/chat-turn-controller.js";
@@ -126,7 +126,9 @@ function rebindBridge({ forceResolve = false } = {}) {
         prefsSync = createPrefsSync({ getBridgeRequest: () => bridgeRequest });
         prefsSync.install();
       }
-      return { cfg, bridgeRequest };
+      return initCapabilityTokens(cfg)
+        .catch(() => undefined)
+        .then(() => ({ cfg, bridgeRequest }));
     })
     .catch(() => null);
   return rebindInFlight;

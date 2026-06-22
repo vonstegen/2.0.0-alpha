@@ -9,6 +9,8 @@ const bridgeTokenHeader = "x-resonantos-bridge-token";
 const bridgeTokenHeaderName = "X-ResonantOS-Bridge-Token";
 const bridgeCapabilityHeader = "x-resonantos-bridge-capability-token";
 const bridgeCapabilityHeaderName = "X-ResonantOS-Bridge-Capability-Token";
+const bridgeCapabilityBootstrapHeader = "x-resonantos-capability-bootstrap-token";
+const bridgeCapabilityBootstrapHeaderName = "X-ResonantOS-Capability-Bootstrap-Token";
 
 // ResonantOS bridge network configuration
 // (read by startBridgeServer / writeBridgeConfig)
@@ -189,6 +191,7 @@ const HOP_BY_HOP_HEADERS = new Set([
   "host",
   bridgeTokenHeader,
   bridgeCapabilityHeader,
+  bridgeCapabilityBootstrapHeader,
 ]);
 
 function pickAllowedOrigin(requestHeaders, extensionOrigin, allowedOrigins) {
@@ -222,7 +225,7 @@ function writeJson(response, status, payload, extensionOrigin, requestHeaders, a
   const allowOrigin = pickAllowedOrigin(requestHeaders, extensionOrigin, allowedOrigins);
   const headers = {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Headers": `Content-Type, ${bridgeTokenHeaderName}, ${bridgeCapabilityHeaderName}`,
+    "Access-Control-Allow-Headers": `Content-Type, ${bridgeTokenHeaderName}, ${bridgeCapabilityHeaderName}, ${bridgeCapabilityBootstrapHeaderName}`,
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Vary": "Origin",
   };
@@ -942,19 +945,16 @@ export async function writeBridgeConfig({
   extensionRoot,
   bridgePort,
   bridgeToken,
-  bridgeCapabilityTokens = {},
+  capabilityBootstrapToken,
   publicUrl,
   httpsPublicUrl,
 }) {
   const configPath = path.join(extensionRoot, "src", "bridge-config.generated.js");
   const httpUrl = publicUrl ?? getBridgePublicUrl(bridgePort);
   const httpsUrl = httpsPublicUrl ?? getBridgeHttpsUrl(bridgePort);
-  // SECURITY: Only bridgeUrl, httpsBridgeUrl, and bridgeToken are written to
-  // the generated config file. bridgeCapabilityTokens are NOT included here;
-  // they are delivered at runtime via the authenticated /api/capability-tokens
-  // endpoint, scoped behind the bridge token. The v0.1.14 write adds
-  // httpsBridgeUrl so the extension can prefer HTTPS in chrome-extension://
-  // (secure) contexts; it does not bypass the capability-token discipline.
+  // SECURITY: Raw route capability tokens are never written to generated config.
+  // The extension receives a separate bootstrap secret and must request only
+  // the capabilities it needs at runtime.
   const config = {
     bridgeUrl: httpUrl,
     // HTTPS counterpart. The extension prefers this when present so the
@@ -963,6 +963,7 @@ export async function writeBridgeConfig({
     // installs the bridge's self-signed CA on each client machine once.
     httpsBridgeUrl: httpsUrl,
     bridgeToken,
+    capabilityBootstrapToken,
   };
   await writeFile(
     configPath,
@@ -980,6 +981,35 @@ function isAuthorizedCapabilityRequest(request, bridgeCapabilityTokens, required
   return Boolean(expectedToken) && constantTimeEqual(request.headers[bridgeCapabilityHeader], expectedToken);
 }
 
+function isAuthorizedCapabilityBootstrapRequest(request, capabilityBootstrapToken) {
+  if (!capabilityBootstrapToken) return false;
+  return constantTimeEqual(request.headers[bridgeCapabilityBootstrapHeader], capabilityBootstrapToken);
+}
+
+function scopedCapabilityTokenPayload(requestedCapabilities, bridgeCapabilityTokens) {
+  const requested = Array.isArray(requestedCapabilities)
+    ? requestedCapabilities
+    : String(requestedCapabilities ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  const uniqueRequested = [...new Set(requested.map((entry) => String(entry ?? "").trim()).filter(Boolean))];
+  if (uniqueRequested.length > 80) {
+    throw new Error("Too many capability tokens requested.");
+  }
+  const capabilityTokens = {};
+  for (const capability of uniqueRequested) {
+    if (!/^[a-z0-9][a-z0-9-]{0,80}$/.test(capability)) {
+      throw new Error(`Invalid capability requested: ${capability}`);
+    }
+    if (!bridgeCapabilityTokens?.[capability]) {
+      throw new Error(`Unknown bridge capability requested: ${capability}`);
+    }
+    capabilityTokens[capability] = bridgeCapabilityTokens[capability];
+  }
+  return capabilityTokens;
+}
+
 export async function evaluateBridgeRequestForSelfTest({
   method = "GET",
   url = "/",
@@ -987,6 +1017,7 @@ export async function evaluateBridgeRequestForSelfTest({
   body = {},
   bridgeToken,
   bridgeCapabilityTokens = {},
+  capabilityBootstrapToken,
   routes = [],
 } = {}) {
   try {
@@ -1005,6 +1036,9 @@ export async function evaluateBridgeRequestForSelfTest({
     if (!route) {
       return { status: 404, payload: { ok: false, error: "Unknown browser-first bridge route." } };
     }
+    if (route.requiredCapabilityBootstrap && !isAuthorizedCapabilityBootstrapRequest(request, capabilityBootstrapToken)) {
+      return { status: 403, payload: { ok: false, error: "Bridge route requires capability bootstrap authorization." } };
+    }
     if (!isAuthorizedCapabilityRequest(request, bridgeCapabilityTokens, route.requiredCapability)) {
       return { status: 403, payload: { ok: false, error: `Bridge route requires ${route.requiredCapability} capability.` } };
     }
@@ -1022,23 +1056,28 @@ export async function evaluateBridgeRequestForSelfTest({
 export function createBridgeRequestHandler({
   bridgeToken,
   bridgeCapabilityTokens = {},
+  capabilityBootstrapToken,
   extensionOrigin,
   routes,
   allowedOrigins = getBridgeAllowedOrigins(),
   allowedCidrs = getBridgeAllowedCidrs(),
   dashboardProxyHandler = null,
 } = {}) {
-  // SECURITY: /api/capability-tokens is a built-in internal route that delivers capability
-  // tokens only to callers who already hold a valid bridge token. Capability tokens are
-  // never written to the generated config file; the extension fetches them at runtime.
+  // SECURITY: /api/capability-tokens is a built-in internal route. It requires
+  // both the bridge token and a separate capability-bootstrap token, and returns
+  // only the capability names requested by the extension.
   const internalRoutes = [
     {
-      method: "GET",
+      method: "POST",
       path: "/api/capability-tokens",
-      handler: async () => ({ capabilityTokens: bridgeCapabilityTokens }),
+      requiredCapabilityBootstrap: true,
+      handler: async (payload = {}) => ({
+        capabilityTokens: scopedCapabilityTokenPayload(payload.capabilities, bridgeCapabilityTokens),
+      }),
     },
     ...routes,
   ];
+  const reservedInternalPaths = new Set(internalRoutes.map((route) => route.path));
   const proxyHandler =
     dashboardProxyHandler ??
     createDashboardProxyHandler({
@@ -1073,7 +1112,7 @@ export function createBridgeRequestHandler({
       // proxy for any path that matches one of the dashboard proxy's mirror
       // entries (e.g. /hermes-dashboard/*, /api/*, /assets/*, etc.).
       const proxyPath = (request.url ?? "/").split("?")[0] ?? "/";
-      if (proxyHandler && dashboardProxyPathMatches(proxyPath)) {
+      if (proxyHandler && !reservedInternalPaths.has(proxyPath) && dashboardProxyPathMatches(proxyPath)) {
         proxyHandler(request, response);
         return;
       }
@@ -1085,6 +1124,7 @@ export function createBridgeRequestHandler({
         body,
         bridgeToken,
         bridgeCapabilityTokens,
+        capabilityBootstrapToken,
         routes: internalRoutes,
       });
       writeJson(response, result.status, result.payload, extensionOrigin, request.headers, allowedOrigins);
@@ -1105,6 +1145,7 @@ export async function startBridgeServer({
   port,
   bridgeToken,
   bridgeCapabilityTokens = {},
+  capabilityBootstrapToken,
   extensionOrigin,
   routes,
   host,
@@ -1124,6 +1165,7 @@ export async function startBridgeServer({
   const handle = createBridgeRequestHandler({
     bridgeToken,
     bridgeCapabilityTokens,
+    capabilityBootstrapToken,
     extensionOrigin,
     routes,
     allowedOrigins,
@@ -1184,6 +1226,7 @@ export async function startBridgeServersWithTls({
   tls = null,
   bridgeToken,
   bridgeCapabilityTokens = {},
+  capabilityBootstrapToken,
   extensionOrigin,
   routes,
   host,
@@ -1195,6 +1238,7 @@ export async function startBridgeServersWithTls({
   const handle = createBridgeRequestHandler({
     bridgeToken,
     bridgeCapabilityTokens,
+    capabilityBootstrapToken,
     extensionOrigin,
     routes,
     allowedOrigins,
@@ -1268,6 +1312,7 @@ export async function startBridgeServerWithFallback({
   port,
   bridgeToken,
   bridgeCapabilityTokens = {},
+  capabilityBootstrapToken,
   extensionOrigin,
   routes,
   host,
@@ -1295,6 +1340,7 @@ export async function startBridgeServerWithFallback({
         tls,
         bridgeToken,
         bridgeCapabilityTokens,
+        capabilityBootstrapToken,
         extensionOrigin,
         routes,
         host,

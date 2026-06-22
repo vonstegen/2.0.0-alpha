@@ -21,11 +21,12 @@ const STATUS_KEYS = [BRIDGE_STORAGE_OVERRIDE_KEY];
 function parseOverrideFromForm(form) {
   const url = String(form.elements["bridge-url"]?.value ?? "").trim();
   const token = String(form.elements["bridge-token"]?.value ?? "").trim();
+  const capabilityBootstrapToken = String(form.elements["bridge-capability-bootstrap-token"]?.value ?? "").trim();
   if (!url) return { ok: false, error: "Bridge URL is required." };
   if (!/^https?:\/\//i.test(url)) {
     return { ok: false, error: "Bridge URL must start with http:// or https://" };
   }
-  return { ok: true, override: { bridgeUrl: url, bridgeToken: token } };
+  return { ok: true, override: { bridgeUrl: url, bridgeToken: token, capabilityBootstrapToken } };
 }
 
 function setOverridePayload(override) {
@@ -36,6 +37,7 @@ function setOverridePayload(override) {
     [BRIDGE_STORAGE_OVERRIDE_KEY]: {
       bridgeUrl: override.bridgeUrl,
       bridgeToken: override.bridgeToken ?? "",
+      capabilityBootstrapToken: override.capabilityBootstrapToken ?? "",
     },
   };
 }
@@ -221,7 +223,7 @@ export function renderBridgeTargetSection(container, { bridgeRequest, onBridgeCo
   const formHint = document.createElement("p");
   formHint.className = "settings-provider-help";
   formHint.textContent =
-    "Set a different bridge URL (and optionally a token) to point this browser at a different host. Leave the token blank to use whatever the bridge's generated config provides.";
+    "Set a different bridge URL, bridge token, and capability-bootstrap token to point this browser at a different host. Leave token fields blank only when the generated config still targets that bridge.";
   const form = document.createElement("form");
   form.className = "settings-provider-form";
   form.addEventListener("submit", (event) => event.preventDefault());
@@ -237,7 +239,13 @@ export function renderBridgeTargetSection(container, { bridgeRequest, onBridgeCo
     placeholder: "leave blank to use the generated token",
     monospace: true,
   });
-  form.append(urlField.wrapper, tokenField.wrapper);
+  const bootstrapField = buildField({
+    id: "bridge-capability-bootstrap-token",
+    label: "Capability-bootstrap token (optional override)",
+    placeholder: "required for privileged bridge actions on a manual target",
+    monospace: true,
+  });
+  form.append(urlField.wrapper, tokenField.wrapper, bootstrapField.wrapper);
   formCard.append(formHeading, formHint, form, actionRow({
     buttons: [
       {
@@ -290,7 +298,7 @@ export function renderBridgeTargetSection(container, { bridgeRequest, onBridgeCo
   container.append(
     noteCard({
       title: "Cross-machine workflow",
-      body: "The same extension zip installs unchanged on Linux, macOS, and Windows. On a remote machine, open the ResonantOS new tab, click the gear icon → Bridge Target, and enter the bridge's LAN or Tailscale URL. Token is optional — the generated token in the extension package is enough for a clean install.",
+      body: "The same extension zip installs unchanged on Linux, macOS, and Windows. A clean install uses the generated config automatically. For a manual remote target, enter the bridge's LAN or Tailscale URL plus the bridge and capability-bootstrap tokens from that bridge host.",
     })
   );
 
@@ -309,7 +317,10 @@ export function renderBridgeTargetSection(container, { bridgeRequest, onBridgeCo
   const generatedToken = document.createElement("code");
   generatedToken.className = "settings-mono settings-provider-pill";
   generatedToken.textContent = "—";
-  generatedCard.append(generatedHeading, generatedHint, generatedUrl, generatedToken);
+  const generatedBootstrapToken = document.createElement("code");
+  generatedBootstrapToken.className = "settings-mono settings-provider-pill";
+  generatedBootstrapToken.textContent = "—";
+  generatedCard.append(generatedHeading, generatedHint, generatedUrl, generatedToken, generatedBootstrapToken);
   container.append(generatedCard);
 
   let activeConfig = null;
@@ -321,14 +332,19 @@ export function renderBridgeTargetSection(container, { bridgeRequest, onBridgeCo
     if (storedOverride) {
       urlField.input.value = storedOverride.bridgeUrl ?? "";
       tokenField.input.value = storedOverride.bridgeToken ?? "";
+      bootstrapField.input.value = storedOverride.capabilityBootstrapToken ?? "";
     } else {
       urlField.input.value = activeConfig.bridgeUrl;
       tokenField.input.value = "";
+      bootstrapField.input.value = "";
     }
     generatedUrl.textContent = generated.bridgeUrl ?? "(none — extension is missing the generated config)";
     generatedToken.textContent = generated.bridgeToken
       ? `${generated.bridgeToken.slice(0, 6)}…${generated.bridgeToken.slice(-4)} (${generated.bridgeToken.length} chars)`
       : "(none)";
+    generatedBootstrapToken.textContent = generated.capabilityBootstrapToken
+      ? `bootstrap: ${generated.capabilityBootstrapToken.slice(0, 6)}…${generated.capabilityBootstrapToken.slice(-4)} (${generated.capabilityBootstrapToken.length} chars)`
+      : "bootstrap: (none)";
 
     const sourceValue = activeConfig.source === "override" ? "Override" : activeConfig.source === "generated" ? "Generated" : "Default";
     const sourceDetail = activeConfig.source === "override"
@@ -338,7 +354,8 @@ export function renderBridgeTargetSection(container, { bridgeRequest, onBridgeCo
         : "loopback default — bridge is on 127.0.0.1 only";
     const [urlCard, sourceCard, healthCardEl] = healthGrid.children;
     urlCard.querySelector("strong").textContent = activeConfig.bridgeUrl;
-    urlCard.querySelector("p").textContent = `token: ${activeConfig.bridgeToken ? `${activeConfig.bridgeToken.slice(0, 6)}…` : "(none)"}`;
+    urlCard.querySelector("p").textContent =
+      `token: ${activeConfig.bridgeToken ? `${activeConfig.bridgeToken.slice(0, 6)}…` : "(none)"} · bootstrap: ${activeConfig.capabilityBootstrapToken ? "configured" : "missing"}`;
     sourceCard.querySelector("strong").textContent = sourceValue;
     sourceCard.querySelector("p").textContent = sourceDetail;
     healthCardEl.querySelector("strong").textContent = "Probing...";
