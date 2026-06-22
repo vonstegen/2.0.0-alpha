@@ -4349,6 +4349,23 @@ describe("App boot flow", () => {
     );
   });
 
+  it("explains the recommended Living Archive default in human-first terms during first-run", async () => {
+    const livingArchiveManifest = createLivingArchiveManifest();
+    manifests.push(livingArchiveManifest);
+
+    try {
+      hydrateStateMock.mockResolvedValueOnce(buildDefaultState(manifests));
+
+      render(<App />);
+
+      expect(await screen.findByRole("dialog", { name: "Choose recommended ResonantOS add-ons" })).toBeTruthy();
+      expect(screen.getAllByText(/Human Knowledge is preserved; AI Memory is the maintained wiki\./i).length).toBeGreaterThan(0);
+      expect(screen.getByText(/Obsidian-compatible vaults are optional and can manage the same memory files later/i)).toBeTruthy();
+    } finally {
+      manifests.pop();
+    }
+  });
+
   it("adds a provider profile through the compact settings modal", async () => {
     render(<App />);
 
@@ -4380,6 +4397,7 @@ describe("App boot flow", () => {
 
     expect(await screen.findByText("Living Archive Memory Bridge")).toBeTruthy();
     expect(await screen.findByText("Bridge stopped")).toBeTruthy();
+    expect(screen.getByText(/Human Knowledge is preserved; AI Memory is the maintained wiki\./i)).toBeTruthy();
     expect(requestLivingArchiveMemoryServiceStatusMock).toHaveBeenCalled();
 
     requestLivingArchiveMemoryServiceStatusMock.mockResolvedValueOnce({
@@ -4420,6 +4438,23 @@ describe("App boot flow", () => {
         sourceLabel: "Synthetic Living Archive Intake Probe",
       }),
     );
+  });
+
+  it("keeps Living Archive start and help copy human-first", async () => {
+    render(<App />);
+
+    expect((await screen.findAllByText("Launch your AI tools from one workbench.")).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Archive/i })[0]);
+
+    expect(await screen.findByText(/Human Knowledge is preserved; AI Memory is the maintained wiki\./i)).toBeTruthy();
+    expect(screen.getByText(/Obsidian-compatible vaults are optional; they are just one way/i)).toBeTruthy();
+
+    fireEvent.click(await screen.findByText("Advanced tools"));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Help section" }));
+
+    expect(await screen.findByText(/Human Knowledge is preserved; AI Memory is the maintained wiki\./i)).toBeTruthy();
+    expect(screen.getByText(/Obsidian is optional/i)).toBeTruthy();
   });
 
   it("loads the real archive runtime surface and can search it", async () => {
@@ -6001,6 +6036,39 @@ function createManifest(id: string, name: string, category: AddOnCategory): AddO
       shellVersion: "^0.1.0",
       platforms: ["macOS"],
     },
+  };
+}
+
+function createLivingArchiveManifest(): AddOnManifest {
+  const memoryProviderGrant = {
+    capability: "memory-provider" as const,
+    granted: false,
+    scope: "system" as const,
+    revocationBehavior: "hard-stop" as const,
+  };
+
+  return {
+    ...createManifest("addon.living-archive", "Living Archive", "memory"),
+    description:
+      "Human Knowledge is preserved; AI Memory is the maintained wiki. Living Archive is the recommended default memory add-on and can be disabled or replaced later.",
+    requestedCapabilities: [memoryProviderGrant],
+    grantPresets: [
+      {
+        id: "recommended-memory-system",
+        label: "Recommended memory system",
+        description: "Enable Living Archive as the default memory provider.",
+        grants: [{ ...memoryProviderGrant, granted: true }],
+      },
+    ],
+    systemSlots: [
+      {
+        id: "memory-system",
+        role: "default-provider",
+        replaceable: true,
+        requiredForFirstRun: false,
+        recommended: true,
+      },
+    ],
   };
 }
 
