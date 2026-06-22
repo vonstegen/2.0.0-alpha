@@ -31,6 +31,36 @@ export function createChatSessionStore({
     return title.length > 46 ? `${title.slice(0, 43)}...` : title;
   };
 
+  const cloneStoredValue = (value, fallback) => {
+    if (value == null) return fallback;
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch {
+      return fallback;
+    }
+  };
+
+  const normalizeCompactState = (value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    const cloned = cloneStoredValue(value, null);
+    return cloned && typeof cloned === "object" && !Array.isArray(cloned) ? cloned : null;
+  };
+
+  const normalizeSourceReferences = (value) => Array.isArray(value)
+    ? cloneStoredValue(value, [])
+    : [];
+
+  const compactMetadataFromSession = (session) => {
+    const compactState = normalizeCompactState(session?.compactState);
+    const sourceReferences = normalizeSourceReferences(session?.sourceReferences);
+    return {
+      ...(compactState ? { compactState } : {}),
+      ...(sourceReferences.length ? { sourceReferences } : {})
+    };
+  };
+
   const normalizeSession = (session) => {
     const normalizedMessages = Array.isArray(session?.messages) ? session.messages.filter(validMessage) : [];
     const titleEdited = Boolean(session?.titleEdited);
@@ -46,7 +76,8 @@ export function createChatSessionStore({
       createdAt: session?.createdAt || now(),
       lastOpenedAt: session?.lastOpenedAt || session?.updatedAt || session?.createdAt || now(),
       updatedAt: session?.updatedAt || session?.createdAt || now(),
-      messages: normalizedMessages
+      messages: normalizedMessages,
+      ...compactMetadataFromSession(session)
     };
   };
 
@@ -512,7 +543,8 @@ export function createChatSessionStore({
       title: `Fork: ${sessionTitleFromMessages(messages)}`,
       messages,
       createdAt: fork.createdAt,
-      updatedAt: fork.createdAt
+      updatedAt: fork.createdAt,
+      ...compactMetadataFromSession(getActiveSession())
     });
     sessions = [session, ...sessions];
     activeSessionId = session.id;
@@ -540,7 +572,8 @@ export function createChatSessionStore({
       pinned: false,
       messages: fork.messages,
       createdAt: fork.createdAt,
-      updatedAt: fork.createdAt
+      updatedAt: fork.createdAt,
+      ...compactMetadataFromSession(source)
     });
     sessions = [session, ...sessions];
     activeSessionId = session.id;
