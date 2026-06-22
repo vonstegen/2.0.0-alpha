@@ -17,6 +17,86 @@
 
 const DEFAULT_BRIDGE_URL = "http://127.0.0.1:47773";
 const STORAGE_OVERRIDE_KEY = "bridgeTargetOverride";
+const BRIDGE_ROUTE_CAPABILITIES = Object.freeze({
+  "POST /providers/health": "provider-diagnostics-read",
+  "POST /providers/connectivity-test": "provider-diagnostics-read",
+  "GET /providers/diagnostics-history": "provider-diagnostics-read",
+  "GET /providers/routing-strategies": "provider-diagnostics-read",
+  "POST /providers/credentials": "provider-credential-write",
+  "POST /providers/accounts": "provider-credential-write",
+  "POST /providers/routing-strategies": "provider-routing-write",
+  "POST /providers/model-preferences": "provider-routing-write",
+  "POST /augmentor/chat": "provider-model-invoke",
+  "POST /augmentor/inline": "provider-model-invoke",
+  "POST /augmentor/control-plan": "agent-control-plan",
+  "POST /augmentor/next-action": "agent-control-plan",
+  "POST /web/news": "agent-control-plan",
+  "POST /memory/settings": "memory-settings-write",
+  "POST /memory/source/browse": "memory-source-browse",
+  "POST /memory/source/scan": "memory-source-scan",
+  "POST /memory/source/action": "memory-source-manage",
+  "POST /memory/source/move-preflight": "memory-source-move",
+  "POST /memory/source/move-execute": "memory-source-move",
+  "POST /memory/source/move-rollback": "memory-source-move",
+  "POST /memory/source/review": "memory-source-review",
+  "POST /memory/source/intake": "memory-source-intake",
+  "POST /memory/source/file-intake": "memory-source-file-intake",
+  "POST /memory/source/sync": "memory-source-file-intake",
+  "POST /memory/search": "archive-read",
+  "POST /memory/wiki/page/read": "archive-read",
+  "POST /memory/wiki/lint": "memory-source-review",
+  "POST /memory/source/versions": "memory-source-review",
+  "POST /memory/source/versions/repair": "memory-source-manage",
+  "POST /memory/source/diff": "memory-source-review",
+  "POST /archive/intake": "archive-write",
+  "POST /archive/intake/list": "archive-read",
+  "POST /archive/intake/read": "archive-read",
+  "POST /archive/review/request": "archive-write",
+  "POST /archive/review/list": "archive-read",
+  "POST /archive/review/transition": "archive-write",
+  "POST /archive/review/draft": "archive-write",
+  "POST /archive/review/artifact/read": "archive-read",
+  "POST /archive/review/artifact/verify": "archive-write",
+  "POST /archive/review/verification/read": "archive-read",
+  "POST /archive/review/artifact/revise": "archive-write",
+  "POST /archive/review/artifact/promote": "archive-write",
+  "POST /archive/review/promotions/list": "archive-read",
+  "POST /archive/review/promotions/restore": "archive-write",
+  "POST /browser/downloads/action": "browser-download-action",
+  "POST /diagnostics/report": "diagnostics-report-export",
+  "POST /addons/execution-settings": "addon-execution-settings-write",
+  "POST /hermes/dashboard/status": "addon-runtime-read",
+  "POST /hermes/dashboard/start": "addon-runtime-control",
+  "POST /hermes/dashboard/stop": "addon-runtime-control",
+  "POST /hermes/status": "addon-runtime-read",
+  "POST /hermes/delegation/start": "addon-runtime-control",
+  "POST /hermes/delegation/status": "addon-runtime-read",
+  "POST /hermes/delegation/artifact": "addon-runtime-read",
+  "POST /hermes/delegation/cancel": "addon-runtime-control",
+  "POST /opencode/delegation/start": "addon-runtime-control",
+  "POST /opencode/delegation/status": "addon-runtime-read",
+  "POST /opencode/delegation/artifact": "addon-runtime-read",
+  "POST /opencode/delegation/cancel": "addon-runtime-control",
+  "POST /addons/draft": "addon-record-write",
+  "POST /addons/draft/list": "addon-record-read",
+  "POST /addons/draft/read": "addon-record-read",
+  "POST /addons/draft/transition": "addon-record-write",
+  "POST /addons/draft/handoff": "addon-record-write",
+  "POST /addons/delegate": "addon-record-write",
+  "POST /addons/delegate/list": "addon-record-read",
+  "POST /goals": "addon-record-write",
+  "POST /settings/extension-prefs": "extension-prefs-write",
+});
+export const RUNTIME_CAPABILITY_ALLOWLIST = Object.freeze([...new Set(Object.values(BRIDGE_ROUTE_CAPABILITIES))]);
+
+function routeCapabilityKey(method, route) {
+  const pathname = new URL(route ?? "/", DEFAULT_BRIDGE_URL).pathname;
+  return `${String(method ?? "GET").toUpperCase()} ${pathname}`;
+}
+
+export function capabilityForBridgeRoute(route, method = "GET") {
+  return BRIDGE_ROUTE_CAPABILITIES[routeCapabilityKey(method, route)] ?? "";
+}
 
 function normalizeBridgeTarget(value) {
   if (!value || typeof value !== "object") return null;
@@ -29,7 +109,10 @@ function normalizeBridgeTarget(value) {
   const capabilityTokens = value.bridgeCapabilityTokens && typeof value.bridgeCapabilityTokens === "object"
     ? value.bridgeCapabilityTokens
     : null;
-  return { url, token, capabilityTokens };
+  const capabilityBootstrapToken = typeof value.capabilityBootstrapToken === "string" && value.capabilityBootstrapToken.trim()
+    ? value.capabilityBootstrapToken.trim()
+    : null;
+  return { url, token, capabilityTokens, capabilityBootstrapToken };
 }
 
 async function readOverrideFromStorage() {
@@ -52,6 +135,7 @@ function generatedConfig() {
   return {
     url,
     token: typeof cfg.bridgeToken === "string" ? cfg.bridgeToken : null,
+    capabilityBootstrapToken: typeof cfg.capabilityBootstrapToken === "string" ? cfg.capabilityBootstrapToken : null,
     capabilityTokens: cfg.bridgeCapabilityTokens && typeof cfg.bridgeCapabilityTokens === "object"
       ? cfg.bridgeCapabilityTokens
       : null,
@@ -64,6 +148,7 @@ export async function resolveBridgeConfig() {
     return {
       bridgeUrl: override.url,
       bridgeToken: override.token ?? "",
+      capabilityBootstrapToken: override.capabilityBootstrapToken ?? "",
       bridgeCapabilityTokens: override.capabilityTokens ?? {},
       source: "override",
     };
@@ -73,6 +158,7 @@ export async function resolveBridgeConfig() {
     return {
       bridgeUrl: generated.url,
       bridgeToken: generated.token ?? "",
+      capabilityBootstrapToken: generated.capabilityBootstrapToken ?? "",
       bridgeCapabilityTokens: generated.capabilityTokens ?? {},
       source: "generated",
     };
@@ -80,12 +166,27 @@ export async function resolveBridgeConfig() {
   return {
     bridgeUrl: DEFAULT_BRIDGE_URL,
     bridgeToken: "",
+    capabilityBootstrapToken: "",
     bridgeCapabilityTokens: {},
     source: "default",
   };
 }
 
 export const BRIDGE_STORAGE_OVERRIDE_KEY = STORAGE_OVERRIDE_KEY;
+
+function bridgeNetworkError(target, error) {
+  const reason = error instanceof Error && error.message
+    ? error.message
+    : String(error || "network request failed");
+  return new Error(
+    `Bridge is unreachable for ${target}: ${reason}. ` +
+      "Start the ResonantOS browser-first bridge or update Settings > Bridge Target."
+  );
+}
+
+function isAbortError(error) {
+  return error && typeof error === "object" && error.name === "AbortError";
+}
 
 export function createBridgeClient(config = globalThis.__RESONANTOS_BRIDGE_CONFIG__ ?? {}) {
   const bridgeUrl = config.bridgeUrl ?? DEFAULT_BRIDGE_URL;
@@ -94,19 +195,28 @@ export function createBridgeClient(config = globalThis.__RESONANTOS_BRIDGE_CONFI
   const fetchImpl = config.fetchImpl ?? fetch;
 
   return async function bridgeRequest(route, options = {}) {
+    const method = options.method ?? "GET";
     const headers = options.body ? { "Content-Type": "application/json" } : {};
     if (bridgeToken) {
       headers["X-ResonantOS-Bridge-Token"] = bridgeToken;
     }
-    if (options.capability && bridgeCapabilityTokens[options.capability]) {
-      headers["X-ResonantOS-Bridge-Capability-Token"] = bridgeCapabilityTokens[options.capability];
+    const capability = options.capability || capabilityForBridgeRoute(route, method);
+    const effectiveCapabilityTokens = { ..._capabilityTokens, ...bridgeCapabilityTokens };
+    if (capability && effectiveCapabilityTokens[capability]) {
+      headers["X-ResonantOS-Bridge-Capability-Token"] = effectiveCapabilityTokens[capability];
     }
-    const response = await fetchImpl(`${bridgeUrl}${route}`, {
-      method: options.method ?? "GET",
-      headers,
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      signal: options.signal
-    });
+    let response;
+    try {
+      response = await fetchImpl(`${bridgeUrl}${route}`, {
+        method,
+        headers,
+        body: options.body ? JSON.stringify(options.body) : undefined,
+        signal: options.signal
+      });
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      throw bridgeNetworkError(route, error);
+    }
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) {
       throw new Error(payload?.error ?? `Bridge request failed with HTTP ${response.status}.`);
@@ -127,19 +237,27 @@ export function createRawBridgeFetch(config = globalThis.__RESONANTOS_BRIDGE_CON
   const fetchImpl = config.fetchImpl ?? fetch;
 
   return async function rawFetch(path, options = {}) {
+    const method = options.method ?? "GET";
     const headers = { ...(options.headers ?? {}) };
     if (bridgeToken) {
       headers["X-ResonantOS-Bridge-Token"] = bridgeToken;
     }
-    if (options.capability && bridgeCapabilityTokens[options.capability]) {
-      headers["X-ResonantOS-Bridge-Capability-Token"] = bridgeCapabilityTokens[options.capability];
+    const capability = options.capability || capabilityForBridgeRoute(path, method);
+    const effectiveCapabilityTokens = { ..._capabilityTokens, ...bridgeCapabilityTokens };
+    if (capability && effectiveCapabilityTokens[capability]) {
+      headers["X-ResonantOS-Bridge-Capability-Token"] = effectiveCapabilityTokens[capability];
     }
-    return fetchImpl(`${bridgeUrl}${path}`, {
-      method: options.method ?? "GET",
-      headers,
-      body: options.body,
-      signal: options.signal,
-    });
+    try {
+      return await fetchImpl(`${bridgeUrl}${path}`, {
+        method,
+        headers,
+        body: options.body,
+        signal: options.signal,
+      });
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      throw bridgeNetworkError(path, error);
+    }
   };
 }
 
@@ -250,17 +368,26 @@ const _capabilityTokens = {};
  * once on service-worker startup so that subsequent bridgeRequest() calls
  * can attach the right capability headers.
  *
- * The endpoint requires a valid X-ResonantOS-Bridge-Token header; raw
- * capability tokens are never written to the generated config file.
+ * The endpoint requires both a valid X-ResonantOS-Bridge-Token header and the
+ * generated capability-bootstrap token; raw capability tokens are never written
+ * to the generated config file.
  */
 export async function initCapabilityTokens(config) {
   const cfg = config ?? globalThis.__RESONANTOS_BRIDGE_CONFIG__ ?? {};
   const bridgeUrl = cfg.bridgeUrl ?? DEFAULT_BRIDGE_URL;
   const bridgeToken = cfg.bridgeToken ?? "";
-  if (!bridgeToken) return;
+  const capabilityBootstrapToken = cfg.capabilityBootstrapToken ?? "";
+  const fetchImpl = cfg.fetchImpl ?? fetch;
+  if (!bridgeToken || !capabilityBootstrapToken) return;
   try {
-    const response = await fetch(`${bridgeUrl}/api/capability-tokens`, {
-      headers: { "X-ResonantOS-Bridge-Token": bridgeToken },
+    const response = await fetchImpl(`${bridgeUrl}/api/capability-tokens`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-ResonantOS-Bridge-Token": bridgeToken,
+        "X-ResonantOS-Capability-Bootstrap-Token": capabilityBootstrapToken,
+      },
+      body: JSON.stringify({ capabilities: RUNTIME_CAPABILITY_ALLOWLIST }),
     });
     if (response.ok) {
       const payload = await response.json().catch(() => ({}));

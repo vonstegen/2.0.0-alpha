@@ -421,9 +421,24 @@ export function createAgentControlHostService(dependencies = {}) {
 
   return {
     agentControlRoutes: [
-      { method: "POST", path: "/augmentor/control-plan", handler: executeControlPlan },
-      { method: "POST", path: "/augmentor/next-action", handler: executeNextAction },
-      { method: "POST", path: "/web/news", handler: executeNewsSearch },
+      {
+        method: "POST",
+        path: "/augmentor/control-plan",
+        requiredCapability: "agent-control-plan",
+        handler: executeControlPlan,
+      },
+      {
+        method: "POST",
+        path: "/augmentor/next-action",
+        requiredCapability: "agent-control-plan",
+        handler: executeNextAction,
+      },
+      {
+        method: "POST",
+        path: "/web/news",
+        requiredCapability: "agent-control-plan",
+        handler: executeNewsSearch,
+      },
     ],
     executeControlPlan,
     executeNextAction,

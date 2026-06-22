@@ -7,7 +7,7 @@ import { activateBrowserJobPage } from "./lib/browser-job-activation.js";
 import { createBrowserJobScheduler } from "./lib/browser-job-scheduler.js";
 import { createBrowserJobStore } from "./lib/browser-job-store.js";
 import { createBrowserPageActions } from "./lib/browser-page-actions.js";
-import { createBridgeClient, detectLoopbackBridge, resolveBridgeConfig } from "./lib/bridge-client.js";
+import { createBridgeClient, detectLoopbackBridge, initCapabilityTokens, resolveBridgeConfig } from "./lib/bridge-client.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 import { createChatSessionStore } from "./lib/chat-session-store.js";
 import { createChatTurnController } from "./lib/chat-turn-controller.js";
@@ -126,7 +126,9 @@ function rebindBridge({ forceResolve = false } = {}) {
         prefsSync = createPrefsSync({ getBridgeRequest: () => bridgeRequest });
         prefsSync.install();
       }
-      return { cfg, bridgeRequest };
+      return initCapabilityTokens(cfg)
+        .catch(() => undefined)
+        .then(() => ({ cfg, bridgeRequest }));
     })
     .catch(() => null);
   return rebindInFlight;
@@ -139,6 +141,18 @@ function hydrateAfterRebind() {
     return result;
   });
 }
+
+async function currentBridgeRequest(route, options = {}) {
+  const req = typeof bridgeRequest === "function"
+    ? bridgeRequest
+    : (await hydrateAfterRebind())?.bridgeRequest;
+  if (typeof req !== "function") {
+    throw new Error("Browser bridge is unavailable.");
+  }
+  return req(route, options);
+}
+
+const getBridgeRequest = () => currentBridgeRequest;
 
 void hydrateAfterRebind();
 
@@ -380,8 +394,8 @@ const dictationController = createDictationController({
 
 messageActions = createMessageActionController({
   addMessage,
-  bridgeRequest,
-  getBridgeRequest: () => bridgeRequest,
+  bridgeRequest: currentBridgeRequest,
+  getBridgeRequest,
   chatSessionStore,
   commandInput,
   composerController,
@@ -397,7 +411,7 @@ messageActions = createMessageActionController({
 
 const browserPageActions = createBrowserPageActions({
   addMessage,
-  bridgeRequest,
+  bridgeRequest: currentBridgeRequest,
   chrome,
   getControlledTabId: () => controlledTabId,
   getModel: () => modelSelect.value,
@@ -586,8 +600,8 @@ const tabContextController = createTabContextController({
 const bindMentionedTab = tabContextController.bindMentionedTab;
 
 const controlPlanningService = createControlPlanningService({
-  bridgeRequest,
-  getBridgeRequest: () => bridgeRequest,
+  bridgeRequest: currentBridgeRequest,
+  getBridgeRequest,
   getLastSnapshot: () => lastSnapshot,
   getModel: () => modelSelect.value,
   getSystemPrompt: () => personalizationSettings?.augmentor?.systemPrompt ?? "",
@@ -622,8 +636,8 @@ const executeControlStep = controlStepExecutor.executeControlStep;
 
 const controlReportingService = createControlReportingService({
   addMessage,
-  bridgeRequest,
-  getBridgeRequest: () => bridgeRequest,
+  bridgeRequest: currentBridgeRequest,
+  getBridgeRequest,
   controlStepLabel,
   getCurrentControlRun: () => currentControlRun,
   getLastSnapshot: () => lastSnapshot,
@@ -847,8 +861,8 @@ const saveIntake = browserActionController.saveIntake;
 
 const chatTurnController = createChatTurnController({
   addMessage,
-  bridgeRequest,
-  getBridgeRequest: () => bridgeRequest,
+  bridgeRequest: currentBridgeRequest,
+  getBridgeRequest,
   chatSessionStore,
   clearActivitySoon,
   clearAttachments: () => messageActions.clearAttachments(),
@@ -891,8 +905,8 @@ const {
 } = createAppCommandHandlers({
   activeTab,
   addMessage,
-  bridgeRequest,
-  getBridgeRequest: () => bridgeRequest,
+  bridgeRequest: currentBridgeRequest,
+  getBridgeRequest,
   browserJobStore,
   chrome,
   detectWalletState,
@@ -992,8 +1006,8 @@ const chatHydration = createSidePanelChatHydration({
   chatSessionStore,
   hydrateControlPreflight,
   hydrateProviderModelOptions: () => hydrateProviderModelOptions({
-    bridgeRequest,
-    getBridgeRequest: () => bridgeRequest,
+    bridgeRequest: currentBridgeRequest,
+    getBridgeRequest,
     getPreferredModel: () => modelSelect.value,
     modelSelect,
     setStatus

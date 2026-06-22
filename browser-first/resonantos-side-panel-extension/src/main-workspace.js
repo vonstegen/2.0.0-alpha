@@ -1,6 +1,6 @@
 import { createBrowserPageActions } from "./lib/browser-page-actions.js";
 import { normalizeBrowserUrl } from "./lib/browser-command-parser.js";
-import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, resolveBridgeConfig } from "./lib/bridge-client.js";
+import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, initCapabilityTokens, resolveBridgeConfig } from "./lib/bridge-client.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 import { createChatSessionStore } from "./lib/chat-session-store.js";
 import { createComposerController } from "./lib/composer-controller.js";
@@ -118,7 +118,9 @@ function rebindBridge({ forceResolve = false } = {}) {
         prefsSync = createPrefsSync({ getBridgeRequest: () => bridgeRequest });
         prefsSync.install();
       }
-      return { cfg, bridgeRequest, rawFetch };
+      return initCapabilityTokens(cfg)
+        .catch(() => undefined)
+        .then(() => ({ cfg, bridgeRequest, rawFetch }));
     })
     .catch(() => null);
   return rebindInFlight;
@@ -131,6 +133,28 @@ function hydrateAfterRebind() {
     return result;
   });
 }
+
+async function currentBridgeRequest(route, options = {}) {
+  const req = typeof bridgeRequest === "function"
+    ? bridgeRequest
+    : (await hydrateAfterRebind())?.bridgeRequest;
+  if (typeof req !== "function") {
+    throw new Error("Browser bridge is unavailable.");
+  }
+  return req(route, options);
+}
+
+async function currentRawFetch(route, options = {}) {
+  const req = typeof rawFetch === "function"
+    ? rawFetch
+    : (await hydrateAfterRebind())?.rawFetch;
+  if (typeof req !== "function") {
+    throw new Error("Browser bridge raw fetch is unavailable.");
+  }
+  return req(route, options);
+}
+
+const getBridgeRequest = () => currentBridgeRequest;
 
 void hydrateAfterRebind();
 
@@ -246,8 +270,8 @@ const setMainActivity = (_phase, label, detail = "") => {
 };
 const browserPageActions = createBrowserPageActions({
   addMessage,
-  bridgeRequest,
-  getBridgeRequest: () => bridgeRequest,
+  bridgeRequest: currentBridgeRequest,
+  getBridgeRequest,
   chrome,
   getControlledTabId: () => controlledTabId,
   getLastSnapshot: () => lastSnapshot,
@@ -275,8 +299,8 @@ const browserPageActions = createBrowserPageActions({
 
 const mainWorkspaceActions = createMainWorkspaceActionController({
   addMessage,
-  bridgeRequest,
-  getBridgeRequest: () => bridgeRequest,
+  bridgeRequest: currentBridgeRequest,
+  getBridgeRequest,
   browserPageActions,
   chatSessionStore,
   chromeApi: chrome,
@@ -355,8 +379,8 @@ const chatRenderers = createSidePanelRenderers({
 
 messageActions = createMessageActionController({
   addMessage,
-  bridgeRequest,
-  getBridgeRequest: () => bridgeRequest,
+  bridgeRequest: currentBridgeRequest,
+  getBridgeRequest,
   chatSessionStore,
   commandInput,
   composerController,
@@ -621,14 +645,14 @@ function renderMessages() {
     const initialArtifactPath = pendingWorkspaceAction?.workspace === "memory" ? pendingWorkspaceAction.artifactPath : "";
     const initialPromotedPage = pendingWorkspaceAction?.workspace === "memory" ? pendingWorkspaceAction.promotedPage : "";
     pendingWorkspaceAction = null;
-    renderLivingArchiveWorkspace({ container: transcript, bridgeRequest, getBridgeRequest: () => bridgeRequest, initialQuery, initialReviewPath, initialArtifactPath, initialPromotedPage });
+    renderLivingArchiveWorkspace({ container: transcript, bridgeRequest: currentBridgeRequest, getBridgeRequest, initialQuery, initialReviewPath, initialArtifactPath, initialPromotedPage });
     return;
   }
   if (activeWorkspace === "artifacts") {
     renderArtifactsWorkspace({
       container: transcript,
-      bridgeRequest,
-      getBridgeRequest: () => bridgeRequest,
+      bridgeRequest: currentBridgeRequest,
+      getBridgeRequest,
       onContinueArtifact: continueFromArtifact,
       onOpenReviewQueue: openMemoryReviewQueue
     });
@@ -637,7 +661,8 @@ function renderMessages() {
   if (activeWorkspace === "addons") {
     renderAddOnsWorkspace({
       container: transcript,
-      bridgeRequest,
+      bridgeRequest: currentBridgeRequest,
+      getBridgeRequest,
       onOpenProviderHandoff: async (handoff) => {
         if (!handoff?.url) return;
         await chrome.tabs.create({ url: handoff.url }).catch(() => undefined);
@@ -653,14 +678,14 @@ function renderMessages() {
   if (activeWorkspace === "opencode") {
     const initialMission = pendingWorkspaceAction?.workspace === "opencode" ? pendingWorkspaceAction.mission : "";
     pendingWorkspaceAction = null;
-    renderOpenCodeWorkspace({ container: transcript, bridgeRequest, getBridgeRequest: () => bridgeRequest, initialMission });
+    renderOpenCodeWorkspace({ container: transcript, bridgeRequest: currentBridgeRequest, getBridgeRequest, initialMission });
     return;
   }
   if (activeWorkspace === "settings") {
     renderSettingsWorkspace({
       container: transcript,
-      bridgeRequest,
-      getBridgeRequest: () => bridgeRequest,
+      bridgeRequest: currentBridgeRequest,
+      getBridgeRequest,
       chatSessionStore,
       onOpenSession: async (sessionId) => {
         await switchToSession(sessionId);
@@ -722,8 +747,7 @@ function workspaceShell({ eyebrow, title, body }) {
 }
 
 async function statusForAddon(addonId) {
-  if (typeof bridgeRequest !== "function") return null;
-  const result = await bridgeRequest("/addons/status", { method: "GET" });
+  const result = await currentBridgeRequest("/addons/status", { method: "GET" });
   return result?.addons?.find((addon) => addon.id === addonId) ?? null;
 }
 
@@ -753,9 +777,9 @@ async function renderHermesWorkspace() {
   const effective = cfg ?? (globalThis.__RESONANTOS_BRIDGE_CONFIG__ ?? {});
   renderHermesDashboardWorkspace({
     container: transcript,
-    bridgeRequest,
-    getBridgeRequest: () => bridgeRequest,
-    rawFetch,
+    bridgeRequest: currentBridgeRequest,
+    getBridgeRequest,
+    rawFetch: currentRawFetch,
     bridgeUrl: effective.bridgeUrl ?? "http://127.0.0.1:47773",
     bridgeToken: effective.bridgeToken ?? "",
     statusForAddon,
@@ -917,7 +941,8 @@ window.addEventListener("hashchange", () => {
 });
 
 await hydrateProviderModelOptions({
-  bridgeRequest,
+  bridgeRequest: currentBridgeRequest,
+  getBridgeRequest,
   getPreferredModel: () => modelSelect.value,
   modelSelect,
   setStatus: updateConnectionLine

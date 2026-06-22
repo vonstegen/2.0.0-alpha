@@ -11,10 +11,8 @@
 // is debounced/coalesced via an in-memory pending-write flag. Multiple rapid
 // updates from the same client collapse into a single disk write.
 //
-// Reads do not require a capability token (low-risk, just returns JSON).
-// Writes do NOT require a capability token either — the bridge already
-// requires the bridge token for any access, and prefs are user-controlled
-// personal data. If you need stronger gating, add a capability key.
+// Reads do not require a capability token. Writes are capability-gated because
+// they persist host-side user preferences from the extension.
 
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -162,7 +160,12 @@ export function createExtensionPrefsHostService({ userRoot } = {}) {
     flushPendingWrites,
     extensionPrefsRoutes: [
       { method: "GET", path: "/settings/extension-prefs", handler: executeReadExtensionPrefs },
-      { method: "POST", path: "/settings/extension-prefs", handler: executeWriteExtensionPrefs },
+      {
+        method: "POST",
+        path: "/settings/extension-prefs",
+        requiredCapability: "extension-prefs-write",
+        handler: executeWriteExtensionPrefs,
+      },
     ],
   };
 }
