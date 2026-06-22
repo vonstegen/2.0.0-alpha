@@ -174,6 +174,20 @@ export async function resolveBridgeConfig() {
 
 export const BRIDGE_STORAGE_OVERRIDE_KEY = STORAGE_OVERRIDE_KEY;
 
+function bridgeNetworkError(target, error) {
+  const reason = error instanceof Error && error.message
+    ? error.message
+    : String(error || "network request failed");
+  return new Error(
+    `Bridge is unreachable for ${target}: ${reason}. ` +
+      "Start the ResonantOS browser-first bridge or update Settings > Bridge Target."
+  );
+}
+
+function isAbortError(error) {
+  return error && typeof error === "object" && error.name === "AbortError";
+}
+
 export function createBridgeClient(config = globalThis.__RESONANTOS_BRIDGE_CONFIG__ ?? {}) {
   const bridgeUrl = config.bridgeUrl ?? DEFAULT_BRIDGE_URL;
   const bridgeToken = config.bridgeToken ?? "";
@@ -191,12 +205,18 @@ export function createBridgeClient(config = globalThis.__RESONANTOS_BRIDGE_CONFI
     if (capability && effectiveCapabilityTokens[capability]) {
       headers["X-ResonantOS-Bridge-Capability-Token"] = effectiveCapabilityTokens[capability];
     }
-    const response = await fetchImpl(`${bridgeUrl}${route}`, {
-      method,
-      headers,
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      signal: options.signal
-    });
+    let response;
+    try {
+      response = await fetchImpl(`${bridgeUrl}${route}`, {
+        method,
+        headers,
+        body: options.body ? JSON.stringify(options.body) : undefined,
+        signal: options.signal
+      });
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      throw bridgeNetworkError(route, error);
+    }
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) {
       throw new Error(payload?.error ?? `Bridge request failed with HTTP ${response.status}.`);
@@ -227,12 +247,17 @@ export function createRawBridgeFetch(config = globalThis.__RESONANTOS_BRIDGE_CON
     if (capability && effectiveCapabilityTokens[capability]) {
       headers["X-ResonantOS-Bridge-Capability-Token"] = effectiveCapabilityTokens[capability];
     }
-    return fetchImpl(`${bridgeUrl}${path}`, {
-      method,
-      headers,
-      body: options.body,
-      signal: options.signal,
-    });
+    try {
+      return await fetchImpl(`${bridgeUrl}${path}`, {
+        method,
+        headers,
+        body: options.body,
+        signal: options.signal,
+      });
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      throw bridgeNetworkError(path, error);
+    }
   };
 }
 

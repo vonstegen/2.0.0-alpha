@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createBridgeClient, capabilityForBridgeRoute, initCapabilityTokens } from "../resonantos-side-panel-extension/src/lib/bridge-client.js";
+import {
+  createBridgeClient,
+  createRawBridgeFetch,
+  capabilityForBridgeRoute,
+  initCapabilityTokens,
+} from "../resonantos-side-panel-extension/src/lib/bridge-client.js";
 import { evaluateBridgeRequestForSelfTest, startBridgeServer } from "../host/bridge-server.mjs";
 
 test("bridge capability behavior is deterministic without localhost binding", async () => {
@@ -155,6 +160,65 @@ test("bridge client sends scoped capability headers without localhost binding", 
     body: { providerId: "shared-minimax", credential: "minimax-test-credential" },
   });
   assert.equal(saved.saved, true);
+});
+
+test("bridge client reports unreachable bridge fetches with settings guidance", async () => {
+  const client = createBridgeClient({
+    bridgeUrl: "http://127.0.0.1:47773",
+    fetchImpl: async () => {
+      throw new TypeError("Failed to fetch");
+    },
+  });
+
+  await assert.rejects(
+    () => client("/addons/status", { method: "GET" }),
+    /Bridge is unreachable for \/addons\/status: Failed to fetch.*Settings > Bridge Target/,
+  );
+});
+
+test("raw bridge fetch reports unreachable proxy fetches with settings guidance", async () => {
+  const rawFetch = createRawBridgeFetch({
+    bridgeUrl: "http://127.0.0.1:47773",
+    fetchImpl: async () => {
+      throw new TypeError("Failed to fetch");
+    },
+  });
+
+  await assert.rejects(
+    () => rawFetch("/hermes-dashboard/", { method: "GET" }),
+    /Bridge is unreachable for \/hermes-dashboard\/: Failed to fetch.*Settings > Bridge Target/,
+  );
+});
+
+test("bridge fetch helpers preserve AbortError cancellation", async () => {
+  const abortError = new Error("The operation was aborted.");
+  abortError.name = "AbortError";
+  const fetchImpl = async () => {
+    throw abortError;
+  };
+  const client = createBridgeClient({
+    bridgeUrl: "http://127.0.0.1:47773",
+    fetchImpl,
+  });
+  const rawFetch = createRawBridgeFetch({
+    bridgeUrl: "http://127.0.0.1:47773",
+    fetchImpl,
+  });
+  const isSameAbort = (error) => error === abortError;
+
+  await assert.rejects(() => client("/addons/status", { method: "GET" }), isSameAbort);
+  await assert.rejects(() => rawFetch("/hermes-dashboard/", { method: "GET" }), isSameAbort);
+});
+
+test("capability-token bootstrap stays quiet when the bridge is unreachable", async () => {
+  await initCapabilityTokens({
+    bridgeUrl: "http://127.0.0.1:47773",
+    bridgeToken: "general-test-token",
+    capabilityBootstrapToken: "bootstrap-test-token",
+    fetchImpl: async () => {
+      throw new TypeError("Failed to fetch");
+    },
+  });
 });
 
 test("bridge capability-token bootstrap is scoped and separate from the bridge token", async (t) => {

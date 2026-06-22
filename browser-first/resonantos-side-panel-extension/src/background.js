@@ -26,7 +26,7 @@ async function loadBridgeConfig() {
   }
   return __bridgeConfigPromise;
 }
-import { createBridgeClient, detectLoopbackBridge, resolveBridgeConfig, initCapabilityTokens } from "./lib/bridge-client.js";
+import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, resolveBridgeConfig, initCapabilityTokens } from "./lib/bridge-client.js";
 import { sanitizeInlineAssistantBody, sanitizeResonantContextSnapshot } from "./lib/background-message-policy.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 
