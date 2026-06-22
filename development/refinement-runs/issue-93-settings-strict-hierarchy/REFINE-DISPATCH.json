@@ -1,0 +1,28 @@
+{
+  "run_id": "issue-93-settings-strict-hierarchy",
+  "classification": "implementation",
+  "selected_route": [
+    "refine",
+    "invoke:define",
+    "invoke:design",
+    "invoke:plan",
+    "task-session"
+  ],
+  "subagent_strategy": {
+    "consulted": true,
+    "live_dispatch": false,
+    "reason": "The requested work required code mutation and planning; the available strategy permits live dispatch only for research, review, and experiment lanes."
+  },
+  "write_scope": [
+    "src/App.tsx",
+    "src/App.test.tsx",
+    "src/modules/settings/SettingsWorkspace.tsx",
+    "src/modules/settings/SettingsWorkspace.test.tsx",
+    "src/modules/settings/settings.css",
+    "development/refinement-runs/issue-93-settings-strict-hierarchy/**",
+    "development/invoke-runs/issue-93-settings-strict-hierarchy/**",
+    "development/task-sessions/issue-93-settings-strict-hierarchy/**"
+  ],
+  "risk": "medium",
+  "risk_reason": "Shared Settings section type affects App state, routing, tests, and user-visible IA."
+}

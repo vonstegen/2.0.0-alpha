@@ -4328,15 +4328,20 @@ describe("App boot flow", () => {
     expect((await screen.findAllByText("Launch your AI tools from one workbench.")).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getAllByRole("button", { name: /Settings/i })[0]);
+    const settingsNav = await screen.findByRole("navigation", { name: "Settings sections" });
+    fireEvent.click(within(settingsNav).getByRole("button", { name: /Providers/i }));
 
     expect(await screen.findByText("AI Providers")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Add AI Provider/i })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Shared MiniMax/i }));
-    expect(await screen.findByText("Diagnostics")).toBeTruthy();
+    expect(screen.queryByText("Diagnostics")).toBeNull();
+
+    fireEvent.click(within(settingsNav).getByRole("button", { name: /Advanced/i }));
+    expect((await screen.findAllByText("Diagnostics")).length).toBeGreaterThan(0);
     expect((await screen.findAllByText("MiniMax Cloud Runtime")).length).toBeGreaterThan(0);
     expect(requestProviderDiagnosticsMock).toHaveBeenCalled();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Test" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Smoke Test" })[0]);
 
     expect((await screen.findAllByText("Provider smoke test passed.")).length).toBeGreaterThan(0);
     expect(screen.getByText(/MiniMax-M3 · 50 tokens/i)).toBeTruthy();
@@ -4355,6 +4360,8 @@ describe("App boot flow", () => {
     expect((await screen.findAllByText("Launch your AI tools from one workbench.")).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getAllByRole("button", { name: /Settings/i })[0]);
+    const settingsNav = await screen.findByRole("navigation", { name: "Settings sections" });
+    fireEvent.click(within(settingsNav).getByRole("button", { name: /Providers/i }));
     fireEvent.click(await screen.findByRole("button", { name: /Add AI Provider/i }));
     fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "ollama" } });
     fireEvent.change(screen.getByLabelText("Name in ResonantOS"), { target: { value: "Studio Local Runtime" } });
@@ -4376,9 +4383,10 @@ describe("App boot flow", () => {
     expect((await screen.findAllByText("Launch your AI tools from one workbench.")).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getAllByRole("button", { name: /Settings/i })[0]);
-    fireEvent.click(await screen.findByRole("button", { name: /Memory Bridge/i }));
+    const settingsNav = await screen.findByRole("navigation", { name: "Settings sections" });
+    fireEvent.click(within(settingsNav).getByRole("button", { name: /Memory/i }));
 
-    expect(await screen.findByText("Living Archive Memory Bridge")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Memory" })).toBeTruthy();
     expect(await screen.findByText("Bridge stopped")).toBeTruthy();
     expect(requestLivingArchiveMemoryServiceStatusMock).toHaveBeenCalled();
 
