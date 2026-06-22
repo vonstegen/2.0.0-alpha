@@ -2444,7 +2444,7 @@ test("settings browser control section manages scoped grants and browser jobs", 
     assert.match(container.textContent, /Agent Control Permissions/);
     assert.match(container.textContent, /The default is ask-before-action/);
     assert.match(container.textContent, /Agent permissions/);
-    assert.match(container.textContent, /Native browser tools/);
+    assert.match(container.textContent, /Browser management pages/);
     assert.match(container.textContent, /Recent downloads/);
     assert.match(container.textContent, /Browser job history/);
     assert.match(container.textContent, /example\.com · Trusted safe actions/);

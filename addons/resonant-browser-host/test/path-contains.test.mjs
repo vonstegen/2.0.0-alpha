@@ -3,7 +3,7 @@
 // sites (captureEvidence artifactsDir, loadUnpackedExtension directory).
 
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -11,7 +11,6 @@ import { describe, it, before } from "node:test";
 
 import { pathContains, assertContained } from "../src/lib/path-contains.mjs";
 import { ResonantBrowserHost } from "../src/browser-host.mjs";
-import { ResonantElectronBrowserHost, handleElectronJsonRpcLine } from "../src/electron-visible-host.mjs";
 
 describe("pathContains primitive (P1-d)", () => {
   let root;
@@ -117,92 +116,5 @@ describe("captureEvidence artifactsDir containment (P1-d, browser-host)", () => 
       (err) => err.code === "EPATH_CONTAINMENT" || /escapes the allowed root/.test(err.message),
     );
     assert.equal(captured.length, 0);
-  });
-});
-
-describe("loadUnpackedExtension directory containment (P1-d, electron-host)", () => {
-  let extensionsRoot;
-  let inRootExt;
-  let outsideExt;
-
-  before(async () => {
-    extensionsRoot = realpathSync(await mkdtemp(path.join(tmpdir(), "pc-ext-root-")));
-    inRootExt = path.join(extensionsRoot, "good-ext");
-    await mkdir(inRootExt);
-    await writeFile(path.join(inRootExt, "manifest.json"), JSON.stringify({ manifest_version: 3, name: "Good", version: "0.1.0" }));
-
-    outsideExt = realpathSync(await mkdtemp(path.join(tmpdir(), "pc-ext-out-")));
-    await writeFile(path.join(outsideExt, "manifest.json"), JSON.stringify({ manifest_version: 3, name: "Evil", version: "0.1.0" }));
-  });
-
-  function fakeElectronApi(loaded) {
-    return {
-      app: { whenReady: async () => undefined },
-      Menu: { buildFromTemplate: () => ({}), setApplicationMenu: () => undefined },
-      session: {
-        defaultSession: {
-          async loadExtension(loadPath) {
-            loaded.push(loadPath);
-            return { id: "ext-id", name: "Ext", version: "0.1.0", permissions: [] };
-          },
-          getAllExtensions() {
-            return [];
-          },
-        },
-      },
-    };
-  }
-
-  it("allows an in-root extension directory when extensionsRoot is configured", async () => {
-    const loaded = [];
-    const host = new ResonantElectronBrowserHost({ electronApi: fakeElectronApi(loaded) });
-    const result = await handleElectronJsonRpcLine(
-      host,
-      JSON.stringify({ id: "1", method: "browser.extensions.load_unpacked", params: { path: inRootExt, extensionsRoot } }),
-    );
-    assert.equal(result.result.extension.extensionId, "ext-id");
-    assert.equal(loaded.length, 1);
-    assert.equal(realpathSync(loaded[0]), realpathSync(inRootExt));
-  });
-
-  it("rejects an extension directory outside the configured extensionsRoot (absolute-outside)", async () => {
-    const loaded = [];
-    const host = new ResonantElectronBrowserHost({ electronApi: fakeElectronApi(loaded) });
-    await assert.rejects(
-      () => host.loadUnpackedExtension({ path: outsideExt, extensionsRoot }),
-      (err) => err.code === "EPATH_CONTAINMENT" || /escapes the allowed root/.test(err.message),
-    );
-    assert.equal(loaded.length, 0);
-  });
-
-  it("rejects a `..` chain extension path against the configured root", async () => {
-    const loaded = [];
-    const host = new ResonantElectronBrowserHost({ electronApi: fakeElectronApi(loaded) });
-    const escaping = path.join(extensionsRoot, "..", path.basename(outsideExt));
-    await assert.rejects(
-      () => host.loadUnpackedExtension({ path: escaping, extensionsRoot }),
-      (err) => err.code === "EPATH_CONTAINMENT" || /escapes the allowed root|not a directory|ENOENT/.test(err.message),
-    );
-    assert.equal(loaded.length, 0);
-  });
-
-  it("rejects a symlinked extension directory that escapes the configured root", async () => {
-    const loaded = [];
-    const host = new ResonantElectronBrowserHost({ electronApi: fakeElectronApi(loaded) });
-    const linkExt = path.join(extensionsRoot, "linked-ext");
-    await symlink(outsideExt, linkExt).catch(() => {});
-    await assert.rejects(
-      () => host.loadUnpackedExtension({ path: linkExt, extensionsRoot }),
-      (err) => err.code === "EPATH_CONTAINMENT" || /escapes the allowed root/.test(err.message),
-    );
-    assert.equal(loaded.length, 0);
-  });
-
-  it("still allows an extension directory with no configured root (backward compatible)", async () => {
-    const loaded = [];
-    const host = new ResonantElectronBrowserHost({ electronApi: fakeElectronApi(loaded) });
-    const result = await host.loadUnpackedExtension({ path: inRootExt });
-    assert.equal(result.extension.extensionId, "ext-id");
-    assert.equal(loaded.length, 1);
   });
 });

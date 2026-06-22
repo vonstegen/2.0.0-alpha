@@ -6,16 +6,6 @@ import { writeFile } from "node:fs/promises";
 import { deflateSync } from "node:zlib";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
-const hostBinary = path.join(
-  repoRoot,
-  "addons",
-  "resonant-browser-native",
-  "build",
-  "ResonantBrowserNativeHost.app",
-  "Contents",
-  "MacOS",
-  "ResonantBrowserNativeHost",
-);
 const resonantExtensionId = "cdpdmmalhmokbfcfgogoepnjplaakgnl";
 async function freeLoopbackPort() {
   const server = http.createServer();
@@ -578,7 +568,6 @@ async function shutdownHost() {
     new Promise((resolve) => host.once("exit", resolve)),
     new Promise((resolve) => setTimeout(resolve, 1500)),
   ]);
-  spawnSync("pkill", ["-9", "-f", "ResonantBrowserNativeHost"], { stdio: "ignore" });
   spawnSync("pkill", ["-9", "-f", "run-browser-first.mjs"], { stdio: "ignore" });
 }
 

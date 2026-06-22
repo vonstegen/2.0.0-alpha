@@ -33,8 +33,6 @@ export default defineConfig({
     strictPort: true,
     watch: {
       ignored: [
-        "**/addons/resonant-browser-native/build/**",
-        "**/src-tauri/target/**",
         "**/dist/**",
         "**/node_modules/**",
       ],

@@ -18,8 +18,7 @@
       "adapter": "npm-lockfiles",
       "surfaces": [
         ".",
-        "addons/resonant-browser-host",
-        "addons/resonant-browser-native"
+        "addons/resonant-browser-host"
       ],
       "lockfiles": [
         "package-lock.json",

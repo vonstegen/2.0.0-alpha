@@ -8,7 +8,7 @@ on:
       - dev
     paths:
       - ".github/workflows/alpha-build.yml"
-      - "addons/**"
+      - "addons/resonant-browser-host/**"
       - "browser-first/**"
       - "docs/**"
       - "package-lock.json"
@@ -16,8 +16,6 @@ on:
       - "public/**"
       - "scripts/**"
       - "src/**"
-      - "src/sdk/**"
-      - "src-tauri/**"
       - "index.html"
       - "vite.config.ts"
       - "tsconfig*.json"
@@ -27,7 +25,7 @@ on:
       - dev
     paths:
       - ".github/workflows/alpha-build.yml"
-      - "addons/**"
+      - "addons/resonant-browser-host/**"
       - "browser-first/**"
       - "docs/**"
       - "package-lock.json"
@@ -35,69 +33,29 @@ on:
       - "public/**"
       - "scripts/**"
       - "src/**"
-      - "src/sdk/**"
-      - "src-tauri/**"
       - "index.html"
       - "vite.config.ts"
       - "tsconfig*.json"
 
 jobs:
   build-alpha:
-    name: Build alpha (${{ matrix.platform }})
-    runs-on: ${{ matrix.platform }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos-latest
-            artifact-name: resonantos-alpha-macos
-            artifact-path: |
-              src-tauri/target/release/bundle/dmg/*.dmg
-              src-tauri/target/release/bundle/macos/*.app
-          - platform: windows-latest
-            artifact-name: resonantos-alpha-windows
-            artifact-path: |
-              src-tauri/target/release/bundle/msi/*.msi
-              src-tauri/target/release/bundle/nsis/*.exe
-          - platform: ubuntu-22.04
-            artifact-name: resonantos-alpha-linux
-            artifact-path: |
-              src-tauri/target/release/bundle/appimage/*.AppImage
-              src-tauri/target/release/bundle/deb/*.deb
-              src-tauri/target/release/bundle/rpm/*.rpm
+    name: Build Chrome extension alpha
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Linux Tauri dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: 22
           cache: npm
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.94.1
-
-      - name: Cache Rust
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: ./src-tauri -> target
-
-      - name: Install frontend dependencies
+      - name: Install app dependencies
         run: npm ci
 
-      - name: Audit frontend dependencies
+      - name: Audit app dependencies
         run: npm audit --audit-level=high
 
       - name: Install browser host dependencies
@@ -105,6 +63,9 @@ jobs:
 
       - name: Audit browser host dependencies
         run: npm audit --prefix addons/resonant-browser-host --audit-level=high
+
+      - name: Typecheck and build app
+        run: npm run build
 
       - name: Run frontend tests
         run: npm test -- --run
@@ -114,15 +75,7 @@ jobs:
           RESONANTOS_BROWSER_HOST_CHANNEL: chrome
         run: npm run test:browser-host
 
-      - name: Run Electron host tests
-        env:
-          RESONANTOS_WALLET_BROWSER_HEADLESS: "1"
-        run: npm run test:electron-host
-
-      - name: Run native browser tests
-        run: npm run test:browser-native
-
-      - name: Run browser-first tests
+      - name: Run browser-first extension tests
         run: npm run test:browser-first
 
       - name: Run Living Archive memory service tests
@@ -137,42 +90,17 @@ jobs:
       - name: Run engineer runner tests
         run: npm run test:engineer-runner
 
-      - name: Package browser-first extension
-        if: runner.os != 'Windows'
+      - name: Run security pipeline
+        run: node scripts/security-pipeline/run-check.mjs
+
+      - name: Package Chrome extension
         run: |
           cd browser-first/resonantos-side-panel-extension
-          zip -r ../../resonantos-side-panel-extension.zip . -x "*.DS_Store"
-
-      - name: Package browser-first extension (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Compress-Archive `
-            -Path browser-first/resonantos-side-panel-extension/* `
-            -DestinationPath resonantos-side-panel-extension.zip `
-            -Force
+          zip -r ../../resonantos-side-panel-extension.zip . -x "*.DS_Store" "src/bridge-config.generated.js"
 
       - name: Upload extension artifact
         uses: actions/upload-artifact@v4
         with:
           name: resonantos-side-panel-extension
           path: resonantos-side-panel-extension.zip
-
-      - name: Check Rust formatting
-        working-directory: src-tauri
-        run: cargo fmt --check
-
-      - name: Run Rust tests
-        working-directory: src-tauri
-        run: cargo test
-
-      - name: Build Tauri bundle
-        run: npm run tauri:build
-
-      - name: Upload alpha artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact-name }}
-          path: ${{ matrix.artifact-path }}
-          if-no-files-found: error
           retention-days: 14

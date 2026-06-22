@@ -19,12 +19,7 @@ export const resolveSpeechRecognitionCtor = (): (new () => BrowserSpeechRecognit
   return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null;
 };
 
-const isTauriRuntime = (): boolean =>
-  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-
 export const canUseDictation = (): boolean =>
-  // Tauri WebViews currently expose partial media APIs that fail with invalid constraints.
-  !isTauriRuntime() &&
   typeof window !== "undefined" &&
   typeof navigator !== "undefined" &&
   Boolean(navigator.mediaDevices?.getUserMedia) &&
@@ -32,7 +27,7 @@ export const canUseDictation = (): boolean =>
 
 export const requestMicrophoneAccess = async (): Promise<void> => {
   if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error("Audio dictate is not available in the desktop runtime yet.");
+    throw new Error("Audio dictate is not available in this browser context.");
   }
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   stream.getTracks().forEach((track) => track.stop());

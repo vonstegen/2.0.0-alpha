@@ -6,7 +6,7 @@ import { run } from "./subprocess-env-clear.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "..", "..", "..");
-const SURFACE = ["src-tauri/src"];
+const SURFACE = ["browser-first/host"];
 
 // Blanket inheritance: no env_clear, no injected vars -> block -> fail.
 const LEAKY_RECORD = {

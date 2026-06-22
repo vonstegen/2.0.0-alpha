@@ -3,7 +3,6 @@ import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { summarizeBrowserLaunchLog } from "./browser-launch-diagnostics.mjs";
 
 export function createBrowserDiagnosticsService({
   repoRoot,
@@ -12,7 +11,6 @@ export function createBrowserDiagnosticsService({
   browserFirstRoot,
   memoryRoot,
   profileDir,
-  browserLaunchLogPath,
   executeSystemStatus,
   executeProviderStatus,
   executeAddonsStatus,
@@ -32,7 +30,6 @@ export function createBrowserDiagnosticsService({
     browserFirstRoot,
     memoryRoot,
     profileDir,
-    browserLaunchLogPath,
     executeSystemStatus,
     executeProviderStatus,
     executeAddonsStatus,
@@ -142,14 +139,6 @@ export function createBrowserDiagnosticsService({
     }
   }
 
-  async function readTextFile(filePath) {
-    try {
-      return await readFile(filePath, "utf8");
-    } catch {
-      return "";
-    }
-  }
-
   function uniqueEntries(entries) {
     const byId = new Map();
     for (const entry of entries.filter(Boolean)) {
@@ -211,7 +200,6 @@ export function createBrowserDiagnosticsService({
       [".json", "JSON"],
       [".md", "Markdown"],
       [".py", "Python"],
-      [".rs", "Rust"],
       [".sh", "Shell"],
       [".toml", "TOML"],
       [".ts", "TypeScript"],
@@ -230,25 +218,22 @@ export function createBrowserDiagnosticsService({
       .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
   }
 
-  function detectFrameworks({ dependencies, cargoToml, extensionManifest }) {
+  function detectFrameworks({ dependencies, extensionManifest }) {
     return uniqueEntries([
       dependencies.has("react") ? { id: "react", label: "React", detail: "react dependency" } : null,
       dependencies.has("vite") ? { id: "vite", label: "Vite", detail: "vite dependency" } : null,
       dependencies.has("vitest") ? { id: "vitest", label: "Vitest", detail: "vitest dependency" } : null,
       dependencies.has("@testing-library/react") ? { id: "testing-library", label: "Testing Library", detail: "@testing-library/react dependency" } : null,
       dependencies.has("lucide-react") ? { id: "lucide-react", label: "Lucide React", detail: "lucide-react dependency" } : null,
-      /\btauri\b/i.test(cargoToml) ? { id: "tauri", label: "Tauri", detail: "src-tauri Cargo metadata" } : null,
       extensionManifest?.manifest_version === 3 ? { id: "chrome-mv3", label: "Chrome Extension MV3", detail: "extension manifest" } : null,
     ]);
   }
 
-  function detectRuntimes({ dependencies, cargoToml, extensionManifest }) {
+  function detectRuntimes({ dependencies, extensionManifest }) {
     return uniqueEntries([
       { id: "node", label: "Node.js", detail: "npm scripts and browser-first host services" },
       dependencies.has("typescript") ? { id: "typescript", label: "TypeScript compiler", detail: "typescript dependency" } : null,
       dependencies.has("vite") ? { id: "vite-dev-server", label: "Vite dev/build runtime", detail: "vite dependency" } : null,
-      /\btauri\b/i.test(cargoToml) ? { id: "tauri-runtime", label: "Tauri native host", detail: "Rust desktop shell" } : null,
-      cargoToml ? { id: "rust", label: "Rust/Cargo", detail: "Cargo.toml metadata" } : null,
       extensionManifest?.manifest_version === 3 ? { id: "chromium", label: "Chromium extension runtime", detail: "Manifest V3 side panel" } : null,
     ]);
   }
@@ -264,26 +249,19 @@ export function createBrowserDiagnosticsService({
       existsSync(path.join(repoRoot, "yarn.lock")) || /^yarn@/i.test(String(pkg?.packageManager ?? ""))
         ? { id: "yarn", label: "Yarn", detail: "yarn.lock/packageManager field" }
         : null,
-      existsSync(path.join(repoRoot, "Cargo.toml")) || existsSync(path.join(repoRoot, "src-tauri", "Cargo.toml"))
-        ? { id: "cargo", label: "Cargo", detail: "Rust/Tauri metadata" }
-        : null,
     ]);
   }
 
   async function executeWorkspaceInspection() {
-    const [pkg, extensionManifest, cargoToml, rootCargoToml, files] = await Promise.all([
+    const [pkg, extensionManifest, files] = await Promise.all([
       readJsonFile(path.join(repoRoot, "package.json")),
       readJsonFile(path.join(resonantExtension, "manifest.json")),
-      readTextFile(path.join(repoRoot, "src-tauri", "Cargo.toml")),
-      readTextFile(path.join(repoRoot, "Cargo.toml")),
       collectWorkspaceFiles(repoRoot),
     ]);
     const dependencies = packageDependencies(pkg);
-    const combinedCargoToml = [cargoToml, rootCargoToml].filter(Boolean).join("\n");
     const evidence = [
       existsSync(path.join(repoRoot, "package.json")) ? { label: "package.json", detail: "project scripts and npm dependencies" } : null,
       existsSync(path.join(repoRoot, "package-lock.json")) ? { label: "package-lock.json", detail: "npm lockfile" } : null,
-      cargoToml ? { label: "src-tauri/Cargo.toml", detail: "Tauri/Rust host metadata" } : null,
       extensionManifest ? { label: "browser-first extension manifest", detail: `Manifest V${extensionManifest.manifest_version ?? "?"}` } : null,
       { label: "source file scan", detail: `${files.length} file(s) sampled outside build/vendor directories` },
     ];
@@ -296,8 +274,8 @@ export function createBrowserDiagnosticsService({
         root: redactPathForDiagnostics(repoRoot),
       },
       languages: languageInventory(files),
-      frameworks: detectFrameworks({ dependencies, cargoToml: combinedCargoToml, extensionManifest }),
-      runtimes: detectRuntimes({ dependencies, cargoToml: combinedCargoToml, extensionManifest }),
+      frameworks: detectFrameworks({ dependencies, extensionManifest }),
+      runtimes: detectRuntimes({ dependencies, extensionManifest }),
       packageManagers: detectPackageManagers(pkg),
       evidence: evidence.filter(Boolean),
       boundary: "Read-only metadata inspection. Provider credentials, bridge tokens, wallet secrets, private keys, and full home paths are excluded or redacted.",
@@ -305,25 +283,10 @@ export function createBrowserDiagnosticsService({
   }
 
   async function executeBrowserLaunchDiagnostics() {
-    const logPath = browserLaunchLogPath();
-    let logContent = "";
-    let logStat = null;
-    try {
-      [logContent, logStat] = await Promise.all([
-        readFile(logPath, "utf8"),
-        stat(logPath),
-      ]);
-    } catch (error) {
-      return {
-        status: "missing-log",
-        logPath: redactPathForDiagnostics(logPath),
-        error: redactDiagnosticText(error instanceof Error ? error.message : error),
-      };
-    }
     return {
-      ...summarizeBrowserLaunchLog(logContent),
-      logPath: redactPathForDiagnostics(logPath),
-      updatedAt: logStat?.mtime?.toISOString?.() ?? "",
+      status: "not-applicable",
+      releaseScope: "chrome-extension-alpha",
+      detail: "Chrome extension alpha uses the local Node bridge. Packaged app launch diagnostics are not part of this release.",
     };
   }
 

@@ -13,7 +13,7 @@ function browserLaunchStatus(result) {
   }
   const value = result.value ?? {};
   if (value.status === "ready") {
-    return { value: "Ready", detail: "native Chromium host, bridge, menu, workspace, and extensions verified", tone: "success" };
+    return { value: "Ready", detail: "extension bridge, menu, workspace, and add-on endpoints verified", tone: "success" };
   }
   return {
     value: "Check",
@@ -80,7 +80,7 @@ export function renderDiagnosticsSection(container, { bridgeRequest, getBridgeRe
   exportCard.append(exportButton, exportStatus);
   const endpointDetails = diagnosticsDisclosure(
     "Endpoint details",
-    "Open this when you need exact status counts for bridge, providers, add-ons, memory, and the native Chromium host.",
+    "Open this when you need exact status counts for bridge, providers, add-ons, memory, and extension health.",
     [details]
   );
   const exportDetails = diagnosticsDisclosure(

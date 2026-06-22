@@ -31,11 +31,13 @@ with concrete values.
 
 Security reports are accepted for the following in-scope surfaces:
 
-- The application IPC / capability surface (Tauri command handlers and bridge
-  routes).
+- The Chrome extension capability surface, including side-panel, new-tab,
+  content-script, and background-service-worker message routing.
+- The local Node.js bridge routes and capability-token boundaries.
 - Subprocess / shell invocation and environment handling.
-- Provider URL handling, the memory-service listener, and LAN exposure.
-- Installed-skill trust (`allowed-tools` declarations, allowlist/denylist).
+- Provider URL handling, the memory-service listener, and loopback/LAN exposure.
+- Add-on trust (`allowed-tools` declarations, allowlist/denylist, scoped bridge
+  APIs).
 - The release-trust surface (action pinning, signing, provenance) — see
   [`docs/security-pipeline/sha-pin-policy.md`](docs/security-pipeline/sha-pin-policy.md)
   and
@@ -51,7 +53,7 @@ threat model.
 
 | Version / branch | Supported |
 | --- | --- |
-| `dev` (latest) | yes |
+| `dev` (latest browser-first alpha) | yes |
 | Tagged releases | _TBD (placeholder)_ |
 
 ## Safe Harbor

@@ -6,7 +6,7 @@ import { run } from "./subprocess-terminal-allowlist.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "..", "..", "..");
-const SURFACE = ["src-tauri/src"];
+const SURFACE = ["browser-first/host"];
 
 // Off-list, no approval -> block -> fail.
 const OFFLIST_RECORD = {

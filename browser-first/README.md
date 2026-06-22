@@ -1,175 +1,46 @@
-# ResonantOS Browser-First Prototype
+# ResonantOS Browser-First Alpha
 
-Intent citation: `docs/architecture/ADR-037-browser-first-chromium-resonantos.md`
+This directory contains the browser-first alpha surface:
 
-This directory is the new product path for ResonantOS as a browser-first app.
+- `resonantos-side-panel-extension/` is the loadable Chrome Manifest V3
+  extension.
+- `host/` is the local Node.js bridge used by the extension.
 
-The target is not:
+The 2.0.0 alpha does not ship a packaged desktop browser, Electron sidecar,
+native CEF host, or Rust/Tauri shell.
 
-- a Tauri dashboard with a webview
-- an Electron sidecar
-- an external Chrome/Brave process controlled by CDP
-- a screenshot browser
-
-The target is a Chromium-family browser where ResonantOS lives inside browser chrome.
-
-## Current Slice
-
-The first implemented slice is a Chromium extension-style ResonantOS side panel:
-
-- `resonantos-side-panel-extension/manifest.json`
-- `src/background.js`
-- `src/content.js`
-- `src/side-panel.html`
-- `src/side-panel.js`
-- `src/side-panel.css`
-
-This is intentionally small. It proves the product direction: ResonantOS functionality must be packaged as a browser-contained layer that can later be bundled into a Chromium shell.
-
-## Non-Negotiable Gates
-
-Before this becomes the default app:
-
-- Phantom must install/open in the same browser profile.
-- A local dApp fixture must detect Phantom provider injection.
-- Wallet connect/sign flows must require human approval.
-- Augmentor must control the active tab only through typed mediated tools.
-- No page, add-on, or assistant can get raw wallet/signing power.
-
-## Browser Control Layer v3
-
-Augmentor stays in the side panel. Browser actions target the active webpage tab through content-script messages:
-
-- read page context
-- click visible non-submit page controls by text
-- type into focused or normal editable fields
-- submit search-like fields only
-- scroll the active webpage
-- inspect forms and loose editable fields
-
-Approval-gated actions are blocked until a dedicated approval flow exists:
-
-- wallet connect/sign/network switch
-- credential autofill
-- public form submit
-- payment, purchase, publish, share, or destructive document actions
-
-The current command surface:
-
-```text
-/control <browser goal>
-/browser read
-/browser forms
-/browser click "Visible text"
-/browser type "Text to type"
-/browser scroll down
-/browser scroll up
-/browser scroll top
-/browser scroll bottom
-/save page
-/save selection
-/save summary
-/save trail <title>
-/trail <title>
-```
-
-Agent Control Mode starts with `/control <goal>` or natural browser-task requests such as `book a call`, `arrange a meeting`, `fill this form`, `find news`, or `use this page`.
-
-V3 is an adaptive observe-decide-act-verify loop:
-
-1. observe the active controlled tab, including readable frames
-2. ask the configured LLM for exactly one strict JSON next action
-3. validate that action against the host safety boundary
-4. execute only the typed mediated browser tool
-5. observe the page again before choosing the next action
-6. continue until the observed page state proves completion, the task blocks, or approval is required
-
-The LLM is only a next-action controller. It cannot execute browser actions directly. The host validates every proposed action, rejects unsupported actions, caps the loop at twelve actions, and falls back to the deterministic parser when the next-action route is unavailable.
-
-The side panel keeps a stable controlled-tab binding. This prevents the assistant from accidentally acting on the side-panel tab instead of the webpage being controlled.
-
-Page observations now expose stable `ref` identifiers for visible controls and editable fields. The model should prefer refs over text labels when it decides to click or type, because refs avoid ambiguity on pages with repeated labels, icon buttons, and embedded frames.
-
-Observations also include a compact list of readable open tabs. This gives Augmentor browser-session awareness without granting uncontrolled tab mutation. Acting across tabs will require explicit mediated tab tools.
-
-V3 now includes mediated tab tools:
-
-- `tabs` lists readable open tabs
-- `switch_tab` changes the controlled tab to a specific observed tab id
-
-This keeps tab work inside the same permissioned control loop instead of giving the model raw browser automation access.
-
-The side panel now includes an Agent Control Monitor:
-
-- current goal and run status
-- planned steps with pending, active, completed, blocked, or failed state
-- durable browser job scheduler state, including runnable queued jobs, page-lock-blocked jobs, and jobs waiting for execution capacity
-- expandable action details covering observation, decision, action, result, and safety class
-- completion and blocker summary cards for fast replay
-- approval card for public-submit and other gated actions
-- deny/delegate actions for blocked work
-- Living Archive intake artifact path when a browser-control report is recorded
-
-Browser memory commands remain intake-only:
-
-- `/save page` captures the current page source context into Living Archive intake
-- `/save selection` captures selected page text into Living Archive intake
-- `/save summary` creates a provider-backed page summary intake artifact with source provenance and deterministic fallback
-- `/save trail <title>` or `/trail <title>` captures readable open web tabs as one multi-page research trail intake bundle
-
-All browser memory commands queue review requests. They do not write trusted wiki pages directly.
-
-Durable browser job commands:
-
-- `/jobs` lists recent browser jobs and shows scheduler capacity, runnable queued jobs, page-lock-blocked jobs, and capacity-waiting jobs.
-- `/jobs focus <job>` changes the focused durable job without merging job traces.
-- `/pause <job>`, `/resume <job>`, `/continue <job>`, `/report <job>`, and `/cancel <job>` operate on persisted job records.
-
-The current scheduler state is visibility and routing groundwork. True simultaneous background control loops remain blocked until the execution runner can supervise more than one non-conflicting page-locked job at the same time.
-
-Wallet/DAO safety command:
-
-- `/wallet status` checks whether the active page exposes Phantom wallet providers and whether they appear connected. This is detection-only: it does not request connection, signatures, seed/private keys, credentials, or transaction submission.
-- `/dao <goal>` reads the active page and prepares human-safe DAO workflow instructions. It can identify visible wallet/governance controls, but it stops before wallet connect, signing, voting, transfer, transaction confirmation, or public submission.
-- `/wallet audit` and `/dao audit <goal>` save a read-only wallet/DAO evidence artifact to Living Archive intake and create a review request. These commands record wallet-provider state and visible governance controls/fields only; they do not connect wallets, sign, vote, transfer, confirm transactions, or submit public actions.
-
-Allowed next actions are:
-
-- `read`
-- `open`
-- `search`
-- `forms`
-- `tabs`
-- `switch_tab`
-- `click` by visible text or observed `ref`
-- `type` by field label or observed `ref`
-- `scroll`
-- `wait`
-
-The native Browser host also accepts `--remote-debugging-port=<port>` for deterministic local testing. This is a test/control-plane hook, not a user-facing permission escalation.
-
-Structured page edits, such as Google Sheet row/cell changes, must resolve to a precise target before execution. The assistant may read the page and ask for a cell, visible control, or focused field, but it must not guess canvas/document coordinates.
-
-## Run Contract Tests
+## Run The Bridge
 
 ```bash
-node --test browser-first/test/*.test.mjs
+npm run browser-first:bridge
 ```
 
-## Run Live Browser Control Test
+The bridge starts on loopback, generates a per-run bridge token, and writes
+`resonantos-side-panel-extension/src/bridge-config.generated.js`. The generated
+config is ignored by git.
 
-This launches the real browser-first CEF host with a local fixture and verifies browser behavior through CDP:
+## Load The Extension
+
+1. Open `chrome://extensions`.
+2. Enable Developer mode.
+3. Choose Load unpacked.
+4. Select `browser-first/resonantos-side-panel-extension`.
+
+## Browser Control Boundary
+
+Augmentor runs in the side panel and can only act through typed mediated browser
+tools. It can read pages, inspect forms, click visible non-submit controls, type
+into editable fields, scroll, and switch to observed tabs.
+
+The alpha blocks wallet approvals, signatures, credential autofill, payments,
+public form submission, destructive document actions, and other privileged
+browser operations unless a human performs them directly in the browser.
+
+## Tests
 
 ```bash
-npm run test:browser-first-live
+npm run test:browser-first
+npm run test:browser-host
 ```
 
-The live test proves:
-
-- natural browser-task phrasing routes into Agent Control Mode
-- iframe context is visible to the controller
-- a differently worded booking request can click a visible iframe appointment slot
-- safe page read, ref-targeted click, ref-targeted type, and scroll
-- document-like contenteditable typing
-- public form submit remains blocked at the approval boundary
-- wallet-style work stops at the approval boundary
+Use the root validation commands before tagging or merging release work.

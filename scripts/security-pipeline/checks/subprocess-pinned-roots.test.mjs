@@ -6,7 +6,7 @@ import { run } from "./subprocess-pinned-roots.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "..", "..", "..");
-const SURFACE = ["src-tauri/src"];
+const SURFACE = ["browser-first/host"];
 
 // Unpinned: resolved from CWD -> block -> fail.
 const UNPINNED_RECORD = {
