@@ -28,7 +28,7 @@ export function isBridgeAuthError(error) {
     /\bHTTP\s*401\b/i.test(message) ||
     /\breplied\s+401\b/i.test(message) ||
     /\btoken mismatch\b/i.test(message) ||
-    /\brequires capability\b/i.test(message) ||
+    /\brequires\b.*\bcapability\b/i.test(message) ||
     /\brequires .*authorization\b/i.test(message);
 }
 

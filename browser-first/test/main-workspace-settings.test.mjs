@@ -2243,9 +2243,32 @@ test("settings sections replace bridge authorization failures with recovery guid
       assert.match(container.textContent, /ResonantOS bridge rejected this browser profile token/);
       assert.match(container.textContent, /Settings > Bridge Target/);
       assert.doesNotMatch(container.textContent, /Unauthorized browser-first bridge request/);
+      assert.doesNotMatch(container.textContent, /requires provider-diagnostics-read capability/);
     } finally {
       cleanup();
     }
+  }
+});
+
+test("settings sections replace bridge capability failures with recovery guidance", async () => {
+  const { container, cleanup } = setupDom();
+
+  try {
+    renderSettingsWorkspace({
+      container,
+      bridgeRequest: async () => {
+        throw new Error("Bridge route requires provider-diagnostics-read capability.");
+      },
+      initialSection: "providers",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.match(container.textContent, /Provider status unavailable/);
+    assert.match(container.textContent, /ResonantOS bridge rejected this browser profile token/);
+    assert.match(container.textContent, /Settings > Bridge Target/);
+    assert.doesNotMatch(container.textContent, /requires provider-diagnostics-read capability/);
+  } finally {
+    cleanup();
   }
 });
 
