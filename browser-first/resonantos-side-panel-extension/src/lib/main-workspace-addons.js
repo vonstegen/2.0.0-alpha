@@ -2,6 +2,7 @@
 // Intent citation: docs/FEATURE_INVENTORY_2026-05-26.md
 
 import { capabilityReviewElement } from "./addon-capability-review.js";
+import { addonWorkspaceMessage } from "./runtime-error-messages.js";
 
 function addonTone(addon) {
   if (addon.available) return "success";
@@ -313,7 +314,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
         : "No email or calendar draft packets yet. Use /email or /calendar from chat to create one.";
       draftStatus.dataset.tone = drafts.length ? "success" : "warning";
     } catch (error) {
-      draftStatus.textContent = `Draft review unavailable: ${error instanceof Error ? error.message : String(error)}`;
+      draftStatus.textContent = addonWorkspaceMessage(error, "Draft review unavailable");
       draftStatus.dataset.tone = "error";
     }
   };
@@ -406,7 +407,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
         : "No delegation packets yet. Ask Augmentor to delegate to Hermes, OpenCode, or Resonant Engineer.";
       delegationStatus.dataset.tone = delegations.length ? "success" : "warning";
     } catch (error) {
-      delegationStatus.textContent = `Delegation review unavailable: ${error instanceof Error ? error.message : String(error)}`;
+      delegationStatus.textContent = addonWorkspaceMessage(error, "Delegation review unavailable");
       delegationStatus.dataset.tone = "error";
     }
   };
@@ -439,7 +440,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
         : "No add-ons are visible to this browser-first host yet.";
       status.dataset.tone = addons.some((addon) => addon.available) ? "success" : "warning";
     } catch (error) {
-      status.textContent = `Add-on registry unavailable: ${error instanceof Error ? error.message : String(error)}`;
+      status.textContent = addonWorkspaceMessage(error, "Add-on registry unavailable");
       status.dataset.tone = "error";
     }
   };

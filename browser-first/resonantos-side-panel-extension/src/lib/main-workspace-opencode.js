@@ -2,6 +2,7 @@
 // Intent citation: docs/architecture/ADR-015-delegation-fabric-addon-catalog-native-tools.md
 
 import { delegationGuidanceText } from "./delegation-guidance.js";
+import { opencodeStatusMessage } from "./runtime-error-messages.js";
 
 function setStatus(node, text, tone = "neutral") {
   node.textContent = text;
@@ -40,6 +41,11 @@ function openCodeRuntimeSetupText(status = {}) {
     lines.push(...status.searchedPaths.slice(0, 12).map((candidate) => `- ${candidate}`));
   }
   return lines.join("\n");
+}
+
+function openCodeStatusMeta(status = {}) {
+  const command = status.command || status.installCommand || "OpenCode command not detected";
+  return [command, status.model ? `model ${status.model}` : ""].filter(Boolean).join(" · ");
 }
 
 export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeRequest, initialMission = "" }) {
@@ -111,7 +117,7 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
       const status = await bridge()("/opencode/status", { method: "GET" });
       const executionEnabled = status.executionEnabled !== false;
       statusBody.textContent = status.detail;
-      statusMeta.textContent = status.command || status.installCommand || "OpenCode command not detected";
+      statusMeta.textContent = openCodeStatusMeta(status);
       statusCard.dataset.ready = status.installed ? "true" : "false";
       if (!status.installed || !executionEnabled) {
         const guidance = statusCard.querySelector(".delegation-guidance") ?? document.createElement("pre");
@@ -130,7 +136,7 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
         statusCard.querySelector(".delegation-guidance")?.remove();
       }
     } catch (error) {
-      statusBody.textContent = error instanceof Error ? error.message : String(error);
+      statusBody.textContent = opencodeStatusMessage(error);
       statusMeta.textContent = "Status unavailable";
       statusCard.dataset.ready = "false";
       const guidance = statusCard.querySelector(".delegation-guidance") ?? document.createElement("pre");
@@ -184,7 +190,7 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
       missionInput.value = "";
       await loadStatus();
     } catch (error) {
-      setStatus(taskStatus, error instanceof Error ? error.message : String(error), "error");
+      setStatus(taskStatus, opencodeStatusMessage(error, "OpenCode delegation failed"), "error");
     } finally {
       taskButton.disabled = false;
     }

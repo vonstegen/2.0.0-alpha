@@ -54,3 +54,17 @@ export function hermesStatusMessage(error, action = "Hermes status unavailable")
   }
   return `${action}: ${redactSensitiveErrorMessage(error)}. Open Settings > Add-ons and confirm Hermes is installed and enabled.`;
 }
+
+export function opencodeStatusMessage(error, action = "OpenCode status unavailable") {
+  if (isBridgeNetworkError(error)) {
+    return `${action}: ${bridgeSetupMessage()} OpenCode setup can continue after the bridge is connected.`;
+  }
+  return `${action}: ${redactSensitiveErrorMessage(error)}. Open Settings > Add-ons and confirm OpenCode is installed and enabled.`;
+}
+
+export function addonWorkspaceMessage(error, action) {
+  if (isBridgeNetworkError(error)) {
+    return `${action}: ${bridgeSetupMessage()}`;
+  }
+  return `${action}: ${redactSensitiveErrorMessage(error)}`;
+}

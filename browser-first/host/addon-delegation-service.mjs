@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { spawn } from "node:child_process";
@@ -9,6 +9,8 @@ import {
   parseDraftPacketMarkdown,
 } from "./addon-draft-connectors.mjs";
 import { dashboardProxyUrl } from "./bridge-server.mjs";
+
+const DEFAULT_OPENCODE_MODEL = "openai/gpt-5.4-mini";
 
 // When the bridge runs on a multi-homed host (e.g. the Pi5 has loopback,
 // LAN 192.168.1.100, and Tailscale 100.100.100.100), it has to publish URLs
@@ -87,6 +89,37 @@ export function createAddonDelegationService(dependencies) {
       overridePath: "",
       overrideFound: false,
     };
+  }
+
+  function openCodeModel(payload = {}) {
+    const requested = String(payload.model ?? process.env.RESONANTOS_OPENCODE_MODEL ?? "").trim();
+    return requested || DEFAULT_OPENCODE_MODEL;
+  }
+
+  function isAllowedOpenCodeProviderEnvKey(key) {
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && !/^RESONANTOS_/i.test(key);
+  }
+
+  function openCodeProviderEnvKeys(model) {
+    const provider = String(model ?? "").split("/")[0]?.toLowerCase();
+    const explicit = String(process.env.RESONANTOS_OPENCODE_PROVIDER_ENV ?? "")
+      .split(",")
+      .map((key) => key.trim())
+      .filter(isAllowedOpenCodeProviderEnvKey);
+    const defaults = {
+      anthropic: ["ANTHROPIC_API_KEY"],
+      deepseek: ["DEEPSEEK_API_KEY"],
+      gemini: ["GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_API_KEY"],
+      glm: ["GLM_API_KEY", "ZAI_API_KEY", "ZHIPUAI_API_KEY"],
+      google: ["GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"],
+      minimax: ["MINIMAX_API_KEY"],
+      openai: ["OPENAI_API_KEY"],
+      openrouter: ["OPENROUTER_API_KEY"],
+      xai: ["XAI_API_KEY"],
+      zai: ["ZAI_API_KEY", "GLM_API_KEY", "ZHIPUAI_API_KEY"],
+      zhipuai: ["ZHIPUAI_API_KEY", "ZAI_API_KEY", "GLM_API_KEY"],
+    };
+    return [...new Set([...(defaults[provider] ?? []), ...explicit])];
   }
 
   // Reverse-proxy URL the extension can embed in an iframe without tripping
@@ -696,6 +729,7 @@ export function createAddonDelegationService(dependencies) {
     const executionSettings = await readAddonExecutionSettings();
     const runtime = currentOpenCodeRuntime();
     const command = runtime.command;
+    const model = openCodeModel(payload);
     const taskRoot = path.join(delegationRoot(), "opencode");
     const tasks = await listFilesRecursive(taskRoot, (filePath) => filePath.endsWith(".md"), 200);
     const statusCounts = {};
@@ -710,6 +744,9 @@ export function createAddonDelegationService(dependencies) {
       mode: command && addonLocalCliExecutionEnabled("opencode", payload, executionSettings) ? "local-opencode-cli" : command ? "local-opencode-cli-disabled" : "packet-only",
       executionEnabled: addonLocalCliExecutionEnabled("opencode", payload, executionSettings),
       workspaceLaunch: "not-enabled-in-browser-first-v1",
+      model,
+      modelSource: payload.model ? "request" : process.env.RESONANTOS_OPENCODE_MODEL ? "env" : "default",
+      providerEnvKeys: openCodeProviderEnvKeys(model).filter((key) => process.env[key] !== undefined),
       detail: command
         ? "OpenCode runtime was detected. ResonantOS can create governed coding packets and start execution only when explicit OpenCode execution is enabled."
         : "OpenCode runtime was not detected. Install OpenCode, or point ResonantOS at an existing binary with OPENCODE_COMMAND.",
@@ -789,8 +826,25 @@ export function createAddonDelegationService(dependencies) {
     ].filter(Boolean).join("\n");
   }
 
+  function extractOpenCodeOutputText(output) {
+    const raw = String(output ?? "").trim();
+    const textEvents = [];
+    for (const line of raw.split(/\r?\n/)) {
+      const candidate = line.trim();
+      if (!candidate.startsWith("{")) continue;
+      try {
+        const event = JSON.parse(candidate);
+        const text = event?.part?.type === "text" ? event.part.text : event?.type === "text" ? event.text : "";
+        if (text) textEvents.push(text);
+      } catch {
+        // Non-JSON output falls back to the raw stream below.
+      }
+    }
+    return textEvents.join("\n\n").trim() || raw;
+  }
+
   function parseOpenCodeCliResult(output, workspacePath) {
-    const text = String(output ?? "").trim();
+    const text = extractOpenCodeOutputText(output);
     return {
       adapter: "opencode-cli",
       actionsTaken: ["Local OpenCode CLI returned a coding result through the host adapter."],
@@ -809,15 +863,124 @@ export function createAddonDelegationService(dependencies) {
     };
   }
 
+  function scopedOpenCodeEnv(model = DEFAULT_OPENCODE_MODEL) {
+    const allowed = [
+      "HOME",
+      "PATH",
+      "SHELL",
+      "TERM",
+      "TMPDIR",
+      "TEMP",
+      "TMP",
+      "LANG",
+      "LC_ALL",
+      "XDG_CONFIG_HOME",
+      "XDG_DATA_HOME",
+      "XDG_CACHE_HOME",
+      "OPENCODE_CONFIG",
+      "OPENCODE_DATA",
+      "OPENCODE_CACHE",
+      "OPENCODE_SERVER_USERNAME",
+      "OPENCODE_SERVER_PASSWORD",
+      ...openCodeProviderEnvKeys(model),
+    ];
+    return Object.fromEntries(
+      allowed
+        .map((key) => [key, process.env[key]])
+        .filter(([, value]) => value !== undefined)
+    );
+  }
+
+  function redactOpenCodeCliText(value) {
+    return String(value ?? "")
+      .replace(/sk-[a-z0-9_-]+/gi, "[redacted-key]")
+      .replace(/bearer\s+[a-z0-9._-]+/gi, "Bearer [redacted-token]")
+      .replace(/api[_-]?key\s*[:=]\s*[^\s]+/gi, "api_key=[redacted]")
+      .replace(/token\s*[:=]\s*[^\s]+/gi, "token=[redacted]")
+      .replace(/secret\s*[:=]\s*[^\s]+/gi, "secret=[redacted]");
+  }
+
+  async function execOpenCodeCli(command, args, options = {}) {
+    const timeout = Math.min(900_000, Math.max(30_000, Number(options.timeout ?? 300_000)));
+    return new Promise((resolve, reject) => {
+      const needsWindowsCommandShell = process.platform === "win32" && /\.(?:cmd|bat)$/i.test(String(command));
+      const child = spawn(command, args, {
+        cwd: options.cwd,
+        env: options.env,
+        shell: needsWindowsCommandShell,
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      });
+      let stdout = "";
+      let stderr = "";
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        child.kill("SIGTERM");
+        reject(new Error(`OpenCode CLI timed out after ${timeout}ms.`));
+      }, timeout);
+      child.stdout?.on("data", (chunk) => {
+        stdout += String(chunk);
+      });
+      child.stderr?.on("data", (chunk) => {
+        stderr += String(chunk);
+      });
+      child.on("error", (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.on("close", (code, signal) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (code !== 0) {
+          const detail = redactOpenCodeCliText(stderr || stdout || `OpenCode CLI exited with code ${code ?? "unknown"}${signal ? ` signal ${signal}` : ""}.`).trim();
+          reject(new Error(detail));
+          return;
+        }
+        resolve(String(stdout ?? "").trim());
+      });
+    });
+  }
+
   async function runOpenCodeCliDelegation(command, packet, payload = {}) {
     const workspacePath = resolveOpenCodeWorkspacePath(payload);
+    const model = openCodeModel(payload);
     const prompt = buildOpenCodeExecutionPrompt(packet, workspacePath);
-    const args = ["run", prompt, "--dir", workspacePath];
-    const output = await execFileStdout(command, args, {
-      cwd: workspacePath,
-      timeout: Math.min(900_000, Math.max(30_000, Number(payload.timeoutMs ?? 300_000))),
-    });
-    return parseOpenCodeCliResult(output, workspacePath);
+    const tempRoot = path.join(browserFirstRoot(), "Runtime", "opencode-prompts");
+    await mkdir(tempRoot, { recursive: true });
+    const tempDir = await mkdtemp(path.join(tempRoot, "prompt-"));
+    const promptPath = path.join(tempDir, "resonantos-opencode-task.md");
+    try {
+      await writeFile(promptPath, prompt, { mode: 0o600 });
+      await chmod(promptPath, 0o600).catch(() => undefined);
+      const args = [
+        "run",
+        "Read the attached ResonantOS OpenCode task packet and return the requested artifact.",
+        "--file",
+        promptPath,
+        "--dir",
+        workspacePath,
+        "-m",
+        model,
+        "--format",
+        "json",
+      ];
+      const output = await execOpenCodeCli(command, args, {
+        cwd: workspacePath,
+        env: scopedOpenCodeEnv(model),
+        timeout: Math.min(900_000, Math.max(30_000, Number(payload.timeoutMs ?? 300_000))),
+      });
+      return {
+        ...parseOpenCodeCliResult(output, workspacePath),
+        model,
+      };
+    } finally {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 
   async function writeOpenCodeResultArtifact(taskPath, packet, result) {
@@ -834,6 +997,7 @@ export function createAddonDelegationService(dependencies) {
       `- adapter: ${result.adapter}`,
       "- status: completed",
       `- workspacePath: ${result.workspacePath || "."}`,
+      result.model ? `- model: ${result.model}` : "",
       "- boundary: Reviewable coding artifact only. Shell, filesystem, provider secrets, trusted memory writes, and external sends remain governed by ResonantOS.",
       "",
       "## Final Summary",

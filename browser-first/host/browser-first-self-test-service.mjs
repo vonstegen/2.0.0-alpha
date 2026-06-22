@@ -28,6 +28,70 @@ function fakeCliScript(output) {
   return `#!/bin/sh\ncat <<'EOF'\n${output}\nEOF\n`;
 }
 
+function fakeOpenCodeCliScript(output) {
+  if (process.platform === "win32") {
+    return [
+      "@echo off",
+      "if \"%OPENAI_API_KEY%\"==\"\" (echo selected provider env missing 1>&2 & exit /b 32)",
+      "if not \"%RESONANTOS_PROVIDER_SECRETS_JSON%\"==\"\" (echo ResonantOS provider store leaked 1>&2 & exit /b 33)",
+      "echo %* | findstr /C:\"OpenCode operating as a ResonantOS add-on coding agent\" >nul && (echo prompt leaked in argv 1>&2 & exit /b 31)",
+      "echo %* | findstr /C:\"openai/gpt-5.4-mini\" >nul || (echo model missing 1>&2 & exit /b 34)",
+      "echo %* | findstr /C:\"json\" >nul || (echo json format missing 1>&2 & exit /b 37)",
+      ...String(output).split("\n").map(cmdEchoLine),
+      "",
+    ].join("\r\n");
+  }
+  return `#!/bin/sh
+if [ -z "\${OPENAI_API_KEY:-}" ]; then
+  echo "selected provider env missing" >&2
+  exit 32
+fi
+if [ -n "\${RESONANTOS_PROVIDER_SECRETS_JSON:-}" ]; then
+  echo "ResonantOS provider store leaked" >&2
+  exit 33
+fi
+case "$*" in
+  *"OpenCode operating as a ResonantOS add-on coding agent"*|*"Validate that enabled OpenCode CLI execution produces"*)
+    echo "prompt leaked in argv" >&2
+    exit 31
+    ;;
+esac
+case "$*" in
+  *"openai/gpt-5.4-mini"*) ;;
+  *)
+    echo "model missing" >&2
+    exit 34
+    ;;
+esac
+case "$*" in
+  *"--format json"*) ;;
+  *)
+    echo "json format missing" >&2
+    exit 37
+    ;;
+esac
+prompt_file=""
+previous=""
+for arg in "$@"; do
+  if [ "$previous" = "--file" ]; then
+    prompt_file="$arg"
+  fi
+  previous="$arg"
+done
+if [ -z "$prompt_file" ] || [ ! -f "$prompt_file" ]; then
+  echo "missing prompt file" >&2
+  exit 35
+fi
+if ! grep -q "OpenCode operating as a ResonantOS add-on coding agent" "$prompt_file"; then
+  echo "prompt missing from file" >&2
+  exit 36
+fi
+cat <<'EOF'
+${output}
+EOF
+`;
+}
+
 function fakeHermesCliScript(output) {
   if (process.platform === "win32") {
     return [
@@ -908,6 +972,9 @@ export async function runBrowserFirstSelfTest(context) {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "resonantos-opencode-cli-bridge-"));
     const previousUserRoot = process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT;
     const previousOpenCodeCommand = process.env.OPENCODE_COMMAND;
+    const previousOpenAiKey = process.env.OPENAI_API_KEY;
+    const previousProviderSecretsJson = process.env.RESONANTOS_PROVIDER_SECRETS_JSON;
+    const previousOpenCodeProviderEnv = process.env.RESONANTOS_OPENCODE_PROVIDER_ENV;
     process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT = path.join(tempRoot, "ResonantOS_User");
     let server = null;
     let exitCode = 1;
@@ -933,7 +1000,10 @@ export async function runBrowserFirstSelfTest(context) {
         "- Local OpenCode CLI process was invoked through the host boundary.",
       ].join("\n");
       await mkdir(path.dirname(fakeOpenCode), { recursive: true });
-      await writeFile(fakeOpenCode, fakeCliScript(fakeOutput));
+      process.env.OPENAI_API_KEY = "opencode-runtime-key";
+      process.env.RESONANTOS_PROVIDER_SECRETS_JSON = JSON.stringify({ "shared-openai": "must-not-reach-opencode" });
+      process.env.RESONANTOS_OPENCODE_PROVIDER_ENV = "RESONANTOS_PROVIDER_SECRETS_JSON";
+      await writeFile(fakeOpenCode, fakeOpenCodeCliScript(fakeOutput));
       await chmod(fakeOpenCode, 0o755).catch(() => undefined);
       process.env.OPENCODE_COMMAND = fakeOpenCode;
       server = await startBridgeServer({
@@ -1012,6 +1082,21 @@ export async function runBrowserFirstSelfTest(context) {
       } else {
         process.env.OPENCODE_COMMAND = previousOpenCodeCommand;
       }
+      if (previousOpenAiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = previousOpenAiKey;
+      }
+      if (previousProviderSecretsJson === undefined) {
+        delete process.env.RESONANTOS_PROVIDER_SECRETS_JSON;
+      } else {
+        process.env.RESONANTOS_PROVIDER_SECRETS_JSON = previousProviderSecretsJson;
+      }
+      if (previousOpenCodeProviderEnv === undefined) {
+        delete process.env.RESONANTOS_OPENCODE_PROVIDER_ENV;
+      } else {
+        process.env.RESONANTOS_OPENCODE_PROVIDER_ENV = previousOpenCodeProviderEnv;
+      }
       await rm(tempRoot, { recursive: true, force: true }).catch(() => undefined);
     }
     process.exit(exitCode);
@@ -1021,6 +1106,9 @@ export async function runBrowserFirstSelfTest(context) {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "resonantos-opencode-cli-bridge-inprocess-"));
     const previousUserRoot = process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT;
     const previousOpenCodeCommand = process.env.OPENCODE_COMMAND;
+    const previousOpenAiKey = process.env.OPENAI_API_KEY;
+    const previousProviderSecretsJson = process.env.RESONANTOS_PROVIDER_SECRETS_JSON;
+    const previousOpenCodeProviderEnv = process.env.RESONANTOS_OPENCODE_PROVIDER_ENV;
     process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT = path.join(tempRoot, "ResonantOS_User");
     let exitCode = 1;
     try {
@@ -1045,7 +1133,10 @@ export async function runBrowserFirstSelfTest(context) {
         "- Local OpenCode CLI process was invoked through the host boundary.",
       ].join("\n");
       await mkdir(path.dirname(fakeOpenCode), { recursive: true });
-      await writeFile(fakeOpenCode, fakeCliScript(fakeOutput));
+      process.env.OPENAI_API_KEY = "opencode-runtime-key";
+      process.env.RESONANTOS_PROVIDER_SECRETS_JSON = JSON.stringify({ "shared-openai": "must-not-reach-opencode" });
+      process.env.RESONANTOS_OPENCODE_PROVIDER_ENV = "RESONANTOS_PROVIDER_SECRETS_JSON";
+      await writeFile(fakeOpenCode, fakeOpenCodeCliScript(fakeOutput));
       await chmod(fakeOpenCode, 0o755).catch(() => undefined);
       process.env.OPENCODE_COMMAND = fakeOpenCode;
       const request = async (routePath, { method = "POST", body = {}, capabilityToken } = {}) => {
@@ -1107,6 +1198,21 @@ export async function runBrowserFirstSelfTest(context) {
         delete process.env.OPENCODE_COMMAND;
       } else {
         process.env.OPENCODE_COMMAND = previousOpenCodeCommand;
+      }
+      if (previousOpenAiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = previousOpenAiKey;
+      }
+      if (previousProviderSecretsJson === undefined) {
+        delete process.env.RESONANTOS_PROVIDER_SECRETS_JSON;
+      } else {
+        process.env.RESONANTOS_PROVIDER_SECRETS_JSON = previousProviderSecretsJson;
+      }
+      if (previousOpenCodeProviderEnv === undefined) {
+        delete process.env.RESONANTOS_OPENCODE_PROVIDER_ENV;
+      } else {
+        process.env.RESONANTOS_OPENCODE_PROVIDER_ENV = previousOpenCodeProviderEnv;
       }
       await rm(tempRoot, { recursive: true, force: true }).catch(() => undefined);
     }
