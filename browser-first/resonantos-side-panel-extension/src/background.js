@@ -27,6 +27,7 @@ async function loadBridgeConfig() {
   return __bridgeConfigPromise;
 }
 import { createBridgeClient, detectLoopbackBridge, resolveBridgeConfig, initCapabilityTokens } from "./lib/bridge-client.js";
+import { sanitizeInlineAssistantBody, sanitizeResonantContextSnapshot } from "./lib/background-message-policy.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 
 const APPROVAL_REQUIRED_ACTIONS = new Set([
@@ -47,6 +48,7 @@ const MAIN_WORKSPACE_PATH = "/src/main-workspace.html";
 // message handlers — those always go through the most recent binding.
 let bridgeRequest = null;
 let rawFetch = null;
+const resonantContextSnapshots = new Map();
 
 // `rebindAndHydrate` runs the full re-initialization chain in the
 // right order:
@@ -186,6 +188,24 @@ const handoffToResonantSidePanel = async ({ senderTab, targetUrl = "" } = {}) =>
   return { ok: true, opened: true, navigated: Boolean(targetUrl), tabId: tab.id };
 };
 
+const rememberResonantContextSnapshot = (message, sender) => {
+  const tabId = sender.tab?.id ?? null;
+  if (tabId === null) {
+    return { ok: false, error: "No tab was associated with the context snapshot." };
+  }
+  const snapshot = sanitizeResonantContextSnapshot(message.payload, {
+    tabId,
+    title: sender.tab?.title ?? "",
+    url: sender.tab?.url ?? "",
+  });
+  resonantContextSnapshots.set(tabId, snapshot);
+  if (resonantContextSnapshots.size > 40) {
+    const oldest = resonantContextSnapshots.keys().next().value;
+    resonantContextSnapshots.delete(oldest);
+  }
+  return { ok: true };
+};
+
 // Fetch capability tokens from the bridge on service-worker startup.
 // Tokens are NOT stored in the generated config (security boundary); they
 // are delivered via the authenticated /api/capability-tokens endpoint.
@@ -218,9 +238,16 @@ chrome.tabs.onActivated?.addListener?.((activeInfo) => {
 });
 
 chrome.tabs.onUpdated?.addListener?.((_tabId, changeInfo, tab) => {
+  if (changeInfo.url) {
+    resonantContextSnapshots.delete(tab.id);
+  }
   if (changeInfo.url || changeInfo.status === "complete") {
     void syncSidePanelForTab(tab);
   }
+});
+
+chrome.tabs.onRemoved?.addListener?.((tabId) => {
+  resonantContextSnapshots.delete(tabId);
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -229,18 +256,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
-  if (!message || message.channel !== "resonantos.browser_first") {
+  if (!message) {
+    return false;
+  }
+
+  if (message.type === "resonant-context-snapshot") {
+    sendResponse(rememberResonantContextSnapshot(message, sender));
+    return true;
+  }
+
+  if (message.channel !== "resonantos.browser_first") {
     return false;
   }
 
   if (message.type === "active_tab_context") {
-    sendResponse({
-      ok: true,
-      tabId: sender.tab?.id ?? null,
-      title: sender.tab?.title ?? "",
-      url: sender.tab?.url ?? "",
-      receivedAt: new Date().toISOString()
-    });
+    const pending = sender.tab?.id === undefined
+      ? activeTabForWindow(sender.tab?.windowId)
+      : Promise.resolve(sender.tab);
+    void pending
+      .then((tab) => {
+        const tabId = tab?.id ?? null;
+        sendResponse({
+          ok: true,
+          tabId,
+          title: tab?.title ?? "",
+          url: tab?.url ?? "",
+          contextSnapshot: tabId === null ? null : resonantContextSnapshots.get(tabId) ?? null,
+          receivedAt: new Date().toISOString()
+        });
+      })
+      .catch((error) => sendResponse({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      }));
     return true;
   }
 
@@ -251,7 +299,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     void pending
       .then((req) => req("/augmentor/inline", {
         method: "POST",
-        body: message.body ?? {}
+        body: sanitizeInlineAssistantBody(message.body)
       }))
       .then((payload) => sendResponse({ ok: true, reply: payload.reply ?? "" }))
       .catch((error) => sendResponse({
