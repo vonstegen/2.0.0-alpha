@@ -32,4 +32,6 @@ Implemented the Living Archive human-first copy update for issue 94.
 
 ## Notes
 
+- PR opened at https://github.com/ResonantOS/2.0.0-alpha/pull/186.
+
 Project board status could not be moved because `gh` reported the token is missing the `project` scope.

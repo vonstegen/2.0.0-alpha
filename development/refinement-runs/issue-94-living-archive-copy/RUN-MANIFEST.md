@@ -30,5 +30,5 @@ The visible promise must say: "Human Knowledge is preserved; AI Memory is the ma
 
 - Refinement status: complete
 - Invoke package status: complete
-- Task-session status: in progress at artifact creation time
-- PR status: pending at artifact creation time
+- Task-session status: complete
+- PR status: open, https://github.com/ResonantOS/2.0.0-alpha/pull/186
