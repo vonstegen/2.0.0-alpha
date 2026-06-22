@@ -2218,6 +2218,83 @@ test("settings add-ons section reports bridge failures without exposing secrets"
   }
 });
 
+test("settings sections replace bridge authorization failures with recovery guidance", async () => {
+  const sections = [
+    ["providers", /Provider status unavailable/],
+    ["memory", /Memory settings unavailable/],
+    ["addons", /Add-on registry unavailable/],
+    ["routing", /Routing strategies unavailable/],
+    ["diagnostics", /Diagnostics loaded with 5 unavailable endpoints/],
+  ];
+
+  for (const [initialSection, heading] of sections) {
+    const { container, cleanup } = setupDom();
+    try {
+      renderSettingsWorkspace({
+        container,
+        bridgeRequest: async () => {
+          throw new Error("Unauthorized browser-first bridge request.");
+        },
+        initialSection,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      assert.match(container.textContent, heading);
+      assert.match(container.textContent, /ResonantOS bridge rejected this browser profile token/);
+      assert.match(container.textContent, /Settings > Bridge Target/);
+      assert.doesNotMatch(container.textContent, /Unauthorized browser-first bridge request/);
+    } finally {
+      cleanup();
+    }
+  }
+});
+
+test("settings bridge target reports 401 token mismatch with recovery guidance", async () => {
+  const { container, cleanup } = setupDom();
+  const previousFetch = globalThis.fetch;
+  const previousBridgeConfig = globalThis.__RESONANTOS_BRIDGE_CONFIG__;
+  globalThis.__RESONANTOS_BRIDGE_CONFIG__ = {
+    bridgeUrl: "http://127.0.0.1:47773",
+    bridgeToken: "stale-token",
+    capabilityBootstrapToken: "stale-bootstrap",
+  };
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    ok: false,
+    error: "Unauthorized browser-first bridge request.",
+  }), {
+    status: 401,
+    headers: { "Content-Type": "application/json" },
+  });
+
+  try {
+    renderSettingsWorkspace({
+      container,
+      bridgeRequest: async () => ({}),
+      initialSection: "bridge-target",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.match(container.textContent, /Bridge Target/);
+    assert.match(container.textContent, /Bridge http:\/\/127\.0\.0\.1:47773 replied 401/);
+    assert.match(container.textContent, /ResonantOS bridge rejected this browser profile token/);
+    assert.match(container.textContent, /reload the extension/);
+    assert.doesNotMatch(container.textContent, /Check the token/);
+    assert.doesNotMatch(container.textContent, /Unauthorized browser-first bridge request/);
+  } finally {
+    if (previousFetch === undefined) {
+      delete globalThis.fetch;
+    } else {
+      globalThis.fetch = previousFetch;
+    }
+    if (previousBridgeConfig === undefined) {
+      delete globalThis.__RESONANTOS_BRIDGE_CONFIG__;
+    } else {
+      globalThis.__RESONANTOS_BRIDGE_CONFIG__ = previousBridgeConfig;
+    }
+    cleanup();
+  }
+});
+
 test("settings workspace exposes privacy boundaries and about metadata", async () => {
   const { container, cleanup } = setupDom();
   const bridgeRequest = async (route) => {

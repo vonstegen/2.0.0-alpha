@@ -22,8 +22,22 @@ export function isBridgeNetworkError(error) {
     /\bnetwork request failed\b/i.test(message);
 }
 
+export function isBridgeAuthError(error) {
+  const message = redactSensitiveErrorMessage(error);
+  return /\bUnauthorized browser-first bridge request\b/i.test(message) ||
+    /\bHTTP\s*401\b/i.test(message) ||
+    /\breplied\s+401\b/i.test(message) ||
+    /\btoken mismatch\b/i.test(message) ||
+    /\brequires capability\b/i.test(message) ||
+    /\brequires .*authorization\b/i.test(message);
+}
+
 export function bridgeSetupMessage() {
   return "ResonantOS bridge is unreachable. Start the ResonantOS browser-first bridge, then verify Settings > Bridge Target.";
+}
+
+export function bridgeAuthMessage() {
+  return "ResonantOS bridge rejected this browser profile token. Restart the browser-first bridge, reload the extension, or clear stale Settings > Bridge Target overrides.";
 }
 
 export function modelConnectionMessage(error) {

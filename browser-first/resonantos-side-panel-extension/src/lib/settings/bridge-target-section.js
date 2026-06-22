@@ -13,6 +13,7 @@
 //   - lets the user copy the generated config values (for when they want
 //     to install the extension on another machine and need the token)
 
+import { bridgeAuthMessage } from "../runtime-error-messages.js";
 import { metricCard, noteCard, safeErrorMessage, setStatus, settingsHeader } from "./settings-common.js";
 import { BRIDGE_STORAGE_OVERRIDE_KEY, resolveBridgeConfig } from "../bridge-client.js";
 
@@ -377,9 +378,9 @@ export function renderBridgeTargetSection(container, { bridgeRequest, onBridgeCo
         setStatus(statusNode, `Bridge ${url} responded OK.`, "success");
       } else if (result.status === 401) {
         healthCardEl.querySelector("strong").textContent = "401";
-        healthCardEl.querySelector("p").textContent = "unauthorized — token mismatch";
+        healthCardEl.querySelector("p").textContent = "unauthorized - token mismatch";
         healthCardEl.dataset.tone = "error";
-        setStatus(statusNode, `Bridge ${url} replied 401. Check the token.`, "error");
+        setStatus(statusNode, `Bridge ${url} replied 401. ${bridgeAuthMessage()}`, "error");
       } else if (result.status === 403) {
         healthCardEl.querySelector("strong").textContent = "403";
         healthCardEl.querySelector("p").textContent = "forbidden — IP not allowlisted";
