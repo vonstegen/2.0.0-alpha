@@ -186,6 +186,15 @@ test("browser page actions respect read-only site permission for mutations", asy
   assert.ok(harness.events.some((event) => event[0] === "status" && event[1] === "Page action failed"));
 });
 
+test("browser page actions still send control overlay updates under read-only permission", async () => {
+  const harness = createHarness({ permission: "read-only" });
+
+  const result = await harness.actions.setPageControlOverlay(true, "reading", "reading");
+
+  assert.equal(result.ok, true);
+  assert.ok(harness.events.some((event) => event[0] === "sendMessage" && event[1] === "control_overlay"));
+});
+
 test("browser page actions summarize existing snapshots without rereading", async () => {
   const harness = createHarness({
     lastSnapshot: {

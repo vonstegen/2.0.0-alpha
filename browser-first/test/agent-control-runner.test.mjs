@@ -149,8 +149,15 @@ test("agent control runner completes an observe-act-verify loop", async () => {
   assert.equal(harness.getControlRun().steps[0].details.uncertainty, null);
   assert.equal(harness.nextActionRequests[1].history[0].result.verificationChanged, true);
   assert.deepEqual(
-    harness.events.filter((event) => event[0] === "overlay").map((event) => event[3]),
-    ["reading", "working", "clicking", "verifying", "reading", "working"]
+    harness.events.filter((event) => event[0] === "overlay").map((event) => [event[2], event[3]]),
+    [
+      ["reading", "reading"],
+      ["reading", "reading"],
+      ["clicking", "clicking"],
+      ["verifying", "verifying"],
+      ["reading", "reading"],
+      ["reading", "reading"]
+    ]
   );
   assert.ok(harness.events.some((event) => event[0] === "message" && /Agent Control Mode completed/.test(event[2])));
 });
