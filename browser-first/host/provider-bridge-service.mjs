@@ -46,12 +46,42 @@ export function createProviderBridgeService({
     assertDependency(name, value);
   }
 
-  async function readProviderSecrets() {
-    const filePath = providerSecretsPath();
-    if (!existsSync(filePath)) {
-      return {};
+  const sessionProviderSecrets = new Map();
+
+  function envProviderSecrets() {
+    const raw = String(process.env.RESONANTOS_PROVIDER_SECRETS_JSON ?? "").trim();
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("RESONANTOS_PROVIDER_SECRETS_JSON must be a provider-id to credential object.");
     }
-    return JSON.parse(await readFile(filePath, "utf8"));
+    return Object.fromEntries(Object.entries(parsed)
+      .map(([providerId, credential]) => [String(providerId).trim(), String(credential ?? "").trim()])
+      .filter(([providerId, credential]) => providerId && credential));
+  }
+
+  function sessionProviderSecretsObject() {
+    return Object.fromEntries(sessionProviderSecrets.entries());
+  }
+
+  async function readProviderSecrets() {
+    return {
+      ...envProviderSecrets(),
+      ...sessionProviderSecretsObject(),
+    };
+  }
+
+  function rememberProviderSecret(providerId, credential) {
+    sessionProviderSecrets.set(providerId, credential);
+  }
+
+  function credentialStoreStatus(secrets) {
+    return {
+      configured: Object.keys(secrets).length > 0,
+      location: "Session-only host memory / environment; no provider secrets are persisted by the alpha host.",
+      persistence: "session-only",
+      legacyPlaintextDetected: existsSync(providerSecretsPath()),
+    };
   }
 
   function slugifyProviderId(value) {
@@ -370,8 +400,7 @@ export function createProviderBridgeService({
     ]);
     return {
       vault: {
-        configured: existsSync(providerSecretsPath()),
-        location: "ResonantOS local provider vault",
+        ...credentialStoreStatus(secrets),
       },
       providers: profiles.map((profile) => ({
         ...profile,
@@ -398,7 +427,7 @@ export function createProviderBridgeService({
             hardStop: strategy.hardStop,
           })),
         configured: Boolean(secrets[profile.id]),
-        credentialPreview: secrets[profile.id] ? "stored" : "missing",
+        credentialPreview: secrets[profile.id] ? "session" : "missing",
       })),
     };
   }
@@ -464,7 +493,7 @@ export function createProviderBridgeService({
           ? `${profile.label} is configured, but one or more dependent routing strategies still have no available route.`
           : state === "disabled"
             ? `${profile.label} is configured, but all declared models are disabled by the current allowed-model policy.`
-          : `${profile.label} has no stored credential in the local provider vault.`,
+          : `${profile.label} has no active credential in the session-only credential store.`,
     };
   }
 
@@ -483,7 +512,7 @@ export function createProviderBridgeService({
         testedAt: new Date().toISOString(),
         state: "missing-credential",
         endpoint: "provider models endpoint",
-        detail: `${profile.label} cannot be tested because no credential is stored in the local provider vault.`,
+        detail: `${profile.label} cannot be tested because no active credential is stored in the session-only credential store.`,
       };
       await appendProviderDiagnosticHistory(result);
       return result;
@@ -627,14 +656,11 @@ export function createProviderBridgeService({
     if (credential.length < 8) {
       throw new Error("Credential is too short to save.");
     }
-    const current = await readProviderSecrets();
-    const filePath = providerSecretsPath();
-    await mkdir(path.dirname(filePath), { recursive: true });
-    await writeFile(filePath, `${JSON.stringify({ ...current, [providerId]: credential }, null, 2)}\n`, { mode: 0o600 });
-    await chmod(filePath, 0o600).catch(() => undefined);
+    rememberProviderSecret(providerId, credential);
     return {
       providerId,
       configured: true,
+      persistence: "session-only",
       savedAt: new Date().toISOString(),
     };
   }
@@ -659,15 +685,12 @@ export function createProviderBridgeService({
       if (credential.length < 8) {
         throw new Error("Credential is too short to save.");
       }
-      const currentSecrets = await readProviderSecrets();
-      const filePath = providerSecretsPath();
-      await mkdir(path.dirname(filePath), { recursive: true });
-      await writeFile(filePath, `${JSON.stringify({ ...currentSecrets, [normalized.id]: credential }, null, 2)}\n`, { mode: 0o600 });
-      await chmod(filePath, 0o600).catch(() => undefined);
+      rememberProviderSecret(normalized.id, credential);
     }
     return {
       provider: normalized,
       savedAt: new Date().toISOString(),
+      persistence: "session-only",
       configured: Boolean(credential || (await readProviderSecrets())[normalized.id]),
     };
   }

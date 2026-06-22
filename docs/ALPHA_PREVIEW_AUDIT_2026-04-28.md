@@ -63,9 +63,9 @@ Current implementation status:
 - Fresh installs create the `ResonantOS_User` root under the user's home folder unless overridden. This avoids protected-folder prompts on macOS while keeping the user-state package visible and portable.
 - `RESONANTOS_USER_STATE_ROOT` or `RESONANT_USER_STATE_ROOT` can override the location.
 - Living Archive managed memory resolves through `ResonantOS_User/Memory`.
-- Provider secrets now resolve under `ResonantOS_User/Secrets/provider-secrets.json`.
+- Chrome-extension alpha provider credentials now resolve from session-only host memory or environment configuration. The legacy plaintext `ResonantOS_User/Secrets/provider-secrets.json` path is detected but ignored by the browser-first host.
 - Wallet storage is architectural only; no wallet vault implementation is shipped.
-- Secret encryption is not production-ready yet. The file location is corrected for portability, but encrypted vault hardening remains a required security milestone.
+- Secret encryption is not production-ready yet. The alpha avoids persistent provider-key writes; ADR-022 encrypted vault hardening remains a required security milestone before persistent credentials return.
 
 ## Privacy Audit
 

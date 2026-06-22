@@ -225,7 +225,7 @@ export function diagnosticRecoverySuggestions(entries = []) {
         providerId: latest.providerId,
         state: "missing-credential",
         title: `${label}: save a credential`,
-        body: "Add or restore the provider credential in the local vault, then run Test connection again."
+        body: "Add or restore the provider credential for this host session, then run Test connection again."
       });
       continue;
     }
@@ -353,7 +353,12 @@ function providerCard({ provider, bridgeRequest, getBridgeRequest, statusNode, r
 
   const auth = document.createElement("p");
   auth.className = "settings-model-list";
-  auth.textContent = `Auth: ${formatLabel(provider.authType)} · Credential: ${provider.credentialPreview === "stored" ? "stored in host vault" : "missing"}`;
+  const credentialState = provider.credentialPreview === "session"
+    ? "session-only in host memory"
+    : provider.credentialPreview === "stored"
+      ? "configured in host credential store"
+      : "missing";
+  auth.textContent = `Auth: ${formatLabel(provider.authType)} · Credential: ${credentialState}`;
 
   const form = document.createElement("form");
   form.className = "settings-provider-form";
@@ -383,7 +388,7 @@ function providerCard({ provider, bridgeRequest, getBridgeRequest, statusNode, r
         body: { providerId: provider.id, credential }
       });
       input.value = "";
-      setStatus(statusNode, `${provider.label} credential saved in the local provider vault.`, "success");
+      setStatus(statusNode, `${provider.label} credential saved for this host session.`, "success");
       await reload();
     } catch (error) {
       setStatus(statusNode, `Save failed: ${safeErrorMessage(error)}`, "error");
@@ -600,7 +605,7 @@ export function renderProvidersSection(container, { bridgeRequest, getBridgeRequ
     settingsHeader({
       eyebrow: "Providers and models",
       title: "Provider Profiles",
-      body: "Configure model accounts for Augmentor, Agent Control, and approved add-ons. ResonantOS stores each account credential in the local host vault and exposes only health state to the browser extension."
+      body: "Configure model accounts for Augmentor, Agent Control, and approved add-ons. Alpha credentials stay in session-only host memory or environment configuration; raw keys are not persisted by the extension host."
     }),
     toolbar,
     statusNode,
@@ -626,15 +631,17 @@ export function renderProvidersSection(container, { bridgeRequest, getBridgeRequ
     const consumerCount = providers.reduce((total, provider) => total + (provider.routeConsumers?.length ?? 0), 0);
     vaultGrid.replaceChildren(
       metricCard({
-        label: "Vault",
-        value: result.vault?.configured ? "Created" : "Missing",
-        detail: result.vault?.location ?? "host-managed provider vault",
+        label: "Credential store",
+        value: result.vault?.persistence === "session-only"
+          ? "Session-only"
+          : result.vault?.configured ? "Created" : "Missing",
+        detail: result.vault?.location ?? "session-only host credential store",
         tone: result.vault?.configured ? "success" : "warning"
       }),
       metricCard({
         label: "Configured",
         value: `${configuredCount}/${providers.length}`,
-        detail: "provider profiles with stored credentials",
+        detail: "provider profiles with active session/env credentials",
         tone: configuredCount ? "success" : "warning"
       }),
       metricCard({

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -58,4 +59,19 @@ test("2.0.0 alpha release scope is Chrome extension and bridge only", async () =
   assert.match(manifest.content_security_policy.extension_pages, /connect-src 'self' http:\/\/127\.0\.0\.1:\*/);
   assert.doesNotMatch(manifest.content_security_policy.extension_pages, /https?:\/\/\*:\*/);
   assert.equal(manifest.content_scripts[0].js[0], "src/lib/resonant-context.js");
+});
+
+test("2.0.0 alpha release scope excludes local credential artifacts", () => {
+  const tracked = execFileSync("git", ["ls-files"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  }).split("\n").filter(Boolean);
+  const forbidden = tracked.filter((entry) =>
+    /(^|\/)provider-secrets\.json$/i.test(entry) ||
+    /(^|\/)bridge-config\.generated\.js$/i.test(entry) ||
+    /(^|\/)\.env$/i.test(entry) ||
+    /(^|\/)ResonantOS_User(\/|$)/i.test(entry)
+  );
+
+  assert.deepEqual(forbidden, [], "alpha must not track credential, bridge-token, env, or local user-state artifacts");
 });
