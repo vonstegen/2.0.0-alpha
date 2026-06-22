@@ -79,7 +79,7 @@ export const toggleComposerDictation = ({
   errorMessageOf,
 }: ToggleDictationInput): void => {
   if (!canUseDictation()) {
-    setChatNotice("Audio dictate is not available in the desktop runtime yet.");
+    setChatNotice("Audio dictate is not available in this browser context.");
     return;
   }
 
@@ -92,7 +92,7 @@ export const toggleComposerDictation = ({
   void (async () => {
     const Recognition = resolveSpeechRecognitionCtor() as (new () => BrowserSpeechRecognition) | null;
     if (!Recognition) {
-      setChatNotice("Audio dictate is not available in the desktop runtime yet.");
+      setChatNotice("Audio dictate is not available in this browser context.");
       return;
     }
     try {

@@ -890,7 +890,7 @@ export function StrategistChatRail(props: StrategistChatRailProps) {
                 ? props.dictating
                   ? "Stop dictation"
                   : "Start dictation"
-                : "Audio dictate is not available in the desktop runtime yet."
+                : "Audio dictate is not available in this browser context."
             }
             onClick={props.onToggleDictation}
             disabled={!props.dictationAvailable}

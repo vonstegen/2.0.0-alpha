@@ -50,10 +50,10 @@ function createHarness(overrides = {}) {
       if (route === "/workspace/inspect") {
         return {
           project: { name: "resonantos-vnext", version: "0.1.0" },
-          languages: [{ label: "TypeScript", count: 12 }, { label: "Rust", count: 3 }],
-          frameworks: [{ label: "React", detail: "react dependency" }, { label: "Tauri", detail: "src-tauri Cargo metadata" }],
+          languages: [{ label: "TypeScript", count: 12 }, { label: "JavaScript", count: 8 }],
+          frameworks: [{ label: "React", detail: "react dependency" }, { label: "Chrome Extension MV3", detail: "extension manifest" }],
           runtimes: [{ label: "Node.js", detail: "npm scripts" }, { label: "Chromium extension runtime", detail: "Manifest V3 side panel" }],
-          packageManagers: [{ label: "npm", detail: "package-lock.json" }, { label: "Cargo", detail: "Rust/Tauri metadata" }],
+          packageManagers: [{ label: "npm", detail: "package-lock.json" }],
           evidence: [{ label: "package.json", detail: "project scripts" }]
         };
       }
@@ -178,7 +178,7 @@ test("main workspace action controller completes workspace self-inspection witho
   assert.ok(message);
   assert.match(message[2], /TypeScript/);
   assert.match(message[2], /React/);
-  assert.match(message[2], /Tauri/);
+  assert.match(message[2], /Chrome Extension MV3/);
   assert.match(message[2], /npm/);
   assert.match(message[2], /No OpenCode\/Hermes delegation/);
 });

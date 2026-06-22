@@ -363,14 +363,14 @@ describe("add-on SDK manifest validation", () => {
       validManifest({
         surfaces: [
           {
-            id: "audio2tol-page",
+            id: "custom-tool-page",
             type: "page",
-            label: "Audio2TOL",
-            description: "TOL intake workspace.",
+            label: "Custom Tool",
+            description: "Custom tool workspace.",
             shellNavigation: {
-              sectionId: "audio2tol",
-              dockIcon: "audio2tol",
-              eyebrow: "TOL",
+              sectionId: "custom-tool",
+              dockIcon: "custom-tool",
+              eyebrow: "Tool",
               order: 70,
               requiredCapabilities: ["network"],
             },

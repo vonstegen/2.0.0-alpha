@@ -36,17 +36,11 @@ const includeDocs = new Set([
   "docs/architecture/addon-skills/living-archive/SOURCE_TO_WIKI_INTAKE.md",
 ]);
 
-const includeNativeBrowser = new Set([
-  "addons/resonant-browser-host/test/browser-host.test.mjs",
-  "addons/resonant-browser-native/native_host/src/resonant_browser_native_bridge_mac.mm",
-  "addons/resonant-browser-native/native_host/src/resonant_browser_native_host.cc",
-]);
-
 function classify(path) {
   if (path.startsWith("browser-first/")) {
     return {
       bucket: "include",
-      reason: "browser-first product code, tests, or docs",
+      reason: "Chrome extension, Node bridge host, or browser-first tests/docs",
     };
   }
   if (includeDocs.has(path)) {
@@ -55,28 +49,54 @@ function classify(path) {
       reason: "browser-first release documentation",
     };
   }
-  if (includeNativeBrowser.has(path)) {
+  if (path.startsWith("addons/resonant-browser-host/")) {
     return {
       bucket: "include",
-      reason: "native browser host behavior required by browser-first",
+      reason: "pure Node browser host support package",
     };
   }
-  if (path === "scripts/browser-first-release-scope-audit.mjs") {
+  if (path.startsWith("src/") || path.startsWith("public/addons/") || path.startsWith("scripts/") || path.startsWith(".github/")) {
     return {
       bucket: "include",
-      reason: "browser-first release hygiene tool",
+      reason: "shared alpha code, addon registry, release script, or CI",
     };
   }
-  if (path === "package.json") {
+  if (
+    path === "package.json" ||
+    path === "package-lock.json" ||
+    path === "README.md" ||
+    path === "SECURITY.md" ||
+    path === "LICENSE.txt" ||
+    path === "run-bridge-minimal.mjs" ||
+    path === "vite.config.ts"
+  ) {
     return {
       bucket: "include",
-      reason: "exposes browser-first release audit command",
+      reason: "alpha package metadata or release-facing documentation",
     };
   }
-  if (path.startsWith("electron-host/")) {
+  if (/^(AUDIT-.*\.md|SECURITY-RED-TEAM-REPORT\.md)$/.test(path)) {
     return {
-      bucket: "defer",
-      reason: "Electron host is experimental/deprecated for current browser-first branch",
+      bucket: "include",
+      reason: "internal audit artifact removed from the public alpha surface",
+    };
+  }
+  if (
+    path.startsWith("electron-host/") ||
+    path.startsWith("src-tauri/") ||
+    path.startsWith("addons/resonant-browser-native/") ||
+    path.startsWith("build/native-browser/") ||
+    path === "rust-toolchain.toml"
+  ) {
+    return {
+      bucket: "include",
+      reason: "desktop/native host removal required for the Chrome extension alpha",
+    };
+  }
+  if (path.startsWith("public/icons/custom/audio2tol") || path === "public/icons/icon-preview.html") {
+    return {
+      bucket: "include",
+      reason: "alpha icon catalog cleanup for removed workspaces",
     };
   }
   if (path.startsWith("examples/living-archive-")) {
@@ -85,16 +105,10 @@ function classify(path) {
       reason: "Living Archive MCP/example bridge scope needs separate release decision",
     };
   }
-  if (path.startsWith("src/") || path.startsWith("src-tauri/") || path.startsWith("public/addons/") || path.startsWith("scripts/")) {
-    return {
-      bucket: "defer",
-      reason: "legacy desktop/shared vNext change; keep separate unless explicitly tied to browser-first",
-    };
-  }
   if (path.startsWith("docs/architecture/AUDIO2TOL_INTAKE_ANALYSIS.md")) {
     return {
       bucket: "defer",
-      reason: "Audio2TOL example update is not browser-first stabilization scope",
+      reason: "specialist media-intake documentation is not browser-first stabilization scope",
     };
   }
   if (path.startsWith("docs/")) {
@@ -140,7 +154,7 @@ printGroup("Include with browser-first", groups.get("include"));
 printGroup("Defer to separate commit/release", groups.get("defer"));
 printGroup("Needs manual review", groups.get("review"));
 
-const missing = [...includeDocs, ...includeNativeBrowser]
+const missing = [...includeDocs]
   .filter((path) => !existsSync(new URL(`../${path}`, import.meta.url)))
   .filter((path) => path !== "docs/BROWSER_FIRST_STABILIZATION_2026-06-02.md");
 

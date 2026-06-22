@@ -260,7 +260,7 @@ const successCriteriaFrom = (messages: ConversationMessage[]): string[] =>
 
 const artifactRefsFrom = (messages: ConversationMessage[]): ContextMemoryState["artifacts"] => {
   const refs: ContextMemoryState["artifacts"] = [];
-  const pathPattern = /(?:\.{0,2}\/|\/Users\/|docs\/|src\/|src-tauri\/|public\/)[^\s),`]+/g;
+  const pathPattern = /(?:\.{0,2}\/|\/Users\/|docs\/|src\/|public\/)[^\s),`]+/g;
   const urlPattern = /https?:\/\/[^\s),`]+/g;
   const commitPattern = /\b[0-9a-f]{7,40}\b/gi;
 
@@ -301,7 +301,7 @@ const factScopeFor = (content: string): ContextMemoryState["facts"][number]["sco
   if (/\b(i am|my|for me|in my case|i have|i use)\b/i.test(content)) {
     return "user";
   }
-  if (/\b(resonantos|augmentor|engineer|living archive|openclaw|hermes|obsidian|audio2tol)\b/i.test(content)) {
+  if (/\b(resonantos|augmentor|engineer|living archive|openclaw|hermes|obsidian)\b/i.test(content)) {
     return "system";
   }
   if (/\b(research|external|company|client|meeting|document)\b/i.test(content)) {

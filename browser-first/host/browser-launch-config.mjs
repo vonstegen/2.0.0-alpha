@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 
-// Browser-launch containment for the browser-first native host (PR-R07 / P1-c).
+// Browser-launch containment helpers for browser-first profile isolation.
 //
 // Goal: each sensitive launch binds an OWNED EPHEMERAL profile, a contained
 // remote-debugging surface (loopback + port 0 / ephemeral), and a pinned

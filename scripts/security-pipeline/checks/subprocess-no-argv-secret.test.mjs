@@ -5,9 +5,9 @@ import { fileURLToPath } from "node:url";
 import { run } from "./subprocess-no-argv-secret.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-// repoRoot such that <repoRoot>/src-tauri/src exists (2.0.0-alpha).
+// repoRoot such that <repoRoot>/browser-first/host exists (2.0.0-alpha).
 const REPO_ROOT = path.resolve(HERE, "..", "..", "..");
-const SURFACE = ["src-tauri/src"];
+const SURFACE = ["browser-first/host"];
 
 const SECRET_RECORD = {
   site: "fixture:argv-secret",

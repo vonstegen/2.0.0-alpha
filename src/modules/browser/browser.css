@@ -380,14 +380,6 @@
   line-height: 1.35;
 }
 
-.browser-native-host {
-  position: relative;
-  display: grid;
-  min-height: 0;
-  overflow: hidden;
-  background: #ffffff;
-}
-
 .browser-v2-host {
   position: relative;
   display: grid;
@@ -472,31 +464,6 @@
   user-select: none;
 }
 
-.browser-native-diagnostics {
-  display: none;
-}
-
-.browser-native-diagnostics h3 {
-  font-size: 1rem;
-  letter-spacing: -0.03em;
-}
-
-.browser-native-diagnostics p {
-  font-size: 0.74rem;
-}
-
-.browser-native-diagnostics .browser-v2-actions {
-  margin-top: 0.65rem;
-}
-
-.browser-native-diagnostics .button-secondary {
-  min-height: 32px;
-  padding: 0 0.62rem;
-  font-size: 0.72rem;
-}
-
-.browser-v2-hero,
-.browser-native-probe,
 .browser-extension-manager,
 .browser-extension-priority-grid article,
 .browser-extension-list {
@@ -507,95 +474,17 @@
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.22);
 }
 
-.browser-v2-host > .browser-native-probe,
 .browser-v2-host > .browser-extension-manager,
 .browser-v2-host > .browser-extension-list {
   display: none;
 }
 
-.browser-v2-hero {
-  padding: clamp(1rem, 2vw, 1.35rem);
-}
-
-.browser-native-placeholder {
-  place-self: center;
-  width: min(42rem, calc(100% - 2rem));
-}
-
-.browser-v2-hero h3 {
-  margin: 0.2rem 0 0;
-  color: var(--text-primary);
-  font-size: clamp(1.35rem, 2vw, 2rem);
-  letter-spacing: -0.06em;
-}
-
-.browser-v2-hero p,
 .browser-extension-priority-grid p,
 .browser-extension-list p {
   margin: 0.42rem 0 0;
   color: var(--text-secondary);
   font-size: 0.84rem;
   line-height: 1.45;
-}
-
-.browser-v2-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem;
-  margin-top: 1rem;
-}
-
-.browser-native-probe {
-  display: grid;
-  gap: 0.8rem;
-  padding: 1rem;
-}
-
-.browser-native-probe h4 {
-  margin: 0.2rem 0 0;
-  color: var(--text-primary);
-  font-size: 1.05rem;
-  letter-spacing: -0.04em;
-}
-
-.browser-native-probe p {
-  margin: 0.42rem 0 0;
-  color: var(--text-secondary);
-  font-size: 0.82rem;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-
-.browser-native-probe-blocked {
-  border-color: rgba(255, 136, 96, 0.28);
-  background: rgba(255, 136, 96, 0.06);
-}
-
-.browser-native-probe-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.browser-native-probe-grid span,
-.browser-native-probe li {
-  color: var(--text-secondary);
-  font-size: 0.78rem;
-  line-height: 1.35;
-}
-
-.browser-native-probe-grid span {
-  padding: 0.45rem 0.6rem;
-  border: 1px solid rgba(255, 248, 236, 0.1);
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.16);
-}
-
-.browser-native-probe ul {
-  display: grid;
-  gap: 0.35rem;
-  margin: 0;
-  padding-left: 1.1rem;
 }
 
 .browser-extension-priority-grid {
@@ -701,31 +590,13 @@
   font-size: 0.74rem;
 }
 
-.browser-native-webview-mount {
+.browser-extension-preview-mount {
   position: relative;
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
   background: transparent;
-}
-
-.browser-native-webview-placeholder {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-content: center;
-  gap: 0.25rem;
-  color: rgba(15, 23, 42, 0.58);
-  background: transparent;
-  opacity: 0;
-  font-size: 0.82rem;
-  pointer-events: none;
-}
-
-.browser-native-webview-placeholder span {
-  color: rgba(15, 23, 42, 0.42);
-  font-size: 0.72rem;
 }
 
 .browser-empty-state {

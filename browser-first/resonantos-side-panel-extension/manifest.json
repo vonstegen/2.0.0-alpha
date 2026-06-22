@@ -8,7 +8,7 @@
   "permissions": ["activeTab", "clipboardRead", "clipboardWrite", "history", "scripting", "sidePanel", "storage", "tabs", "webNavigation"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' http://127.0.0.1:47773 http://localhost:47773 http://127.0.0.1:19443 https://localhost:19443 https://*:* http://*:*; img-src 'self' data: http://127.0.0.1:47773 http://localhost:47773 http://127.0.0.1:19443 https://localhost:19443 https://*:* http://*:* data: blob:; style-src 'self' 'unsafe-inline'; frame-src http://127.0.0.1:47773 http://localhost:47773 http://127.0.0.1:19443 https://localhost:19443 https://*:* http://*:*;"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:* https://127.0.0.1:* https://localhost:*; img-src 'self' data: blob: http://127.0.0.1:* http://localhost:* https://127.0.0.1:* https://localhost:*; style-src 'self' 'unsafe-inline'; frame-src http://127.0.0.1:* http://localhost:* https://127.0.0.1:* https://localhost:*;"
   },
   "background": {
     "service_worker": "src/background.js",
@@ -17,7 +17,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["src/lib/control-overlay.js", "src/lib/content-field-safety.js", "src/lib/content-inline-actions.js", "src/lib/content-control-refs.js", "src/content.js"],
+      "js": ["src/lib/resonant-context.js", "src/lib/control-overlay.js", "src/lib/content-field-safety.js", "src/lib/content-inline-actions.js", "src/lib/content-control-refs.js", "src/content.js"],
       "run_at": "document_idle",
       "all_frames": true
     }

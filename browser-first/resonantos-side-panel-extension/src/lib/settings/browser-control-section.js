@@ -124,8 +124,8 @@ export function renderBrowserControlSection(container, { bridgeRequest, getBridg
   clearJobs.textContent = "Clear Completed Browser Jobs";
   const clearDownloads = clearButton("Clear Download History");
 
-  const nativeActions = document.createElement("div");
-  nativeActions.className = "settings-inline-actions";
+  const browserActions = document.createElement("div");
+  browserActions.className = "settings-inline-actions";
   const downloadsButton = document.createElement("button");
   downloadsButton.type = "button";
   downloadsButton.textContent = "Open Downloads";
@@ -154,7 +154,7 @@ export function renderBrowserControlSection(container, { bridgeRequest, getBridg
   settingsButton.type = "button";
   settingsButton.textContent = "Browser Settings";
   settingsButton.addEventListener("click", () => void openBrowserTab(chromeApi, "chrome://settings"));
-  nativeActions.append(downloadsButton, historyButton, bookmarksButton, extensionsButton, passwordsButton, permissionsButton, settingsButton);
+  browserActions.append(downloadsButton, historyButton, bookmarksButton, extensionsButton, passwordsButton, permissionsButton, settingsButton);
 
   const grantsSection = document.createElement("section");
   grantsSection.className = "settings-control-primary";
@@ -167,10 +167,10 @@ export function renderBrowserControlSection(container, { bridgeRequest, getBridg
   grantsHeading.append(grantsTitle, grantsCopy);
   grantsSection.append(grantsHeading, permissionsList);
 
-  const nativeDisclosure = controlDisclosure(
-    "Native browser tools",
+  const browserDisclosure = controlDisclosure(
+    "Browser management pages",
     "Open Chromium management pages when you need browser-level settings. These are separate from Augmentor's agent-control grants.",
-    [nativeActions]
+    [browserActions]
   );
   const downloadsDisclosure = controlDisclosure(
     "Recent downloads",
@@ -179,7 +179,7 @@ export function renderBrowserControlSection(container, { bridgeRequest, getBridg
   );
   const jobsDisclosure = controlDisclosure(
     "Browser job history",
-    "Review recent browser-control jobs. Clearing terminal jobs removes completed, blocked, cancelled, and failed history from the local monitor only.",
+    "Review recent browser-control jobs. Clearing browser jobs removes completed, blocked, cancelled, and failed history from the local monitor only.",
     [jobsList, clearJobs]
   );
 
@@ -192,7 +192,7 @@ export function renderBrowserControlSection(container, { bridgeRequest, getBridg
     statusNode,
     currentCard,
     grantsSection,
-    nativeDisclosure,
+    browserDisclosure,
     downloadsDisclosure,
     jobsDisclosure
   );
