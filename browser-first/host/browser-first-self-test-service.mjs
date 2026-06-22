@@ -28,6 +28,40 @@ function fakeCliScript(output) {
   return `#!/bin/sh\ncat <<'EOF'\n${output}\nEOF\n`;
 }
 
+function fakeHermesCliScript(output) {
+  if (process.platform === "win32") {
+    return [
+      "@echo off",
+      "if \"%HERMES_TUI_QUERY%\"==\"\" (echo missing HERMES_TUI_QUERY 1>&2 & exit /b 32)",
+      "echo %* | findstr /C:\"Hermes operating as a ResonantOS add-on agent\" >nul && (echo prompt leaked in argv 1>&2 & exit /b 31)",
+      ...String(output).split("\n").map(cmdEchoLine),
+      "",
+    ].join("\r\n");
+  }
+  return `#!/bin/sh
+if [ -z "\${HERMES_TUI_QUERY:-}" ]; then
+  echo "missing HERMES_TUI_QUERY" >&2
+  exit 32
+fi
+case "$*" in
+  *"Hermes operating as a ResonantOS add-on agent"*)
+    echo "prompt leaked in argv" >&2
+    exit 31
+    ;;
+esac
+case "$HERMES_TUI_QUERY" in
+  *"Hermes operating as a ResonantOS add-on agent"*) ;;
+  *)
+    echo "prompt missing from HERMES_TUI_QUERY" >&2
+    exit 33
+    ;;
+esac
+cat <<'EOF'
+${output}
+EOF
+`;
+}
+
 export async function runBrowserFirstSelfTest(context) {
   const {
     args,
@@ -519,7 +553,7 @@ export async function runBrowserFirstSelfTest(context) {
         "- Local Hermes CLI process was invoked through the host boundary.",
       ].join("\n");
       await mkdir(path.dirname(fakeHermes), { recursive: true });
-      await writeFile(fakeHermes, fakeCliScript(fakeOutput));
+      await writeFile(fakeHermes, fakeHermesCliScript(fakeOutput));
       await chmod(fakeHermes, 0o755).catch(() => undefined);
       process.env.HERMES_COMMAND = fakeHermes;
       server = await startBridgeServer({
@@ -629,7 +663,7 @@ export async function runBrowserFirstSelfTest(context) {
         "- Local Hermes CLI process was invoked through the host boundary.",
       ].join("\n");
       await mkdir(path.dirname(fakeHermes), { recursive: true });
-      await writeFile(fakeHermes, fakeCliScript(fakeOutput));
+      await writeFile(fakeHermes, fakeHermesCliScript(fakeOutput));
       await chmod(fakeHermes, 0o755).catch(() => undefined);
       process.env.HERMES_COMMAND = fakeHermes;
       const request = async (routePath, { method = "POST", body = {}, capabilityToken } = {}) => {
