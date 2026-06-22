@@ -47,6 +47,10 @@ See the [README](README.md) for all run modes and provider setup.
    ```
 6. Add or update tests when changing behavior. Both Vitest and `node --test`
    suites are used — run the full suite before pushing.
+7. When adding a module, moving ownership between modules, changing host routes,
+   or moving behavior out of `App.tsx`, follow the
+   [module ownership PR checklist](docs/architecture/MODULE-OWNERSHIP.md#pull-request-checklist-hook)
+   and update the ownership map in the same PR.
 
 ## Code Style
 
