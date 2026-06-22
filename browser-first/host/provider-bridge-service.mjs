@@ -47,17 +47,37 @@ export function createProviderBridgeService({
   }
 
   const sessionProviderSecrets = new Map();
+  const providerEnvKeys = Object.freeze({
+    "shared-minimax": ["MINIMAX_API_KEY"],
+    "shared-openai": ["OPENAI_API_KEY"],
+    "shared-zai-glm": ["ZAI_API_KEY", "GLM_API_KEY", "ZHIPUAI_API_KEY"],
+  });
+
+  function commonEnvProviderSecrets() {
+    const entries = [];
+    for (const [providerId, envKeys] of Object.entries(providerEnvKeys)) {
+      const credential = envKeys
+        .map((key) => String(process.env[key] ?? "").trim())
+        .find(Boolean);
+      if (credential) entries.push([providerId, credential]);
+    }
+    return Object.fromEntries(entries);
+  }
 
   function envProviderSecrets() {
     const raw = String(process.env.RESONANTOS_PROVIDER_SECRETS_JSON ?? "").trim();
-    if (!raw) return {};
+    const common = commonEnvProviderSecrets();
+    if (!raw) return common;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       throw new Error("RESONANTOS_PROVIDER_SECRETS_JSON must be a provider-id to credential object.");
     }
-    return Object.fromEntries(Object.entries(parsed)
-      .map(([providerId, credential]) => [String(providerId).trim(), String(credential ?? "").trim()])
-      .filter(([providerId, credential]) => providerId && credential));
+    return {
+      ...common,
+      ...Object.fromEntries(Object.entries(parsed)
+        .map(([providerId, credential]) => [String(providerId).trim(), String(credential ?? "").trim()])
+        .filter(([providerId, credential]) => providerId && credential)),
+    };
   }
 
   function sessionProviderSecretsObject() {

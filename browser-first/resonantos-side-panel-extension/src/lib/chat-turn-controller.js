@@ -1,3 +1,5 @@
+import { modelConnectionMessage } from "./runtime-error-messages.js";
+
 export const DEFAULT_MAX_HISTORY_MESSAGES = 16;
 
 export function pageContextForSnapshot(snapshot) {
@@ -81,7 +83,7 @@ export function createChatTurnController({
         return;
       }
       setStatus("Provider failed");
-      await addMessage("system", error instanceof Error ? error.message : String(error));
+      await addMessage("system", modelConnectionMessage(error));
     } finally {
       activeAbortController = null;
       setTurnBusy(false, { canStop: false });

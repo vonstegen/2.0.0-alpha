@@ -20,7 +20,36 @@ function createService(root) {
   });
 }
 
+const providerEnvNames = [
+  "MINIMAX_API_KEY",
+  "OPENAI_API_KEY",
+  "ZAI_API_KEY",
+  "GLM_API_KEY",
+  "ZHIPUAI_API_KEY",
+  "RESONANTOS_PROVIDER_SECRETS_JSON",
+];
+
+function withProviderEnv(values = {}) {
+  const previous = Object.fromEntries(providerEnvNames.map((name) => [name, process.env[name]]));
+  for (const name of providerEnvNames) {
+    delete process.env[name];
+  }
+  for (const [name, value] of Object.entries(values)) {
+    process.env[name] = value;
+  }
+  return () => {
+    for (const name of providerEnvNames) {
+      if (previous[name] === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = previous[name];
+      }
+    }
+  };
+}
+
 test("provider credentials saved through the alpha host are session-only", async () => {
+  const restoreEnv = withProviderEnv();
   const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-provider-session-"));
   const secretPath = path.join(root, "Secrets", "provider-secrets.json");
   const service = createService(root);
@@ -42,11 +71,13 @@ test("provider credentials saved through the alpha host are session-only", async
     assert.equal(minimax.configured, true);
     assert.equal(minimax.credentialPreview, "session");
   } finally {
+    restoreEnv();
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("legacy plaintext provider secret files are detected but ignored", async () => {
+  const restoreEnv = withProviderEnv();
   const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-provider-legacy-"));
   const secretPath = path.join(root, "Secrets", "provider-secrets.json");
   const service = createService(root);
@@ -63,11 +94,43 @@ test("legacy plaintext provider secret files are detected but ignored", async ()
     assert.equal(minimax.configured, false);
     assert.equal(minimax.credentialPreview, "missing");
   } finally {
+    restoreEnv();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("common provider environment keys configure built-in providers without persistence", async () => {
+  const restoreEnv = withProviderEnv({
+    OPENAI_API_KEY: "openai-env-credential",
+    ZAI_API_KEY: "zai-env-credential",
+  });
+  const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-provider-env-"));
+  const secretPath = path.join(root, "Secrets", "provider-secrets.json");
+  const service = createService(root);
+  try {
+    const secrets = await service.readProviderSecrets();
+    const status = await service.executeProviderStatus();
+    const openai = status.providers.find((provider) => provider.id === "shared-openai");
+    const zai = status.providers.find((provider) => provider.id === "shared-zai-glm");
+    const minimax = status.providers.find((provider) => provider.id === "shared-minimax");
+
+    assert.equal(secrets["shared-openai"], "openai-env-credential");
+    assert.equal(secrets["shared-zai-glm"], "zai-env-credential");
+    assert.equal(secrets["shared-minimax"], undefined);
+    assert.equal(status.vault.configured, true);
+    assert.equal(status.vault.persistence, "session-only");
+    assert.equal(existsSync(secretPath), false);
+    assert.equal(openai.configured, true);
+    assert.equal(zai.configured, true);
+    assert.equal(minimax.configured, false);
+  } finally {
+    restoreEnv();
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("provider account save enforces credential-safe endpoint policy", async () => {
+  const restoreEnv = withProviderEnv();
   const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-provider-endpoint-policy-"));
   const service = createService(root);
   try {
@@ -138,6 +201,7 @@ test("provider account save enforces credential-safe endpoint policy", async () 
     });
     assert.equal(localRuntime.provider.apiBaseUrl, "http://127.0.0.1:11434/v1");
   } finally {
+    restoreEnv();
     await rm(root, { recursive: true, force: true });
   }
 });

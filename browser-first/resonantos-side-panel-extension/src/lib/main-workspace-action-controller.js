@@ -11,6 +11,10 @@ import { buildDelegationStatusMessage } from "./delegation-status.js";
 import { buildHermesRuntimeStatusMessage } from "./addon-runtime-status.js";
 import { runReviewableCapture } from "./main-workspace-review-handoff.js";
 import {
+  mainWorkspaceRequestMessage,
+  regenerationMessage
+} from "./runtime-error-messages.js";
+import {
   parseDaoSlashCommand,
   parseDraftSlashCommand,
   parseHermesSlashCommand,
@@ -345,7 +349,7 @@ export function createMainWorkspaceActionController({
       composerController.resetUndoStack("");
       await runPrompt(prompt);
     } catch (error) {
-      await addMessage("system", `Main workspace request failed: ${error instanceof Error ? error.message : String(error)}`);
+      await addMessage("system", mainWorkspaceRequestMessage(error));
       updateConnectionLine("Failed");
     } finally {
       setComposerBusy(false);
@@ -358,7 +362,7 @@ export function createMainWorkspaceActionController({
     try {
       await runChatTurn(prompt);
     } catch (error) {
-      await addMessage("system", `Regeneration failed: ${error instanceof Error ? error.message : String(error)}`);
+      await addMessage("system", regenerationMessage(error));
       updateConnectionLine("Failed");
     } finally {
       setComposerBusy(false);

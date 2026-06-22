@@ -1,3 +1,5 @@
+import { bridgeSetupMessage, isBridgeNetworkError, redactSensitiveErrorMessage } from "./runtime-error-messages.js";
+
 function statusCountLine(taskCounts = {}) {
   const entries = Object.entries(taskCounts)
     .filter(([, count]) => Number(count) > 0)
@@ -45,11 +47,14 @@ export async function buildHermesRuntimeStatusMessage({ bridgeRequest, getBridge
     const status = await bridgeFn("/hermes/status", { method: "POST", body: {} });
     return formatHermesRuntimeStatus(status);
   } catch (error) {
+    const reason = isBridgeNetworkError(error)
+      ? bridgeSetupMessage()
+      : redactSensitiveErrorMessage(error);
     return [
       "Hermes runtime status",
       "- CLI: unknown",
       "- Execution: unavailable",
-      `Reason: ${error instanceof Error ? error.message : String(error)}`,
+      `Reason: ${reason}`,
       "Next action: open Settings > Add-ons or the Hermes workspace to inspect the runtime configuration."
     ].join("\n");
   }

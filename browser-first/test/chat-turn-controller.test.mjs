@@ -32,7 +32,7 @@ test("chat turn controller filters provider messages to recent user/assistant tu
   ]);
 });
 
-function createHarness({ fail = false, systemPrompt = "" } = {}) {
+function createHarness({ fail = false, failureError = new Error("provider down"), systemPrompt = "" } = {}) {
   const events = [];
   const attachments = [{ name: "notes.md", content: "notes" }];
   const messages = [
@@ -43,7 +43,7 @@ function createHarness({ fail = false, systemPrompt = "" } = {}) {
     addMessage: async (role, content, options = {}) => events.push(["message", role, content, options]),
     bridgeRequest: async (path, request) => {
       events.push(["bridge", path, request]);
-      if (fail) throw new Error("provider down");
+      if (fail) throw failureError;
       return { reply: "answer", providerId: "provider-a", model: "model-a", usage: { tokens: 7 } };
     },
     chatSessionStore: {
@@ -97,6 +97,19 @@ test("chat turn controller reports provider failure", async () => {
   await harness.controller.runChatTurn();
 
   assert.ok(harness.events.some((event) => event[0] === "status" && event[1] === "Provider failed"));
-  assert.ok(harness.events.some((event) => event[0] === "message" && event[1] === "system" && event[2] === "provider down"));
+  assert.ok(harness.events.some((event) => event[0] === "message" && event[1] === "system" && /Model connection unavailable: provider down/.test(event[2])));
+  assert.ok(harness.events.some((event) => event[0] === "message" && event[1] === "system" && /Settings > Providers/.test(event[2])));
   assert.deepEqual(harness.events.at(-1), ["clearActivitySoon"]);
+});
+
+test("chat turn controller replaces raw fetch failures with bridge setup guidance", async () => {
+  const harness = createHarness({ fail: true, failureError: new TypeError("Failed to fetch") });
+
+  await harness.controller.runChatTurn();
+
+  const message = harness.events.find((event) => event[0] === "message" && event[1] === "system")?.[2] ?? "";
+  assert.match(message, /Model connection unavailable/);
+  assert.match(message, /ResonantOS bridge is unreachable/);
+  assert.match(message, /Settings > Bridge Target/);
+  assert.doesNotMatch(message, /Failed to fetch/);
 });

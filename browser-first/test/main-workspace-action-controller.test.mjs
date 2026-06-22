@@ -44,6 +44,9 @@ function createHarness(overrides = {}) {
     },
     bridgeRequest: async (route, request = {}) => {
       events.push(["bridge", route, request.body ?? null]);
+      if (overrides.bridgeFailure) {
+        throw overrides.bridgeFailure;
+      }
       if (route === "/augmentor/chat") {
         return { content: "assistant reply", usage: { tokens: 4 } };
       }
@@ -133,6 +136,19 @@ test("main workspace action controller runs provider chat with current model, de
   assert.equal(harness.commandInput.value, "");
   assert.ok(harness.events.some((event) => event[0] === "message" && event[1] === "assistant" && event[2] === "assistant reply"));
   assert.deepEqual(harness.events.at(-1), ["busy", false]);
+});
+
+test("main workspace action controller replaces raw model fetch failures with bridge setup guidance", async () => {
+  const harness = createHarness({ prompt: "test", bridgeFailure: new TypeError("Failed to fetch") });
+
+  await harness.controller.handleSubmit({ preventDefault() {} });
+
+  const message = harness.events.find((event) => event[0] === "message" && event[1] === "system")?.[2] ?? "";
+  assert.match(message, /Main workspace request failed/);
+  assert.match(message, /ResonantOS bridge is unreachable/);
+  assert.match(message, /Settings > Bridge Target/);
+  assert.doesNotMatch(message, /Failed to fetch/);
+  assert.ok(harness.events.some((event) => event[0] === "status" && event[1] === "Failed"));
 });
 
 test("main workspace action controller routes browser work into sidebar control mode", async () => {

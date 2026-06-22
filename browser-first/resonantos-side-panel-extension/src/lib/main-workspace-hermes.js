@@ -1,5 +1,6 @@
 import { delegationGuidanceText } from "./delegation-guidance.js";
 import { createAddonIframe } from "./addon-iframe.js";
+import { hermesStatusMessage } from "./runtime-error-messages.js";
 
 function runtimeLine(hermesStatus = {}) {
   const cli = hermesStatus.available ? "CLI detected" : "CLI not detected";
@@ -119,7 +120,7 @@ export function renderHermesDashboardWorkspace({ container, bridgeRequest, getBr
       bridge()("/hermes/status", { method: "POST", body: {} }),
     ]);
     setDashboardState({ addon, dashboard, hermesStatus });
-    return dashboard;
+    return { dashboard, hermesStatus };
   };
   const startDashboard = async () => {
     start.disabled = true;
@@ -136,7 +137,7 @@ export function renderHermesDashboardWorkspace({ container, bridgeRequest, getBr
       setDashboardState({ addon, dashboard, hermesStatus });
       reloadIframe();
     } catch (error) {
-      status.textContent = `Hermes dashboard failed to start: ${error instanceof Error ? error.message : String(error)}`;
+      status.textContent = hermesStatusMessage(error, "Hermes dashboard failed to start");
     } finally {
       start.disabled = false;
     }
@@ -155,22 +156,22 @@ export function renderHermesDashboardWorkspace({ container, bridgeRequest, getBr
       ]);
       setDashboardState({ addon, dashboard, hermesStatus });
     } catch (error) {
-      status.textContent = `Hermes dashboard failed to stop: ${error instanceof Error ? error.message : String(error)}`;
+      status.textContent = hermesStatusMessage(error, "Hermes dashboard failed to stop");
     } finally {
       stop.disabled = false;
     }
   });
   refresh.addEventListener("click", () => void Promise.all([loadStatus(), reloadIframe()]).catch((error) => {
-    status.textContent = `Hermes status unavailable: ${error instanceof Error ? error.message : String(error)}`;
+    status.textContent = hermesStatusMessage(error);
   }));
   void loadStatus()
-    .then((dashboard) => {
-      if (!dashboard?.running) {
+    .then(({ dashboard, hermesStatus }) => {
+      if (!dashboard?.running && hermesStatus?.available) {
         return startDashboard();
       }
       reloadIframe();
     })
     .catch((error) => {
-      status.textContent = `Hermes status unavailable: ${error instanceof Error ? error.message : String(error)}`;
+      status.textContent = hermesStatusMessage(error);
     });
 }
