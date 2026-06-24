@@ -485,6 +485,24 @@ export function createAddonDelegationService(dependencies) {
     return next;
   }
 
+  async function failDelegationAfterRunning(taskPath, error) {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      const updated = await writeDelegationStatus(taskPath, "failed", {
+        failedAt: new Date().toISOString(),
+        failureReason: message.slice(0, 500),
+      });
+      return {
+        ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
+        failureReason: message,
+        status: "failed",
+      };
+    } catch (statusError) {
+      const statusMessage = statusError instanceof Error ? statusError.message : String(statusError);
+      throw new Error(`Delegation failed, and failed-status recovery also failed: ${message}; recovery: ${statusMessage}`);
+    }
+  }
+
   function deterministicHermesResult(packet) {
     const mission = sectionFromMarkdown(packet, "Mission");
     const hasContext = Boolean(sectionFromMarkdown(packet, "Context Packet"));
@@ -646,39 +664,29 @@ export function createAddonDelegationService(dependencies) {
         status: "blocked",
       };
     }
-    let result;
     try {
-      result = adapter === "deterministic"
+      const result = adapter === "deterministic"
         ? deterministicHermesResult(packet)
         : await runHermesCliDelegation(command, packet, payload);
-    } catch (error) {
-      const failedAt = new Date().toISOString();
-      const updated = await writeDelegationStatus(taskPath, "failed", {
-        failedAt,
-        failureReason: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+      const artifactPath = await writeHermesResultArtifact(taskPath, packet, result);
+      let updated = await writeDelegationStatus(taskPath, "completed", {
+        completedAt: new Date().toISOString(),
+        resultArtifactPath: path.relative(userRoot(), artifactPath),
       });
+      updated = `${updated.trimEnd()}\n\n## Result\n${result.finalSummary}\n\n## Result Artifact\n${path.relative(userRoot(), artifactPath)}\n`;
+      await writeFile(taskPath, updated);
       return {
         ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
-        failureReason: error instanceof Error ? error.message : String(error),
-        status: "failed",
+        adapter: result.adapter,
+        artifact: {
+          path: path.relative(userRoot(), artifactPath),
+          ...result,
+        },
+        status: "completed",
       };
+    } catch (error) {
+      return failDelegationAfterRunning(taskPath, error);
     }
-    const artifactPath = await writeHermesResultArtifact(taskPath, packet, result);
-    let updated = await writeDelegationStatus(taskPath, "completed", {
-      completedAt: new Date().toISOString(),
-      resultArtifactPath: path.relative(userRoot(), artifactPath),
-    });
-    updated = `${updated.trimEnd()}\n\n## Result\n${result.finalSummary}\n\n## Result Artifact\n${path.relative(userRoot(), artifactPath)}\n`;
-    await writeFile(taskPath, updated);
-    return {
-      ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
-      adapter: result.adapter,
-      artifact: {
-        path: path.relative(userRoot(), artifactPath),
-        ...result,
-      },
-      status: "completed",
-    };
   }
 
   async function executeHermesDelegationStatus(payload = {}) {
@@ -1072,38 +1080,29 @@ export function createAddonDelegationService(dependencies) {
         status: "blocked",
       };
     }
-    let result;
     try {
-      result = adapter === "deterministic"
+      const result = adapter === "deterministic"
         ? deterministicOpenCodeResult(packet, payload)
         : await runOpenCodeCliDelegation(command, packet, payload);
-    } catch (error) {
-      const updated = await writeDelegationStatus(taskPath, "failed", {
-        failedAt: new Date().toISOString(),
-        failureReason: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+      const artifactPath = await writeOpenCodeResultArtifact(taskPath, packet, result);
+      let updated = await writeDelegationStatus(taskPath, "completed", {
+        completedAt: new Date().toISOString(),
+        resultArtifactPath: path.relative(userRoot(), artifactPath),
       });
+      updated = `${updated.trimEnd()}\n\n## Result\n${result.finalSummary}\n\n## Result Artifact\n${path.relative(userRoot(), artifactPath)}\n`;
+      await writeFile(taskPath, updated);
       return {
         ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
-        failureReason: error instanceof Error ? error.message : String(error),
-        status: "failed",
+        adapter: result.adapter,
+        artifact: {
+          path: path.relative(userRoot(), artifactPath),
+          ...result,
+        },
+        status: "completed",
       };
+    } catch (error) {
+      return failDelegationAfterRunning(taskPath, error);
     }
-    const artifactPath = await writeOpenCodeResultArtifact(taskPath, packet, result);
-    let updated = await writeDelegationStatus(taskPath, "completed", {
-      completedAt: new Date().toISOString(),
-      resultArtifactPath: path.relative(userRoot(), artifactPath),
-    });
-    updated = `${updated.trimEnd()}\n\n## Result\n${result.finalSummary}\n\n## Result Artifact\n${path.relative(userRoot(), artifactPath)}\n`;
-    await writeFile(taskPath, updated);
-    return {
-      ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
-      adapter: result.adapter,
-      artifact: {
-        path: path.relative(userRoot(), artifactPath),
-        ...result,
-      },
-      status: "completed",
-    };
   }
 
   async function executeOpenCodeDelegationStatus(payload = {}) {
