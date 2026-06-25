@@ -2775,6 +2775,10 @@ export function App() {
               ResonantOS can start as a minimal shell, or you can enable the recommended replaceable defaults now.
               You can disable or replace them later from Add-ons.
             </p>
+            <p>
+              For memory, the recommended Living Archive default means: Human Knowledge is preserved; AI Memory is the
+              maintained wiki. Obsidian-compatible vaults are optional and can manage the same memory files later.
+            </p>
             <div className="first-run-choice-list">
               {recommendedAddOns.map((manifest) => (
                 <label key={manifest.id} className="first-run-choice">

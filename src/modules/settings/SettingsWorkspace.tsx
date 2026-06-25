@@ -1112,7 +1112,7 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
         {props.settingsSection === "memory" && (
           <Panel
             title="Memory"
-            subtitle="Start or stop the Living Archive bridge without exposing trusted archive writes."
+            subtitle="Share scoped memory with external MCP clients while keeping trusted wiki writes inside ResonantOS."
           >
             {props.settingsNotice && <div className="inline-notice">{props.settingsNotice}</div>}
             <div className="memory-service-hero">
@@ -1120,8 +1120,8 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
                 <p className="eyebrow">Local endpoint</p>
                 <h3>{props.memoryServiceStatus?.running ? "Bridge running" : "Bridge stopped"}</h3>
                 <p>
-                  Start this service when Codex, Claude Desktop, OpenCode, or another MCP-capable client needs scoped access to
-                  the Living Archive.
+                  Human Knowledge is preserved; AI Memory is the maintained wiki. Start this service when Codex, Claude
+                  Desktop, OpenCode, or another MCP-capable client needs scoped access to the same memory files.
                 </p>
               </div>
               <span className={`tone tone-${props.memoryServiceStatus?.running ? "active" : "neutral"}`}>
@@ -1182,9 +1182,9 @@ export function SettingsWorkspace(props: SettingsWorkspaceProps) {
                 <span className="tone tone-warning">intake-only writes</span>
               </div>
               <ul>
-                <li>External clients can search/read scoped memory and write raw artifacts to intake.</li>
-                <li>Trusted AI Memory wiki pages are still written only by the Strategist-owned ingest/review flow.</li>
-                <li>Provider-backed promotion and semantic repair stay inside the desktop host boundary.</li>
+                <li>External clients can search/read scoped memory and add raw intake notes.</li>
+                <li>Trusted AI Memory wiki pages are still written only after ResonantOS review.</li>
+                <li>Technical repair steps stay inside the desktop host boundary.</li>
               </ul>
               {props.memoryServiceLastResult ? (
                 <p className="mono-inline">
