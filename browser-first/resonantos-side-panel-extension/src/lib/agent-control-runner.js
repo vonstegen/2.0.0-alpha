@@ -1,3 +1,5 @@
+import { publicControlOverlayActionForStep } from "./control-overlay-actions.js";
+
 export function controlResultSummary(result = {}) {
   if (!result?.ok) {
     if (result?.ambiguousTarget) return result?.error ?? "ambiguous browser target";
@@ -341,9 +343,9 @@ export function createAgentControlRunner(deps) {
     try {
       for (let loopIndex = startIndex; loopIndex < maxSteps; loopIndex += 1) {
         await updateBrowserJob(getActiveJobId(), { status: "running" });
-        await setPageControlOverlay(true, "Reading page...", "reading");
+        await setPageControlOverlay(true, "reading", "reading");
         const snapshot = await deps.observeControlPage();
-        await setPageControlOverlay(true, "Deciding next browser action...", "working");
+        await setPageControlOverlay(true, "reading", "reading");
         setActivity("thinking", "Deciding next browser action", `Loop ${loopIndex + 1}/${maxSteps}`);
         setStatus("Deciding");
         const decision = await requestNextControlAction({ goal, snapshot, history });
@@ -521,10 +523,11 @@ export function createAgentControlRunner(deps) {
             decision
           })
         });
-        await setPageControlOverlay(true, controlStepLabel(step), step.type === "click" ? "clicking" : step.type === "type" ? "typing" : step.type === "read" ? "reading" : step.type === "wait" ? "waiting" : "working");
+        const overlayAction = publicControlOverlayActionForStep(step);
+        await setPageControlOverlay(true, overlayAction.label, overlayAction.phase);
         setActivity("tool-running", `Executing browser action ${stepIndex + 1}`, controlStepLabel(step));
         const result = await executeControlStep(step);
-        await setPageControlOverlay(true, "Verifying page state...", "verifying");
+        await setPageControlOverlay(true, "verifying", "verifying");
         const verificationSnapshot = await deps.observeControlPage().catch(() => null);
         const verification = verifyBrowserAction({
           after: verificationSnapshot,
@@ -550,7 +553,7 @@ export function createAgentControlRunner(deps) {
         let verificationRetry = null;
         if (canRetryPageStateVerification(finalStep, finalResult, finalVerification)) {
           verificationRetry = "settle-reread";
-          await setPageControlOverlay(true, "Rechecking page state...", "verifying");
+          await setPageControlOverlay(true, "verifying", "verifying");
           await sleep(650);
           const settledSnapshot = await deps.observeControlPage().catch(() => null);
           postActionSnapshot = settledSnapshot ?? postActionSnapshot;
@@ -576,10 +579,10 @@ export function createAgentControlRunner(deps) {
         });
         if (retryStep) {
           actionRetry = retryStep.retryStrategy;
-          await setPageControlOverlay(true, "Retrying with precise visible target...", "clicking");
+          await setPageControlOverlay(true, "clicking", "clicking");
           executedStep = retryStep;
           executedResult = await executeControlStep(retryStep);
-          await setPageControlOverlay(true, "Verifying retry...", "verifying");
+          await setPageControlOverlay(true, "verifying", "verifying");
           const retrySnapshot = await deps.observeControlPage().catch(() => postActionSnapshot);
           postActionSnapshot = retrySnapshot ?? postActionSnapshot;
           finalVerification = verifyBrowserAction({
