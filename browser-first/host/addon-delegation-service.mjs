@@ -11,6 +11,92 @@ import {
 import { dashboardProxyUrl } from "./bridge-server.mjs";
 
 const DEFAULT_OPENCODE_MODEL = "openai/gpt-5.4-mini";
+const DEFAULT_HERMES_PROVIDER = "openai-api";
+const DEFAULT_HERMES_MODEL = "gpt-5.4-mini";
+
+const providerEnvKeyDefaults = Object.freeze({
+  anthropic: ["ANTHROPIC_API_KEY"],
+  "anthropic-api": ["ANTHROPIC_API_KEY"],
+  deepseek: ["DEEPSEEK_API_KEY"],
+  gemini: ["GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_API_KEY"],
+  glm: ["GLM_API_KEY", "ZAI_API_KEY", "ZHIPUAI_API_KEY"],
+  google: ["GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"],
+  minimax: ["MINIMAX_API_KEY"],
+  openai: ["OPENAI_API_KEY"],
+  "openai-api": ["OPENAI_API_KEY"],
+  openrouter: ["OPENROUTER_API_KEY"],
+  xai: ["XAI_API_KEY"],
+  zai: ["ZAI_API_KEY", "GLM_API_KEY", "ZHIPUAI_API_KEY"],
+  zhipuai: ["ZHIPUAI_API_KEY", "ZAI_API_KEY", "GLM_API_KEY"],
+});
+
+const providerSecretIdDefaults = Object.freeze({
+  anthropic: ["shared-anthropic", "anthropic"],
+  "anthropic-api": ["shared-anthropic", "anthropic"],
+  deepseek: ["shared-deepseek", "deepseek"],
+  gemini: ["shared-gemini", "shared-google", "gemini", "google"],
+  google: ["shared-google", "shared-gemini", "google", "gemini"],
+  minimax: ["shared-minimax", "minimax"],
+  openai: ["shared-openai", "openai"],
+  "openai-api": ["shared-openai", "openai"],
+  openrouter: ["shared-openrouter", "openrouter"],
+  xai: ["shared-xai", "xai"],
+  zai: ["shared-zai-glm", "shared-zai", "zai", "glm", "zhipuai"],
+  zhipuai: ["shared-zai-glm", "shared-zhipuai", "zhipuai", "zai", "glm"],
+});
+
+function providerFromModel(model, fallback = "") {
+  const [provider] = String(model ?? "").trim().split("/");
+  return provider && provider !== String(model ?? "").trim() ? provider.toLowerCase() : fallback;
+}
+
+function providerEnvKeysForProvider(provider) {
+  return providerEnvKeyDefaults[String(provider ?? "").trim().toLowerCase()] ?? [];
+}
+
+function providerSecretCandidates(provider) {
+  const normalized = String(provider ?? "").trim().toLowerCase();
+  return providerSecretIdDefaults[normalized] ?? (normalized ? [`shared-${normalized}`, normalized] : []);
+}
+
+function secretForProvider(provider, secrets = {}) {
+  const normalized = String(provider ?? "").trim().toLowerCase();
+  const entries = Object.entries(secrets ?? {})
+    .map(([providerId, credential]) => [String(providerId ?? "").trim(), String(credential ?? "").trim()])
+    .filter(([providerId, credential]) => providerId && credential);
+  const byId = new Map(entries.map(([providerId, credential]) => [providerId.toLowerCase(), credential]));
+  for (const candidate of providerSecretCandidates(normalized)) {
+    const credential = byId.get(String(candidate).toLowerCase());
+    if (credential) return credential;
+  }
+  const fuzzy = entries.find(([providerId]) => {
+    const id = providerId.toLowerCase();
+    return normalized && (id === normalized || id.includes(`-${normalized}`) || id.includes(normalized));
+  });
+  return fuzzy?.[1] ?? "";
+}
+
+function providerEnvFromSecrets(provider, secrets = {}, envKeys = providerEnvKeysForProvider(provider)) {
+  const credential = secretForProvider(provider, secrets);
+  if (!credential) return {};
+  const selectedKey = envKeys.find((key) => !String(process.env[key] ?? "").trim()) ?? envKeys[0];
+  return selectedKey ? { [selectedKey]: credential } : {};
+}
+
+function providerEnvKeysPresent(provider, secrets = {}, envKeys = providerEnvKeysForProvider(provider)) {
+  const fromProcess = envKeys.filter((key) => String(process.env[key] ?? "").trim());
+  const fromSecrets = secretForProvider(provider, secrets) ? [envKeys[0]].filter(Boolean) : [];
+  return [...new Set([...fromProcess, ...fromSecrets])];
+}
+
+function redactCliText(value) {
+  return String(value ?? "")
+    .replace(/sk-[a-z0-9_-]+/gi, "[redacted-key]")
+    .replace(/bearer\s+[a-z0-9._-]+/gi, "Bearer [redacted-token]")
+    .replace(/api[_-]?key\s*[:=]\s*[^\s]+/gi, "api_key=[redacted]")
+    .replace(/token\s*[:=]\s*[^\s]+/gi, "token=[redacted]")
+    .replace(/secret\s*[:=]\s*[^\s]+/gi, "secret=[redacted]");
+}
 
 // When the bridge runs on a multi-homed host (e.g. the Pi5 has loopback,
 // LAN 192.168.1.100, and Tailscale 100.100.100.100), it has to publish URLs
@@ -61,6 +147,7 @@ export function createAddonDelegationService(dependencies) {
     opencodeCommand,
     opencodeRuntimeDiagnostics,
     redactPathForDiagnostics,
+    readProviderSecrets = async () => ({}),
     repoRoot,
     safeFileSlug,
     socketOpen,
@@ -101,25 +188,12 @@ export function createAddonDelegationService(dependencies) {
   }
 
   function openCodeProviderEnvKeys(model) {
-    const provider = String(model ?? "").split("/")[0]?.toLowerCase();
+    const provider = providerFromModel(model, "openai");
     const explicit = String(process.env.RESONANTOS_OPENCODE_PROVIDER_ENV ?? "")
       .split(",")
       .map((key) => key.trim())
       .filter(isAllowedOpenCodeProviderEnvKey);
-    const defaults = {
-      anthropic: ["ANTHROPIC_API_KEY"],
-      deepseek: ["DEEPSEEK_API_KEY"],
-      gemini: ["GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_API_KEY"],
-      glm: ["GLM_API_KEY", "ZAI_API_KEY", "ZHIPUAI_API_KEY"],
-      google: ["GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"],
-      minimax: ["MINIMAX_API_KEY"],
-      openai: ["OPENAI_API_KEY"],
-      openrouter: ["OPENROUTER_API_KEY"],
-      xai: ["XAI_API_KEY"],
-      zai: ["ZAI_API_KEY", "GLM_API_KEY", "ZHIPUAI_API_KEY"],
-      zhipuai: ["ZHIPUAI_API_KEY", "ZAI_API_KEY", "GLM_API_KEY"],
-    };
-    return [...new Set([...(defaults[provider] ?? []), ...explicit])];
+    return [...new Set([...providerEnvKeysForProvider(provider), ...explicit])];
   }
 
   // Reverse-proxy URL the extension can embed in an iframe without tripping
@@ -449,6 +523,9 @@ export function createAddonDelegationService(dependencies) {
     const profileHome = hermesHome(payload.profileHome);
     const command = hermesCommand(profileHome);
     const dashboard = await executeHermesDashboardStatus({ profileHome, host: payload.host, port: payload.port });
+    const secrets = await readProviderSecrets();
+    const provider = hermesProvider(payload, secrets);
+    const model = hermesModel(payload, provider);
     const taskRoot = path.join(delegationRoot(), "hermes");
     const tasks = await listFilesRecursive(taskRoot, (filePath) => filePath.endsWith(".md"), 200);
     const statusCounts = {};
@@ -462,6 +539,9 @@ export function createAddonDelegationService(dependencies) {
       command: command ? redactPathForDiagnostics(command) : "",
       dashboard,
       executionEnabled: addonLocalCliExecutionEnabled("hermes", payload, executionSettings),
+      provider,
+      model,
+      providerEnvKeys: providerEnvKeysPresent(provider, secrets, providerEnvKeysForProvider(provider)),
       mode: command
         ? addonLocalCliExecutionEnabled("hermes", payload, executionSettings)
           ? "local-hermes-cli"
@@ -483,6 +563,24 @@ export function createAddonDelegationService(dependencies) {
     }
     await writeFile(filePath, next);
     return next;
+  }
+
+  async function failDelegationAfterRunning(taskPath, error) {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      const updated = await writeDelegationStatus(taskPath, "failed", {
+        failedAt: new Date().toISOString(),
+        failureReason: message.slice(0, 500),
+      });
+      return {
+        ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
+        failureReason: message,
+        status: "failed",
+      };
+    } catch (statusError) {
+      const statusMessage = statusError instanceof Error ? statusError.message : String(statusError);
+      throw new Error(`Delegation failed, and failed-status recovery also failed: ${message}; recovery: ${statusMessage}`);
+    }
   }
 
   function deterministicHermesResult(packet) {
@@ -555,21 +653,104 @@ export function createAddonDelegationService(dependencies) {
     };
   }
 
+  function hermesProvider(payload = {}, secrets = {}) {
+    const requested = String(payload.provider ?? process.env.RESONANTOS_HERMES_PROVIDER ?? process.env.HERMES_INFERENCE_PROVIDER ?? "").trim();
+    if (requested) return requested;
+    if (providerEnvKeysPresent("openai-api", secrets).length) return DEFAULT_HERMES_PROVIDER;
+    if (providerEnvKeysPresent("openrouter", secrets).length) return "openrouter";
+    if (providerEnvKeysPresent("anthropic", secrets).length) return "anthropic";
+    return DEFAULT_HERMES_PROVIDER;
+  }
+
+  function hermesModel(payload = {}, provider = DEFAULT_HERMES_PROVIDER) {
+    const requested = String(payload.model ?? process.env.RESONANTOS_HERMES_MODEL ?? process.env.HERMES_INFERENCE_MODEL ?? "").trim();
+    const normalizedProvider = String(provider ?? "").trim().toLowerCase();
+    const model = requested || (normalizedProvider === "openrouter" ? "openai/gpt-5.4-mini" : DEFAULT_HERMES_MODEL);
+    if ((normalizedProvider === "openai" || normalizedProvider === "openai-api") && model.startsWith("openai/")) {
+      return model.slice("openai/".length);
+    }
+    return model;
+  }
+
+  function hermesProviderCredentialState(payload = {}, secrets = {}) {
+    const provider = hermesProvider(payload, secrets);
+    const model = hermesModel(payload, provider);
+    const envKeys = providerEnvKeysForProvider(provider);
+    const configuredEnvKeys = providerEnvKeysPresent(provider, secrets, envKeys);
+    return {
+      configured: configuredEnvKeys.length > 0,
+      configuredEnvKeys,
+      envKeys,
+      model,
+      provider,
+    };
+  }
+
+  function hermesProviderCredentialBlockedReason(state) {
+    const provider = String(state?.provider ?? DEFAULT_HERMES_PROVIDER);
+    const model = String(state?.model ?? DEFAULT_HERMES_MODEL);
+    const envHint = state?.envKeys?.length
+      ? ` The bridge can also be started with ${state.envKeys.join(" or ")} in its environment.`
+      : "";
+    return [
+      `Hermes provider credential unavailable for ${provider} / ${model}.`,
+      "Re-save the provider credential in Settings > Providers so the restarted browser-first bridge has it in session memory.",
+      "Provider secrets remain session-only; ResonantOS does not persist plaintext provider credentials for this alpha.",
+      envHint.trim(),
+    ].filter(Boolean).join(" ");
+  }
+
+  function isHermesProviderCredentialError(message) {
+    return /(?:selected provider env missing|provider credential unavailable|no inference provider configured|api key|OPENAI_API_KEY|OPENROUTER_API_KEY|ANTHROPIC_API_KEY|set an api key)/i
+      .test(String(message ?? ""));
+  }
+
+  function isHermesUnsafePromptInputError(message) {
+    return /Hermes CLI execution blocked: installed Hermes only accepts oneshot prompts through process argv/i
+      .test(String(message ?? ""));
+  }
+
+  function scopedHermesEnv({ provider, model, profileHome, secrets = {} } = {}) {
+    const providerKeys = providerEnvKeysForProvider(provider);
+    const allowed = [
+      "HOME",
+      "PATH",
+      "SHELL",
+      "TERM",
+      "TMPDIR",
+      "TEMP",
+      "TMP",
+      "LANG",
+      "LC_ALL",
+      "XDG_CONFIG_HOME",
+      "XDG_DATA_HOME",
+      "XDG_CACHE_HOME",
+      "OPENAI_BASE_URL",
+      "HERMES_CONFIG",
+      ...providerKeys,
+    ];
+    const inherited = Object.fromEntries(
+      allowed
+        .map((key) => [key, process.env[key]])
+        .filter(([, value]) => value !== undefined)
+    );
+    return {
+      ...inherited,
+      ...providerEnvFromSecrets(provider, secrets, providerKeys),
+      HERMES_HOME: profileHome,
+      ...(provider ? { HERMES_INFERENCE_PROVIDER: provider } : {}),
+      ...(model ? { HERMES_INFERENCE_MODEL: model } : {}),
+    };
+  }
+
   async function runHermesCliDelegation(command, packet, payload = {}) {
-    const prompt = buildHermesExecutionPrompt(packet);
-    const toolsets = String(payload.toolsets ?? process.env.RESONANTOS_HERMES_TOOLSETS ?? "memory").trim();
-    const args = ["chat", "-Q", "--source", "resonantos", "--max-turns", "8"];
-    if (toolsets) args.push("--toolsets", toolsets);
-    const output = await execFileStdout(command, args, {
-      cwd: browserFirstRoot(),
-      env: {
-        ...process.env,
-        HERMES_HOME: hermesHome(payload.profileHome),
-        HERMES_TUI_QUERY: prompt,
-      },
-      timeout: Math.min(600_000, Math.max(30_000, Number(payload.timeoutMs ?? 180_000))),
-    });
-    return parseHermesCliResult(output);
+    void command;
+    void packet;
+    void payload;
+    throw new Error(
+      "Hermes CLI execution blocked: installed Hermes only accepts oneshot prompts through process argv. " +
+      "Use deterministic packet delegation or the Hermes dashboard until Hermes exposes a file, stdin, or authenticated local API prompt handoff."
+    );
   }
 
   async function writeHermesResultArtifact(taskPath, packet, result) {
@@ -585,6 +766,8 @@ export function createAddonDelegationService(dependencies) {
       `- createdAt: ${new Date().toISOString()}`,
       `- adapter: ${result.adapter}`,
       "- status: completed",
+      result.provider ? `- provider: ${result.provider}` : "",
+      result.model ? `- model: ${result.model}` : "",
       "- boundary: Reviewable artifact only. External sends and trusted memory writes remain blocked.",
       "",
       "## Final Summary",
@@ -646,6 +829,24 @@ export function createAddonDelegationService(dependencies) {
         status: "blocked",
       };
     }
+    if (adapter !== "deterministic") {
+      const credentialState = hermesProviderCredentialState(payload, await readProviderSecrets());
+      if (!credentialState.configured) {
+        const blockedAt = new Date().toISOString();
+        const blockedReason = hermesProviderCredentialBlockedReason(credentialState);
+        const updated = await writeDelegationStatus(taskPath, "blocked", {
+          blockedAt,
+          blockedReason,
+          provider: credentialState.provider,
+          model: credentialState.model,
+        });
+        return {
+          ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
+          blockedReason,
+          status: "blocked",
+        };
+      }
+    }
     let result;
     try {
       result = adapter === "deterministic"
@@ -653,32 +854,63 @@ export function createAddonDelegationService(dependencies) {
         : await runHermesCliDelegation(command, packet, payload);
     } catch (error) {
       const failedAt = new Date().toISOString();
+      const failureReason = error instanceof Error ? error.message : String(error);
+      if (adapter !== "deterministic" && isHermesProviderCredentialError(failureReason)) {
+        const credentialState = hermesProviderCredentialState(payload, await readProviderSecrets());
+        const blockedReason = hermesProviderCredentialBlockedReason(credentialState);
+        const updated = await writeDelegationStatus(taskPath, "blocked", {
+          blockedAt: failedAt,
+          blockedReason,
+          provider: credentialState.provider,
+          model: credentialState.model,
+        });
+        return {
+          ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
+          blockedReason,
+          status: "blocked",
+        };
+      }
+      if (adapter !== "deterministic" && isHermesUnsafePromptInputError(failureReason)) {
+        const updated = await writeDelegationStatus(taskPath, "blocked", {
+          blockedAt: failedAt,
+          blockedReason: failureReason.slice(0, 500),
+        });
+        return {
+          ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
+          blockedReason: failureReason,
+          status: "blocked",
+        };
+      }
       const updated = await writeDelegationStatus(taskPath, "failed", {
         failedAt,
-        failureReason: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+        failureReason: failureReason.slice(0, 500),
       });
       return {
         ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
-        failureReason: error instanceof Error ? error.message : String(error),
+        failureReason,
         status: "failed",
       };
     }
-    const artifactPath = await writeHermesResultArtifact(taskPath, packet, result);
-    let updated = await writeDelegationStatus(taskPath, "completed", {
-      completedAt: new Date().toISOString(),
-      resultArtifactPath: path.relative(userRoot(), artifactPath),
-    });
-    updated = `${updated.trimEnd()}\n\n## Result\n${result.finalSummary}\n\n## Result Artifact\n${path.relative(userRoot(), artifactPath)}\n`;
-    await writeFile(taskPath, updated);
-    return {
-      ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
-      adapter: result.adapter,
-      artifact: {
-        path: path.relative(userRoot(), artifactPath),
-        ...result,
-      },
-      status: "completed",
-    };
+    try {
+      const artifactPath = await writeHermesResultArtifact(taskPath, packet, result);
+      let updated = await writeDelegationStatus(taskPath, "completed", {
+        completedAt: new Date().toISOString(),
+        resultArtifactPath: path.relative(userRoot(), artifactPath),
+      });
+      updated = `${updated.trimEnd()}\n\n## Result\n${result.finalSummary}\n\n## Result Artifact\n${path.relative(userRoot(), artifactPath)}\n`;
+      await writeFile(taskPath, updated);
+      return {
+        ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
+        adapter: result.adapter,
+        artifact: {
+          path: path.relative(userRoot(), artifactPath),
+          ...result,
+        },
+        status: "completed",
+      };
+    } catch (error) {
+      return failDelegationAfterRunning(taskPath, error);
+    }
   }
 
   async function executeHermesDelegationStatus(payload = {}) {
@@ -730,6 +962,8 @@ export function createAddonDelegationService(dependencies) {
     const runtime = currentOpenCodeRuntime();
     const command = runtime.command;
     const model = openCodeModel(payload);
+    const secrets = await readProviderSecrets();
+    const provider = providerFromModel(model, "openai");
     const taskRoot = path.join(delegationRoot(), "opencode");
     const tasks = await listFilesRecursive(taskRoot, (filePath) => filePath.endsWith(".md"), 200);
     const statusCounts = {};
@@ -746,7 +980,7 @@ export function createAddonDelegationService(dependencies) {
       workspaceLaunch: "not-enabled-in-browser-first-v1",
       model,
       modelSource: payload.model ? "request" : process.env.RESONANTOS_OPENCODE_MODEL ? "env" : "default",
-      providerEnvKeys: openCodeProviderEnvKeys(model).filter((key) => process.env[key] !== undefined),
+      providerEnvKeys: providerEnvKeysPresent(provider, secrets, openCodeProviderEnvKeys(model)),
       detail: command
         ? "OpenCode runtime was detected. ResonantOS can create governed coding packets and start execution only when explicit OpenCode execution is enabled."
         : "OpenCode runtime was not detected. Install OpenCode, or point ResonantOS at an existing binary with OPENCODE_COMMAND.",
@@ -863,7 +1097,7 @@ export function createAddonDelegationService(dependencies) {
     };
   }
 
-  function scopedOpenCodeEnv(model = DEFAULT_OPENCODE_MODEL) {
+  function scopedOpenCodeEnv(model = DEFAULT_OPENCODE_MODEL, secrets = {}) {
     const allowed = [
       "HOME",
       "PATH",
@@ -884,11 +1118,15 @@ export function createAddonDelegationService(dependencies) {
       "OPENCODE_SERVER_PASSWORD",
       ...openCodeProviderEnvKeys(model),
     ];
-    return Object.fromEntries(
+    const inherited = Object.fromEntries(
       allowed
         .map((key) => [key, process.env[key]])
         .filter(([, value]) => value !== undefined)
     );
+    return {
+      ...inherited,
+      ...providerEnvFromSecrets(providerFromModel(model, "openai"), secrets, openCodeProviderEnvKeys(model)),
+    };
   }
 
   function redactOpenCodeCliText(value) {
@@ -949,6 +1187,7 @@ export function createAddonDelegationService(dependencies) {
   async function runOpenCodeCliDelegation(command, packet, payload = {}) {
     const workspacePath = resolveOpenCodeWorkspacePath(payload);
     const model = openCodeModel(payload);
+    const secrets = await readProviderSecrets();
     const prompt = buildOpenCodeExecutionPrompt(packet, workspacePath);
     const tempRoot = path.join(browserFirstRoot(), "Runtime", "opencode-prompts");
     await mkdir(tempRoot, { recursive: true });
@@ -971,7 +1210,7 @@ export function createAddonDelegationService(dependencies) {
       ];
       const output = await execOpenCodeCli(command, args, {
         cwd: workspacePath,
-        env: scopedOpenCodeEnv(model),
+        env: scopedOpenCodeEnv(model, secrets),
         timeout: Math.min(900_000, Math.max(30_000, Number(payload.timeoutMs ?? 300_000))),
       });
       return {
@@ -1088,22 +1327,26 @@ export function createAddonDelegationService(dependencies) {
         status: "failed",
       };
     }
-    const artifactPath = await writeOpenCodeResultArtifact(taskPath, packet, result);
-    let updated = await writeDelegationStatus(taskPath, "completed", {
-      completedAt: new Date().toISOString(),
-      resultArtifactPath: path.relative(userRoot(), artifactPath),
-    });
-    updated = `${updated.trimEnd()}\n\n## Result\n${result.finalSummary}\n\n## Result Artifact\n${path.relative(userRoot(), artifactPath)}\n`;
-    await writeFile(taskPath, updated);
-    return {
-      ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
-      adapter: result.adapter,
-      artifact: {
-        path: path.relative(userRoot(), artifactPath),
-        ...result,
-      },
-      status: "completed",
-    };
+    try {
+      const artifactPath = await writeOpenCodeResultArtifact(taskPath, packet, result);
+      let updated = await writeDelegationStatus(taskPath, "completed", {
+        completedAt: new Date().toISOString(),
+        resultArtifactPath: path.relative(userRoot(), artifactPath),
+      });
+      updated = `${updated.trimEnd()}\n\n## Result\n${result.finalSummary}\n\n## Result Artifact\n${path.relative(userRoot(), artifactPath)}\n`;
+      await writeFile(taskPath, updated);
+      return {
+        ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
+        adapter: result.adapter,
+        artifact: {
+          path: path.relative(userRoot(), artifactPath),
+          ...result,
+        },
+        status: "completed",
+      };
+    } catch (error) {
+      return failDelegationAfterRunning(taskPath, error);
+    }
   }
 
   async function executeOpenCodeDelegationStatus(payload = {}) {
@@ -1309,6 +1552,9 @@ export function createAddonDelegationService(dependencies) {
     const target = dashboardTarget(payload.host, payload.port);
     const command = hermesCommand(payload.profileHome);
     const running = await socketOpen(target.host, target.port);
+    const secrets = await readProviderSecrets();
+    const provider = hermesProvider(payload, secrets);
+    const model = hermesModel(payload, provider);
     return {
       running,
       url: clientReachableUrl(target.url),
@@ -1322,6 +1568,9 @@ export function createAddonDelegationService(dependencies) {
       port: target.port,
       clientHost: clientReachableHost(),
       command,
+      provider,
+      model,
+      providerEnvKeys: providerEnvKeysPresent(provider, secrets, providerEnvKeysForProvider(provider)),
       profileHome: hermesHome(payload.profileHome),
       detail: running
         ? `Hermes dashboard is reachable at ${clientReachableUrl(target.url)}.`
@@ -1334,6 +1583,9 @@ export function createAddonDelegationService(dependencies) {
     const target = dashboardTarget(payload.host, payload.port);
     const profileHome = hermesHome(payload.profileHome);
     const command = hermesCommand(profileHome);
+    const secrets = await readProviderSecrets();
+    const provider = hermesProvider(payload, secrets);
+    const model = hermesModel(payload, provider);
     if (!command) {
       throw new Error("Hermes CLI was not found. Install or configure Hermes before launching the dashboard.");
     }
@@ -1349,7 +1601,7 @@ export function createAddonDelegationService(dependencies) {
       }
       const child = spawn(command, args, {
         detached: true,
-        env: { ...process.env, HERMES_HOME: profileHome },
+        env: scopedHermesEnv({ provider, model, profileHome, secrets }),
         stdio: "ignore",
       });
       child.unref();
@@ -1364,12 +1616,15 @@ export function createAddonDelegationService(dependencies) {
   async function executeHermesDashboardStop(payload = {}) {
     const profileHome = hermesHome(payload.profileHome);
     const command = hermesCommand(profileHome);
+    const secrets = await readProviderSecrets();
+    const provider = hermesProvider(payload, secrets);
+    const model = hermesModel(payload, provider);
     if (!command) {
       throw new Error("Hermes CLI was not found. Install or configure Hermes before stopping the dashboard.");
     }
     await new Promise((resolve) => {
       const child = spawn(command, ["dashboard", "--stop"], {
-        env: { ...process.env, HERMES_HOME: profileHome },
+        env: scopedHermesEnv({ provider, model, profileHome, secrets }),
         stdio: "ignore",
       });
       child.once("exit", resolve);

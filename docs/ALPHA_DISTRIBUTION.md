@@ -1,181 +1,182 @@
 # Alpha Distribution
 
-Status: Internal technical preview  
-Date: 2026-04-28
+Status: Chrome extension alpha MVP guidance
+Date: 2026-06-25
 
 ## Purpose
 
-This document explains how to build and share the current ResonantOS vNext alpha with the tech team.
+This document explains how to build and share the ResonantOS 2.0.0 alpha MVP
+with reviewers. The alpha release is browser-first: a Chrome Manifest V3
+extension plus a local Node.js bridge.
 
-The goal is to let reviewers install the core shell, inspect the architecture, configure their own providers, and test the Living Archive flow without receiving any founder personal data or trusted add-ons.
+Do not distribute Tauri, Electron, native CEF, or Rust/Cargo desktop artifacts
+as part of this alpha unless the release owner explicitly reopens that scope.
 
-## Supported Alpha Targets
+## Supported Alpha Target
 
-The repository now includes a manual GitHub Actions workflow:
+The supported reviewer install is:
+
+- Chrome, Brave, Edge, or another Chromium-family browser with Manifest V3
+  extension support.
+- The unpacked extension at `browser-first/resonantos-side-panel-extension`.
+- The local Node.js bridge under `browser-first/host`.
+- Node.js 18 or newer.
+
+The alpha does not include:
+
+- Tauri desktop packaging.
+- Electron packaging.
+- Native CEF/browser-host bundles.
+- Rust toolchain or Cargo build path.
+- Native desktop signing/notarization.
+- Terminal or Audio2TOL workspaces.
+
+## How To Build And Run Locally
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Start the browser-first bridge:
+
+```bash
+npm run browser-first:bridge
+```
+
+The bridge writes:
 
 ```text
-.github/workflows/alpha-build.yml
+browser-first/resonantos-side-panel-extension/src/bridge-config.generated.js
 ```
 
-It builds native artifacts on:
+That generated file contains the local bridge URL and token. It is ignored by
+git, regenerated on bridge startup, and must not be committed or shared as a
+source artifact.
 
-- macOS
-- Windows
-- Ubuntu Linux
+Load the extension:
 
-This follows the Tauri distribution model where each platform is built on its native runner. The workflow uses the official Tauri GitHub build guidance and installs the Linux WebKitGTK dependencies required by Tauri.
+1. Open `chrome://extensions`.
+2. Enable Developer mode.
+3. Select Load unpacked.
+4. Select `browser-first/resonantos-side-panel-extension`.
+5. Keep the bridge process running while testing the extension.
 
-Reference:
+## Release Validation
 
-- Tauri GitHub pipeline docs: `https://v2.tauri.app/distribute/pipelines/github/`
-- Tauri prerequisites: `https://v2.tauri.app/start/prerequisites/`
-
-## How To Build Locally
-
-Use the repository Rust toolchain pin before native builds:
-
-```bash
-rustup toolchain install 1.94.1
-rustup override set 1.94.1
-```
-
-The repo also includes `rust-toolchain.toml`, so rustup-aware shells should select `1.94.1` automatically.
-
-macOS local build:
+Before sharing an alpha package or install instructions, run:
 
 ```bash
-npm ci
 npm test -- --run
-cd src-tauri && cargo fmt --check && cargo test && cd ..
 npm run build
-npm run tauri:build
+npm run test:browser-first
+npm run test:browser-host
+npm run test:health
+node scripts/security-pipeline/run-check.mjs
+npm run browser-first:audit-scope
+npm run browser-first:audit-scope:staged
 ```
 
-Current macOS artifacts are generated under:
+For host-service changes, also run the relevant focused suites:
 
-```text
-src-tauri/target/release/bundle/macos/
-src-tauri/target/release/bundle/dmg/
+```bash
+npm run test:living-archive-mcp
+npm run test:living-archive-memory-service
+npm run test:engineer-runner
 ```
 
-## How To Build In GitHub
-
-1. Open the private GitHub repository.
-2. Go to `Actions`.
-3. Select `alpha-build`.
-4. Run workflow manually with `workflow_dispatch`.
-5. Download the platform artifact for each reviewer.
-
-Expected artifacts:
-
-- `resonantos-alpha-macos`
-- `resonantos-alpha-windows`
-- `resonantos-alpha-linux`
-
-Artifacts are retained for 14 days.
-
-## Linux Toolchain Note
-
-Linux native Tauri builds compile GTK/WebKitGTK Rust bindings through the Tauri dependency graph.
-
-Known alpha blocker:
-
-- Linux x86_64 on an Intel Haswell GT70 test machine passed Vitest, Vite production build, and Rust unit tests.
-- Native Tauri packaging was blocked by a rustc internal compiler error / SIGSEGV while compiling the `gtk` crate.
-- The reported failing environment used Rust 1.95 with LLVM 20 on Haswell-class hardware.
-- Repeated local build-flag workarounds did not resolve it, which points to an upstream compiler/toolchain issue rather than a ResonantOS source error.
-
-Current alpha policy:
-
-- Use Rust `1.94.1` for reproducible alpha packaging.
-- GitHub `alpha-build` is pinned to Rust `1.94.1`.
-- If Linux native packaging fails with Rust `1.95+`, first retest with rustup-managed `1.94.1` before debugging ResonantOS code.
-- If `1.94.1` still fails on that hardware, treat Haswell Linux native packaging as blocked and use GitHub-hosted Linux artifacts until the upstream compiler path is fixed.
-
-## Current Signing Status
-
-The internal alpha is unsigned.
-
-Expected reviewer friction:
-
-- macOS may show Gatekeeper warnings.
-- Windows may show SmartScreen warnings.
-- Linux may require executable permission or package-manager confirmation depending on artifact type.
-
-Do not treat this as production distribution.
-
-Production distribution requires:
-
-- macOS Developer ID signing and notarization
-- Windows code signing certificate
-- Linux package signing/repository decision
-- updater signing policy
+Do not use `npm run tauri:build` as an alpha release gate. Tauri packaging is
+outside the Chrome extension MVP scope.
 
 ## Alpha Privacy Boundary
 
-The alpha should not include founder personal data.
+The alpha should not include founder personal data, provider secrets, generated
+bridge tokens, local runtime state, or reviewer-specific workspace data.
 
-Current privacy rules:
+Local runtime/user state may exist under paths such as:
 
-- user data belongs under `ResonantOS_User/`
-- managed memory belongs under `ResonantOS_User/Memory`
-- provider secrets belong under `ResonantOS_User/Secrets`
-- wallet state belongs under `ResonantOS_User/Wallets`
-- logs belong under `ResonantOS_User/Logs`
-- backups belong under `ResonantOS_User/Backups`
+- `ResonantOS_User/`
+- `browser-first/Runtime/`
+- `browser-first/resonantos-side-panel-extension/src/bridge-config.generated.js`
+- local `.env` files
+- local `output/` and `runs/` evidence directories
 
-Ignored local folders must not be shared as source:
+Those paths are not distribution payloads.
 
-- `dist/`
-- `node_modules/`
-- `src-tauri/target/`
-- `Memory/`
-- `Living_Archive/`
-- `.resonantos/`
-- `.env`
-- `tmp/`
+## Provider And Secret Policy
+
+Provider credentials are supplied by each reviewer through the bridge/settings
+flow or the reviewer's local environment. Do not include credential values in
+source, reports, screenshots, logs, generated configs, or packaged artifacts.
+
+Required pre-share scan:
+
+```bash
+rg -n "sk-[A-Za-z0-9_-]+|OPENAI_API_KEY|ANTHROPIC_API_KEY|OPENROUTER_API_KEY|GITHUB_TOKEN|BEGIN PRIVATE KEY|bridge-token|capabilityTokens" .
+```
+
+Review each match before sharing. Expected safe matches include documentation
+examples, variable names, and redacted placeholders. Secret values, generated
+bridge tokens, or capability-token payloads are release blockers.
 
 ## Add-on Policy For Alpha
 
-The alpha is a core ResonantOS preview.
+Add-ons are visible as governed, replaceable capabilities. They are not trusted
+core agents and should not receive raw provider secrets, wallet authority, or
+trusted memory-write authority.
 
-Add-ons are not part of the guaranteed install experience.
+Alpha status:
 
-Rules:
-
-- no add-on should be installed or trusted by default
-- add-on catalog entries may exist for developer inspection
-- Obsidian, Browser, Terminal, OpenCode, OpenClaw, Hermes, and Audio2TOL are experimental or external
-- reviewers should configure providers and memory using their own data
-- founder-specific add-ons should move toward separate repositories as defined in `ADR-023`
+- OpenCode governed delegation may execute through the browser-first bridge when
+  explicitly enabled and configured.
+- Hermes dashboard/setup and governed packet delegation are available.
+- Hermes local CLI task execution is deferred because the installed Hermes CLI
+  only accepts oneshot prompts through process argv. It must remain blocked until
+  Hermes exposes file, stdin, or authenticated local API prompt handoff.
+- Terminal and Audio2TOL are outside this alpha scope.
 
 ## Reviewer Instructions
 
 Ask reviewers to focus on:
 
-- whether the core app launches on their OS
-- whether the shell layout makes sense
-- whether provider configuration is understandable
-- whether the Living Archive start flow is understandable
-- whether no personal founder data appears
-- whether add-ons appear clearly unavailable/not trusted until installed
+- loading the extension successfully;
+- starting and connecting to the local bridge;
+- configuring a provider without exposing credential values;
+- using main chat and the side-panel chat;
+- checking Settings, Diagnostics, Bridge Target, Add-ons, Living Archive,
+  Hermes, and OpenCode surfaces;
+- confirming unavailable or deferred capabilities are explained clearly.
 
-Ask reviewers not to evaluate as production-ready:
+Ask reviewers not to evaluate this alpha as production-ready for:
 
-- wallet security
-- encrypted vault storage
-- signed add-on marketplace
-- final browser automation
-- final Obsidian compatibility
-- final Windows/Linux installer polish
+- desktop packaging;
+- native signing/notarization;
+- encrypted portable vault;
+- signed add-on marketplace;
+- final wallet security;
+- final native browser automation.
+
+## Current Release Waivers And Deferrals
+
+The release owner must explicitly accept or close these before publishing:
+
+- #102 Living Archive real-data validation: complete with evidence or waive.
+- #111 encrypted vault: may be deferred only while alpha credentials remain
+  session-only/env-only and plaintext persistence is not reintroduced.
+- #163 PATH-resolved binary exec/install shell hardening: defer only as broader
+  local CLI hardening with opt-in local execution gated.
+- #192 and #194 runtime/native installation issues: add to the project board and
+  fix, close, or formally defer as outside Chrome MVP scope.
 
 ## Release Gate Before Sharing
 
-Before sending a build:
+Before sending the alpha to reviewers:
 
-- run `npm test -- --run`
-- run `cargo fmt --check && cargo test` in `src-tauri`
-- run `npm run build`
-- run `npm run tauri:build` or the GitHub `alpha-build` workflow
-- scan generated resources for founder paths and provider-key strings
-- confirm add-ons are not installed or enabled by default
+- confirm the current branch is `dev`;
+- confirm all release-scope changes are committed and pushed;
+- confirm clean validation commands pass;
+- confirm project-board status matches the GitHub issues/PRs;
+- confirm no generated bridge config or provider secret values are included;
+- produce screenshot evidence for every shipped surface;
+- record any release-owner waivers in the release report.

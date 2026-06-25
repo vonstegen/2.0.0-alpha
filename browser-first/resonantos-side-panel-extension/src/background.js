@@ -26,7 +26,7 @@ async function loadBridgeConfig() {
   }
   return __bridgeConfigPromise;
 }
-import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, resolveBridgeConfig, initCapabilityTokens } from "./lib/bridge-client.js";
+import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, resolveBridgeConfig, initCapabilityTokens, isUnauthorizedBridgeError } from "./lib/bridge-client.js";
 import { sanitizeInlineAssistantBody, sanitizeResonantContextSnapshot } from "./lib/background-message-policy.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 
@@ -83,8 +83,8 @@ const prefsSync = createPrefsSync({
 });
 prefsSync.install();
 
-function rebindAndHydrate() {
-  return resolveBridgeConfig()
+function rebindAndHydrate({ refreshGenerated = false } = {}) {
+  return resolveBridgeConfig({ refreshGenerated })
     .then((cfg) => detectLoopbackBridge(cfg))
     .then((cfg) => {
       bridgeRequest = createBridgeClient(cfg);
@@ -93,7 +93,7 @@ function rebindAndHydrate() {
         .catch(() => undefined)
         .then(() => ({ cfg, bridgeRequest, rawFetch }));
     })
-    .then(({ bridgeRequest: req, rawFetch: raw }) => {
+    .then(({ cfg, bridgeRequest: req, rawFetch: raw }) => {
       // Prefs hydrate is fire-and-forget — the hydration state is
       // visible to the user via the Bridge Target settings card and
       // doesn't need to gate any other startup work.
@@ -104,6 +104,23 @@ function rebindAndHydrate() {
 }
 
 void rebindAndHydrate();
+
+async function currentBridgeRequest(route, options = {}) {
+  const req = typeof bridgeRequest === "function"
+    ? bridgeRequest
+    : (await rebindAndHydrate())?.bridgeRequest;
+  if (typeof req !== "function") {
+    throw new Error("Browser bridge is unavailable.");
+  }
+  try {
+    return await req(route, options);
+  } catch (error) {
+    if (!isUnauthorizedBridgeError(error)) throw error;
+    const rebound = await rebindAndHydrate({ refreshGenerated: true });
+    if (typeof rebound?.bridgeRequest !== "function") throw error;
+    return rebound.bridgeRequest(route, options);
+  }
+}
 
 // Re-bind the client if the user changes the bridge target override
 // from the settings page. The service worker can be woken by the storage
@@ -297,14 +314,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "inline_assistant_request") {
-    const pending = (typeof bridgeRequest === "function")
-      ? Promise.resolve(bridgeRequest)
-      : rebindAndHydrate().then(() => bridgeRequest);
-    void pending
-      .then((req) => req("/augmentor/inline", {
+    void currentBridgeRequest("/augmentor/inline", {
         method: "POST",
         body: sanitizeInlineAssistantBody(message.body)
-      }))
+      })
       .then((payload) => sendResponse({ ok: true, reply: payload.reply ?? "" }))
       .catch((error) => sendResponse({
         ok: false,

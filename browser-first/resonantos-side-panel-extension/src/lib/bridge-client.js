@@ -17,6 +17,10 @@
 
 const DEFAULT_BRIDGE_URL = "http://127.0.0.1:47773";
 const STORAGE_OVERRIDE_KEY = "bridgeTargetOverride";
+const GENERATED_CONFIG_PATH = "src/bridge-config.generated.js";
+const GENERATED_CONFIG_PREFIX = "globalThis.__RESONANTOS_BRIDGE_CONFIG__ = Object.freeze(";
+const GENERATED_CONFIG_SUFFIX = ");";
+const UNAUTHORIZED_BRIDGE_ERROR = "Unauthorized browser-first bridge request.";
 const BRIDGE_ROUTE_CAPABILITIES = Object.freeze({
   "POST /providers/health": "provider-diagnostics-read",
   "POST /providers/connectivity-test": "provider-diagnostics-read",
@@ -125,8 +129,7 @@ async function readOverrideFromStorage() {
   }
 }
 
-function generatedConfig() {
-  const cfg = globalThis.__RESONANTOS_BRIDGE_CONFIG__;
+function normalizeGeneratedConfig(cfg) {
   if (!cfg || typeof cfg !== "object") return null;
   const url = typeof cfg.bridgeUrl === "string" && cfg.bridgeUrl.trim()
     ? cfg.bridgeUrl.trim()
@@ -142,26 +145,67 @@ function generatedConfig() {
   };
 }
 
-export async function resolveBridgeConfig() {
+function generatedConfig() {
+  return normalizeGeneratedConfig(globalThis.__RESONANTOS_BRIDGE_CONFIG__);
+}
+
+function generatedConfigUrl() {
+  if (typeof chrome !== "undefined" && chrome?.runtime?.getURL) {
+    return chrome.runtime.getURL(GENERATED_CONFIG_PATH);
+  }
+  try {
+    return new URL("../bridge-config.generated.js", import.meta.url).href;
+  } catch {
+    return "";
+  }
+}
+
+function parseGeneratedConfigScript(source) {
+  const text = String(source ?? "").trim();
+  if (!text.startsWith(GENERATED_CONFIG_PREFIX) || !text.endsWith(GENERATED_CONFIG_SUFFIX)) return null;
+  const json = text.slice(GENERATED_CONFIG_PREFIX.length, -GENERATED_CONFIG_SUFFIX.length);
+  try {
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+export async function refreshGeneratedBridgeConfig({ fetchImpl, resourceUrl, now } = {}) {
+  const fetchFn = fetchImpl ?? (typeof fetch !== "undefined" ? fetch : null);
+  const url = resourceUrl ?? generatedConfigUrl();
+  if (!fetchFn || !url) return null;
+  const reloadUrl = new URL(url);
+  reloadUrl.searchParams.set("resonantosConfigReload", String(now ?? Date.now()));
+  const response = await fetchFn(reloadUrl.toString(), { cache: "no-store" });
+  if (!response?.ok) return null;
+  const parsed = parseGeneratedConfigScript(await response.text());
+  const normalized = normalizeGeneratedConfig(parsed);
+  if (!normalized) return null;
+  globalThis.__RESONANTOS_BRIDGE_CONFIG__ = Object.freeze(parsed);
+  return normalized;
+}
+
+function toResolvedBridgeConfig(config, source) {
+  return {
+    bridgeUrl: config.url,
+    bridgeToken: config.token ?? "",
+    capabilityBootstrapToken: config.capabilityBootstrapToken ?? "",
+    bridgeCapabilityTokens: config.capabilityTokens ?? {},
+    source,
+  };
+}
+
+export async function resolveBridgeConfig(options = {}) {
   const override = await readOverrideFromStorage();
   if (override) {
-    return {
-      bridgeUrl: override.url,
-      bridgeToken: override.token ?? "",
-      capabilityBootstrapToken: override.capabilityBootstrapToken ?? "",
-      bridgeCapabilityTokens: override.capabilityTokens ?? {},
-      source: "override",
-    };
+    return toResolvedBridgeConfig(override, "override");
   }
-  const generated = generatedConfig();
+  const generated = options.refreshGenerated
+    ? (await refreshGeneratedBridgeConfig(options).catch(() => null)) ?? generatedConfig()
+    : generatedConfig();
   if (generated) {
-    return {
-      bridgeUrl: generated.url,
-      bridgeToken: generated.token ?? "",
-      capabilityBootstrapToken: generated.capabilityBootstrapToken ?? "",
-      bridgeCapabilityTokens: generated.capabilityTokens ?? {},
-      source: "generated",
-    };
+    return toResolvedBridgeConfig(generated, options.refreshGenerated ? "generated:refreshed" : "generated");
   }
   return {
     bridgeUrl: DEFAULT_BRIDGE_URL,
@@ -186,6 +230,19 @@ function bridgeNetworkError(target, error) {
 
 function isAbortError(error) {
   return error && typeof error === "object" && error.name === "AbortError";
+}
+
+function bridgeResponseError(payload, status) {
+  const error = new Error(payload?.error ?? `Bridge request failed with HTTP ${status}.`);
+  error.bridgeStatus = status;
+  error.bridgePayload = payload;
+  return error;
+}
+
+export function isUnauthorizedBridgeError(error) {
+  if (!error || typeof error !== "object") return false;
+  if (error.bridgeStatus === 401) return true;
+  return typeof error.message === "string" && error.message.includes(UNAUTHORIZED_BRIDGE_ERROR);
 }
 
 export function createBridgeClient(config = globalThis.__RESONANTOS_BRIDGE_CONFIG__ ?? {}) {
@@ -219,7 +276,7 @@ export function createBridgeClient(config = globalThis.__RESONANTOS_BRIDGE_CONFI
     }
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) {
-      throw new Error(payload?.error ?? `Bridge request failed with HTTP ${response.status}.`);
+      throw bridgeResponseError(payload, response.status);
     }
     return payload;
   };

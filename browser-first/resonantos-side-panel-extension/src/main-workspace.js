@@ -1,6 +1,6 @@
 import { createBrowserPageActions } from "./lib/browser-page-actions.js";
 import { normalizeBrowserUrl } from "./lib/browser-command-parser.js";
-import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, initCapabilityTokens, resolveBridgeConfig } from "./lib/bridge-client.js";
+import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, initCapabilityTokens, isUnauthorizedBridgeError, resolveBridgeConfig } from "./lib/bridge-client.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 import { createChatSessionStore } from "./lib/chat-session-store.js";
 import { createComposerController } from "./lib/composer-controller.js";
@@ -107,9 +107,9 @@ let rawFetch = null;
 let prefsSync = null;
 let rebindInFlight = null;
 
-function rebindBridge({ forceResolve = false } = {}) {
+function rebindBridge({ forceResolve = false, refreshGenerated = false } = {}) {
   if (rebindInFlight && !forceResolve) return rebindInFlight;
-  rebindInFlight = resolveBridgeConfig()
+  rebindInFlight = resolveBridgeConfig({ refreshGenerated })
     .then((cfg) => detectLoopbackBridge(cfg))
     .then((cfg) => {
       bridgeRequest = createBridgeClient(cfg);
@@ -126,8 +126,8 @@ function rebindBridge({ forceResolve = false } = {}) {
   return rebindInFlight;
 }
 
-function hydrateAfterRebind() {
-  return rebindBridge().then((result) => {
+function hydrateAfterRebind(options = {}) {
+  return rebindBridge(options).then((result) => {
     if (!result) return null;
     void prefsSync.hydrate().catch(() => undefined);
     return result;
@@ -141,7 +141,15 @@ async function currentBridgeRequest(route, options = {}) {
   if (typeof req !== "function") {
     throw new Error("Browser bridge is unavailable.");
   }
-  return req(route, options);
+  try {
+    return await req(route, options);
+  } catch (error) {
+    if (!isUnauthorizedBridgeError(error)) throw error;
+    rebindInFlight = null;
+    const rebound = await hydrateAfterRebind({ forceResolve: true, refreshGenerated: true });
+    if (typeof rebound?.bridgeRequest !== "function") throw error;
+    return rebound.bridgeRequest(route, options);
+  }
 }
 
 async function currentRawFetch(route, options = {}) {
@@ -151,7 +159,12 @@ async function currentRawFetch(route, options = {}) {
   if (typeof req !== "function") {
     throw new Error("Browser bridge raw fetch is unavailable.");
   }
-  return req(route, options);
+  const response = await req(route, options);
+  if (response?.status !== 401) return response;
+  rebindInFlight = null;
+  const rebound = await hydrateAfterRebind({ forceResolve: true, refreshGenerated: true });
+  if (typeof rebound?.rawFetch !== "function") return response;
+  return rebound.rawFetch(route, options);
 }
 
 const getBridgeRequest = () => currentBridgeRequest;

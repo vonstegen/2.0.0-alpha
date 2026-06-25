@@ -666,6 +666,11 @@ function createAddonProxyHandler({
           };
           const payload = isWsTicket ? { ticket: "loopback" } : stubUser;
           const out = Buffer.from(JSON.stringify(payload), "utf8");
+          for (const k of Object.keys(responseHeaders)) {
+            if (["content-length", "content-type"].includes(k.toLowerCase())) {
+              delete responseHeaders[k];
+            }
+          }
           responseHeaders["Content-Type"] = "application/json";
           responseHeaders["Content-Length"] = Buffer.byteLength(out);
           response.writeHead(200, responseHeaders);

@@ -6,6 +6,8 @@ import {
   createRawBridgeFetch,
   capabilityForBridgeRoute,
   initCapabilityTokens,
+  isUnauthorizedBridgeError,
+  resolveBridgeConfig,
 } from "../resonantos-side-panel-extension/src/lib/bridge-client.js";
 import { evaluateBridgeRequestForSelfTest, startBridgeServer } from "../host/bridge-server.mjs";
 
@@ -174,6 +176,63 @@ test("bridge client reports unreachable bridge fetches with settings guidance", 
     () => client("/addons/status", { method: "GET" }),
     /Bridge is unreachable for \/addons\/status: Failed to fetch.*Settings > Bridge Target/,
   );
+});
+
+test("bridge client marks 401 token mismatch errors as bridge authorization failures", async () => {
+  const client = createBridgeClient({
+    bridgeUrl: "http://127.0.0.1:47773",
+    bridgeToken: "stale-token",
+    fetchImpl: async () => ({
+      ok: false,
+      status: 401,
+      json: async () => ({ ok: false, error: "Unauthorized browser-first bridge request." }),
+    }),
+  });
+
+  await assert.rejects(
+    () => client("/status", { method: "GET" }),
+    (error) => {
+      assert.equal(isUnauthorizedBridgeError(error), true);
+      assert.equal(error.bridgeStatus, 401);
+      return true;
+    },
+  );
+});
+
+test("bridge config resolver can refresh a generated config resource without eval", async () => {
+  const previousBridgeConfig = globalThis.__RESONANTOS_BRIDGE_CONFIG__;
+  globalThis.__RESONANTOS_BRIDGE_CONFIG__ = Object.freeze({
+    bridgeUrl: "http://127.0.0.1:47773",
+    bridgeToken: "stale-token",
+    capabilityBootstrapToken: "stale-bootstrap",
+  });
+  const script = 'globalThis.__RESONANTOS_BRIDGE_CONFIG__ = Object.freeze({"bridgeUrl":"http://127.0.0.1:47773","bridgeToken":"fresh-token","capabilityBootstrapToken":"fresh-bootstrap"});\n';
+  try {
+    const cfg = await resolveBridgeConfig({
+      refreshGenerated: true,
+      now: 12345,
+      resourceUrl: "chrome-extension://test/src/bridge-config.generated.js",
+      fetchImpl: async (url, options = {}) => {
+        assert.equal(new URL(url).searchParams.get("resonantosConfigReload"), "12345");
+        assert.equal(options.cache, "no-store");
+        return new Response(script, {
+          status: 200,
+          headers: { "Content-Type": "application/javascript" },
+        });
+      },
+    });
+
+    assert.equal(cfg.bridgeToken, "fresh-token");
+    assert.equal(cfg.capabilityBootstrapToken, "fresh-bootstrap");
+    assert.equal(cfg.source, "generated:refreshed");
+    assert.equal(globalThis.__RESONANTOS_BRIDGE_CONFIG__.bridgeToken, "fresh-token");
+  } finally {
+    if (previousBridgeConfig === undefined) {
+      delete globalThis.__RESONANTOS_BRIDGE_CONFIG__;
+    } else {
+      globalThis.__RESONANTOS_BRIDGE_CONFIG__ = previousBridgeConfig;
+    }
+  }
 });
 
 test("raw bridge fetch reports unreachable proxy fetches with settings guidance", async () => {

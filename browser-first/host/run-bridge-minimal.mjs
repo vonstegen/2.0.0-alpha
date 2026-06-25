@@ -162,6 +162,7 @@ const addonDelegationService = createAddonDelegationService({
   opencodeCommand,
   opencodeRuntimeDiagnostics,
   redactPathForDiagnostics,
+  readProviderSecrets,
   repoRoot,
   safeFileSlug,
   socketOpen,

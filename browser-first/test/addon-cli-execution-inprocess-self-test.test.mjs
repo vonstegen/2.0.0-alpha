@@ -30,15 +30,14 @@ test("add-on execution settings pass in-process deterministic smoke test", async
   assert.equal(result.settings.opencode.localCliExecution, true);
 });
 
-test("Hermes CLI execution bridge routes pass in-process deterministic smoke test", async () => {
+test("Hermes CLI execution is blocked when the installed CLI only accepts argv prompts", async () => {
   const result = await runSelfTest("--hermes-cli-execution-inprocess-self-test=true");
   assert.equal(result.ok, true);
   assert.equal(result.mode, "in-process");
-  assert.equal(result.adapter, "hermes-cli");
+  assert.equal(result.adapter, "blocked-unsafe-hermes-argv");
   assert.equal(result.hermesMode, "local-hermes-cli");
-  assert.equal(result.statusAfter, "completed");
-  assert.match(result.summary, /Hermes CLI adapter completed/);
-  assert.ok(toPortablePath(result.artifactPath).includes("BrowserFirst/DelegationArtifacts/hermes/"));
+  assert.equal(result.statusAfter, "blocked");
+  assert.match(result.summary, /process argv/i);
 });
 
 test("OpenCode CLI execution bridge routes pass in-process deterministic smoke test", async () => {

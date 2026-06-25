@@ -190,6 +190,46 @@ test("proxy: forwards POST body to upstream", async () => {
   });
 });
 
+test("proxy: auth bootstrap stub does not duplicate entity headers", async () => {
+  const previousOpenPrefixes = process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES;
+  process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES = "/api";
+  await withFakeUpstream((req, res) => {
+    if (req.url === "/api/auth/me") {
+      const body = JSON.stringify({ error: "unauthorized" });
+      res.writeHead(401, {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      });
+      res.end(body);
+      return;
+    }
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "unexpected path" }));
+  }, async () => {
+    try {
+      await withBridgeServer(
+        {
+          bridgeToken: "proxy-test-token",
+          routes: [],
+        },
+        async ({ bridgeUrl }) => {
+          // Mirrors iframe behavior: the dashboard SPA cannot attach the
+          // bridge token to its own auth bootstrap fetch.
+          const r = await fetch(`${bridgeUrl}/api/auth/me`);
+          assert.equal(r.status, 200);
+          assert.equal(r.headers.get("content-type"), "application/json");
+          const body = await r.json();
+          assert.equal(body.user_id, "local-loopback");
+        },
+      );
+    } finally {
+      if (previousOpenPrefixes === undefined)
+        delete process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES;
+      else process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES = previousOpenPrefixes;
+    }
+  });
+});
+
 test("proxy: does not leak the bridge token header to the upstream", async () => {
   await withFakeUpstream((req, res) => {
     res.writeHead(200, { "Content-Type": "application/json" });
