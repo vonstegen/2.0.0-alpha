@@ -1,6 +1,18 @@
 const defaultNow = () => new Date().toISOString();
 const defaultId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+const cloneStoredValue = (value) => {
+  if (value === null || typeof value !== "object") return value;
+  if (typeof globalThis.structuredClone === "function") {
+    try {
+      return globalThis.structuredClone(value);
+    } catch {
+      // Fall through to JSON cloning for storage-shaped values.
+    }
+  }
+  return JSON.parse(JSON.stringify(value));
+};
+
 export function createChatSessionStore({
   storage,
   storageKeys,
@@ -31,25 +43,16 @@ export function createChatSessionStore({
     return title.length > 46 ? `${title.slice(0, 43)}...` : title;
   };
 
-  const cloneStoredValue = (value, fallback) => {
-    if (value == null) return fallback;
-    try {
-      return JSON.parse(JSON.stringify(value));
-    } catch {
-      return fallback;
-    }
-  };
-
   const normalizeCompactState = (value) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return null;
     }
-    const cloned = cloneStoredValue(value, null);
+    const cloned = cloneStoredValue(value);
     return cloned && typeof cloned === "object" && !Array.isArray(cloned) ? cloned : null;
   };
 
   const normalizeSourceReferences = (value) => Array.isArray(value)
-    ? cloneStoredValue(value, [])
+    ? cloneStoredValue(value)
     : [];
 
   const compactMetadataFromSession = (session) => {
@@ -61,10 +64,46 @@ export function createChatSessionStore({
     };
   };
 
+  const compactStateForMessages = (compactState, retainedMessages = []) => {
+    if (!compactState || typeof compactState !== "object") return undefined;
+    const nextCompactState = cloneStoredValue(compactState);
+    if (!nextCompactState || typeof nextCompactState !== "object") return undefined;
+    const retainedIds = new Set(retainedMessages.map((message) => message.id));
+    const firstMessageId = retainedMessages[0]?.id ?? "";
+    const lastMessageId = retainedMessages.at(-1)?.id ?? "";
+
+    if (Array.isArray(nextCompactState.preservedRecentMessageIds)) {
+      nextCompactState.preservedRecentMessageIds = nextCompactState.preservedRecentMessageIds
+        .filter((id) => retainedIds.has(id));
+    }
+
+    if (nextCompactState.sourceRange && typeof nextCompactState.sourceRange === "object") {
+      const range = nextCompactState.sourceRange;
+      if (range.fromMessageId && !retainedIds.has(range.fromMessageId) && firstMessageId) {
+        range.fromMessageId = firstMessageId;
+      }
+      if (range.toMessageId && !retainedIds.has(range.toMessageId) && lastMessageId) {
+        range.toMessageId = lastMessageId;
+      }
+    }
+
+    return nextCompactState;
+  };
+
+  const sourceReferencesForMessages = (sourceReferences, retainedMessages = []) => {
+    if (!sourceReferences || typeof sourceReferences !== "object") return undefined;
+    const retainedIds = new Set(retainedMessages.map((message) => message.id));
+    const nextSourceReferences = cloneStoredValue(sourceReferences);
+    if (!Array.isArray(nextSourceReferences)) return nextSourceReferences;
+    return nextSourceReferences.filter((reference) =>
+      !reference?.messageId || retainedIds.has(reference.messageId)
+    );
+  };
+
   const normalizeSession = (session) => {
     const normalizedMessages = Array.isArray(session?.messages) ? session.messages.filter(validMessage) : [];
     const titleEdited = Boolean(session?.titleEdited);
-    return {
+    const normalized = {
       id: String(session?.id || `session-${createId()}`),
       title: String(session?.title || sessionTitleFromMessages(normalizedMessages)).trim() || "New chat",
       titleEdited,
@@ -76,9 +115,13 @@ export function createChatSessionStore({
       createdAt: session?.createdAt || now(),
       lastOpenedAt: session?.lastOpenedAt || session?.updatedAt || session?.createdAt || now(),
       updatedAt: session?.updatedAt || session?.createdAt || now(),
-      messages: normalizedMessages,
-      ...compactMetadataFromSession(session)
+      messages: normalizedMessages
     };
+    const compactState = compactStateForMessages(session?.compactState, normalizedMessages);
+    const sourceReferences = sourceReferencesForMessages(session?.sourceReferences, normalizedMessages);
+    if (compactState) normalized.compactState = compactState;
+    if (sourceReferences) normalized.sourceReferences = sourceReferences;
+    return normalized;
   };
 
   const normalizeProject = (project) => ({
@@ -530,12 +573,17 @@ export function createChatSessionStore({
   async function forkFromMessage(id) {
     const index = messages.findIndex((item) => item.id === id);
     if (index < 0) return null;
+    const source = getActiveSession();
     const fork = {
       id: `fork-${Date.now()}`,
       sourceMessageId: id,
       createdAt: now(),
       messages: messages.slice(0, index + 1)
     };
+    const compactState = compactStateForMessages(source?.compactState, fork.messages);
+    const sourceReferences = sourceReferencesForMessages(source?.sourceReferences, fork.messages);
+    if (compactState) fork.compactState = compactState;
+    if (sourceReferences) fork.sourceReferences = sourceReferences;
     forks = [...forks, fork];
     messages = fork.messages.map((message) => ({ ...message }));
     const session = normalizeSession({
@@ -544,7 +592,8 @@ export function createChatSessionStore({
       messages,
       createdAt: fork.createdAt,
       updatedAt: fork.createdAt,
-      ...compactMetadataFromSession(getActiveSession())
+      compactState,
+      sourceReferences
     });
     sessions = [session, ...sessions];
     activeSessionId = session.id;
@@ -604,6 +653,61 @@ export function createChatSessionStore({
     return userMessage;
   }
 
+  async function prepareRegenerationFromMessage(id, { mode = "branch" } = {}) {
+    const normalizedMode = mode === "overwrite" ? "overwrite" : "branch";
+    const index = messages.findIndex((item) => item.id === id);
+    if (index < 0) return null;
+    const userIndex = messages.slice(0, index).findLastIndex((message) => message.role === "user");
+    if (userIndex < 0) return null;
+    const userMessage = { ...messages[userIndex] };
+
+    if (normalizedMode === "overwrite") {
+      messages = messages.slice(0, userIndex + 1).map((message) => ({ ...message }));
+      writeActiveSession();
+      await persist();
+      return { mode: normalizedMode, userMessage };
+    }
+
+    writeActiveSession();
+    const source = getActiveSession();
+    const retainedMessages = messages.slice(0, userIndex + 1).map((message) => ({ ...message }));
+    const forkId = `fork-${Date.now()}`;
+    const createdAt = now();
+    const compactState = compactStateForMessages(source?.compactState, retainedMessages);
+    const sourceReferences = sourceReferencesForMessages(source?.sourceReferences, retainedMessages);
+    const fork = {
+      id: forkId,
+      sourceSessionId: source?.id ?? activeSessionId,
+      sourceMessageId: id,
+      regeneratedFromMessageId: id,
+      createdAt,
+      messages: retainedMessages
+    };
+    if (compactState) fork.compactState = compactState;
+    if (sourceReferences) fork.sourceReferences = sourceReferences;
+    forks = [...forks, fork];
+
+    const session = normalizeSession({
+      id: fork.id,
+      title: `Regenerate: ${sessionTitleFromMessages([userMessage])}`,
+      titleEdited: true,
+      workspaceId: source?.workspaceId,
+      projectId: source?.projectId,
+      pinned: false,
+      messages: retainedMessages,
+      compactState,
+      sourceReferences,
+      createdAt,
+      updatedAt: createdAt
+    });
+    sessions = [session, ...sessions];
+    activeSessionId = session.id;
+    messages = session.messages.map((message) => ({ ...message }));
+    attachments = [];
+    await persist();
+    return { mode: normalizedMode, userMessage, fork, session };
+  }
+
   async function addAttachments(nextAttachments) {
     attachments = [...attachments, ...nextAttachments];
     await persist();
@@ -644,6 +748,7 @@ export function createChatSessionStore({
     getSessions,
     hydrate,
     persist,
+    prepareRegenerationFromMessage,
     renameProject,
     renameSession,
     removeAttachment,

@@ -96,6 +96,7 @@ const {
   permissionManagerPanel,
   permissionManagerTitle,
   readButton,
+  regenerationModeSelect,
   saveIntakeButton,
   saveSelectionButton,
   sitePermissionHost,
@@ -183,6 +184,27 @@ let personalizationSettings = null;
 let messageActions = null;
 let monitorRenderers = null;
 let browserJobScheduler = null;
+
+function normalizeRegenerationMode(value) {
+  return value === "overwrite" ? "overwrite" : "branch";
+}
+
+async function hydrateRegenerationModePreference() {
+  const settings = await chrome.storage?.local?.get?.([STORAGE_KEYS.regenerationMode]).catch(() => ({}));
+  if (regenerationModeSelect) {
+    regenerationModeSelect.value = normalizeRegenerationMode(settings?.[STORAGE_KEYS.regenerationMode]);
+  }
+}
+
+async function setRegenerationModePreference(mode) {
+  const normalized = normalizeRegenerationMode(mode);
+  if (regenerationModeSelect) {
+    regenerationModeSelect.value = normalized;
+  }
+  await chrome.storage?.local?.set?.({
+    [STORAGE_KEYS.regenerationMode]: normalized
+  }).catch(() => undefined);
+}
 
 const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 const { withBrowserActionLock } = createBrowserActionLock();
@@ -410,6 +432,7 @@ messageActions = createMessageActionController({
   fileInput,
   flashCopied,
   getLastSnapshot: () => lastSnapshot,
+  getRegenerationMode: () => normalizeRegenerationMode(regenerationModeSelect?.value),
   getRespondToCommand: () => respondToCommand,
   navigator,
   renderAttachments,
@@ -1108,6 +1131,7 @@ const consumePendingSidebarPrompt = lifecycleController.consumePendingSidebarPro
 window.__resonantosSidePanelReady = false;
 try {
   lifecycleController.bindListeners();
+  regenerationModeSelect?.addEventListener("change", () => void setRegenerationModePreference(regenerationModeSelect.value));
   window.__resonantosSidePanelReady = true;
 } catch (error) {
   window.__resonantosSidePanelReadyError = error instanceof Error
@@ -1117,6 +1141,7 @@ try {
 }
 
 hydrateChatSettings().then(async () => {
+  await hydrateRegenerationModePreference();
   await loadBrowserJobs();
   await tabContextController.hydrateInitialContext();
   await consumePendingSidebarPrompt();
