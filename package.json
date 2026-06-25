@@ -20,6 +20,7 @@
     "engineer:prompt": "node scripts/engineer-runner.mjs prompt",
     "engineer:verify": "node scripts/engineer-runner.mjs verify",
     "test:engineer-runner": "node --test scripts/engineer-runner.test.mjs",
+    "discipline:validate": "node scripts/validate-discipline-catalog.mjs",
     "browser-first:audit-scope": "node scripts/browser-first-release-scope-audit.mjs",
     "browser-first:audit-scope:staged": "node scripts/browser-first-release-scope-audit.mjs --staged --strict"
   },

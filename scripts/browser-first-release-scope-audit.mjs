@@ -45,6 +45,18 @@ function classify(path) {
       reason: "Chrome extension, Node bridge host, or browser-first tests/docs",
     };
   }
+  if (path.startsWith("development/")) {
+    return {
+      bucket: "defer",
+      reason: "Arcanum or local run package; keep out of product PRs unless explicitly promoted",
+    };
+  }
+  if (path.startsWith("disciplines/")) {
+    return {
+      bucket: "include",
+      reason: "local ResonantOS governance discipline",
+    };
+  }
   if (includeDocs.has(path)) {
     return {
       bucket: "include",
