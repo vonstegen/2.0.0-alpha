@@ -400,12 +400,14 @@ export function App() {
       if (cancelled) {
         return;
       }
-      currentReadyStateRef.current = nextState;
-      setLoadState((current) =>
-        current.phase === "ready"
-          ? { ...current, state: nextState }
-          : current,
-      );
+      setLoadState((current) => {
+        if (current.phase !== "ready") {
+          return current;
+        }
+        const mergedState = { ...current.state, ...nextState };
+        currentReadyStateRef.current = mergedState;
+        return { ...current, state: mergedState };
+      });
     }).then((cleanup) => {
       if (cancelled) {
         cleanup();

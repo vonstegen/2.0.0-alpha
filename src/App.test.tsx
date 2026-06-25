@@ -1450,6 +1450,7 @@ vi.mock("./core/runtime", () => ({
 }));
 
 import { App } from "./App";
+import { subscribeRuntimeStateUpdates } from "./core/runtime";
 
 const deferred = <T,>() => {
   let resolve!: (value: T) => void;
@@ -1514,6 +1515,8 @@ describe("App boot flow", () => {
     });
     hydrateStateMock.mockReset();
     hydrateStateMock.mockResolvedValue(buildDefaultState(manifests));
+    vi.mocked(subscribeRuntimeStateUpdates).mockReset();
+    vi.mocked(subscribeRuntimeStateUpdates).mockResolvedValue(() => undefined);
     requestProviderServiceChatCompletionMock.mockReset();
     requestProviderServiceChatCompletionMock.mockResolvedValue("This is a live Strategist test reply from MiniMax-M3.");
     requestProviderServiceChatCompletionStreamMock.mockReset();
@@ -2869,6 +2872,31 @@ describe("App boot flow", () => {
     expect(screen.getByText("What model are you using?")).toBeTruthy();
     expect(await screen.findByText("This is a live Strategist test reply from MiniMax-M3.")).toBeTruthy();
   }, 15_000);
+
+  it("preserves host-owned runtime state fields when a runtime update is security-filtered", async () => {
+    let onRuntimeStateUpdate: ((state: ResonantShellState) => void) | null = null;
+    vi.mocked(subscribeRuntimeStateUpdates).mockImplementation(async (listener) => {
+      onRuntimeStateUpdate = listener;
+      return () => undefined;
+    });
+
+    const { container } = render(<App />);
+
+    expect((await screen.findAllByText("Launch your AI tools from one workbench.")).length).toBeGreaterThan(0);
+    expect(onRuntimeStateUpdate).toBeTruthy();
+
+    const partialState = buildDefaultState(manifests);
+    partialState.uiPreferences.activeSection = "addons";
+    delete (partialState as Partial<ResonantShellState>).installations;
+
+    act(() => {
+      onRuntimeStateUpdate?.(partialState as ResonantShellState);
+    });
+
+    await waitFor(() => expect(container.querySelector(".system-active-app")?.textContent).toBe("Add-ons"));
+    expect(container.querySelector(".shell")).toBeTruthy();
+    expect(screen.getByText("OpenCode")).toBeTruthy();
+  });
 
   it("swaps the main workspace and chat rail while keeping the app dock fixed", async () => {
     const { container } = render(<App />);
