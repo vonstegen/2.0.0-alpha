@@ -299,7 +299,7 @@ export function App() {
   const [chatNotice, setChatNotice] = useState<string | null>(null);
   const [providerDrafts, setProviderDrafts] = useState<Record<string, string>>({});
   const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>("providers");
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("profile");
   const [providerDiagnostics, setProviderDiagnostics] = useState<ProviderDiagnosticReport[]>([]);
   const [providerDiagnosticsBusy, setProviderDiagnosticsBusy] = useState(false);
   const [activeProviderProbeId, setActiveProviderProbeId] = useState<string | null>(null);
@@ -473,7 +473,7 @@ export function App() {
   }, [loadState]);
 
   useEffect(() => {
-    if (loadState.phase !== "ready" || settingsSection !== "providers" || providerDiagnostics.length) {
+    if (loadState.phase !== "ready" || settingsSection !== "advanced" || providerDiagnostics.length) {
       return;
     }
     void refreshProviderDiagnostics();
