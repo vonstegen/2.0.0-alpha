@@ -14,6 +14,8 @@ This folder is the documentation entrypoint for the current codebase.
   - browser-first working features, browser-first next features, and desktop vNext feature inventory
 - [architecture/MODULE_MAP.md](./architecture/MODULE_MAP.md)
   - current ownership map for modules and shell composition
+- [architecture/MODULE-OWNERSHIP.md](./architecture/MODULE-OWNERSHIP.md)
+  - current contributor-facing module ownership contract, data-flow rules, host boundaries, and PR checklist hook
 - [architecture/VNEXT_SYSTEM_DIAGRAM.md](./architecture/VNEXT_SYSTEM_DIAGRAM.md)
   - current system diagrams, implemented capability map, under-construction areas, and next engineering sequence
 - [architecture/ARCHITECTURE_AUDIT_2026-04-26.md](./architecture/ARCHITECTURE_AUDIT_2026-04-26.md)
@@ -76,6 +78,7 @@ This folder is the documentation entrypoint for the current codebase.
 - `What standards are we following?`
   - `ADR-003`
 - `Which module owns what?`
+  - `MODULE-OWNERSHIP`
   - `MODULE_MAP`
 - `How does ResonantOS vNext work end to end, and what is working vs under construction?`
   - `VNEXT_SYSTEM_DIAGRAM`
@@ -124,5 +127,6 @@ When a new structural decision is made, add or update an ADR before the codebase
 When a refactor changes ownership or service boundaries, update these in the same change:
 
 - `architecture/MODULE_MAP.md`
+- `architecture/MODULE-OWNERSHIP.md`
 - `FEATURE_BACKLOG.md`
 - the relevant ADR if the rule itself changed
