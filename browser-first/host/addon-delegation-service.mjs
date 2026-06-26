@@ -441,6 +441,15 @@ export function createAddonDelegationService(dependencies) {
       .filter(Boolean);
   }
 
+  function resultArtifactPathFromMarkdown(content) {
+    const fieldValue = fieldFromMarkdown(content, "resultArtifactPath");
+    if (fieldValue) return fieldValue;
+    return sectionFromMarkdown(content, "Result Artifact")
+      .split(/\s+/)
+      .map((line) => line.trim())
+      .find(Boolean) || "";
+  }
+
   function draftSummaryFromMarkdown(filePath, content, details) {
     return {
       id: fieldFromMarkdown(content, "id") || path.basename(filePath, ".md"),
@@ -462,7 +471,7 @@ export function createAddonDelegationService(dependencies) {
       id: fieldFromMarkdown(content, "id") || path.basename(filePath, ".md"),
       mission: sectionFromMarkdown(content, "Mission").slice(0, 360),
       path: path.relative(userRoot(), filePath),
-      resultArtifactPath: fieldFromMarkdown(content, "resultArtifactPath"),
+      resultArtifactPath: resultArtifactPathFromMarkdown(content),
       resultExcerpt: result.replace(/\s+/g, " ").slice(0, 360),
       sourceControlRunId: fieldFromMarkdown(content, "sourceControlRunId"),
       sourceKind: fieldFromMarkdown(content, "sourceKind") || "resonantos-chat",
@@ -922,7 +931,7 @@ export function createAddonDelegationService(dependencies) {
   async function executeHermesDelegationArtifact(payload = {}) {
     const taskPath = resolveDelegationPath(payload.path, "hermes");
     const content = await readFile(taskPath, "utf8");
-    const artifactRelative = fieldFromMarkdown(content, "resultArtifactPath");
+    const artifactRelative = resultArtifactPathFromMarkdown(content);
     if (!artifactRelative) {
       throw new Error("Hermes delegation has no result artifact yet.");
     }
@@ -1358,7 +1367,7 @@ export function createAddonDelegationService(dependencies) {
   async function executeOpenCodeDelegationArtifact(payload = {}) {
     const taskPath = resolveDelegationPath(payload.path, "opencode");
     const content = await readFile(taskPath, "utf8");
-    const artifactRelative = fieldFromMarkdown(content, "resultArtifactPath");
+    const artifactRelative = resultArtifactPathFromMarkdown(content);
     if (!artifactRelative) {
       throw new Error("OpenCode delegation has no result artifact yet.");
     }

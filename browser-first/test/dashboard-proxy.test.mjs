@@ -76,7 +76,7 @@ test("proxy: dashboardProxyUrl strips trailing slashes", () => {
 test("proxy: rejects requests without a bridge token", async () => {
   await withFakeUpstream(() => {}, async () => {
     await withBridgeServer(
-      { bridgeToken: "proxy-test-token", routes: [] },
+      { bridgeToken: "proxy-test-token", openPathPrefixes: [], routes: [] },
       async ({ bridgeUrl }) => {
         const r = await fetch(`${bridgeUrl}/hermes-dashboard/`);
         assert.equal(r.status, 401);
@@ -88,7 +88,7 @@ test("proxy: rejects requests without a bridge token", async () => {
 test("proxy: rejects requests with the wrong bridge token", async () => {
   await withFakeUpstream(() => {}, async () => {
     await withBridgeServer(
-      { bridgeToken: "proxy-test-token", routes: [] },
+      { bridgeToken: "proxy-test-token", openPathPrefixes: [], routes: [] },
       async ({ bridgeUrl }) => {
         const r = await fetch(`${bridgeUrl}/hermes-dashboard/`, {
           headers: { "X-ResonantOS-Bridge-Token": "wrong" },
@@ -112,6 +112,63 @@ test("proxy: serves /hermes-dashboard/ from the upstream root", async () => {
         const body = await r.json();
         assert.equal(body.path, "/");
         assert.equal(body.method, "GET");
+      },
+    );
+  });
+});
+
+test("proxy: allows iframe src dashboard mirror paths on loopback by default", async () => {
+  await withFakeUpstream((req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ path: req.url }));
+  }, async () => {
+    await withBridgeServer(
+      { bridgeToken: "proxy-test-token", routes: [] },
+      async ({ bridgeUrl }) => {
+        const root = await fetch(`${bridgeUrl}/hermes-dashboard/`);
+        assert.equal(root.status, 200);
+        assert.equal((await root.json()).path, "/");
+
+        const asset = await fetch(`${bridgeUrl}/assets/index-abc.js`);
+        assert.equal(asset.status, 200);
+        assert.equal((await asset.json()).path, "/assets/index-abc.js");
+      },
+    );
+  });
+});
+
+test("proxy: owns CORS headers for local harness and extension origins", async () => {
+  await withFakeUpstream((_req, res) => {
+    res.writeHead(200, {
+      "Access-Control-Allow-Origin": "http://upstream.invalid",
+      "Access-Control-Allow-Credentials": "false",
+      "Content-Type": "text/plain",
+      "Vary": "Accept-Encoding",
+    });
+    res.end("ok");
+  }, async () => {
+    await withBridgeServer(
+      {
+        allowedOrigins: ["http://127.0.0.1:18777"],
+        bridgeToken: "proxy-test-token",
+        extensionOrigin: "chrome-extension://extension-id",
+        routes: [],
+      },
+      async ({ bridgeUrl }) => {
+        const local = await fetchWithToken(bridgeUrl, "/hermes-dashboard/", {
+          headers: { Origin: "http://127.0.0.1:18777" },
+        });
+        assert.equal(local.status, 200);
+        assert.equal(local.headers.get("access-control-allow-origin"), "http://127.0.0.1:18777");
+        assert.equal(local.headers.get("access-control-allow-credentials"), "true");
+        assert.equal(local.headers.get("vary"), "Origin");
+        assert.equal(await local.text(), "ok");
+
+        const extension = await fetchWithToken(bridgeUrl, "/hermes-dashboard/", {
+          headers: { Origin: "chrome-extension://extension-id" },
+        });
+        assert.equal(extension.status, 200);
+        assert.equal(extension.headers.get("access-control-allow-origin"), "chrome-extension://extension-id");
       },
     );
   });

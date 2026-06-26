@@ -196,6 +196,9 @@ const HOP_BY_HOP_HEADERS = new Set([
 
 function pickAllowedOrigin(requestHeaders, extensionOrigin, allowedOrigins) {
   const requestOrigin = requestHeaders?.origin;
+  if (requestOrigin && extensionOrigin && requestOrigin === extensionOrigin) {
+    return requestOrigin;
+  }
   if (requestOrigin && allowedOrigins && allowedOrigins.length > 0) {
     // Exact match first.
     if (allowedOrigins.includes(requestOrigin)) {
@@ -219,6 +222,11 @@ function pickAllowedOrigin(requestHeaders, extensionOrigin, allowedOrigins) {
     return extensionOrigin ?? "*";
   }
   return extensionOrigin;
+}
+
+function shouldDropUpstreamResponseHeader(headerName) {
+  const lower = String(headerName).toLowerCase();
+  return HOP_BY_HOP_HEADERS.has(lower) || lower.startsWith("access-control-") || lower === "vary";
 }
 
 function writeJson(response, status, payload, extensionOrigin, requestHeaders, allowedOrigins) {
@@ -625,7 +633,7 @@ function createAddonProxyHandler({
         const responseHeaders = {};
         for (const [key, value] of Object.entries(upstreamRes.headers)) {
           const lower = String(key).toLowerCase();
-          if (HOP_BY_HOP_HEADERS.has(lower)) continue;
+          if (shouldDropUpstreamResponseHeader(lower)) continue;
           responseHeaders[key] = value;
         }
         const allowOrigin = pickAllowedOrigin(
@@ -837,7 +845,7 @@ function bufferAddonProxyResponse({
         const responseHeaders = {};
         for (const [key, value] of Object.entries(upstreamRes.headers)) {
           const lower = String(key).toLowerCase();
-          if (HOP_BY_HOP_HEADERS.has(lower)) continue;
+          if (shouldDropUpstreamResponseHeader(lower)) continue;
           responseHeaders[key] = value;
         }
         const chunks = [];
@@ -944,6 +952,20 @@ export function getBridgeAllowedOrigins() {
 
 export function getBridgeAllowedCidrs() {
   return parseAllowedList(process.env.RESONANTOS_BRIDGE_ALLOWED_IPS);
+}
+
+function isLoopbackBridgeHost(host) {
+  const value = String(host ?? "").trim().toLowerCase();
+  return value === "localhost" || value === "127.0.0.1" || value === "::1" || value === "[::1]";
+}
+
+export function getBridgeOpenProxyPrefixes({ host = getBridgeHost(), allowedCidrs = getBridgeAllowedCidrs() } = {}) {
+  const configured = parseAllowedList(process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES);
+  if (configured.length > 0) return configured;
+  if (isLoopbackBridgeHost(host) || allowedCidrs.length > 0) {
+    return DASHBOARD_PROXY_MIRROR_PATHS.map((entry) => entry.bridge);
+  }
+  return [];
 }
 
 export async function writeBridgeConfig({
@@ -1067,6 +1089,7 @@ export function createBridgeRequestHandler({
   allowedOrigins = getBridgeAllowedOrigins(),
   allowedCidrs = getBridgeAllowedCidrs(),
   dashboardProxyHandler = null,
+  openPathPrefixes = getBridgeOpenProxyPrefixes({ allowedCidrs }),
 } = {}) {
   // SECURITY: /api/capability-tokens is a built-in internal route. It requires
   // both the bridge token and a separate capability-bootstrap token, and returns
@@ -1094,7 +1117,7 @@ export function createBridgeRequestHandler({
       // exempt this prefix from the bridge-token requirement. The IP
       // allowlist (RESONANTOS_BRIDGE_ALLOWED_IPS) is still enforced
       // upstream of this check.
-      openPathPrefixes: parseAllowedList(process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES),
+      openPathPrefixes,
     });
   return async function handleBridgeRequest(request, response) {
     try {
@@ -1157,15 +1180,17 @@ export async function startBridgeServer({
   allowedOrigins = getBridgeAllowedOrigins(),
   allowedCidrs = getBridgeAllowedCidrs(),
   dashboardProxyHandler = null,
+  openPathPrefixes,
 }) {
   const bindHost = host ?? getBridgeHost();
+  const effectiveOpenPathPrefixes = openPathPrefixes ?? getBridgeOpenProxyPrefixes({ host: bindHost, allowedCidrs });
   const effectiveProxyHandler =
     dashboardProxyHandler ??
     createDashboardProxyHandler({
       bridgeToken,
       extensionOrigin,
       allowedOrigins,
-      openPathPrefixes: parseAllowedList(process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES),
+      openPathPrefixes: effectiveOpenPathPrefixes,
     });
   const handle = createBridgeRequestHandler({
     bridgeToken,
@@ -1176,6 +1201,7 @@ export async function startBridgeServer({
     allowedOrigins,
     allowedCidrs,
     dashboardProxyHandler: effectiveProxyHandler,
+    openPathPrefixes: effectiveOpenPathPrefixes,
   });
   const server = http.createServer(handle);
   // WebSocket upgrade support. Node's http server emits "upgrade"
@@ -1190,7 +1216,7 @@ export async function startBridgeServer({
     allowedCidrs,
     upstreamHostname: dashboardProxyHostname,
     upstreamPort: dashboardProxyPort,
-    openPathPrefixes: parseAllowedList(process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES),
+    openPathPrefixes: effectiveOpenPathPrefixes,
   });
   server.on("upgrade", (req, socket, head) => {
     const pathPart = (req.url ?? "/").split("?")[0] ?? "/";
@@ -1238,8 +1264,11 @@ export async function startBridgeServersWithTls({
   allowedOrigins,
   allowedCidrs,
   dashboardProxyHandler = null,
+  openPathPrefixes,
 }) {
   const bindHost = host ?? getBridgeHost();
+  const effectiveAllowedCidrs = allowedCidrs ?? getBridgeAllowedCidrs();
+  const effectiveOpenPathPrefixes = openPathPrefixes ?? getBridgeOpenProxyPrefixes({ host: bindHost, allowedCidrs: effectiveAllowedCidrs });
   const handle = createBridgeRequestHandler({
     bridgeToken,
     bridgeCapabilityTokens,
@@ -1247,8 +1276,9 @@ export async function startBridgeServersWithTls({
     extensionOrigin,
     routes,
     allowedOrigins,
-    allowedCidrs,
+    allowedCidrs: effectiveAllowedCidrs,
     dashboardProxyHandler,
+    openPathPrefixes: effectiveOpenPathPrefixes,
   });
   const httpServer = http.createServer(handle);
   await new Promise((resolve, reject) => {
@@ -1281,10 +1311,10 @@ export async function startBridgeServersWithTls({
   // iframe's chat / event WebSockets to fail (close code 1006).
   const upgradeHandler = createDashboardProxyUpgradeHandler({
     bridgeToken,
-    allowedCidrs,
+    allowedCidrs: effectiveAllowedCidrs,
     upstreamHostname: dashboardProxyHostname,
     upstreamPort: dashboardProxyPort,
-    openPathPrefixes: parseAllowedList(process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES),
+    openPathPrefixes: effectiveOpenPathPrefixes,
   });
   const onUpgrade = (req, socket, head) => {
     const pathPart = (req.url ?? "/").split("?")[0] ?? "/";
@@ -1326,7 +1356,7 @@ export async function startBridgeServerWithFallback({
   tls = null,
   httpsPort,
   fallbackPorts = [0],
-  openPathPrefixes = parseAllowedList(process.env.RESONANTOS_BRIDGE_OPEN_PROXY_PREFIXES),
+  openPathPrefixes,
 }) {
   const attempts = [port, ...fallbackPorts].filter((candidate, index, list) =>
     Number.isInteger(Number(candidate)) && list.indexOf(candidate) === index
@@ -1351,6 +1381,7 @@ export async function startBridgeServerWithFallback({
         host,
         allowedOrigins,
         allowedCidrs,
+        openPathPrefixes,
       });
       return {
         server: result.httpServer,

@@ -789,6 +789,7 @@ export interface HermesChatResult {
 export interface HermesDashboardStatus {
   running: boolean;
   url: string;
+  dashboardProxyUrl?: string;
   host: string;
   port: number;
   detail: string;

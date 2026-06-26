@@ -344,9 +344,28 @@ const LOOPBACK_CANDIDATES = [
 ];
 const PROBE_TIMEOUT_MS = 1500;
 
+function configuredLoopbackOrigin(config) {
+  const origin = (config.bridgeUrl || "").trim().replace(/\/+$/, "");
+  if (!origin) return "";
+  try {
+    const parsed = new URL(origin);
+    const host = parsed.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1") return origin;
+  } catch {
+    return "";
+  }
+  return "";
+}
+
 function buildLoopbackCandidates(config) {
   const out = [];
   const seen = new Set();
+  const configuredLoopback = configuredLoopbackOrigin(config);
+  const defaultCandidates = new Set(LOOPBACK_CANDIDATES.map(([host, port, scheme]) => `${scheme}://${host}:${port}`));
+  if (configuredLoopback && !defaultCandidates.has(configuredLoopback)) {
+    seen.add(configuredLoopback);
+    out.push(configuredLoopback);
+  }
   // Use "localhost" (not 127.0.0.1) as the host for the loopback probe
   // because Chrome's MV3 CSP rejects "https://127.0.0.1:*" as an
   // "insecure CSP value" in script-src, even though 127.0.0.1 is a
