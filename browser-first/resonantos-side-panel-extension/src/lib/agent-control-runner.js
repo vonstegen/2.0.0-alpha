@@ -48,6 +48,52 @@ function normalizedConfidence(value, fallback = "medium") {
   return ["high", "medium", "low"].includes(normalized) ? normalized : fallback;
 }
 
+function humanInterventionState({ boundary = "safe", result = {}, step = {} } = {}) {
+  const text = [
+    boundary,
+    result?.error,
+    step?.label,
+    step?.text,
+    step?.field,
+    step?.url,
+    step?.type
+  ].filter(Boolean).join(" ").toLowerCase();
+  if (/\b(payment|pay|checkout|card|billing|purchase|buy|order|subscribe)\b/.test(text)) {
+    return {
+      state: "checkout",
+      action: "Review and complete checkout, payment, billing, or purchase steps manually. Augmentor may resume only after the value action is finished or cancelled."
+    };
+  }
+  if (/\b(wallet|sign|signature|connect wallet|transfer|swap|stake|unstake|bridge|mint|claim)\b/.test(text)) {
+    return {
+      state: "wallet",
+      action: "Use the wallet UI manually. Augmentor must not connect wallets, sign messages, approve transactions, transfer value, or operate wallet prompts."
+    };
+  }
+  if (/\b(login|log in|sign in|credential|password|2fa|mfa|otp|passkey|auth)\b/.test(text)) {
+    return {
+      state: "login",
+      action: "Complete the login or credential step manually, then ask Augmentor to continue from the signed-in page."
+    };
+  }
+  if (boundary === "public-submit" || /\b(submit|send|post|publish|share|comment|save)\b/.test(text)) {
+    return {
+      state: "public-submit",
+      action: "Review the visible page state and destination, then approve once only if you intend to submit/post/send publicly, or deny/delegate the blocker."
+    };
+  }
+  if (boundary === "hard") {
+    return {
+      state: "human-only",
+      action: "Complete this action manually in the page. Augmentor must not operate wallet, login, payment, credential, signing, transfer, or irreversible value controls."
+    };
+  }
+  return {
+    state: "review",
+    action: "Review the visible page state, then approve once, allow this task class once, trust safe actions for this task class, deny, or delegate the blocker."
+  };
+}
+
 function controlStepEvidence({ boundary = "safe", decision = {}, result = {}, status = "" } = {}) {
   const failed = result && result.ok === false;
   const approvalRequired = Boolean(result?.approvalRequired) || status === "approval";
@@ -63,10 +109,11 @@ function controlStepEvidence({ boundary = "safe", decision = {}, result = {}, st
     ""
   ).trim();
   let nextHumanAction = "";
+  const humanState = humanInterventionState({ boundary, result, step: decision.action ?? {} });
   if (approvalRequired && boundary === "hard") {
-    nextHumanAction = "Complete this action manually in the page. Augmentor must not operate wallet, login, payment, credential, signing, or transfer controls.";
+    nextHumanAction = humanState.action;
   } else if (approvalRequired) {
-    nextHumanAction = "Review the visible page state, then approve once, deny, or delegate the blocker.";
+    nextHumanAction = humanState.action;
   } else if (failed) {
     nextHumanAction = "Inspect the page state, adjust the instruction or target text, then resume or delegate the issue.";
   } else if (status === "blocked") {
@@ -74,6 +121,7 @@ function controlStepEvidence({ boundary = "safe", decision = {}, result = {}, st
   }
   return {
     confidence,
+    humanInterventionState: approvalRequired || hardBoundary ? humanState.state : null,
     uncertainty: uncertainty || null,
     nextHumanAction: nextHumanAction || null
   };
@@ -191,8 +239,19 @@ function targetCandidateLabel(candidate = {}) {
     visibleRefLabel(candidate),
     candidate.tagName ? `tag:${candidate.tagName}` : "",
     candidate.fieldKind ? `kind:${candidate.fieldKind}` : "",
+    candidate.visibleIndex ? `index:${candidate.visibleIndex}` : "",
+    candidate.context ? `context:${candidate.context}` : "",
     candidate.approvalRequired ? "approval-required" : ""
   ].filter(Boolean).join(" · ");
+}
+
+function targetCandidateContext(candidate = {}) {
+  return [
+    candidate.context,
+    candidate.container?.label,
+    candidate.section?.label,
+    candidate.form?.label
+  ].filter(Boolean).map((value) => String(value).slice(0, 160))[0] ?? "";
 }
 
 function targetCandidatesFromResult(result = {}) {
@@ -200,10 +259,20 @@ function targetCandidatesFromResult(result = {}) {
     ? result.candidates
       .map((candidate) => ({
         approvalRequired: Boolean(candidate.approvalRequired),
+        context: targetCandidateContext(candidate),
         fieldKind: candidate.fieldKind ? String(candidate.fieldKind).slice(0, 80) : "",
+        form: candidate.form && typeof candidate.form === "object"
+          ? {
+            id: candidate.form.id ? String(candidate.form.id).slice(0, 80) : "",
+            index: Number.isFinite(Number(candidate.form.index)) ? Number(candidate.form.index) : null,
+            label: candidate.form.label ? String(candidate.form.label).slice(0, 160) : "",
+            name: candidate.form.name ? String(candidate.form.name).slice(0, 80) : ""
+          }
+          : null,
         label: visibleLabel(candidate).slice(0, 160),
         ref: candidate.ref ? String(candidate.ref).slice(0, 80) : "",
-        tagName: candidate.tagName ? String(candidate.tagName).slice(0, 40) : ""
+        tagName: candidate.tagName ? String(candidate.tagName).slice(0, 40) : "",
+        visibleIndex: Number.isFinite(Number(candidate.visibleIndex)) ? Number(candidate.visibleIndex) : null
       }))
       .filter((candidate) => candidate.ref || candidate.label)
       .slice(0, 8)

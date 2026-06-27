@@ -22,6 +22,7 @@
     "engineer:verify": "node scripts/engineer-runner.mjs verify",
     "test:engineer-runner": "node --test scripts/engineer-runner.test.mjs",
     "discipline:validate": "node scripts/validate-discipline-catalog.mjs",
+    "pre-release:scan": "bash scripts/pre-release-scan.sh",
     "browser-first:audit-scope": "node scripts/browser-first-release-scope-audit.mjs",
     "browser-first:audit-scope:staged": "node scripts/browser-first-release-scope-audit.mjs --staged --strict"
   },

@@ -54,6 +54,7 @@ const {
   activityDetail,
   activityLabel,
   activityPanel,
+  approvalAllowOnceButton,
   approvalApproveButton,
   approvalCard,
   approvalDelegateButton,
@@ -80,6 +81,7 @@ const {
   controlPreflightBody,
   controlPreflightCard,
   controlPreflightDenyButton,
+  controlPreflightOnceButton,
   controlPreflightTitle,
   controlPreflightTrustButton,
   controlStepList,
@@ -508,6 +510,7 @@ monitorRenderers = createMonitorRenderers({
   approvalBoundaryForStep,
   controlStepLabel,
   elements: {
+    approvalAllowOnceButton,
     approvalApproveButton,
     approvalCard,
     approvalReason,
@@ -736,10 +739,19 @@ const agentControlRunner = createAgentControlRunner({
   startControlRun,
   taskConsentForStep: async ({ goal }) => {
     const tab = await activeTab();
-    return taskConsentStore.consentFor({
+    const consent = await taskConsentStore.consentFor({
       siteKey: siteKeyForUrl(tab?.url),
       goal
     });
+    if (consent?.mode === "allow-once") {
+      await taskConsentStore.consumeTaskConsent?.({
+        siteKey: consent.siteKey,
+        taskClass: consent.taskClass,
+        reason: `Consumed by safe approval retry for: ${goal}`,
+        source: "agent-control-runner"
+      });
+    }
+    return consent;
   },
   updateBrowserJob,
   updateControlRunArtifacts,
@@ -845,11 +857,13 @@ const controlCommandController = createSidePanelControlCommandController({
 const prepareBrowserJobPageLock = controlCommandController.prepareBrowserJobPageLock;
 const runControlCommand = controlCommandController.runControlCommand;
 
+const allowControlPreflightOnceForTaskClass = controlPreflightController.allowControlPreflightOnceForTaskClass;
 const approveControlPreflight = controlPreflightController.approveControlPreflight;
 const denyControlPreflight = controlPreflightController.denyControlPreflight;
 const trustControlPreflightForSafeActions = controlPreflightController.trustControlPreflightForSafeActions;
 
 const {
+  allowCurrentTaskOnceForSafeActions,
   approvePendingControlStep,
   denyPendingControlStep,
   trustCurrentTaskForSafeActions,
@@ -991,6 +1005,7 @@ controlStopButton.addEventListener("click", () => {
 });
 
 const commandRouter = createSidePanelCommandRouter({
+  allowControlPreflightOnceForTaskClass,
   bindMentionedTab,
   clickActivePageText,
   detectActivePageForms,
@@ -1062,6 +1077,9 @@ const hydrateChatSettings = chatHydration.hydrateChatSettings;
 const lifecycleController = createSidePanelLifecycleController({
   activeTab,
   addMessage,
+  allowControlPreflightOnceForTaskClass,
+  allowCurrentTaskOnceForSafeActions,
+  approvalAllowOnceButton,
   approvalApproveButton,
   approvalDelegateButton,
   approvalDenyButton,
@@ -1078,6 +1096,7 @@ const lifecycleController = createSidePanelLifecycleController({
   contextToggleButton,
   controlPreflightApproveButton,
   controlPreflightDenyButton,
+  controlPreflightOnceButton,
   controlPreflightTrustButton,
   delegateControlIssue,
   denyControlPreflight,

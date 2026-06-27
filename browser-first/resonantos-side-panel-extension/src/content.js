@@ -69,6 +69,7 @@ const controlBubbleClass = "resonantos-control-bubble";
 const controlToastId = "resonantos-control-toast";
 const controlStatusTextClass = "ros-control-status-text";
 const controlStopButtonClass = "ros-control-stop-button";
+const editableSelector = "input, textarea, select, [contenteditable], [role='textbox']";
 let lastInlineSelectionDetails = null;
 
 const isTopWindow = () => window.top === window;
@@ -145,18 +146,19 @@ const pageSnapshot = () => ({
     })),
   controls: candidateClickElements()
     .slice(0, 80)
-    .map((element) => ({
+    .map((element, index) => ({
       ref: ensureControlRef(element),
       text: visibleText(element).slice(0, 160),
       tagName: element.tagName.toLowerCase(),
       role: element.getAttribute("role") || "",
       ariaLabel: element.getAttribute("aria-label") || "",
-      approvalRequired: isSubmitLikeElement(element)
+      approvalRequired: isSubmitLikeElement(element),
+      ...elementContextDetails(element, { visibleIndex: index + 1 })
     })),
-  fields: querySelectorAllDeep("input, textarea, select, [contenteditable='true']")
+  fields: querySelectorAllDeep(editableSelector)
     .filter((element) => !isResonantosInternalElement(element))
     .slice(0, 80)
-    .map((element) => describeEditable(element)),
+    .map((element, index) => describeEditable(element, { visibleIndex: index + 1 })),
   walletProviders: {
     phantomSolana: Boolean(globalThis.phantom?.solana?.isPhantom || globalThis.solana?.isPhantom)
   }
@@ -181,16 +183,16 @@ const describeForms = () => ({
       name: form.getAttribute("name") || "",
       action: form.action || "",
       method: form.method || "get",
-      fields: querySelectorAllDeep("input, textarea, select, [contenteditable='true']", { root: form })
+      fields: querySelectorAllDeep(editableSelector, { root: form })
         .filter((field) => !isResonantosInternalElement(field))
         .slice(0, 40)
-        .map((field) => describeEditable(field))
+        .map((field, fieldIndex) => describeEditable(field, { visibleIndex: fieldIndex + 1 }))
     })),
-  looseFields: querySelectorAllDeep("input, textarea, select, [contenteditable='true']")
+  looseFields: querySelectorAllDeep(editableSelector)
     .filter((field) => !isResonantosInternalElement(field))
     .filter((field) => !field.closest("form"))
     .slice(0, 40)
-    .map((field) => describeEditable(field))
+    .map((field, index) => describeEditable(field, { visibleIndex: index + 1 }))
 });
 
 const idReferenceText = (element, attribute) => {
@@ -231,20 +233,96 @@ const uniqueElements = (elements) => Array.from(new Set(elements.filter(Boolean)
 
 const normalizedTargetText = (value) => String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 
+const clippedText = (value, max = 120) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+
+const elementBounds = (element) => {
+  const rect = element?.getBoundingClientRect?.();
+  if (!rect) return null;
+  return {
+    height: Math.round(rect.height),
+    left: Math.round(rect.left),
+    top: Math.round(rect.top),
+    width: Math.round(rect.width)
+  };
+};
+
+const nearestContextElement = (element) => {
+  let current = element?.parentElement ?? null;
+  while (current && current !== document.body && current !== document.documentElement) {
+    if (current.matches?.("form, fieldset, section, article, aside, nav, main, header, footer, li, tr, [role='group'], [role='region'], [aria-label], [data-testid]")) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return element?.parentElement && element.parentElement !== document.body ? element.parentElement : null;
+};
+
+const contextLabel = (element) => {
+  const containsEditable = Boolean(element?.matches?.(editableSelector) || element?.querySelector?.(editableSelector));
+  const explicitParts = [
+    element?.getAttribute?.("aria-label"),
+    element?.getAttribute?.("data-testid"),
+    element?.id ? `#${element.id}` : "",
+    element?.getAttribute?.("name"),
+    element?.querySelector?.("h1, h2, h3, legend, [role='heading']")?.textContent
+  ].filter(Boolean);
+  return clippedText([
+    ...explicitParts,
+    containsEditable || explicitParts.length ? "" : visibleText(element)
+  ].filter(Boolean).join(" · "), 160);
+};
+
+const formContextDetails = (element) => {
+  const form = element?.closest?.("form") ?? null;
+  if (!form) return null;
+  const forms = querySelectorAllDeep("form");
+  return {
+    action: clippedText(form.action || form.getAttribute("action") || "", 160),
+    id: form.id || "",
+    index: Math.max(1, forms.indexOf(form) + 1),
+    label: contextLabel(form),
+    method: form.method || form.getAttribute("method") || "get",
+    name: form.getAttribute("name") || ""
+  };
+};
+
+const elementContextDetails = (element, { visibleIndex = 0 } = {}) => {
+  const container = nearestContextElement(element);
+  const section = element?.closest?.("section, article, main, nav, aside, header, footer, [role='region']") ?? null;
+  return {
+    bounds: elementBounds(element),
+    container: container ? {
+      id: container.id || "",
+      label: contextLabel(container),
+      role: container.getAttribute("role") || "",
+      tagName: container.tagName.toLowerCase()
+    } : null,
+    form: formContextDetails(element),
+    section: section ? {
+      id: section.id || "",
+      label: contextLabel(section),
+      role: section.getAttribute("role") || "",
+      tagName: section.tagName.toLowerCase()
+    } : null,
+    visibleIndex
+  };
+};
+
 const clickableCandidateDetails = (elements) => uniqueElements(elements)
   .slice(0, 8)
-  .map((element) => ({
+  .map((element, index) => ({
     ref: ensureControlRef(element),
     text: visibleText(element).slice(0, 160),
     tagName: element.tagName.toLowerCase(),
     role: element.getAttribute("role") || "",
     ariaLabel: element.getAttribute("aria-label") || "",
-    approvalRequired: isSubmitLikeElement(element)
+    approvalRequired: isSubmitLikeElement(element),
+    ...elementContextDetails(element, { visibleIndex: index + 1 })
   }));
 
 const editableCandidateDetails = (elements) => uniqueElements(elements)
   .slice(0, 8)
-  .map((element) => {
+  .map((element, index) => {
     const fieldSafety = classifyEditableField(element);
     return {
       ref: ensureControlRef(element),
@@ -254,8 +332,13 @@ const editableCandidateDetails = (elements) => uniqueElements(elements)
       id: element.id || "",
       role: element.getAttribute("role") || "",
       label: element.getAttribute("aria-label") || element.getAttribute("placeholder") || element.getAttribute("title") || relatedLabelText(element) || "",
+      ariaDescription: idReferenceText(element, "aria-describedby"),
+      autocomplete: element.getAttribute("autocomplete") || "",
+      contentEditable: contentEditableMode(element),
       fieldKind: fieldSafety.kind,
-      hasValue: Boolean(editableRawValue(element))
+      hasValue: Boolean(editableRawValue(element)),
+      placeholder: element.getAttribute("placeholder") || "",
+      ...elementContextDetails(element, { visibleIndex: index + 1 })
     };
   });
 
@@ -379,7 +462,8 @@ const editableCandidates = () => [
     "input[type='tel']",
     "input[type='number']",
     "input[type='password']",
-    "[contenteditable='true']"
+    "[contenteditable]",
+    "[role='textbox']"
   ].join(", "))
 ].filter((element) => element && !isResonantosInternalElement(element));
 
@@ -391,10 +475,16 @@ const deepActiveElement = () => {
   return active;
 };
 
+const contentEditableMode = (element) => String(element?.getAttribute?.("contenteditable") ?? "").toLowerCase();
+
+const isContentEditableElement = (element) =>
+  Boolean(element?.isContentEditable) ||
+  (element?.hasAttribute?.("contenteditable") && contentEditableMode(element) !== "false");
+
 const isEditable = (element) =>
   ((element instanceof HTMLInputElement && !["button", "checkbox", "file", "hidden", "image", "radio", "range", "reset", "submit"].includes(element.type)) ||
     element instanceof HTMLTextAreaElement ||
-    element?.isContentEditable) &&
+    isContentEditableElement(element)) &&
   !element.disabled &&
   !element.readOnly;
 
@@ -403,6 +493,7 @@ const editableLabel = (element) => [
   element.getAttribute("placeholder"),
   element.getAttribute("title"),
   element.getAttribute("autocomplete"),
+  idReferenceText(element, "aria-describedby"),
   element.getAttribute("name"),
   element.id,
   relatedLabelText(element),
@@ -437,7 +528,7 @@ const editableValuePreview = (element, fieldSafety) => {
   return `[redacted:${fieldSafety.kind}]`;
 };
 
-const describeEditable = (element) => {
+const describeEditable = (element, { visibleIndex = 0 } = {}) => {
   const fieldSafety = classifyEditableField(element);
   const rawValue = editableRawValue(element);
   return {
@@ -448,9 +539,14 @@ const describeEditable = (element) => {
     id: element.id || "",
     role: element.getAttribute("role") || "",
     label: accessibleLabelText(element),
+    ariaDescription: idReferenceText(element, "aria-describedby"),
+    autocomplete: element.getAttribute("autocomplete") || "",
+    contentEditable: contentEditableMode(element),
     fieldKind: fieldSafety.kind,
     hasValue: Boolean(rawValue),
-    valuePreview: editableValuePreview(element, fieldSafety)
+    placeholder: element.getAttribute("placeholder") || "",
+    valuePreview: editableValuePreview(element, fieldSafety),
+    ...elementContextDetails(element, { visibleIndex })
   };
 };
 
@@ -500,7 +596,7 @@ const setNativeValue = (element, value) => {
     const proto = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
     setter?.call(element, value);
-  } else if (element?.isContentEditable) {
+  } else if (isContentEditableElement(element)) {
     element.textContent = value;
   }
   element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
@@ -663,7 +759,7 @@ const editableRootForSelection = () => {
   if (active && isEditable(active)) return active;
   const node = window.getSelection()?.anchorNode;
   const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
-  return element?.closest?.("input, textarea, [contenteditable='true']") ?? null;
+  return element?.closest?.("input, textarea, [contenteditable], [role='textbox']") ?? null;
 };
 
 const editableSelectionDetails = (element) => {
@@ -844,7 +940,7 @@ const runInlineAction = async (action) => {
       active.setRangeText(replacement, rangeStart, rangeEnd, "end");
       active.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertReplacementText", data: replacement }));
       active.dispatchEvent(new Event("change", { bubbles: true }));
-    } else if (active.isContentEditable) {
+    } else if (isContentEditableElement(active)) {
       const selectionObject = window.getSelection();
       if (selectionObject?.rangeCount && active.contains(selectionObject.getRangeAt(0).commonAncestorContainer)) {
         const range = selectionObject.getRangeAt(0);

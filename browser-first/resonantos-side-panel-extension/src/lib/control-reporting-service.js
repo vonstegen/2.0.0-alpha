@@ -46,11 +46,20 @@ export function createControlReportingService({
     ...(Array.isArray(step?.details?.preferredProbes)
       ? step.details.preferredProbes.filter(Boolean).slice(0, 5).map((probe, index) => `     - preferred probe ${index + 1}: ${probe}`)
       : []),
+    step?.details?.humanInterventionState ? `     - human state: ${step.details.humanInterventionState}` : "",
     step?.details?.uncertainty ? `     - uncertainty: ${step.details.uncertainty}` : "",
     step?.details?.ambiguousTarget ? "     - ambiguous target: yes" : "",
     ...(Array.isArray(step?.details?.targetCandidates)
       ? step.details.targetCandidates.filter((candidate) => candidate?.ref || candidate?.label).slice(0, 8).map((candidate, index) => {
-        const label = [candidate.label, candidate.ref ? `#${candidate.ref}` : "", candidate.fieldKind ? `kind:${candidate.fieldKind}` : "", candidate.approvalRequired ? "approval-required" : ""].filter(Boolean).join(" · ");
+        const label = [
+          candidate.label,
+          candidate.ref ? `#${candidate.ref}` : "",
+          candidate.visibleIndex ? `index:${candidate.visibleIndex}` : "",
+          candidate.context ? `context:${candidate.context}` : "",
+          candidate.form?.label ? `form:${candidate.form.label}` : "",
+          candidate.fieldKind ? `kind:${candidate.fieldKind}` : "",
+          candidate.approvalRequired ? "approval-required" : ""
+        ].filter(Boolean).join(" · ");
         return `     - target candidate ${index + 1}: ${label}`;
       })
       : []),

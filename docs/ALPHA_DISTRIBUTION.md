@@ -74,6 +74,7 @@ npm run test:browser-first
 npm run test:browser-host
 npm run test:health
 node scripts/security-pipeline/run-check.mjs
+npm run pre-release:scan
 npm run browser-first:audit-scope
 npm run browser-first:audit-scope:staged
 ```
@@ -113,12 +114,13 @@ source, reports, screenshots, logs, generated configs, or packaged artifacts.
 Required pre-share scan:
 
 ```bash
-rg -n "sk-[A-Za-z0-9_-]+|OPENAI_API_KEY|ANTHROPIC_API_KEY|OPENROUTER_API_KEY|GITHUB_TOKEN|BEGIN PRIVATE KEY|bridge-token|capabilityTokens" .
+npm run pre-release:scan
 ```
 
-Review each match before sharing. Expected safe matches include documentation
-examples, variable names, and redacted placeholders. Secret values, generated
-bridge tokens, or capability-token payloads are release blockers.
+The scan checks distributable artifacts for provider-key-like strings, known
+founder filesystem paths in built JavaScript bundles, generated runtime files,
+and default enabled/installed add-on state. Any finding is a release blocker
+until removed or explicitly waived by the release owner in the release report.
 
 ## Add-on Policy For Alpha
 
@@ -161,13 +163,23 @@ Ask reviewers not to evaluate this alpha as production-ready for:
 
 The release owner must explicitly accept or close these before publishing:
 
-- #102 Living Archive real-data validation: complete with evidence or waive.
-- #111 encrypted vault: may be deferred only while alpha credentials remain
-  session-only/env-only and plaintext persistence is not reintroduced.
+- #129 browser-first first-run onboarding: deferred for this alpha. The Settings
+  "Start Here" surface remains present, but the full guided first-run wizard is
+  intentionally non-functional and must not be represented as complete.
+- #111 encrypted vault: deferred for Chrome-extension alpha only while
+  credentials remain session-only/env-only and legacy plaintext stores are
+  ignored by the browser-first release path.
 - #163 PATH-resolved binary exec/install shell hardening: defer only as broader
   local CLI hardening with opt-in local execution gated.
-- #192 and #194 runtime/native installation issues: add to the project board and
-  fix, close, or formally defer as outside Chrome MVP scope.
+- #120, #121, #122, #123, and #124 signing, packaging, and CI hardening for
+  signed/native packaged builds: waived for this alpha because the release scope
+  remains Chrome extension plus local Node bridge. Reopen before any signed
+  native package or desktop artifact is shipped.
+- #109, #136, and #180 add-on install/update/uninstall lifecycle: deferred.
+  Alpha ships governed visible capabilities only; no signed add-on marketplace
+  or lifecycle manager is release-blocking for the Chrome MVP.
+- #192 and #194 runtime/native installation issues: outside Chrome MVP scope
+  unless the release owner reopens native desktop distribution.
 
 ## Release Gate Before Sharing
 

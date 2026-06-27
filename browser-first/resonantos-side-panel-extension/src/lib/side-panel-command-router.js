@@ -42,6 +42,7 @@ export function createSidePanelCommandRouter(handlers) {
       if (name === "report") return handlers.reportBrowserJob(body);
       if (name === "cancel") return handlers.cancelBrowserJob(body);
       if (name === "approve-control") return handlers.approveControlPreflight(body);
+      if (name === "allow-control-once") return handlers.allowControlPreflightOnceForTaskClass(body);
       if (name === "deny-control") return handlers.denyControlPreflight(body);
       if (name === "browser") return handlers.runBrowserCommand(body);
       if (name === "control") return handlers.runControlCommand(body);

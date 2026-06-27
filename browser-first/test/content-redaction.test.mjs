@@ -176,8 +176,12 @@ test("content page snapshots redact sensitive and ambiguous editable values", as
 test("content click actions reject repeated text unless a control ref is supplied", async () => {
   const { listener } = await loadContentScript(`
     <!doctype html>
-    <button id="primary">Add</button>
-    <button id="secondary">Add</button>
+    <section aria-label="Starter plan">
+      <button id="primary">Add</button>
+    </section>
+    <section aria-label="Pro plan">
+      <button id="secondary">Add</button>
+    </section>
   `);
   let snapshot = null;
   listener({
@@ -201,16 +205,25 @@ test("content click actions reject repeated text unless a control ref is supplie
   assert.match(response.error, /matched 2 visible candidates/i);
   assert.deepEqual(Array.from(response.candidates, (candidate) => candidate.text), ["Add", "Add"]);
   assert.ok(response.candidates.every((candidate) => /^r\d+$/.test(candidate.ref)));
+  assert.deepEqual(Array.from(response.candidates, (candidate) => candidate.visibleIndex), [1, 2]);
+  assert.deepEqual(Array.from(response.candidates, (candidate) => candidate.section.label), ["Starter plan", "Pro plan"]);
   assert.equal(snapshot.controls.length, 2);
+  assert.equal(snapshot.controls[0].visibleIndex, 1);
+  assert.equal(snapshot.controls[0].section.label, "Starter plan");
 });
 
 test("content typing actions reject ambiguous fields and preserve existing values", async () => {
   const { dom, listener } = await loadContentScript(`
     <!doctype html>
-    <label for="first-search">Search</label>
-    <input id="first-search" type="search" value="">
-    <label for="second-search">Search</label>
-    <input id="second-search" type="search" value="">
+    <form id="header-search" aria-label="Header search">
+      <label for="first-search">Search</label>
+      <input id="first-search" type="search" value="" aria-describedby="first-help">
+      <small id="first-help">Search the catalog</small>
+    </form>
+    <form id="footer-search" aria-label="Footer search">
+      <label for="second-search">Search</label>
+      <input id="second-search" type="search" value="">
+    </form>
   `);
 
   let response = null;
@@ -227,6 +240,9 @@ test("content typing actions reject ambiguous fields and preserve existing value
   assert.equal(response.ambiguousTarget, true);
   assert.match(response.error, /matched 2 visible candidates/i);
   assert.deepEqual(Array.from(response.candidates, (candidate) => candidate.label), ["search", "search"]);
+  assert.deepEqual(Array.from(response.candidates, (candidate) => candidate.visibleIndex), [1, 2]);
+  assert.deepEqual(Array.from(response.candidates, (candidate) => candidate.form.id), ["header-search", "footer-search"]);
+  assert.equal(response.candidates[0].ariaDescription, "Search the catalog");
   assert.equal(dom.window.document.querySelector("#first-search").value, "");
   assert.equal(dom.window.document.querySelector("#second-search").value, "");
 });
@@ -262,6 +278,39 @@ test("content typing actions use exact editable refs when repeated labels exist"
   assert.equal(response.ref, secondRef);
   assert.equal(dom.window.document.querySelector("#first-search").value, "");
   assert.equal(dom.window.document.querySelector("#second-search").value, "resonantos");
+});
+
+test("content typing actions support plaintext-only contenteditable regions", async () => {
+  const { dom, listener } = await loadContentScript(`
+    <!doctype html>
+    <section aria-label="Draft editor">
+      <div id="draft" role="textbox" contenteditable="plaintext-only" aria-label="Draft body"></div>
+    </section>
+  `);
+
+  let snapshot = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "read_page",
+  }, {}, (payload) => {
+    snapshot = payload.snapshot;
+  });
+  const draft = snapshot.fields.find((field) => field.id === "draft");
+  assert.equal(draft?.contentEditable, "plaintext-only");
+  assert.equal(draft?.section.label, "Draft editor");
+
+  let response = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "type_text",
+    ref: draft.ref,
+    text: "ResonantOS draft",
+  }, {}, (payload) => {
+    response = payload;
+  });
+
+  assert.equal(response?.ok, true);
+  assert.equal(dom.window.document.querySelector("#draft").textContent, "ResonantOS draft");
 });
 
 test("content page snapshots and typing include open shadow DOM controls safely", async () => {

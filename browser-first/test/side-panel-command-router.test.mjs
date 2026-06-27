@@ -9,6 +9,7 @@ function createHarness() {
     calls.push([name, ...args]);
   };
   const router = createSidePanelCommandRouter({
+    allowControlPreflightOnceForTaskClass: handler("allow-control-once"),
     bindMentionedTab: handler("bind"),
     cancelBrowserJob: handler("cancel"),
     approveControlPreflight: handler("approve-control"),
@@ -114,6 +115,7 @@ test("side panel command router dispatches browser state slash commands", async 
   await harness.router.respondToCommand("/report job-a");
   await harness.router.respondToCommand("/cancel job-a");
   await harness.router.respondToCommand("/approve-control control-a");
+  await harness.router.respondToCommand("/allow-control-once control-a");
   await harness.router.respondToCommand("/deny-control control-a");
 
   assert.deepEqual(harness.calls.map((call) => call[0]), [
@@ -132,6 +134,7 @@ test("side panel command router dispatches browser state slash commands", async 
     "bind", "report",
     "bind", "cancel",
     "bind", "approve-control",
+    "bind", "allow-control-once",
     "bind", "deny-control"
   ]);
 });

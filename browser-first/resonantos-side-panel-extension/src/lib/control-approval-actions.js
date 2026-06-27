@@ -36,6 +36,44 @@ export function createControlApprovalActions({
     await agentControlRunner.approvePendingControlStep(approval);
   };
 
+  const allowCurrentTaskOnceForSafeActions = async () => {
+    const pendingApproval = getPendingApproval();
+    const currentControlRun = getCurrentControlRun();
+    if (!pendingApproval || !currentControlRun) return;
+
+    const approval = pendingApproval;
+    const boundary = approvalBoundaryForStep(approval.step, approval.reason);
+    const tab = await activeTab();
+    if (boundary !== "safe") {
+      await addMessage(
+        "system",
+        `Cannot allow this task class once for ${boundary} actions. Wallet, payment, login, credential, signing, public-submit, and transfer boundaries stay once-only human review.`
+      );
+      renderControlMonitor();
+      return;
+    }
+
+    const consent = await taskConsentStore.setTaskConsent({
+      siteKey: siteKeyForUrl(tab?.url),
+      goal: currentControlRun.goal,
+      mode: "allow-once",
+      reason: `Allowed once after approval for: ${controlStepLabel(approval.step)}`,
+      source: "approval-card",
+    });
+    await addMessage(
+      "system",
+      `Allowed safe ${consent.taskClass} actions on ${consent.siteKey} for this execution only and approved this safe step once: ${controlStepLabel(approval.step)}`
+    );
+    await taskConsentStore.consumeTaskConsent?.({
+      siteKey: consent.siteKey,
+      taskClass: consent.taskClass,
+      reason: `Consumed by approved step: ${controlStepLabel(approval.step)}`,
+      source: "approval-card"
+    });
+    await approvePendingControlStep();
+    await renderTaskConsentPanel(tab);
+  };
+
   const trustCurrentTaskForSafeActions = async () => {
     const pendingApproval = getPendingApproval();
     const currentControlRun = getCurrentControlRun();
@@ -76,6 +114,7 @@ export function createControlApprovalActions({
   };
 
   return {
+    allowCurrentTaskOnceForSafeActions,
     approvePendingControlStep,
     denyPendingControlStep,
     trustCurrentTaskForSafeActions,
