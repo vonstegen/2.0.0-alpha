@@ -52,6 +52,41 @@ export function createProviderBridgeService({
     "shared-openai": ["OPENAI_API_KEY"],
     "shared-zai-glm": ["ZAI_API_KEY", "GLM_API_KEY", "ZHIPUAI_API_KEY"],
   });
+  const providerTimeoutDefaults = Object.freeze({
+    archiveSemantic: 60_000,
+    chatAttempt: 90_000,
+    inlineAssistant: 30_000,
+  });
+
+  function providerTimeoutMs(envName, fallbackMs) {
+    const configured = Number(process.env[envName]);
+    if (Number.isFinite(configured) && configured > 0) {
+      return Math.min(600_000, Math.max(1, Math.floor(configured)));
+    }
+    return fallbackMs;
+  }
+
+  function isAbortError(error) {
+    return error?.name === "AbortError";
+  }
+
+  async function fetchProviderResponse(url, init, { timeoutMs, label }) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s.`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 
   function commonEnvProviderSecrets() {
     const entries = [];
@@ -923,21 +958,28 @@ export function createProviderBridgeService({
       proposedContent: String(proposedContent ?? "").slice(0, 10_000),
     });
     try {
-      const response = await fetch(providerRequestUrl(route, "/chat/completions"), {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${secrets[route.providerId]}`,
-          "Content-Type": "application/json",
+      const response = await fetchProviderResponse(
+        providerRequestUrl(route, "/chat/completions"),
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${secrets[route.providerId]}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: route.wireModel,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            ...(route.providerType === "openai" ? { reasoning_effort: openAiReasoningEffort("minimal"), response_format: { type: "json_object" } } : {}),
+          }),
         },
-        body: JSON.stringify({
-          model: route.wireModel,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          ...(route.providerType === "openai" ? { reasoning_effort: openAiReasoningEffort("minimal"), response_format: { type: "json_object" } } : {}),
-        }),
-      });
+        {
+          timeoutMs: providerTimeoutMs("RESONANTOS_PROVIDER_ARCHIVE_TIMEOUT_MS", providerTimeoutDefaults.archiveSemantic),
+          label: `${route.wireModel} semantic verifier request`,
+        },
+      );
       const responsePayload = await response.json().catch(() => ({}));
       if (!response.ok) {
         return {
@@ -1033,18 +1075,35 @@ export function createProviderBridgeService({
         failures.push(`${route.label} credential missing`);
         continue;
       }
-      const response = await fetch(providerRequestUrl(route, "/chat/completions", { sendsCredential: route.providerId !== "desktop-local" }), {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: route.wireModel,
-          messages: requestMessages,
-          ...(route.providerType === "openai" ? { reasoning_effort: openAiReasoningEffort(payload.thinkingDepth) } : {}),
-        }),
-      });
+      let response;
+      try {
+        response = await fetchProviderResponse(
+          providerRequestUrl(route, "/chat/completions", { sendsCredential: route.providerId !== "desktop-local" }),
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: route.wireModel,
+              messages: requestMessages,
+              ...(route.providerType === "openai" ? { reasoning_effort: openAiReasoningEffort(payload.thinkingDepth) } : {}),
+            }),
+          },
+          {
+            timeoutMs: providerTimeoutMs("RESONANTOS_PROVIDER_CHAT_TIMEOUT_MS", providerTimeoutDefaults.chatAttempt),
+            label: `${route.wireModel} chat request`,
+          },
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push(`${route.wireModel}: ${message}`);
+        if (routeDecision.source !== "strategy") {
+          throw new Error(message);
+        }
+        continue;
+      }
       const responsePayload = await response.json().catch(() => ({}));
       if (!response.ok) {
         const message = responsePayload?.error?.message ?? `Provider request failed with HTTP ${response.status}.`;
@@ -1113,21 +1172,38 @@ export function createProviderBridgeService({
       selectedText: selection,
       pageContext,
     });
-    const response = await fetch(providerRequestUrl(route, "/chat/completions"), {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: route.wireModel,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        ...(route.providerType === "openai" ? { reasoning_effort: openAiReasoningEffort(payload.thinkingDepth) } : {}),
-      }),
-    });
+    let response;
+    try {
+      response = await fetchProviderResponse(
+        providerRequestUrl(route, "/chat/completions"),
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: route.wireModel,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            ...(route.providerType === "openai" ? { reasoning_effort: openAiReasoningEffort(payload.thinkingDepth) } : {}),
+          }),
+        },
+        {
+          timeoutMs: providerTimeoutMs("RESONANTOS_PROVIDER_INLINE_TIMEOUT_MS", providerTimeoutDefaults.inlineAssistant),
+          label: `${route.wireModel} inline assistant request`,
+        },
+      );
+    } catch (error) {
+      return {
+        reply: fallbackInlineAssistant({ action, selection, prompt }),
+        providerId: "local-fallback",
+        model: "local-inline-fallback",
+        usage: { providerError: error instanceof Error ? error.message : String(error) },
+      };
+    }
     const responsePayload = await response.json().catch(() => ({}));
     if (!response.ok) {
       return {

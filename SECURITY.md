@@ -8,24 +8,24 @@ report it privately. **Do not open a public issue for security reports.**
 - **Disclosure contact:** Vladimir Rondelli (rondellivladimir@gmail.com)
 - **Report channel:** email the disclosure contact above with the subject line
   prefix `[SECURITY]`. Provide a description, reproduction steps, affected
-  version/commit, and impact assessment. PGP key fingerprint: _TBD placeholder_.
+  version/commit, and impact assessment. No project PGP key is published for
+  the private internal alpha; use the disclosure contact's agreed secure channel
+  if encrypted material must be exchanged.
 
 The disclosure contact is the single accountable owner for triage and
 coordinated-disclosure decisions for this repository.
 
 ## Response SLA
 
-> **Placeholder — to be ratified by the disclosure owner.**
-
 | Stage | Target |
 | --- | --- |
-| Acknowledgement of report | _TBD (placeholder) — e.g. within 3 business days_ |
-| Triage / severity assignment | _TBD (placeholder)_ |
-| Fix or mitigation plan | _TBD (placeholder)_ |
-| Coordinated public disclosure | _TBD (placeholder)_ |
+| Acknowledgement of report | Within 3 business days |
+| Triage / severity assignment | Within 7 business days |
+| Fix or mitigation plan | Within 14 business days for confirmed high-impact findings |
+| Coordinated public disclosure | Not applicable to private internal alpha unless the owner approves external disclosure |
 
-These targets are placeholders pending owner ratification and MUST be filled
-with concrete values.
+These targets apply to the private internal alpha. Public-release support terms
+must be reviewed before broader external distribution.
 
 ## Supported Scope
 
@@ -54,9 +54,13 @@ threat model.
 | Version / branch | Supported |
 | --- | --- |
 | `dev` (latest browser-first alpha) | yes |
-| Tagged releases | _TBD (placeholder)_ |
+| Internal alpha tags | yes, while actively used for internal testing |
+| Public releases | not yet supported |
 
 ## Safe Harbor
 
 Good-faith research conducted in accordance with this policy will not be pursued
-or reported as abuse. _Detailed safe-harbor terms: TBD placeholder._
+or reported as abuse. Researchers must avoid accessing third-party accounts,
+exfiltrating secrets, disrupting provider services, modifying trusted memory
+outside test data, or publishing vulnerability details before the disclosure
+owner confirms remediation or an approved disclosure plan.

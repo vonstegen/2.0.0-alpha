@@ -130,10 +130,10 @@ Alpha status:
 
 - OpenCode governed delegation may execute through the browser-first bridge when
   explicitly enabled and configured.
-- Hermes dashboard/setup and governed packet delegation are available.
-- Hermes local CLI task execution is deferred because the installed Hermes CLI
-  only accepts oneshot prompts through process argv. It must remain blocked until
-  Hermes exposes file, stdin, or authenticated local API prompt handoff.
+- Hermes dashboard/setup and governed packet delegation are available. When
+  explicitly enabled and configured, Hermes local execution runs through the
+  browser-first bridge's prompt-file Python adapter so delegation content stays
+  out of process argv.
 - Terminal and Audio2TOL are outside this alpha scope.
 
 ## Reviewer Instructions

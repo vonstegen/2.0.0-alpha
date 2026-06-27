@@ -714,11 +714,6 @@ export function createAddonDelegationService(dependencies) {
       .test(String(message ?? ""));
   }
 
-  function isHermesUnsafePromptInputError(message) {
-    return /Hermes CLI execution blocked: installed Hermes only accepts oneshot prompts through process argv/i
-      .test(String(message ?? ""));
-  }
-
   function scopedHermesEnv({ provider, model, profileHome, secrets = {} } = {}) {
     const providerKeys = providerEnvKeysForProvider(provider);
     const allowed = [
@@ -752,14 +747,179 @@ export function createAddonDelegationService(dependencies) {
     };
   }
 
+  function hermesPythonRuntimeFromBin(binDir) {
+    const venvRoot = path.dirname(binDir);
+    const agentRoot = path.dirname(venvRoot);
+    const pythonPath = (process.platform === "win32" ? ["python.exe", "python.cmd", "python"] : ["python"])
+      .map((candidate) => path.join(binDir, candidate))
+      .find((candidate) => existsSync(candidate));
+    const runAgentPath = path.join(agentRoot, "run_agent.py");
+    if (pythonPath && existsSync(runAgentPath)) {
+      return { agentRoot, pythonPath };
+    }
+    return null;
+  }
+
+  function hermesPythonRuntime(command, profileHome) {
+    const home = hermesHome(profileHome);
+    const binDirs = [
+      path.dirname(path.resolve(String(command ?? ""))),
+      path.join(home, "hermes-agent", "venv", "bin"),
+      path.join(home, "venv", "bin"),
+    ];
+    for (const binDir of [...new Set(binDirs)]) {
+      const runtime = hermesPythonRuntimeFromBin(binDir);
+      if (runtime) return runtime;
+    }
+    return null;
+  }
+
+  function hermesPythonAdapterScript() {
+    return String.raw`import contextlib
+import json
+import os
+import sys
+import traceback
+from pathlib import Path
+
+prompt_path = Path(sys.argv[1])
+output_path = Path(sys.argv[2])
+agent_root = Path(os.environ["RESONANTOS_HERMES_AGENT_ROOT"])
+if str(agent_root) not in sys.path:
+    sys.path.insert(0, str(agent_root))
+
+prompt = prompt_path.read_text(encoding="utf-8")
+provider = os.environ.get("HERMES_INFERENCE_PROVIDER") or None
+model = os.environ.get("HERMES_INFERENCE_MODEL") or ""
+max_turns = int(os.environ.get("RESONANTOS_HERMES_MAX_TURNS", "20"))
+
+try:
+    from run_agent import AIAgent
+
+    agent = AIAgent(
+        provider=provider,
+        model=model,
+        max_iterations=max_turns,
+        enabled_toolsets=[],
+        disabled_toolsets=[],
+        quiet_mode=True,
+        tool_progress_mode="off",
+        platform="cli",
+        skip_context_files=False,
+        skip_memory=False,
+        log_prefix="",
+    )
+    with open(os.devnull, "w", encoding="utf-8") as sink, contextlib.redirect_stdout(sink):
+        result = agent.run_conversation(prompt)
+    output_path.write_text(json.dumps({
+        "ok": True,
+        "finalResponse": str(result.get("final_response") or ""),
+        "completed": bool(result.get("completed")),
+        "apiCalls": int(result.get("api_calls") or 0),
+    }), encoding="utf-8")
+except BaseException as exc:
+    output_path.write_text(json.dumps({
+        "ok": False,
+        "error": str(exc),
+        "traceback": traceback.format_exc(limit=5),
+    }), encoding="utf-8")
+    raise
+`;
+  }
+
+  async function execHermesPythonAdapter(runtime, promptPath, outputPath, options = {}) {
+    const timeout = Math.min(900_000, Math.max(30_000, Number(options.timeout ?? 300_000)));
+    const adapterPath = options.adapterPath;
+    return new Promise((resolve, reject) => {
+      const child = spawn(runtime.pythonPath, [adapterPath, promptPath, outputPath], {
+        cwd: options.cwd,
+        env: options.env,
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      });
+      let stdout = "";
+      let stderr = "";
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        child.kill("SIGTERM");
+        reject(new Error(`Hermes local runtime timed out after ${timeout}ms.`));
+      }, timeout);
+      child.stdout?.on("data", (chunk) => {
+        stdout += String(chunk);
+      });
+      child.stderr?.on("data", (chunk) => {
+        stderr += String(chunk);
+      });
+      child.on("error", (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.on("close", (code, signal) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (code !== 0) {
+          const detail = redactCliText(stderr || stdout || `Hermes local runtime exited with code ${code ?? "unknown"}${signal ? ` signal ${signal}` : ""}.`).trim();
+          reject(new Error(detail));
+          return;
+        }
+        resolve({ stdout, stderr });
+      });
+    });
+  }
+
   async function runHermesCliDelegation(command, packet, payload = {}) {
-    void command;
-    void packet;
-    void payload;
-    throw new Error(
-      "Hermes CLI execution blocked: installed Hermes only accepts oneshot prompts through process argv. " +
-      "Use deterministic packet delegation or the Hermes dashboard until Hermes exposes a file, stdin, or authenticated local API prompt handoff."
-    );
+    const profileHome = hermesHome(payload.profileHome);
+    const runtime = hermesPythonRuntime(command, profileHome);
+    if (!runtime) {
+      throw new Error(
+        "Hermes local execution requires an installed Hermes venv with run_agent.py. " +
+        "The detected hermes command does not expose a prompt-safe local runtime."
+      );
+    }
+    const provider = hermesProvider(payload, await readProviderSecrets());
+    const model = hermesModel(payload, provider);
+    const prompt = buildHermesExecutionPrompt(packet);
+    const tempRoot = path.join(browserFirstRoot(), "Runtime", "hermes-prompts");
+    await mkdir(tempRoot, { recursive: true });
+    const tempDir = await mkdtemp(path.join(tempRoot, "prompt-"));
+    const promptPath = path.join(tempDir, "resonantos-hermes-task.md");
+    const adapterPath = path.join(tempDir, "resonantos_hermes_adapter.py");
+    const outputPath = path.join(tempDir, "result.json");
+    try {
+      await writeFile(promptPath, prompt, { mode: 0o600 });
+      await writeFile(adapterPath, hermesPythonAdapterScript(), { mode: 0o600 });
+      await chmod(promptPath, 0o600).catch(() => undefined);
+      await chmod(adapterPath, 0o600).catch(() => undefined);
+      await execHermesPythonAdapter(runtime, promptPath, outputPath, {
+        adapterPath,
+        cwd: repoRoot,
+        env: {
+          ...scopedHermesEnv({ provider, model, profileHome, secrets: await readProviderSecrets() }),
+          RESONANTOS_HERMES_AGENT_ROOT: runtime.agentRoot,
+          RESONANTOS_HERMES_MAX_TURNS: String(Math.min(90, Math.max(1, Number(payload.maxTurns ?? 20)))),
+        },
+        timeout: Math.min(900_000, Math.max(30_000, Number(payload.timeoutMs ?? 300_000))),
+      });
+      const rawResult = await readFile(outputPath, "utf8");
+      const parsed = JSON.parse(rawResult);
+      if (!parsed.ok) {
+        throw new Error(redactCliText(parsed.error || "Hermes local runtime failed."));
+      }
+      return {
+        ...parseHermesCliResult(parsed.finalResponse, repoRoot),
+        adapter: "hermes-cli",
+        model,
+        provider,
+      };
+    } finally {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 
   async function writeHermesResultArtifact(taskPath, packet, result) {
@@ -876,17 +1036,6 @@ export function createAddonDelegationService(dependencies) {
         return {
           ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
           blockedReason,
-          status: "blocked",
-        };
-      }
-      if (adapter !== "deterministic" && isHermesUnsafePromptInputError(failureReason)) {
-        const updated = await writeDelegationStatus(taskPath, "blocked", {
-          blockedAt: failedAt,
-          blockedReason: failureReason.slice(0, 500),
-        });
-        return {
-          ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
-          blockedReason: failureReason,
           status: "blocked",
         };
       }

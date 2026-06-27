@@ -2,6 +2,7 @@
   "name": "resonantos-vnext",
   "version": "2.0.0-alpha.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1430 --strictPort",

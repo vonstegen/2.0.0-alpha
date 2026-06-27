@@ -27,6 +27,9 @@ const providerEnvNames = [
   "GLM_API_KEY",
   "ZHIPUAI_API_KEY",
   "RESONANTOS_PROVIDER_SECRETS_JSON",
+  "RESONANTOS_PROVIDER_ARCHIVE_TIMEOUT_MS",
+  "RESONANTOS_PROVIDER_CHAT_TIMEOUT_MS",
+  "RESONANTOS_PROVIDER_INLINE_TIMEOUT_MS",
 ];
 
 function withProviderEnv(values = {}) {
@@ -201,6 +204,113 @@ test("provider account save enforces credential-safe endpoint policy", async () 
     });
     assert.equal(localRuntime.provider.apiBaseUrl, "http://127.0.0.1:11434/v1");
   } finally {
+    restoreEnv();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+function abortingFetch() {
+  return async (_url, options = {}) => new Promise((_resolve, reject) => {
+    options.signal?.addEventListener("abort", () => {
+      const error = new Error("aborted");
+      error.name = "AbortError";
+      reject(error);
+    });
+  });
+}
+
+test("provider chat times out a strategy route and falls back to the next configured route", async () => {
+  const restoreEnv = withProviderEnv({
+    MINIMAX_API_KEY: "minimax-env-credential",
+    OPENAI_API_KEY: "openai-env-credential",
+    RESONANTOS_PROVIDER_CHAT_TIMEOUT_MS: "5",
+  });
+  const previousFetch = globalThis.fetch;
+  const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-provider-chat-timeout-"));
+  const service = createService(root);
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push(String(url));
+    if (calls.length === 1) {
+      return abortingFetch()(url, options);
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{ message: { content: "fallback route reply" } }],
+        usage: { total_tokens: 12 },
+      }),
+    };
+  };
+  try {
+    const result = await service.executeBridgeChat({
+      model: "__auto__",
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    assert.equal(result.reply, "fallback route reply");
+    assert.equal(result.providerId, "shared-openai");
+    assert.equal(calls.length, 2);
+    assert.match(calls[0], /api\.minimax\.io/);
+    assert.match(calls[1], /api\.openai\.com/);
+  } finally {
+    globalThis.fetch = previousFetch;
+    restoreEnv();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("archive semantic verifier reports provider timeout as unavailable", async () => {
+  const restoreEnv = withProviderEnv({
+    OPENAI_API_KEY: "openai-env-credential",
+    RESONANTOS_PROVIDER_ARCHIVE_TIMEOUT_MS: "5",
+  });
+  const previousFetch = globalThis.fetch;
+  const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-provider-archive-timeout-"));
+  const service = createService(root);
+  globalThis.fetch = abortingFetch();
+  try {
+    const result = await service.runArchiveSemanticVerifier({
+      artifactPath: "artifact.json",
+      requestPath: "request.json",
+      sourceContent: "source",
+      proposedPage: "Page",
+      proposedContent: "content",
+    });
+
+    assert.equal(result.semanticStatus, "unavailable");
+    assert.equal(result.providerId, "shared-openai");
+    assert.match(result.semanticSummary, /timed out/i);
+  } finally {
+    globalThis.fetch = previousFetch;
+    restoreEnv();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("inline assistant falls back when the provider request times out", async () => {
+  const restoreEnv = withProviderEnv({
+    OPENAI_API_KEY: "openai-env-credential",
+    RESONANTOS_PROVIDER_INLINE_TIMEOUT_MS: "5",
+  });
+  const previousFetch = globalThis.fetch;
+  const root = await mkdtemp(path.join(os.tmpdir(), "resonantos-provider-inline-timeout-"));
+  const service = createService(root);
+  globalThis.fetch = abortingFetch();
+  try {
+    const result = await service.executeInlineAssistant({
+      action: "summarize",
+      model: "gpt-5.5",
+      selection: "This text should be summarized.",
+    });
+
+    assert.equal(result.providerId, "local-fallback");
+    assert.equal(result.model, "local-inline-fallback");
+    assert.match(result.reply, /Summary/);
+    assert.match(result.usage.providerError, /timed out/i);
+  } finally {
+    globalThis.fetch = previousFetch;
     restoreEnv();
     await rm(root, { recursive: true, force: true });
   }

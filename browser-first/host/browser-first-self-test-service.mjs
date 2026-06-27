@@ -92,16 +92,23 @@ EOF
 `;
 }
 
-function fakeHermesCliScript(output) {
+function fakeHermesPythonScript(output) {
+  const encoded = JSON.stringify({
+    ok: true,
+    finalResponse: String(output),
+    completed: true,
+    apiCalls: 1,
+  });
   if (process.platform === "win32") {
     return [
       "@echo off",
       "if \"%OPENAI_API_KEY%\"==\"\" (echo selected provider env missing 1>&2 & exit /b 32)",
       "if not \"%RESONANTOS_PROVIDER_SECRETS_JSON%\"==\"\" (echo ResonantOS provider store leaked 1>&2 & exit /b 33)",
       "echo %* | findstr /C:\"Hermes operating as a ResonantOS add-on agent\" >nul && (echo prompt leaked in argv 1>&2 & exit /b 31)",
-      "echo %* | findstr /C:\"openai-api\" >nul || (echo provider missing 1>&2 & exit /b 34)",
-      "echo %* | findstr /C:\"gpt-5.4-mini\" >nul || (echo model missing 1>&2 & exit /b 35)",
-      ...String(output).split("\n").map(cmdEchoLine),
+      "if not \"%HERMES_INFERENCE_PROVIDER%\"==\"openai-api\" (echo provider missing 1>&2 & exit /b 34)",
+      "if not \"%HERMES_INFERENCE_MODEL%\"==\"gpt-5.4-mini\" (echo model missing 1>&2 & exit /b 35)",
+      "findstr /C:\"Hermes operating as a ResonantOS add-on agent\" \"%~2\" >nul || (echo prompt missing from file 1>&2 & exit /b 36)",
+      `> "%~3" echo ${encoded.replace(/%/g, "%%")}`,
       "",
     ].join("\r\n");
   }
@@ -120,24 +127,36 @@ case "$*" in
     exit 31
     ;;
 esac
-case "$*" in
-  *"openai-api"*) ;;
-  *)
-    echo "provider missing" >&2
-    exit 34
-    ;;
-esac
-case "$*" in
-  *"gpt-5.4-mini"*) ;;
-  *)
-    echo "model missing" >&2
-    exit 35
-    ;;
-esac
-cat <<'EOF'
-${output}
+if [ "\${HERMES_INFERENCE_PROVIDER:-}" != "openai-api" ]; then
+  echo "provider missing" >&2
+  exit 34
+fi
+if [ "\${HERMES_INFERENCE_MODEL:-}" != "gpt-5.4-mini" ]; then
+  echo "model missing" >&2
+  exit 35
+fi
+if ! grep -q "Hermes operating as a ResonantOS add-on agent" "$2"; then
+  echo "prompt missing from file" >&2
+  exit 36
+fi
+cat > "$3" <<'EOF'
+${encoded}
 EOF
 `;
+}
+
+async function writeFakeHermesPythonRuntime(root, output) {
+  const agentRoot = path.join(root, "hermes-agent");
+  const binRoot = path.join(agentRoot, "venv", "bin");
+  const fakeHermes = path.join(binRoot, process.platform === "win32" ? "hermes.cmd" : "hermes");
+  const fakePython = path.join(binRoot, process.platform === "win32" ? "python.cmd" : "python");
+  await mkdir(binRoot, { recursive: true });
+  await writeFile(path.join(agentRoot, "run_agent.py"), "# fake Hermes run_agent marker for ResonantOS self-tests\n");
+  await writeFile(fakeHermes, process.platform === "win32" ? "@echo off\r\necho fake hermes\r\n" : "#!/bin/sh\necho fake hermes\n");
+  await writeFile(fakePython, fakeHermesPythonScript(output));
+  await chmod(fakeHermes, 0o755).catch(() => undefined);
+  await chmod(fakePython, 0o755).catch(() => undefined);
+  return fakeHermes;
 }
 
 export async function runBrowserFirstSelfTest(context) {
@@ -614,7 +633,6 @@ export async function runBrowserFirstSelfTest(context) {
     let server = null;
     let exitCode = 1;
     try {
-      const fakeHermes = path.join(tempRoot, "bin", process.platform === "win32" ? "hermes.cmd" : "hermes");
       const fakeOutput = [
         "## Final Summary",
         "Hermes CLI adapter completed the requested production execution test.",
@@ -632,9 +650,7 @@ export async function runBrowserFirstSelfTest(context) {
         "## Verification",
         "- Local Hermes CLI process was invoked through the host boundary.",
       ].join("\n");
-      await mkdir(path.dirname(fakeHermes), { recursive: true });
-      await writeFile(fakeHermes, fakeHermesCliScript(fakeOutput));
-      await chmod(fakeHermes, 0o755).catch(() => undefined);
+      const fakeHermes = await writeFakeHermesPythonRuntime(tempRoot, fakeOutput);
       process.env.HERMES_COMMAND = fakeHermes;
       delete process.env.OPENAI_API_KEY;
       process.env.RESONANTOS_PROVIDER_SECRETS_JSON = JSON.stringify({ "shared-openai": "must-not-reach-hermes" });
@@ -680,22 +696,23 @@ export async function runBrowserFirstSelfTest(context) {
         },
       });
       const started = await request("/hermes/delegation/start", { body: { path: created.path } });
+      const artifact = await request("/hermes/delegation/artifact", { body: { path: created.path } });
       const statusAfter = await request("/hermes/delegation/status", { body: { path: created.path } });
       const hermesStatus = await request("/hermes/status", { body: {} });
       const ok = (
-        started.status === "blocked" &&
-        /process argv/i.test(started.blockedReason ?? "") &&
-        statusAfter.status === "blocked" &&
+        started.status === "completed" &&
+        /Hermes CLI adapter completed/.test(artifact.finalSummary ?? "") &&
+        statusAfter.status === "completed" &&
         hermesStatus.executionEnabled === true &&
         hermesStatus.mode === "local-hermes-cli"
       );
       console.log(JSON.stringify({
         ok,
-        adapter: "blocked-unsafe-hermes-argv",
-        blockedReason: started.blockedReason ?? "",
+        adapter: started.adapter,
+        artifactPath: artifact.path,
         hermesMode: hermesStatus.mode,
         statusAfter: statusAfter.status,
-        summary: started.blockedReason ?? "",
+        summary: artifact.finalSummary ?? "",
       }, null, 2));
       exitCode = ok ? 0 : 1;
     } catch (error) {
@@ -738,7 +755,6 @@ export async function runBrowserFirstSelfTest(context) {
     process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT = path.join(tempRoot, "ResonantOS_User");
     let exitCode = 1;
     try {
-      const fakeHermes = path.join(tempRoot, "bin", process.platform === "win32" ? "hermes.cmd" : "hermes");
       const fakeOutput = [
         "## Final Summary",
         "Hermes CLI adapter completed the requested production execution test.",
@@ -756,9 +772,7 @@ export async function runBrowserFirstSelfTest(context) {
         "## Verification",
         "- Local Hermes CLI process was invoked through the host boundary.",
       ].join("\n");
-      await mkdir(path.dirname(fakeHermes), { recursive: true });
-      await writeFile(fakeHermes, fakeHermesCliScript(fakeOutput));
-      await chmod(fakeHermes, 0o755).catch(() => undefined);
+      const fakeHermes = await writeFakeHermesPythonRuntime(tempRoot, fakeOutput);
       process.env.HERMES_COMMAND = fakeHermes;
       delete process.env.OPENAI_API_KEY;
       delete process.env.RESONANTOS_PROVIDER_SECRETS_JSON;
@@ -812,23 +826,24 @@ export async function runBrowserFirstSelfTest(context) {
         },
       });
       const started = await request("/hermes/delegation/start", { body: { path: created.path } });
+      const artifact = await request("/hermes/delegation/artifact", { body: { path: created.path } });
       const statusAfter = await request("/hermes/delegation/status", { body: { path: created.path } });
       const hermesStatus = await request("/hermes/status", { body: {} });
       const ok = (
-        started.status === "blocked" &&
-        /process argv/i.test(started.blockedReason ?? "") &&
-        statusAfter.status === "blocked" &&
+        started.status === "completed" &&
+        /Hermes CLI adapter completed/.test(artifact.finalSummary ?? "") &&
+        statusAfter.status === "completed" &&
         hermesStatus.executionEnabled === true &&
         hermesStatus.mode === "local-hermes-cli"
       );
       console.log(JSON.stringify({
         ok,
         mode: "in-process",
-        adapter: "blocked-unsafe-hermes-argv",
-        blockedReason: started.blockedReason ?? "",
+        adapter: started.adapter,
+        artifactPath: artifact.path,
         hermesMode: hermesStatus.mode,
         statusAfter: statusAfter.status,
-        summary: started.blockedReason ?? "",
+        summary: artifact.finalSummary ?? "",
       }, null, 2));
       exitCode = ok ? 0 : 1;
     } catch (error) {
