@@ -178,8 +178,14 @@ The release owner must explicitly accept or close these before publishing:
 - #109, #136, and #180 add-on install/update/uninstall lifecycle: deferred.
   Alpha ships governed visible capabilities only; no signed add-on marketplace
   or lifecycle manager is release-blocking for the Chrome MVP.
-- #192 and #194 runtime/native installation issues: outside Chrome MVP scope
-  unless the release owner reopens native desktop distribution.
+- #162 native CEF host argument containment and #192/#194 runtime/native
+  installation issues: outside Chrome MVP scope unless the release owner reopens
+  native CEF, native desktop distribution, or native packaged add-ons.
+- Remaining Project 2 roadmap/TODO items (#96, #97, #99, #103-#108, #110,
+  #112-#115, #118, #126, #128, #130-#133, #138, and #139): deferred to
+  post-alpha backlog. They remain useful product, test, and integration work,
+  but they are not release blockers for the Chrome extension plus local Node
+  bridge alpha.
 
 ## Release Gate Before Sharing
 
