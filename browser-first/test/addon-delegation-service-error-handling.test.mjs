@@ -202,6 +202,72 @@ test("Hermes MiniMax execution uses OpenAI-compatible custom runtime endpoint", 
   });
 });
 
+test("Hermes delegation fails closed when runtime returns unresolved tool-call markup", async () => {
+  await withEnv({
+    RESONANTOS_HERMES_EXECUTION: "enabled",
+    MINIMAX_API_KEY: undefined,
+    OPENAI_API_KEY: undefined,
+  }, async () => {
+    await withTempService(async (_service, root) => {
+      const hermesBin = path.join(root, "HermesHome", "hermes-agent", "venv", "bin");
+      const hermesCommand = path.join(hermesBin, "hermes");
+      await mkdir(hermesBin, { recursive: true });
+      await writeFile(hermesCommand, "");
+      await writeFile(path.join(hermesBin, "python"), "");
+      await writeFile(path.join(root, "HermesHome", "hermes-agent", "run_agent.py"), "");
+
+      const service = createService(root, {
+        hermesCommand: () => hermesCommand,
+        readProviderSecrets: async () => ({ "shared-minimax": "session-minimax-credential" }),
+        spawnProcess: (_command, args) => {
+          const child = new EventEmitter();
+          child.stdout = new EventEmitter();
+          child.stderr = new EventEmitter();
+          child.kill = () => undefined;
+          setImmediate(() => {
+            writeFile(args[2], JSON.stringify({
+              ok: true,
+              completed: true,
+              apiCalls: 1,
+              finalResponse: [
+                "Final Summary",
+                "I'll create a local-only delegation smoke artifact.]<]minimax[>[<tool_call>",
+                "",
+                "Actions Taken",
+                "- Hermes attempted a provider tool call.",
+                "",
+                "Approval Needs",
+                "- None.",
+                "",
+                "Residual Risks",
+                "- Provider tool-call markup leaked into the result.",
+                "",
+                "Verification",
+                "- Simulated malformed runtime output.",
+              ].join("\n"),
+            }))
+              .then(() => child.emit("close", 0, null))
+              .catch((error) => child.emit("error", error));
+          });
+          return child;
+        },
+      });
+
+      const created = await service.executeDelegationRecord({
+        target: "hermes",
+        mission: "Create a local-only Hermes delegation smoke artifact.",
+      });
+      const started = await service.executeHermesDelegationStart({ path: created.path });
+
+      assert.equal(started.status, "failed");
+      assert.match(started.failureReason, /unresolved provider tool-call markup/i);
+      const taskPacket = await readFile(path.join(root, created.path), "utf8");
+      assert.match(taskPacket, /^- status:\s*failed$/mi);
+      assert.match(taskPacket, /^- failureReason:\s*Hermes returned unresolved provider tool-call markup/m);
+    });
+  });
+});
+
 test("OpenCode status prefers MiniMax model when MiniMax credential is available", async () => {
   await withTempService(async (_service, root) => {
     const service = createService(root, {

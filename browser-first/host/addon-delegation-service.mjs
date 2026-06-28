@@ -644,6 +644,7 @@ export function createAddonDelegationService(dependencies) {
     const context = sectionFromMarkdown(packet, "Context Packet");
     return [
       "You are Hermes operating as a ResonantOS add-on agent.",
+      "You are running in reviewable-artifact mode. No interactive tools are available.",
       "",
       "Mission:",
       mission,
@@ -653,6 +654,9 @@ export function createAddonDelegationService(dependencies) {
       "",
       "Rules:",
       "- Return a reviewable artifact only.",
+      "- Do not attempt tool calls, function calls, XML tool tags, shell commands, file writes, or local runtime actions.",
+      "- Do not include unresolved provider/tool markers such as <tool_call>, tool_call, function_call, or provider control tokens.",
+      "- If the mission asks you to create, run, inspect, browse, or execute something, describe the requested action and mark it as requiring approval or unavailable instead of attempting it.",
       "- Do not send messages, schedule events, post publicly, submit forms, operate wallets, expose secrets, or write trusted memory.",
       "- If external action is needed, list it under Approval Needs instead of performing it.",
       "- Keep the output concise and structured with these headings exactly: Final Summary, Actions Taken, Approval Needs, Residual Risks, Verification.",
@@ -661,6 +665,9 @@ export function createAddonDelegationService(dependencies) {
 
   function parseHermesCliResult(output) {
     const text = String(output ?? "").trim();
+    if (/<\s*tool_call\b|tool_call|function_call|]<]minimax\[>\[</i.test(text)) {
+      throw new Error("Hermes returned unresolved provider tool-call markup instead of a reviewable artifact.");
+    }
     const actionsTaken = sectionListFromMarkdown(text, "Actions Taken");
     const approvalNeeds = sectionListFromMarkdown(text, "Approval Needs");
     const residualRisks = sectionListFromMarkdown(text, "Residual Risks");
