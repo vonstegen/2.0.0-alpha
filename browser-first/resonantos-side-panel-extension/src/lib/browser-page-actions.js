@@ -26,6 +26,7 @@ export function createBrowserPageActions(deps) {
     setActivity,
     setContextMeter,
     setControlledTabId,
+    getLastSnapshot = () => null,
     setLastSnapshot,
     setStatus,
     siteKeyForUrl,
@@ -224,6 +225,41 @@ export function createBrowserPageActions(deps) {
     return sendContentActionToFrames(tab.id, message);
   }
 
+  function sameContextTab(snapshot, tab) {
+    if (!snapshot || !tab?.id) return false;
+    const snapshotTabId = Number(snapshot.tabId ?? snapshot.tab?.id);
+    if (Number.isFinite(snapshotTabId) && snapshotTabId !== tab.id) return false;
+    if (Number.isFinite(snapshotTabId)) return true;
+    return Boolean(snapshot.url && tab.url && snapshot.url === tab.url);
+  }
+
+  async function hydrateCachedTabSnapshot(tab) {
+    if (!tab?.id) {
+      setLastSnapshot(null);
+      setContextMeter(null);
+      return null;
+    }
+    const currentSnapshot = getLastSnapshot();
+    if (sameContextTab(currentSnapshot, tab)) {
+      setContextMeter(currentSnapshot);
+      return currentSnapshot;
+    }
+    const response = await chrome.runtime?.sendMessage?.({
+      channel: "resonantos.browser_first",
+      type: "active_tab_context",
+      tabId: tab.id
+    }).catch(() => null);
+    const snapshot = response?.snapshot ?? null;
+    if (sameContextTab(snapshot, tab)) {
+      setLastSnapshot(snapshot);
+      setContextMeter(snapshot);
+      return snapshot;
+    }
+    setLastSnapshot(null);
+    setContextMeter(null);
+    return null;
+  }
+
   const setPageControlOverlay = async (active, label = "", phase = "") => sendContentAction({
     type: "control_overlay",
     active,
@@ -317,6 +353,7 @@ export function createBrowserPageActions(deps) {
     const label = tab?.title || tab?.url || "No page context";
     deps.setReadButtonTitle(`Attach/read current page: ${label}`);
     await renderSitePermissionPanel(tab);
+    await hydrateCachedTabSnapshot(tab);
     setStatus("Ready");
     return tab;
   }
