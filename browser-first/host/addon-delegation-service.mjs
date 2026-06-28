@@ -11,8 +11,11 @@ import {
 import { dashboardProxyUrl } from "./bridge-server.mjs";
 
 const DEFAULT_OPENCODE_MODEL = "openai/gpt-5.4-mini";
+const MINIMAX_OPENCODE_MODEL = "minimax/MiniMax-M3";
 const DEFAULT_HERMES_PROVIDER = "openai-api";
 const DEFAULT_HERMES_MODEL = "gpt-5.4-mini";
+const DEFAULT_HERMES_MINIMAX_MODEL = "MiniMax-M3";
+const MINIMAX_OPENAI_COMPAT_BASE_URL = "https://api.minimax.io/v1";
 
 const providerEnvKeyDefaults = Object.freeze({
   anthropic: ["ANTHROPIC_API_KEY"],
@@ -83,6 +86,14 @@ function providerEnvFromSecrets(provider, secrets = {}, envKeys = providerEnvKey
   return selectedKey ? { [selectedKey]: credential } : {};
 }
 
+function providerCredential(provider, secrets = {}, envKeys = providerEnvKeysForProvider(provider)) {
+  const secret = secretForProvider(provider, secrets);
+  if (secret) return secret;
+  return envKeys
+    .map((key) => String(process.env[key] ?? "").trim())
+    .find(Boolean) ?? "";
+}
+
 function providerEnvKeysPresent(provider, secrets = {}, envKeys = providerEnvKeysForProvider(provider)) {
   const fromProcess = envKeys.filter((key) => String(process.env[key] ?? "").trim());
   const fromSecrets = secretForProvider(provider, secrets) ? [envKeys[0]].filter(Boolean) : [];
@@ -150,6 +161,7 @@ export function createAddonDelegationService(dependencies) {
     readProviderSecrets = async () => ({}),
     repoRoot,
     safeFileSlug,
+    spawnProcess = spawn,
     socketOpen,
     uniqueRuntimeId,
     userRoot,
@@ -178,9 +190,18 @@ export function createAddonDelegationService(dependencies) {
     };
   }
 
-  function openCodeModel(payload = {}) {
+  function openCodeProviderForModel(model) {
+    const normalized = String(model ?? "").trim();
+    if (/^minimax-m/i.test(normalized)) return "minimax";
+    if (/^gpt-/i.test(normalized)) return "openai";
+    return providerFromModel(normalized, "openai");
+  }
+
+  function openCodeModel(payload = {}, secrets = {}) {
     const requested = String(payload.model ?? process.env.RESONANTOS_OPENCODE_MODEL ?? "").trim();
-    return requested || DEFAULT_OPENCODE_MODEL;
+    if (requested) return requested;
+    if (providerEnvKeysPresent("minimax", secrets).length) return MINIMAX_OPENCODE_MODEL;
+    return DEFAULT_OPENCODE_MODEL;
   }
 
   function isAllowedOpenCodeProviderEnvKey(key) {
@@ -188,7 +209,7 @@ export function createAddonDelegationService(dependencies) {
   }
 
   function openCodeProviderEnvKeys(model) {
-    const provider = providerFromModel(model, "openai");
+    const provider = openCodeProviderForModel(model);
     const explicit = String(process.env.RESONANTOS_OPENCODE_PROVIDER_ENV ?? "")
       .split(",")
       .map((key) => key.trim())
@@ -665,6 +686,7 @@ export function createAddonDelegationService(dependencies) {
   function hermesProvider(payload = {}, secrets = {}) {
     const requested = String(payload.provider ?? process.env.RESONANTOS_HERMES_PROVIDER ?? process.env.HERMES_INFERENCE_PROVIDER ?? "").trim();
     if (requested) return requested;
+    if (providerEnvKeysPresent("minimax", secrets).length) return "minimax";
     if (providerEnvKeysPresent("openai-api", secrets).length) return DEFAULT_HERMES_PROVIDER;
     if (providerEnvKeysPresent("openrouter", secrets).length) return "openrouter";
     if (providerEnvKeysPresent("anthropic", secrets).length) return "anthropic";
@@ -674,7 +696,13 @@ export function createAddonDelegationService(dependencies) {
   function hermesModel(payload = {}, provider = DEFAULT_HERMES_PROVIDER) {
     const requested = String(payload.model ?? process.env.RESONANTOS_HERMES_MODEL ?? process.env.HERMES_INFERENCE_MODEL ?? "").trim();
     const normalizedProvider = String(provider ?? "").trim().toLowerCase();
-    const model = requested || (normalizedProvider === "openrouter" ? "openai/gpt-5.4-mini" : DEFAULT_HERMES_MODEL);
+    const model = requested || (
+      normalizedProvider === "minimax"
+        ? DEFAULT_HERMES_MINIMAX_MODEL
+        : normalizedProvider === "openrouter"
+          ? "openai/gpt-5.4-mini"
+          : DEFAULT_HERMES_MODEL
+    );
     if ((normalizedProvider === "openai" || normalizedProvider === "openai-api") && model.startsWith("openai/")) {
       return model.slice("openai/".length);
     }
@@ -707,6 +735,32 @@ export function createAddonDelegationService(dependencies) {
       "Provider secrets remain session-only; ResonantOS does not persist plaintext provider credentials for this alpha.",
       envHint.trim(),
     ].filter(Boolean).join(" ");
+  }
+
+  function hermesRuntimeProviderConfig(provider, secrets = {}) {
+    const normalizedProvider = String(provider ?? "").trim().toLowerCase();
+    if (normalizedProvider !== "minimax") {
+      return {
+        provider,
+        baseUrl: "",
+        apiKey: "",
+        apiMode: "",
+      };
+    }
+    const baseUrl = String(
+      process.env.RESONANTOS_HERMES_MINIMAX_BASE_URL ??
+      process.env.RESONANTOS_MINIMAX_OPENAI_BASE_URL ??
+      MINIMAX_OPENAI_COMPAT_BASE_URL
+    ).trim().replace(/\/+$/, "");
+    return {
+      // Hermes' built-in MiniMax provider currently routes to /anthropic.
+      // The browser-first alpha provider fabric uses MiniMax's OpenAI-compatible
+      // /v1 surface, so hand Hermes an explicit custom runtime for execution.
+      provider: "custom",
+      baseUrl,
+      apiKey: providerCredential("minimax", secrets),
+      apiMode: "chat_completions",
+    };
   }
 
   function isHermesProviderCredentialError(message) {
@@ -791,13 +845,19 @@ if str(agent_root) not in sys.path:
 prompt = prompt_path.read_text(encoding="utf-8")
 provider = os.environ.get("HERMES_INFERENCE_PROVIDER") or None
 model = os.environ.get("HERMES_INFERENCE_MODEL") or ""
+base_url = os.environ.get("RESONANTOS_HERMES_BASE_URL") or None
+api_key = os.environ.get("RESONANTOS_HERMES_API_KEY") or None
+api_mode = os.environ.get("RESONANTOS_HERMES_API_MODE") or None
 max_turns = int(os.environ.get("RESONANTOS_HERMES_MAX_TURNS", "20"))
 
 try:
     from run_agent import AIAgent
 
     agent = AIAgent(
+        base_url=base_url,
+        api_key=api_key,
         provider=provider,
+        api_mode=api_mode,
         model=model,
         max_iterations=max_turns,
         enabled_toolsets=[],
@@ -831,7 +891,7 @@ except BaseException as exc:
     const timeout = Math.min(900_000, Math.max(30_000, Number(options.timeout ?? 300_000)));
     const adapterPath = options.adapterPath;
     return new Promise((resolve, reject) => {
-      const child = spawn(runtime.pythonPath, [adapterPath, promptPath, outputPath], {
+      const child = spawnProcess(runtime.pythonPath, [adapterPath, promptPath, outputPath], {
         cwd: options.cwd,
         env: options.env,
         shell: false,
@@ -882,8 +942,10 @@ except BaseException as exc:
         "The detected hermes command does not expose a prompt-safe local runtime."
       );
     }
-    const provider = hermesProvider(payload, await readProviderSecrets());
+    const secrets = await readProviderSecrets();
+    const provider = hermesProvider(payload, secrets);
     const model = hermesModel(payload, provider);
+    const runtimeProvider = hermesRuntimeProviderConfig(provider, secrets);
     const prompt = buildHermesExecutionPrompt(packet);
     const tempRoot = path.join(browserFirstRoot(), "Runtime", "hermes-prompts");
     await mkdir(tempRoot, { recursive: true });
@@ -900,7 +962,17 @@ except BaseException as exc:
         adapterPath,
         cwd: repoRoot,
         env: {
-          ...scopedHermesEnv({ provider, model, profileHome, secrets: await readProviderSecrets() }),
+          ...scopedHermesEnv({ provider, model, profileHome, secrets }),
+          ...(runtimeProvider.provider ? { HERMES_INFERENCE_PROVIDER: runtimeProvider.provider } : {}),
+          ...(runtimeProvider.baseUrl ? {
+            OPENAI_BASE_URL: runtimeProvider.baseUrl,
+            RESONANTOS_HERMES_BASE_URL: runtimeProvider.baseUrl,
+          } : {}),
+          ...(runtimeProvider.apiKey ? {
+            OPENAI_API_KEY: runtimeProvider.apiKey,
+            RESONANTOS_HERMES_API_KEY: runtimeProvider.apiKey,
+          } : {}),
+          ...(runtimeProvider.apiMode ? { RESONANTOS_HERMES_API_MODE: runtimeProvider.apiMode } : {}),
           RESONANTOS_HERMES_AGENT_ROOT: runtime.agentRoot,
           RESONANTOS_HERMES_MAX_TURNS: String(Math.min(90, Math.max(1, Number(payload.maxTurns ?? 20)))),
         },
@@ -1119,9 +1191,9 @@ except BaseException as exc:
     const executionSettings = await readAddonExecutionSettings();
     const runtime = currentOpenCodeRuntime();
     const command = runtime.command;
-    const model = openCodeModel(payload);
     const secrets = await readProviderSecrets();
-    const provider = providerFromModel(model, "openai");
+    const model = openCodeModel(payload, secrets);
+    const provider = openCodeProviderForModel(model);
     const taskRoot = path.join(delegationRoot(), "opencode");
     const tasks = await listFilesRecursive(taskRoot, (filePath) => filePath.endsWith(".md"), 200);
     const statusCounts = {};
@@ -1137,7 +1209,7 @@ except BaseException as exc:
       executionEnabled: addonLocalCliExecutionEnabled("opencode", payload, executionSettings),
       workspaceLaunch: "not-enabled-in-browser-first-v1",
       model,
-      modelSource: payload.model ? "request" : process.env.RESONANTOS_OPENCODE_MODEL ? "env" : "default",
+      modelSource: payload.model ? "request" : process.env.RESONANTOS_OPENCODE_MODEL ? "env" : model === MINIMAX_OPENCODE_MODEL ? "provider-default" : "default",
       providerEnvKeys: providerEnvKeysPresent(provider, secrets, openCodeProviderEnvKeys(model)),
       detail: command
         ? "OpenCode runtime was detected. ResonantOS can create governed coding packets and start execution only when explicit OpenCode execution is enabled."
@@ -1283,7 +1355,7 @@ except BaseException as exc:
     );
     return {
       ...inherited,
-      ...providerEnvFromSecrets(providerFromModel(model, "openai"), secrets, openCodeProviderEnvKeys(model)),
+      ...providerEnvFromSecrets(openCodeProviderForModel(model), secrets, openCodeProviderEnvKeys(model)),
     };
   }
 
@@ -1344,8 +1416,8 @@ except BaseException as exc:
 
   async function runOpenCodeCliDelegation(command, packet, payload = {}) {
     const workspacePath = resolveOpenCodeWorkspacePath(payload);
-    const model = openCodeModel(payload);
     const secrets = await readProviderSecrets();
+    const model = openCodeModel(payload, secrets);
     const prompt = buildOpenCodeExecutionPrompt(packet, workspacePath);
     const tempRoot = path.join(browserFirstRoot(), "Runtime", "opencode-prompts");
     await mkdir(tempRoot, { recursive: true });
@@ -1468,6 +1540,30 @@ except BaseException as exc:
         blockedReason: "OpenCode CLI was found, but execution is disabled. Set RESONANTOS_OPENCODE_EXECUTION=enabled or pass enableOpenCodeExecution from a trusted Settings flow.",
         status: "blocked",
       };
+    }
+    if (adapter !== "deterministic") {
+      const secrets = await readProviderSecrets();
+      const model = openCodeModel(payload, secrets);
+      const provider = openCodeProviderForModel(model);
+      const envKeys = openCodeProviderEnvKeys(model);
+      if (!providerEnvKeysPresent(provider, secrets, envKeys).length) {
+        const blockedReason = [
+          `OpenCode provider credential unavailable for ${provider} / ${model}.`,
+          "Re-save the provider credential in Settings > Providers so the restarted browser-first bridge has it in session memory.",
+          "Provider secrets remain session-only; ResonantOS does not persist plaintext provider credentials for this alpha.",
+          envKeys.length ? `The bridge can also be started with ${envKeys.join(" or ")} in its environment.` : "",
+        ].filter(Boolean).join(" ");
+        const updated = await writeDelegationStatus(taskPath, "blocked", {
+          blockedAt: new Date().toISOString(),
+          blockedReason,
+          model,
+        });
+        return {
+          ...delegationSummaryFromMarkdown(taskPath, updated, await stat(taskPath)),
+          blockedReason,
+          status: "blocked",
+        };
+      }
     }
     let result;
     try {

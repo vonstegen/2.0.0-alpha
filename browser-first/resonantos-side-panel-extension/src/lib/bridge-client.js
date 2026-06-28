@@ -198,12 +198,17 @@ function toResolvedBridgeConfig(config, source) {
 
 export async function resolveBridgeConfig(options = {}) {
   const override = await readOverrideFromStorage();
-  if (override) {
-    return toResolvedBridgeConfig(override, "override");
-  }
   const generated = options.refreshGenerated
     ? (await refreshGeneratedBridgeConfig(options).catch(() => null)) ?? generatedConfig()
     : generatedConfig();
+  if (override) {
+    return toResolvedBridgeConfig({
+      ...override,
+      token: override.token ?? generated?.token ?? null,
+      capabilityBootstrapToken: override.capabilityBootstrapToken ?? generated?.capabilityBootstrapToken ?? null,
+      capabilityTokens: override.capabilityTokens ?? generated?.capabilityTokens ?? null,
+    }, "override");
+  }
   if (generated) {
     return toResolvedBridgeConfig(generated, options.refreshGenerated ? "generated:refreshed" : "generated");
   }

@@ -2318,6 +2318,82 @@ test("settings bridge target reports 401 token mismatch with recovery guidance",
   }
 });
 
+test("settings bridge target uses loopback-detected URL when tokenless override is stale", async () => {
+  const { container, cleanup } = setupDom();
+  const previousFetch = globalThis.fetch;
+  const previousBridgeConfig = globalThis.__RESONANTOS_BRIDGE_CONFIG__;
+  const previousChrome = globalThis.chrome;
+  globalThis.__RESONANTOS_BRIDGE_CONFIG__ = {
+    bridgeUrl: "http://127.0.0.1:47773",
+    bridgeToken: "generated-token",
+    capabilityBootstrapToken: "generated-bootstrap",
+  };
+  globalThis.chrome = {
+    storage: {
+      local: memoryStorage({
+        bridgeTargetOverride: {
+          bridgeUrl: "http://127.0.0.1:48773",
+          bridgeToken: "",
+          capabilityBootstrapToken: "",
+        },
+      }),
+    },
+  };
+  globalThis.fetch = async (url) => {
+    const value = String(url);
+    if (value === "http://127.0.0.1:48773/status") {
+      throw new Error("connection refused");
+    }
+    if (value === "https://localhost:19443/status") {
+      throw new Error("certificate unavailable");
+    }
+    if (value === "http://localhost:47773/status") {
+      return new Response(JSON.stringify({
+        ok: true,
+        bridge: "resonantos-bridge",
+        providers: { "shared-minimax": false },
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error(`Unexpected bridge target probe: ${value}`);
+  };
+
+  try {
+    renderSettingsWorkspace({
+      container,
+      bridgeRequest: async () => ({}),
+      initialSection: "bridge-target",
+    });
+    await waitForCondition(() => /Bridge http:\/\/localhost:47773 responded OK/.test(container.textContent));
+
+    assert.match(container.textContent, /Bridge Target/);
+    assert.match(container.textContent, /http:\/\/localhost:47773/);
+    assert.match(container.textContent, /Loopback/);
+    assert.match(container.textContent, /local loopback bridge detected from override config/);
+    assert.match(container.textContent, /Bridge http:\/\/localhost:47773 responded OK/);
+    assert.doesNotMatch(container.textContent, /Could not reach http:\/\/127\.0\.0\.1:48773/);
+  } finally {
+    if (previousFetch === undefined) {
+      delete globalThis.fetch;
+    } else {
+      globalThis.fetch = previousFetch;
+    }
+    if (previousBridgeConfig === undefined) {
+      delete globalThis.__RESONANTOS_BRIDGE_CONFIG__;
+    } else {
+      globalThis.__RESONANTOS_BRIDGE_CONFIG__ = previousBridgeConfig;
+    }
+    if (previousChrome === undefined) {
+      delete globalThis.chrome;
+    } else {
+      globalThis.chrome = previousChrome;
+    }
+    cleanup();
+  }
+});
+
 test("settings workspace exposes privacy boundaries and about metadata", async () => {
   const { container, cleanup } = setupDom();
   const bridgeRequest = async (route) => {

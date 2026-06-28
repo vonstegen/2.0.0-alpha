@@ -15,7 +15,7 @@
 
 import { bridgeAuthMessage } from "../runtime-error-messages.js";
 import { metricCard, noteCard, safeErrorMessage, setStatus, settingsHeader } from "./settings-common.js";
-import { BRIDGE_STORAGE_OVERRIDE_KEY, resolveBridgeConfig } from "../bridge-client.js";
+import { BRIDGE_STORAGE_OVERRIDE_KEY, detectLoopbackBridge, resolveBridgeConfig } from "../bridge-client.js";
 
 const STATUS_KEYS = [BRIDGE_STORAGE_OVERRIDE_KEY];
 
@@ -327,7 +327,8 @@ export function renderBridgeTargetSection(container, { bridgeRequest, onBridgeCo
   let activeConfig = null;
 
   async function refresh() {
-    activeConfig = await resolveBridgeConfig();
+    const resolvedConfig = await resolveBridgeConfig();
+    activeConfig = await detectLoopbackBridge(resolvedConfig).catch(() => resolvedConfig);
     const [storedOverride] = await Promise.all([loadStoredOverride()]);
     const generated = globalThis.__RESONANTOS_BRIDGE_CONFIG__ ?? {};
     if (storedOverride) {
@@ -347,12 +348,20 @@ export function renderBridgeTargetSection(container, { bridgeRequest, onBridgeCo
       ? `bootstrap: ${generated.capabilityBootstrapToken.slice(0, 6)}…${generated.capabilityBootstrapToken.slice(-4)} (${generated.capabilityBootstrapToken.length} chars)`
       : "bootstrap: (none)";
 
-    const sourceValue = activeConfig.source === "override" ? "Override" : activeConfig.source === "generated" ? "Generated" : "Default";
-    const sourceDetail = activeConfig.source === "override"
-      ? "local chrome.storage override is winning"
-      : activeConfig.source === "generated"
-        ? "extension package config is in use"
-        : "loopback default — bridge is on 127.0.0.1 only";
+    const sourceValue = activeConfig.source?.startsWith("loopback:")
+      ? "Loopback"
+      : activeConfig.source === "override"
+        ? "Override"
+        : activeConfig.source === "generated"
+          ? "Generated"
+          : "Default";
+    const sourceDetail = activeConfig.source?.startsWith("loopback:")
+      ? `local loopback bridge detected from ${activeConfig.source.replace("loopback:", "")} config`
+      : activeConfig.source === "override"
+        ? "local chrome.storage override is winning"
+        : activeConfig.source === "generated"
+          ? "extension package config is in use"
+          : "loopback default — bridge is on 127.0.0.1 only";
     const [urlCard, sourceCard, healthCardEl] = healthGrid.children;
     urlCard.querySelector("strong").textContent = activeConfig.bridgeUrl;
     urlCard.querySelector("p").textContent =

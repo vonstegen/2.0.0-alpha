@@ -235,6 +235,50 @@ test("bridge config resolver can refresh a generated config resource without eva
   }
 });
 
+test("bridge config resolver lets tokenless overrides inherit generated credentials", async () => {
+  const previousBridgeConfig = globalThis.__RESONANTOS_BRIDGE_CONFIG__;
+  const previousChrome = globalThis.chrome;
+  globalThis.__RESONANTOS_BRIDGE_CONFIG__ = Object.freeze({
+    bridgeUrl: "http://127.0.0.1:47773",
+    bridgeToken: "generated-token",
+    capabilityBootstrapToken: "generated-bootstrap",
+    bridgeCapabilityTokens: { "addon-runtime-read": "runtime-token" },
+  });
+  globalThis.chrome = {
+    storage: {
+      local: {
+        get: async () => ({
+          bridgeTargetOverride: {
+            bridgeUrl: "http://127.0.0.1:48773",
+            bridgeToken: "",
+            capabilityBootstrapToken: "",
+          },
+        }),
+      },
+    },
+  };
+
+  try {
+    const cfg = await resolveBridgeConfig();
+    assert.equal(cfg.source, "override");
+    assert.equal(cfg.bridgeUrl, "http://127.0.0.1:48773");
+    assert.equal(cfg.bridgeToken, "generated-token");
+    assert.equal(cfg.capabilityBootstrapToken, "generated-bootstrap");
+    assert.equal(cfg.bridgeCapabilityTokens["addon-runtime-read"], "runtime-token");
+  } finally {
+    if (previousBridgeConfig === undefined) {
+      delete globalThis.__RESONANTOS_BRIDGE_CONFIG__;
+    } else {
+      globalThis.__RESONANTOS_BRIDGE_CONFIG__ = previousBridgeConfig;
+    }
+    if (previousChrome === undefined) {
+      delete globalThis.chrome;
+    } else {
+      globalThis.chrome = previousChrome;
+    }
+  }
+});
+
 test("raw bridge fetch reports unreachable proxy fetches with settings guidance", async () => {
   const rawFetch = createRawBridgeFetch({
     bridgeUrl: "http://127.0.0.1:47773",
