@@ -13,6 +13,7 @@ function createHarness(overrides = {}) {
     { role: "user", content: "previous question" },
     { role: "assistant", content: "previous answer" }
   ];
+  const attachments = overrides.attachments ?? [];
   const browserPageActions = {
     detectWalletState: async () => {
       events.push(["wallet-status"]);
@@ -76,6 +77,7 @@ function createHarness(overrides = {}) {
       addMessage: async (role, content, options = {}) => {
         events.push(["store-message", role, content, options]);
       },
+      getAttachments: () => attachments,
       getMessages: () => messages
     },
     chromeApi: {
@@ -100,6 +102,7 @@ function createHarness(overrides = {}) {
     },
     composerNotice: {},
     getBusy: () => busy,
+    getLastSnapshot: () => overrides.lastSnapshot ?? null,
     getModel: () => "MiniMax 2.7",
     getPersonalizationSettings: () => ({ augmentor: { systemPrompt: "custom prompt" } }),
     getThinkingDepth: () => "high",
@@ -136,6 +139,31 @@ test("main workspace action controller runs provider chat with current model, de
   assert.equal(harness.commandInput.value, "");
   assert.ok(harness.events.some((event) => event[0] === "message" && event[1] === "assistant" && event[2] === "assistant reply"));
   assert.deepEqual(harness.events.at(-1), ["busy", false]);
+});
+
+test("main workspace action controller forwards current page and attachment context to provider chat", async () => {
+  const harness = createHarness({
+    prompt: "what matters on this page?",
+    lastSnapshot: {
+      title: "ResonantOS Docs",
+      url: "https://example.test/docs",
+      text: "Visible documentation text",
+      links: [{ text: "Install", href: "https://example.test/install" }]
+    },
+    attachments: [{
+      name: "notes.md",
+      type: "text/markdown",
+      content: "Local note context"
+    }]
+  });
+
+  await harness.controller.handleSubmit({ preventDefault() {} });
+
+  const chatCall = harness.events.find((event) => event[0] === "bridge" && event[1] === "/augmentor/chat");
+  assert.match(chatCall[2].pageContext, /ResonantOS Docs/);
+  assert.match(chatCall[2].pageContext, /Visible documentation text/);
+  assert.match(chatCall[2].runtimeContext, /notes\.md/);
+  assert.match(chatCall[2].runtimeContext, /Local note context/);
 });
 
 test("main workspace action controller replaces raw model fetch failures with bridge setup guidance", async () => {

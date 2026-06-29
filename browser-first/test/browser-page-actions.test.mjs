@@ -30,6 +30,12 @@ function createHarness(overrides = {}) {
         return { id: tabId, ...payload };
       }
     },
+    runtime: overrides.activeTabContext ? {
+      sendMessage: async (message) => {
+        events.push(["runtime.sendMessage", message]);
+        return overrides.activeTabContext(message);
+      }
+    } : undefined,
     scripting: overrides.scripting ?? {
       executeScript: async (payload) => events.push(["inject", payload])
     },
@@ -160,6 +166,72 @@ test("browser page actions merge frame snapshots when reading the active page", 
   assert.match(result.snapshot.text, /child text/);
   assert.equal(result.snapshot.frames.length, 2);
   assert.equal(harness.getLastSnapshot().title, "Top");
+});
+
+test("browser page actions hydrates cached active-tab context from background snapshot store", async () => {
+  const harness = createHarness({
+    activeTabContext: () => ({
+      ok: true,
+      snapshot: {
+        tabId: 1,
+        title: "Cached Active Tab",
+        url: "https://example.test/",
+        text: "cached page context"
+      }
+    })
+  });
+
+  await harness.actions.readActivePage({ announce: false });
+
+  assert.ok(harness.events.some((event) => event[0] === "runtime.sendMessage" && event[1].type === "active_tab_context"));
+  assert.ok(harness.events.some((event) => event[0] === "snapshot" && event[1] === "Cached Active Tab"));
+  assert.ok(harness.events.some((event) => event[0] === "context" && event[1] === "Cached Active Tab"));
+});
+
+test("browser page actions clears stale page context when active tab changes", async () => {
+  const harness = createHarness({
+    lastSnapshot: {
+      tabId: 9,
+      title: "Old Tab",
+      url: "https://old.example/",
+      text: "stale"
+    },
+    activeTabContext: () => ({
+      ok: true,
+      snapshot: {
+        tabId: 9,
+        title: "Old Tab",
+        url: "https://old.example/",
+        text: "stale"
+      }
+    })
+  });
+
+  await harness.actions.readActivePage({ announce: false });
+
+  assert.ok(harness.events.some((event) => event[0] === "snapshot" && event[1] === null));
+  assert.ok(harness.events.some((event) => event[0] === "context" && event[1] === null));
+});
+
+test("browser page actions rejects cached tab context without tab identity or URL", async () => {
+  const harness = createHarness({
+    lastSnapshot: {
+      title: "Malformed Cached Snapshot",
+      text: "no tab or URL identity"
+    },
+    activeTabContext: () => ({
+      ok: true,
+      snapshot: {
+        title: "Malformed Cached Snapshot",
+        text: "no tab or URL identity"
+      }
+    })
+  });
+
+  await harness.actions.readActivePage({ announce: false });
+
+  assert.ok(harness.events.some((event) => event[0] === "snapshot" && event[1] === null));
+  assert.ok(harness.events.some((event) => event[0] === "context" && event[1] === null));
 });
 
 test("browser page actions inject content script after missing receiver failure", async () => {
