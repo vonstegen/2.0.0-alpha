@@ -9,6 +9,10 @@ import {
 import { delegationTargetLabel, startDelegationLifecycle } from "./delegation-lifecycle.js";
 import { buildDelegationStatusMessage } from "./delegation-status.js";
 import { buildHermesRuntimeStatusMessage } from "./addon-runtime-status.js";
+import {
+  pageContextForSnapshot,
+  runtimeContextForAttachments
+} from "./chat-turn-controller.js";
 import { runReviewableCapture } from "./main-workspace-review-handoff.js";
 import {
   mainWorkspaceRequestMessage,
@@ -69,6 +73,7 @@ export function createMainWorkspaceActionController({
   composerController,
   composerNotice,
   getBusy,
+  getLastSnapshot = () => null,
   getModel,
   getPersonalizationSettings,
   getThinkingDepth,
@@ -121,6 +126,9 @@ export function createMainWorkspaceActionController({
     activeChatAbortController = new AbortController();
     updateConnectionLine("Thinking");
     try {
+      const attachments = typeof chatSessionStore.getAttachments === "function"
+        ? chatSessionStore.getAttachments()
+        : [];
       const response = await bridge()("/augmentor/chat", {
         method: "POST",
         signal: activeChatAbortController.signal,
@@ -130,6 +138,8 @@ export function createMainWorkspaceActionController({
           workload: "augmentor-chat",
           thinkingDepth: getThinkingDepth(),
           systemPrompt: prepareSystemPrompt(getPersonalizationSettings()?.augmentor?.systemPrompt ?? ""),
+          pageContext: pageContextForSnapshot(getLastSnapshot()),
+          runtimeContext: runtimeContextForAttachments(attachments),
           messages: providerMessagesFromHistory(chatSessionStore.getMessages())
         }
       });

@@ -334,6 +334,7 @@ const mainWorkspaceActions = createMainWorkspaceActionController({
   composerController,
   composerNotice,
   getBusy: () => busy,
+  getLastSnapshot: () => lastSnapshot,
   getModel: () => modelSelect.value,
   getPersonalizationSettings: () => personalizationSettings,
   getThinkingDepth: () => thinkingDepthSelect.value,
