@@ -106,7 +106,10 @@ function createHarness(overrides = {}) {
     openMemoryReviewQueue: () => events.push(["open-review"]),
     openSidebar: async () => events.push(["open-sidebar"]),
     persistActiveWorkspace: async () => events.push(["persist-workspace"]),
+    prepareSystemPrompt: overrides.prepareSystemPrompt,
+    processAssistantReply: overrides.processAssistantReply,
     renderAll: () => events.push(["render-all"]),
+    runBlackboardCommand: async (value) => events.push(["blackboard", value]),
     setActiveWorkspace: (workspace) => {
       activeWorkspace = workspace;
       events.push(["workspace", workspace]);
@@ -136,6 +139,39 @@ test("main workspace action controller runs provider chat with current model, de
   assert.equal(harness.commandInput.value, "");
   assert.ok(harness.events.some((event) => event[0] === "message" && event[1] === "assistant" && event[2] === "assistant reply"));
   assert.deepEqual(harness.events.at(-1), ["busy", false]);
+});
+
+test("main workspace action controller can augment prompts and process Blackboard markers", async () => {
+  const harness = createHarness({
+    prompt: "make this visual",
+    prepareSystemPrompt: (prompt) => `${prompt}\nBlackboard enabled`,
+    processAssistantReply: async (reply) => reply.replace("assistant reply", "assistant reply cleaned")
+  });
+
+  await harness.controller.handleSubmit({ preventDefault() {} });
+
+  const chatCall = harness.events.find((event) => event[0] === "bridge" && event[1] === "/augmentor/chat");
+  assert.match(chatCall[2].systemPrompt, /custom prompt/);
+  assert.match(chatCall[2].systemPrompt, /Blackboard enabled/);
+  assert.ok(harness.events.some((event) =>
+    event[0] === "message" &&
+    event[1] === "assistant" &&
+    event[2] === "assistant reply cleaned"
+  ));
+});
+
+test("main workspace action controller routes Blackboard commands without provider chat", async () => {
+  const slash = createHarness({ prompt: "/blackboard" });
+  await slash.controller.handleSubmit({ preventDefault() {} });
+  assert.equal(slash.events.some((event) => event[0] === "bridge" && event[1] === "/augmentor/chat"), false);
+  const slashCall = slash.events.find((event) => event[0] === "blackboard");
+  assert.deepEqual(slashCall[1], { action: "open", command: "open", payload: {}, body: "" });
+
+  const natural = createHarness({ prompt: "draw a smile" });
+  await natural.controller.handleSubmit({ preventDefault() {} });
+  const naturalCall = natural.events.find((event) => event[0] === "blackboard");
+  assert.equal(naturalCall[1].command, "draw");
+  assert.equal(naturalCall[1].source, "natural");
 });
 
 test("main workspace action controller replaces raw model fetch failures with bridge setup guidance", async () => {

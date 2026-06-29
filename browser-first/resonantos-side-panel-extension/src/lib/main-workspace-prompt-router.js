@@ -1,4 +1,5 @@
 import { parseNaturalDelegationIntent } from "./app-command-handlers.js";
+import { parseBlackboardNaturalIntent, parseBlackboardSlashCommand } from "./blackboard-controller.js";
 import {
   parseAutonomousBrowserActionIntent,
   parseNaturalBrowserIntent,
@@ -104,12 +105,16 @@ export function planMainWorkspacePrompt(value) {
   if (openCodeMission !== null) return { action: "opencode", mission: openCodeMission };
   const hermesMission = parseHermesSlashCommand(prompt);
   if (hermesMission !== null) return { action: "hermes", mission: hermesMission };
+  const blackboardCommand = parseBlackboardSlashCommand(prompt);
+  if (blackboardCommand) return { action: "blackboard", command: blackboardCommand };
   const delegationFilter = parseDelegationsSlashCommand(prompt);
   if (delegationFilter !== null) return { action: "delegations", filter: delegationFilter };
   const intakeCommand = parseIntakeSlashCommand(prompt);
   if (intakeCommand) return { action: "intake", command: intakeCommand };
   const naturalDelegation = parseNaturalDelegationIntent(prompt);
   if (naturalDelegation) return { action: "delegate", intent: naturalDelegation };
+  const naturalBlackboard = parseBlackboardNaturalIntent(prompt);
+  if (naturalBlackboard) return { action: "blackboard", command: naturalBlackboard };
   const walletCommand = parseWalletSlashCommand(prompt);
   if (walletCommand) return { action: "wallet", command: walletCommand };
   const daoCommand = parseDaoSlashCommand(prompt);

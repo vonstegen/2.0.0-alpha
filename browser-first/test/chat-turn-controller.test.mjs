@@ -32,7 +32,7 @@ test("chat turn controller filters provider messages to recent user/assistant tu
   ]);
 });
 
-function createHarness({ fail = false, failureError = new Error("provider down"), systemPrompt = "" } = {}) {
+function createHarness({ fail = false, failureError = new Error("provider down"), processAssistantReply, systemPrompt = "" } = {}) {
   const events = [];
   const attachments = [{ name: "notes.md", content: "notes" }];
   const messages = [
@@ -56,6 +56,7 @@ function createHarness({ fail = false, failureError = new Error("provider down")
     getModel: () => "MiniMax-M3",
     getSystemPrompt: () => systemPrompt,
     getThinkingDepth: () => "high",
+    processAssistantReply,
     setActivity: (...args) => events.push(["activity", ...args]),
     setStatus: (status) => events.push(["status", status])
   });
@@ -80,6 +81,20 @@ test("chat turn controller calls provider and records assistant reply", async ()
   assert.ok(harness.events.some((event) => event[0] === "message" && event[1] === "assistant" && event[2] === "answer"));
   assert.ok(harness.events.some((event) => event[0] === "clearAttachments"));
   assert.deepEqual(harness.events.at(-1), ["clearActivitySoon"]);
+});
+
+test("chat turn controller processes assistant replies before rendering", async () => {
+  const harness = createHarness({
+    processAssistantReply: async (reply) => reply.replace("answer", "clean answer")
+  });
+
+  await harness.controller.runChatTurn();
+
+  assert.ok(harness.events.some((event) =>
+    event[0] === "message" &&
+    event[1] === "assistant" &&
+    event[2] === "clean answer"
+  ));
 });
 
 test("chat turn controller forwards the user-configured Augmentor prompt", async () => {

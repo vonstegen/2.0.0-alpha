@@ -80,6 +80,24 @@ test("main workspace prompt router parses reviewed intake slash commands", () =>
   });
 });
 
+test("main workspace prompt router parses Blackboard visual commands", () => {
+  assert.deepEqual(planMainWorkspacePrompt("/blackboard"), {
+    action: "blackboard",
+    command: {
+      action: "open",
+      body: "",
+      command: "open",
+      payload: {}
+    }
+  });
+  assert.equal(planMainWorkspacePrompt("/draw").action, "blackboard");
+  assert.equal(planMainWorkspacePrompt("/show https://example.com").action, "blackboard");
+  assert.equal(planMainWorkspacePrompt("/present").action, "blackboard");
+  const natural = planMainWorkspacePrompt("draw a smile");
+  assert.equal(natural.action, "blackboard");
+  assert.equal(natural.command.command, "draw");
+});
+
 test("main workspace prompt router delegates natural agent requests before provider chat", () => {
   assert.deepEqual(planMainWorkspacePrompt("ask Hermes to research the add-on strategy"), {
     action: "delegate",

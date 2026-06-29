@@ -38,6 +38,7 @@ export function createChatTurnController({
   getSystemPrompt = () => "",
   getThinkingDepth,
   maxHistoryMessages = DEFAULT_MAX_HISTORY_MESSAGES,
+  processAssistantReply = async (text) => text,
   setActivity,
   setStatus,
   setTurnBusy = () => undefined
@@ -73,7 +74,8 @@ export function createChatTurnController({
       const result = await bridgeChat({ signal: activeAbortController.signal });
       setStatus("Writing");
       setActivity("writing", "Writing response", result.model || getModel());
-      await addMessage("assistant", result.reply, { usage: result.usage ?? { providerId: result.providerId, model: result.model } });
+      const reply = await processAssistantReply(result.reply ?? "");
+      await addMessage("assistant", reply, { usage: result.usage ?? { providerId: result.providerId, model: result.model } });
       await clearAttachments();
       setStatus("Ready");
     } catch (error) {

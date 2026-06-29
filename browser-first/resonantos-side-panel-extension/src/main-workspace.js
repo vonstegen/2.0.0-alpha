@@ -1,5 +1,10 @@
 import { createBrowserPageActions } from "./lib/browser-page-actions.js";
 import { normalizeBrowserUrl } from "./lib/browser-command-parser.js";
+import {
+  appendBlackboardSystemPrompt,
+  createBlackboardController,
+  installBlackboardContextReceiver
+} from "./lib/blackboard-controller.js";
 import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, initCapabilityTokens, isUnauthorizedBridgeError, resolveBridgeConfig } from "./lib/bridge-client.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 import { createChatSessionStore } from "./lib/chat-session-store.js";
@@ -272,6 +277,8 @@ const chatSessionStore = createChatSessionStore({
   isAllowedModel: (model) => [...modelSelect.options].some((option) => option.value === model),
   isAllowedThinkingDepth: (depth) => [...thinkingDepthSelect.options].some((option) => option.value === depth)
 });
+const blackboardController = createBlackboardController({ chromeApi: chrome });
+installBlackboardContextReceiver({ chromeApi: chrome, addMessage });
 const sitePermissionStore = createSitePermissionStore({
   storage: chrome.storage?.local,
   sitePermissionAuditStorageKey: STORAGE_KEYS.sitePermissionAudit,
@@ -330,6 +337,9 @@ const mainWorkspaceActions = createMainWorkspaceActionController({
   getModel: () => modelSelect.value,
   getPersonalizationSettings: () => personalizationSettings,
   getThinkingDepth: () => thinkingDepthSelect.value,
+  prepareSystemPrompt: (prompt) => appendBlackboardSystemPrompt(prompt),
+  processAssistantReply: (reply) => blackboardController.processAssistantReply(reply),
+  runBlackboardCommand: (value) => blackboardController.runSlashCommand(value, { addMessage }),
   openMemoryReviewQueue,
   openSidebar,
   persistActiveWorkspace,
@@ -700,6 +710,12 @@ function renderMessages() {
       container: transcript,
       bridgeRequest: currentBridgeRequest,
       getBridgeRequest,
+      onOpenBlackboard: async () => {
+        const opened = await blackboardController.openBlackboard();
+        await addMessage("system", opened.ok
+          ? "Opened Resonant Blackboard."
+          : `Blackboard could not open: ${opened.error}`);
+      },
       onOpenProviderHandoff: async (handoff) => {
         if (!handoff?.url) return;
         await chrome.tabs.create({ url: handoff.url }).catch(() => undefined);

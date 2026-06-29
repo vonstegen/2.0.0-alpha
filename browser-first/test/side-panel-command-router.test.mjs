@@ -24,6 +24,7 @@ function createHarness() {
     prepareDaoWorkflowGuidance: handler("dao"),
     resumeBrowserJob: handler("resume"),
     runBrowserCommand: handler("browser"),
+    runBlackboardCommand: handler("blackboard"),
     runCapabilitiesCommand: handler("capabilities"),
     runChatTurn: handler("chat"),
     runControlCommand: handler("control"),
@@ -95,6 +96,21 @@ test("side panel command router dispatches slash commands", async () => {
     ["bind", "/trail dao research"],
     ["save", "trail dao research"]
   ]);
+});
+
+test("side panel command router routes Blackboard slash commands and natural visual prompts", async () => {
+  const harness = createHarness();
+
+  await harness.router.respondToCommand("/blackboard");
+  await harness.router.respondToCommand("/doc # Visual notes");
+  await harness.router.respondToCommand("draw a smile");
+
+  const dispatched = harness.calls.filter((call) => call[0] !== "bind");
+  assert.deepEqual(dispatched[0], ["blackboard", "/blackboard"]);
+  assert.deepEqual(dispatched[1], ["blackboard", "/doc # Visual notes"]);
+  assert.equal(dispatched[2][0], "blackboard");
+  assert.equal(dispatched[2][1].command, "draw");
+  assert.equal(dispatched[2][1].source, "natural");
 });
 
 test("side panel command router dispatches browser state slash commands", async () => {

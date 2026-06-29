@@ -8,6 +8,11 @@ import { createBrowserJobScheduler } from "./lib/browser-job-scheduler.js";
 import { createBrowserJobStore } from "./lib/browser-job-store.js";
 import { createBrowserPageActions } from "./lib/browser-page-actions.js";
 import { createBridgeClient, detectLoopbackBridge, initCapabilityTokens, isUnauthorizedBridgeError, resolveBridgeConfig } from "./lib/bridge-client.js";
+import {
+  appendBlackboardSystemPrompt,
+  createBlackboardController,
+  installBlackboardContextReceiver
+} from "./lib/blackboard-controller.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 import { createChatSessionStore } from "./lib/chat-session-store.js";
 import { createChatTurnController } from "./lib/chat-turn-controller.js";
@@ -413,6 +418,10 @@ const addMessage = async (role, content, { persist = true, usage = null } = {}) 
   return message;
 };
 
+const blackboardController = createBlackboardController({ chromeApi: chrome });
+const getAugmentorSystemPrompt = () => appendBlackboardSystemPrompt(personalizationSettings?.augmentor?.systemPrompt ?? "");
+installBlackboardContextReceiver({ chromeApi: chrome, addMessage });
+
 const dictationController = createDictationController({
   addMessage,
   button: dictateButton,
@@ -638,7 +647,7 @@ const controlPlanningService = createControlPlanningService({
   getBridgeRequest,
   getLastSnapshot: () => lastSnapshot,
   getModel: () => modelSelect.value,
-  getSystemPrompt: () => personalizationSettings?.augmentor?.systemPrompt ?? "",
+  getSystemPrompt: getAugmentorSystemPrompt,
   getThinkingDepth: () => thinkingDepthSelect.value,
   readActivePage
 });
@@ -913,7 +922,9 @@ const chatTurnController = createChatTurnController({
   clearAttachments: () => messageActions.clearAttachments(),
   getLastSnapshot: () => lastSnapshot,
   getModel: () => modelSelect.value,
+  getSystemPrompt: getAugmentorSystemPrompt,
   getThinkingDepth: () => thinkingDepthSelect.value,
+  processAssistantReply: (reply) => blackboardController.processAssistantReply(reply),
   setActivity,
   setStatus,
   setTurnBusy
@@ -1020,6 +1031,7 @@ const commandRouter = createSidePanelCommandRouter({
   continueBrowserJob,
   denyControlPreflight,
   runBrowserCommand,
+  runBlackboardCommand: (value) => blackboardController.runSlashCommand(value, { addMessage }),
   runCapabilitiesCommand,
   runChatTurn,
   runControlCommand,

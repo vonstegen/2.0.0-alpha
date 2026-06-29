@@ -4,6 +4,26 @@
 import { capabilityReviewElement } from "./addon-capability-review.js";
 import { addonWorkspaceMessage } from "./runtime-error-messages.js";
 
+const LOCAL_BLACKBOARD_ADDON = {
+  id: "addon.blackboard",
+  name: "Resonant Blackboard",
+  version: "1.0.0",
+  description: "Visual display surface: canvas, documents, tables, web embeds, images, slideshows, and annotations",
+  mode: "visual-surface",
+  trust: "host-mediated",
+  available: true,
+  capabilities: ["canvas", "document", "table", "embed", "image", "present", "annotate"],
+  boundary: "Visual display only. No page modification, no wallet interaction, no provider credentials. Web and image loads are explicit, human-visible, and URL-policy gated."
+};
+
+function withLocalAddons(addons) {
+  const list = Array.isArray(addons) ? [...addons] : [];
+  if (!list.some((addon) => addon.id === LOCAL_BLACKBOARD_ADDON.id)) {
+    list.push(LOCAL_BLACKBOARD_ADDON);
+  }
+  return list;
+}
+
 function addonTone(addon) {
   if (addon.available) return "success";
   return "warning";
@@ -81,6 +101,12 @@ function createAddonCard(addon, actions = {}) {
     open.textContent = `Open ${addon.name}`;
     open.disabled = !addon.available;
     open.addEventListener("click", () => actions.onOpenWorkspace?.(workspace, addon));
+    cardActions.append(open);
+  } else if (addon.id === "addon.blackboard") {
+    const open = document.createElement("button");
+    open.type = "button";
+    open.textContent = "Open Resonant Blackboard";
+    open.addEventListener("click", () => actions.onOpenBlackboard?.(addon));
     cardActions.append(open);
   }
 
@@ -215,7 +241,7 @@ function createDelegationCard(delegation, actions = {}) {
   return card;
 }
 
-export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeRequest, onOpenProviderHandoff, onOpenWorkspace }) {
+export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeRequest, onOpenBlackboard, onOpenProviderHandoff, onOpenWorkspace }) {
   // Resolve at call time. The module-level `bridgeRequest` may be
   // null at construction (rebind still in flight); the getter lets
   // us re-read the current value on every call.
@@ -415,9 +441,10 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
   const loadAddons = async () => {
     try {
       const result = await bridge()("/addons/status", { method: "GET" });
-      const addons = Array.isArray(result.addons) ? result.addons : [];
+      const addons = withLocalAddons(result.addons);
       grid.replaceChildren();
       addons.forEach((addon) => grid.append(createAddonCard(addon, {
+        onOpenBlackboard,
         onOpenWorkspace,
         onToggleExecution: async (selected, enabled) => {
           const addonKey = addonExecutionKey(selected);
@@ -440,7 +467,10 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
         : "No add-ons are visible to this browser-first host yet.";
       status.dataset.tone = addons.some((addon) => addon.available) ? "success" : "warning";
     } catch (error) {
-      status.textContent = addonWorkspaceMessage(error, "Add-on registry unavailable");
+      const addons = withLocalAddons([]);
+      grid.replaceChildren();
+      addons.forEach((addon) => grid.append(createAddonCard(addon, { onOpenBlackboard, onOpenWorkspace })));
+      status.textContent = `${addonWorkspaceMessage(error, "Add-on registry unavailable")} Local visual Blackboard remains available.`;
       status.dataset.tone = "error";
     }
   };

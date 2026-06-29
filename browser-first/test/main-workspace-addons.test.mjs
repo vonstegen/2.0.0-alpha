@@ -9,6 +9,7 @@ test("add-ons workspace renders registry status and governed open actions", asyn
   globalThis.document = dom.window.document;
   const container = dom.window.document.querySelector("#root");
   const opened = [];
+  const blackboardOpened = [];
   const providerHandoffs = [];
   const calls = [];
   let draftStatus = "draft-only";
@@ -218,6 +219,7 @@ test("add-ons workspace renders registry status and governed open actions", asyn
   renderAddOnsWorkspace({
     container,
     bridgeRequest,
+    onOpenBlackboard: () => blackboardOpened.push("blackboard"),
     onOpenProviderHandoff: (handoff, draft) => providerHandoffs.push([handoff, draft.id]),
     onOpenWorkspace: (workspaceId) => opened.push(workspaceId)
   });
@@ -225,12 +227,14 @@ test("add-ons workspace renders registry status and governed open actions", asyn
 
   assert.deepEqual(calls.map((call) => call[0]), ["/addons/status", "/addons/delegate/list", "/addons/draft/list"]);
   assert.match(container.textContent, /Replaceable capabilities, explicit trust/);
-  assert.match(container.textContent, /5 add-ons visible/);
+  assert.match(container.textContent, /6 add-ons visible/);
   assert.match(container.textContent, /Hermes/);
   assert.match(container.textContent, /OpenCode/);
   assert.match(container.textContent, /Living Archive/);
   assert.match(container.textContent, /Email/);
   assert.match(container.textContent, /Calendar/);
+  assert.match(container.textContent, /Resonant Blackboard/);
+  assert.match(container.textContent, /Visual display only/);
   assert.match(container.textContent, /not trusted core agents/i);
   assert.match(container.textContent, /Direct trusted wiki writes remain blocked/);
   assert.match(container.textContent, /Sending and scheduling remain human-approval gated/);
@@ -253,11 +257,13 @@ test("add-ons workspace renders registry status and governed open actions", asyn
   assert.match(container.textContent, /Project update/);
   assert.match(container.textContent, /provider draft surfaces for human review only/);
   const buttons = [...container.querySelectorAll(".addon-card > .addon-card-actions button")];
-  assert.equal(buttons.length, 3);
+  assert.equal(buttons.length, 4);
   assert.equal(buttons.find((button) => /OpenCode/.test(button.textContent)).disabled, true);
   buttons.find((button) => /Hermes/.test(button.textContent)).click();
   buttons.find((button) => /Living Archive/.test(button.textContent)).click();
+  buttons.find((button) => /Blackboard/.test(button.textContent)).click();
   assert.deepEqual(opened, ["hermes", "memory"]);
+  assert.deepEqual(blackboardOpened, ["blackboard"]);
 
   const enableHermes = [...container.querySelectorAll(".addon-execution-panel button")]
     .find((button) => /Enable local execution/.test(button.textContent));
@@ -328,11 +334,14 @@ test("add-ons workspace reports bridge failures without exposing secrets", async
     container,
     bridgeRequest: async () => {
       throw new Error("host unavailable token=abc123 sk-settings-secret");
-    }
+    },
+    onOpenBlackboard: () => undefined
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.match(container.textContent, /Add-on registry unavailable: host unavailable/);
+  assert.match(container.textContent, /Local visual Blackboard remains available/);
+  assert.match(container.textContent, /Resonant Blackboard/);
   assert.match(container.textContent, /Delegation review unavailable: host unavailable/);
   assert.match(container.textContent, /Draft review unavailable: host unavailable/);
   assert.equal(container.querySelector(".addons-status").dataset.tone, "error");
@@ -348,11 +357,14 @@ test("add-ons workspace replaces raw bridge fetch failures with setup guidance",
     container,
     bridgeRequest: async () => {
       throw new TypeError("Failed to fetch");
-    }
+    },
+    onOpenBlackboard: () => undefined
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.match(container.textContent, /Add-on registry unavailable: ResonantOS bridge is unreachable/);
+  assert.match(container.textContent, /Local visual Blackboard remains available/);
+  assert.match(container.textContent, /Resonant Blackboard/);
   assert.match(container.textContent, /Delegation review unavailable: ResonantOS bridge is unreachable/);
   assert.match(container.textContent, /Draft review unavailable: ResonantOS bridge is unreachable/);
   assert.match(container.textContent, /Settings > Bridge Target/);

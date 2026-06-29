@@ -1,4 +1,5 @@
 import { parseNaturalDelegationIntent } from "./app-command-handlers.js";
+import { isBlackboardSlashCommand, parseBlackboardNaturalIntent } from "./blackboard-controller.js";
 import {
   parseAutonomousBrowserActionIntent,
   parseClickIntent,
@@ -52,6 +53,14 @@ export function createSidePanelCommandRouter(handlers) {
         return handlers.saveWalletDaoAuditToArchive(body.replace(/^audit\b/i, "").trim());
       }
       if (name === "dao") return handlers.prepareDaoWorkflowGuidance(body);
+      if (isBlackboardSlashCommand(value) && typeof handlers.runBlackboardCommand === "function") {
+        return handlers.runBlackboardCommand(value);
+      }
+    }
+
+    const blackboardIntent = parseBlackboardNaturalIntent(value);
+    if (blackboardIntent && typeof handlers.runBlackboardCommand === "function") {
+      return handlers.runBlackboardCommand(blackboardIntent);
     }
 
     const controlIntent = parseControlIntent(value);

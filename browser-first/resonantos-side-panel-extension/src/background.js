@@ -40,6 +40,10 @@ const APPROVAL_REQUIRED_ACTIONS = new Set([
 ]);
 
 const MAIN_WORKSPACE_PATH = "/src/main-workspace.html";
+const BLACKBOARD_PATH = "/src/addons/blackboard/blackboard.html";
+const BLACKBOARD_CHANNEL = "resonantos.blackboard";
+const BLACKBOARD_RELAY_CHANNEL = "resonantos.blackboard.relay";
+const BLACKBOARD_TO_PANEL_CHANNEL = "resonantos.blackboard.to_panel";
 
 // `bridgeRequest` is `let` (not `const`) because the rebind chain below
 // replaces it once loopback detection has settled. Anything that holds
@@ -139,6 +143,13 @@ const isMainWorkspaceUrl = (url = "") => {
   }
 };
 
+const isExtensionPageSender = (sender = {}) => {
+  const extensionOrigin = chrome.runtime.getURL("").replace(/\/$/, "");
+  return [sender.url, sender.origin, sender.tab?.url]
+    .filter((value) => typeof value === "string")
+    .some((value) => value === extensionOrigin || value.startsWith(`${extensionOrigin}/`));
+};
+
 const activeTabForWindow = async (windowId) => {
   const query = windowId === undefined
     ? { active: true, currentWindow: true }
@@ -227,6 +238,45 @@ const rememberResonantContextSnapshot = (message, sender) => {
   return { ok: true };
 };
 
+const isBlackboardUrl = (url = "") => {
+  try {
+    return new URL(url).pathname === BLACKBOARD_PATH;
+  } catch {
+    return false;
+  }
+};
+
+const handleBlackboardRelay = async (message) => {
+  const payload = message?.payload;
+  if (!payload || payload.channel !== BLACKBOARD_CHANNEL) {
+    return { ok: false, error: "Invalid Blackboard relay payload." };
+  }
+  const tabs = await chrome.tabs.query({}).catch(() => []);
+  const tab = tabs.find((item) => isBlackboardUrl(item.url));
+  if (tab?.id === undefined) {
+    return { ok: false, error: "Blackboard tab is not open." };
+  }
+  await chrome.storage.session.set({
+    blackboardRelay: {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      payload,
+      receivedAt: new Date().toISOString(),
+      tabId: tab.id
+    }
+  });
+  await chrome.runtime.sendMessage(payload).catch(() => undefined);
+  return { ok: true, tabId: tab.id };
+};
+
+const handleBlackboardToPanel = async (message) => {
+  const record = {
+    ...(message?.payload && typeof message.payload === "object" ? message.payload : {}),
+    receivedAt: new Date().toISOString()
+  };
+  await chrome.storage.session.set({ blackboardToPanel: record });
+  return { ok: true };
+};
+
 // Fetch capability tokens from the bridge on service-worker startup.
 // Tokens are NOT stored in the generated config; the endpoint requires the
 // bridge token plus a separate capability-bootstrap token.
@@ -279,6 +329,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (!message) {
     return false;
+  }
+
+  if (message.channel === BLACKBOARD_RELAY_CHANNEL) {
+    if (!isExtensionPageSender(sender)) {
+      sendResponse({ ok: false, error: "Blackboard relay is restricted to ResonantOS extension pages." });
+      return true;
+    }
+    void handleBlackboardRelay(message)
+      .then(sendResponse)
+      .catch((error) => sendResponse({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      }));
+    return true;
+  }
+
+  if (message.channel === BLACKBOARD_TO_PANEL_CHANNEL) {
+    if (!isExtensionPageSender(sender)) {
+      sendResponse({ ok: false, error: "Blackboard context return is restricted to ResonantOS extension pages." });
+      return true;
+    }
+    void handleBlackboardToPanel(message)
+      .then(sendResponse)
+      .catch((error) => sendResponse({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      }));
+    return true;
   }
 
   if (message.type === "resonant-context-snapshot") {

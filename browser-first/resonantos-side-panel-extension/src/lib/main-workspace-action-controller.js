@@ -75,7 +75,10 @@ export function createMainWorkspaceActionController({
   openMemoryReviewQueue,
   openSidebar,
   persistActiveWorkspace,
+  prepareSystemPrompt = (prompt) => prompt,
+  processAssistantReply = async (reply) => reply,
   renderAll,
+  runBlackboardCommand,
   setActiveWorkspace,
   setComposerBusy,
   setPendingWorkspaceAction,
@@ -126,11 +129,12 @@ export function createMainWorkspaceActionController({
           surface: "main-workspace",
           workload: "augmentor-chat",
           thinkingDepth: getThinkingDepth(),
-          systemPrompt: getPersonalizationSettings()?.augmentor?.systemPrompt ?? "",
+          systemPrompt: prepareSystemPrompt(getPersonalizationSettings()?.augmentor?.systemPrompt ?? ""),
           messages: providerMessagesFromHistory(chatSessionStore.getMessages())
         }
       });
-      await addMessage("assistant", assistantTextFromResponse(response) || "No response was returned.", {
+      const assistantText = await processAssistantReply(assistantTextFromResponse(response));
+      await addMessage("assistant", assistantText || "No response was returned.", {
         usage: response?.usage ?? null
       });
       updateConnectionLine("Ready");
@@ -311,6 +315,8 @@ export function createMainWorkspaceActionController({
       await runOpenCodeCommand(prompt);
     } else if (promptPlan.action === "hermes") {
       await runHermesDelegation(prompt);
+    } else if (promptPlan.action === "blackboard" && typeof runBlackboardCommand === "function") {
+      await runBlackboardCommand(promptPlan.command ?? prompt);
     } else if (promptPlan.action === "delegate") {
       await runNaturalDelegation(promptPlan.intent);
     } else if (promptPlan.action === "delegations") {
