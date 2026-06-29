@@ -58,7 +58,15 @@ export function createSidePanelCommandRouter(handlers) {
     if (controlIntent) return handlers.runControlCommand(controlIntent.goal);
 
     const delegationIntent = parseNaturalDelegationIntent(value);
-    if (delegationIntent) return handlers.runNaturalDelegationCommand(delegationIntent);
+    if (delegationIntent) {
+      if (typeof handlers.runNaturalDelegationCommand === "function") {
+        return handlers.runNaturalDelegationCommand(delegationIntent);
+      }
+      if (!delegationIntent.missingTarget && delegationIntent.target && typeof handlers.runDelegateCommand === "function") {
+        const mission = delegationIntent.mission ? ` ${delegationIntent.mission}` : "";
+        return handlers.runDelegateCommand(`${delegationIntent.target}${mission}`.trim());
+      }
+    }
 
     const typeIntent = parseTypeIntent(value);
     if (typeIntent) return handlers.typeIntoActivePage(typeIntent);

@@ -196,6 +196,22 @@ test("side panel command router dispatches natural delegation before chat", asyn
   ]);
 });
 
+test("side panel command router falls back to slash delegation if natural handler is missing", async () => {
+  const calls = [];
+  const router = createSidePanelCommandRouter({
+    bindMentionedTab: async (...args) => calls.push(["bind", ...args]),
+    runChatTurn: async (...args) => calls.push(["chat", ...args]),
+    runDelegateCommand: async (...args) => calls.push(["delegate", ...args])
+  });
+
+  await router.respondToCommand("ask Hermes to research the project options");
+
+  assert.deepEqual(calls, [
+    ["bind", "ask Hermes to research the project options"],
+    ["delegate", "hermes research the project options"]
+  ]);
+});
+
 test("side panel command router gates wallet terms and falls back to chat", async () => {
   const harness = createHarness();
 
