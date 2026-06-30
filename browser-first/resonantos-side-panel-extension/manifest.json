@@ -8,7 +8,7 @@
   "permissions": ["activeTab", "clipboardRead", "clipboardWrite", "history", "scripting", "sidePanel", "storage", "tabs", "webNavigation"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:* https://127.0.0.1:* https://localhost:*; img-src 'self' data: blob: http://127.0.0.1:* http://localhost:* https://127.0.0.1:* https://localhost:*; style-src 'self' 'unsafe-inline'; frame-src http://127.0.0.1:* http://localhost:* https://127.0.0.1:* https://localhost:*;"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:* https://127.0.0.1:* https://localhost:* http://*:* https://*:*; img-src 'self' data: blob: http://127.0.0.1:* http://localhost:* https://127.0.0.1:* https://localhost:* http://*:* https://*:*; style-src 'self' 'unsafe-inline'; frame-src http://127.0.0.1:* http://localhost:* https://127.0.0.1:* https://localhost:* http://*:* https://*:*;"
   },
   "background": {
     "service_worker": "src/background.js",
