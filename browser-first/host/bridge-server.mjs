@@ -379,14 +379,6 @@ function createDashboardProxyUpgradeHandler({
       if (HOP_BY_HOP_HEADERS.has(lower) && lower !== "connection" && lower !== "upgrade") continue;
       headers[lower] = value;
     }
-    // Rewrite Origin to the upstream's loopback bound origin so the
-    // dashboard's loopback-only Host/Origin check accepts the
-    // forwarded WS upgrade. Same rationale as the HTTP forward path
-    // in createAddonProxyHandler — see the comment there.
-    if (Object.prototype.hasOwnProperty.call(headers, "origin")) {
-      headers["x-forwarded-origin"] = headers["origin"];
-      headers["origin"] = `http://${upstreamHostnameValue}:${upstreamPortValue}`;
-    }
     // Ensure Connection/Upgrade are present so the upstream treats
     // this as a real upgrade. Browsers always send these, but other
     // WebSocket clients (e.g. `ws`, websocket-as-library) might not.
@@ -628,18 +620,6 @@ function createAddonProxyHandler({
       const lower = String(key).toLowerCase();
       if (HOP_BY_HOP_HEADERS.has(lower)) continue;
       headers[lower] = value;
-    }
-    // Rewrite Origin to the upstream's loopback bound origin so the
-    // dashboard's loopback-only Host/Origin check (web_server.py
-    // _ws_host_origin_reason / host_header_middleware) accepts the
-    // forwarded request. Browsers send an Origin that targets the
-    // public bridge URL (e.g. "https://100.112.42.40:19443"); the
-    // upstream Hermes is bound to "127.0.0.1:9119" and rejects any
-    // non-loopback Origin. Preserve the original in X-Forwarded-Origin
-    // so operators can still see the real client origin in upstream logs.
-    if (Object.prototype.hasOwnProperty.call(headers, "origin")) {
-      headers["x-forwarded-origin"] = headers["origin"];
-      headers["origin"] = `http://${upstreamHostnameValue}:${upstreamPortValue}`;
     }
 
     const upstreamReq = http.request(
