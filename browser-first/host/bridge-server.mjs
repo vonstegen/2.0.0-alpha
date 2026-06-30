@@ -113,6 +113,7 @@ function dashboardProxyPathPrefix() {
 // path. See createDashboardProxyHandler for the full set of rules.
 const DASHBOARD_PROXY_MIRROR_PATHS = Object.freeze([
   Object.freeze({ bridge: "/hermes-dashboard", upstream: "" }),
+  Object.freeze({ bridge: "/auth", upstream: "/auth" }),
   Object.freeze({ bridge: "/api", upstream: "/api" }),
   Object.freeze({ bridge: "/assets", upstream: "/assets" }),
   Object.freeze({ bridge: "/fonts-terminal", upstream: "/fonts-terminal" }),
