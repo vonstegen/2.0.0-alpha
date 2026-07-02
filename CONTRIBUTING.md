@@ -83,6 +83,28 @@ Open a GitHub issue with:
 - Environment: OS, Node.js version, browser (if applicable).
 - Relevant log output or error messages.
 
+## Issue Triage And Project 2
+
+GitHub Issues are the public intake list. Project 2 is the release planning
+source of truth for the alpha gate. The `project-issue-sync` workflow keeps
+open issues and PRs on Project 2 and mirrors the Project fields into labels:
+
+- `Release Scope` becomes `scope:*` labels such as `scope:alpha-mvp`,
+  `scope:community-test`, or `scope:deferred`.
+- `Area` becomes `area:*` labels such as `area:bridge`, `area:chat`,
+  `area:hermes`, or `area:docs`.
+
+Community contributors should start with issues labeled
+`scope:community-test`, `help wanted`, or `good first issue` when available.
+Maintainers should triage new Project 2 items from `Inbox` by setting
+`Release Scope`, `Area`, and `Status`; the labels will be backfilled by the
+sync workflow.
+
+For unattended org-project writes, maintainers should configure the repository
+secret `PROJECT_SYNC_TOKEN` with repo issue/PR access and Project write access.
+The workflow falls back to `GITHUB_TOKEN` for repo-only operations, but org
+Project mutations may require the explicit token.
+
 ## Provider Configuration
 
 Never commit API keys, provider secrets, or wallet credentials. Secrets belong

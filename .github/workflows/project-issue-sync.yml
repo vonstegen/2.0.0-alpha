@@ -1,0 +1,46 @@
+name: project-issue-sync
+
+on:
+  issues:
+    types: [opened, reopened, edited, labeled, unlabeled, closed]
+  pull_request:
+    types: [opened, reopened, ready_for_review, converted_to_draft, closed, labeled, unlabeled]
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Log planned Project/label changes without writing them."
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  sync:
+    name: Sync Project 2 release fields and issue labels
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Sync project and labels
+        env:
+          # Org Project writes may require a PAT with Project access.
+          GITHUB_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN || github.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+        run: |
+          args=""
+          if [ "$DRY_RUN" = "true" ]; then
+            args="--dry-run"
+          fi
+          node scripts/sync-project-issue-labels.mjs $args
