@@ -102,8 +102,9 @@ sync workflow.
 
 For unattended org-project writes, maintainers should configure the repository
 secret `PROJECT_SYNC_TOKEN` with repo issue/PR access and Project write access.
-The workflow falls back to `GITHUB_TOKEN` for repo-only operations, but org
-Project mutations may require the explicit token.
+Until that secret exists, the workflow logs a warning and skips hosted Project
+sync; maintainers can still run `scripts/sync-project-issue-labels.mjs`
+locally with an authenticated `gh` token for one-off backfills.
 
 ## Provider Configuration
 

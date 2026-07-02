@@ -33,18 +33,22 @@ jobs:
         with:
           node-version: 22
 
-      - name: Warn when Project token is missing
+      - name: Check Project token
+        id: project-token
         env:
           HAS_PROJECT_SYNC_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN != '' }}
         run: |
           if [ "$HAS_PROJECT_SYNC_TOKEN" != "true" ]; then
             echo "::warning::PROJECT_SYNC_TOKEN is not configured. The default repo token may not be able to read or update org-level Project 2."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Sync project and labels
+        if: steps.project-token.outputs.configured == 'true'
         env:
-          # Org Project writes may require a PAT with Project access.
-          GITHUB_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN || github.token }}
+          GITHUB_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
         run: |
           args=""
