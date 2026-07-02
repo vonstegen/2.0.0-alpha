@@ -33,6 +33,14 @@ jobs:
         with:
           node-version: 22
 
+      - name: Warn when Project token is missing
+        env:
+          HAS_PROJECT_SYNC_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN != '' }}
+        run: |
+          if [ "$HAS_PROJECT_SYNC_TOKEN" != "true" ]; then
+            echo "::warning::PROJECT_SYNC_TOKEN is not configured. The default repo token may not be able to read or update org-level Project 2."
+          fi
+
       - name: Sync project and labels
         env:
           # Org Project writes may require a PAT with Project access.

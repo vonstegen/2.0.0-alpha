@@ -66,7 +66,21 @@ const summary = {
   skippedWithoutFields: 0,
 };
 
-const project = await getProject(projectOwner, projectNumber);
+let project;
+try {
+  project = await getProject(projectOwner, projectNumber);
+} catch (error) {
+  if (isProjectAccessError(error)) {
+    fail(
+      [
+        `Project ${projectOwner}/${projectNumber} is not visible to the token used by this run.`,
+        "For GitHub Actions, configure the repository secret PROJECT_SYNC_TOKEN",
+        "with repo issue/PR access and organization Project read/write access.",
+      ].join(" "),
+    );
+  }
+  throw error;
+}
 const requiredFields = getRequiredFields(project);
 const projectItems = await listProjectItems(projectOwner, projectNumber);
 const contentIdToProjectItem = new Map(
@@ -188,6 +202,10 @@ function invertMap(map) {
 function fail(message) {
   console.error(message);
   process.exit(1);
+}
+
+function isProjectAccessError(error) {
+  return /Could not resolve to a ProjectV2|Project .* was not found/.test(String(error?.message ?? error));
 }
 
 async function githubRequest(path, options = {}) {
