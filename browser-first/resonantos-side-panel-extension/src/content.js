@@ -4,6 +4,20 @@
 (() => {
 if (window.__resonantOSContentScriptLoaded) return;
 window.__resonantOSContentScriptLoaded = true;
+function sanitizeBrowserContextUrl(value, base = window.location.href) {
+  if (!String(value ?? "").trim()) return "";
+  try {
+    const url = new URL(String(value || ""), base);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.href;
+  } catch {
+    return "";
+  }
+}
 (function initResonantContextSDK() {
   try {
     if (typeof window.ResonantContext === 'undefined' || typeof window._ResonantContext === 'undefined') {
@@ -11,42 +25,92 @@ window.__resonantOSContentScriptLoaded = true;
       return;
     }
 
-    var _rcCollector = window.ResonantContext.init({
-      plugin: {
-        domain: 'resonantos-browser-layer',
-        viewportThreshold: 0.4,
-        maxTextChars: 600,
-        clickSelectors: 'a, button, [role="button"], input[type="submit"], [onclick]',
-        persistSession: true,
-        pages: {
-          default: {
-            match: function () { return true; },
-            sections: [
-              { selector: 'main',    label: 'Main content', priority: 8 },
-              { selector: 'article', label: 'Article',      priority: 7 },
-              { selector: 'header',  label: 'Header',       priority: 4 },
-              { selector: 'nav',     label: 'Navigation',   priority: 3 },
-              { selector: 'footer',  label: 'Footer',       priority: 1 }
-            ]
-          }
+    if (window.top !== window) {
+      return;
+    }
+
+    var _rcFallbackPlugin = {
+      domain: 'generic-web',
+      viewportThreshold: 0.4,
+      maxTextChars: 600,
+      clickSelectors: 'a, button, [role="button"], input[type="submit"], [onclick]',
+      persistSession: true,
+      pages: {
+        default: {
+          match: function () { return true; },
+          sections: [
+            { selector: 'main',    label: 'Main content', priority: 8 },
+            { selector: 'article', label: 'Article',      priority: 7 },
+            { selector: 'header',  label: 'Header',       priority: 4 },
+            { selector: 'nav',     label: 'Navigation',   priority: 3 },
+            { selector: 'footer',  label: 'Footer',       priority: 1 }
+          ]
         }
       }
-    });
+    };
+    var _rcPlugin = window.ResonantOSContextPlugins?.getPluginForDomain?.(window.location.hostname) || _rcFallbackPlugin;
+    var _rcCollector = window.ResonantContext.init({ plugin: _rcPlugin });
 
     // Broadcast snapshots to the background service worker so the side-panel
     // can access live page context without making a separate read_page round-trip.
     var _rcSnapshotTimer = null;
+    var _rcLastSnapshotAt = 0;
+    function _rcSanitizeText(value, max) {
+      return String(value || '')
+        .replace(/-----BEGIN [^-]+ PRIVATE KEY-----[\s\S]*?-----END [^-]+ PRIVATE KEY-----/g, '[redacted]')
+        .replace(/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, '[redacted]')
+        .replace(/\b(?:sk-[A-Za-z0-9_-]{12,}|sk-ant-[A-Za-z0-9_-]{12,}|sk-or-v1-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]{12,}|hf_[A-Za-z0-9_-]{12,}|xox[baprs]-[A-Za-z0-9-]{12,}|xai-[A-Za-z0-9_-]{12,}|gsk_[A-Za-z0-9_-]{12,}|AIza[A-Za-z0-9_-]{12,}|AKIA[A-Z0-9]{12,}|pk_live_[A-Za-z0-9]{12,}|rk_live_[A-Za-z0-9]{12,})\b/gi, '[redacted]')
+        .replace(/\b(?:api[_-]?key|token|password|secret|authorization|bearer|session|cookie)\s*[:=]\s*['"]?[^'"\s]+/gi, '[redacted]')
+        .replace(/\b(?:\d[ -]?){13,19}\b/g, function (candidate) {
+          var digits = candidate.replace(/\D/g, '');
+          return digits.length >= 13 && digits.length <= 19 ? '[redacted]' : candidate;
+        })
+        .replace(/\s{3,}/g, '  ')
+        .trim()
+        .slice(0, max || 1000);
+    }
+    function _rcSanitizeUrl(value) {
+      return sanitizeBrowserContextUrl(value);
+    }
+    function _rcSanitizeStructured(value, depth, keyName) {
+      if (value === null || value === undefined) return value;
+      if (/^(value|password|passwd|pwd|secret|token|access[-_ ]?token|refresh[-_ ]?token|id[-_ ]?token|api[-_ ]?key|apikey|auth|authorization|bearer|cookie|session|credential|credentials|client[-_ ]?secret|private[-_ ]?key|seed|otp|2fa|mfa)$/i.test(String(keyName || ''))) {
+        return value ? '[redacted]' : value;
+      }
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        return _rcSanitizeText(value, 1000);
+      }
+      if (Array.isArray(value)) {
+        if (depth > 3) return [];
+        return value.slice(0, 30).map(function (entry) { return _rcSanitizeStructured(entry, depth + 1, keyName); });
+      }
+      if (typeof value === 'object') {
+        if (depth > 3) return {};
+        return Object.fromEntries(Object.entries(value).slice(0, 40).map(function (entry) {
+          return [_rcSanitizeText(entry[0], 80), _rcSanitizeStructured(entry[1], depth + 1, entry[0])];
+        }));
+      }
+      return '';
+    }
+    function _rcSanitizeSnapshot(snapshot) {
+      var safe = _rcSanitizeStructured(snapshot, 0, '');
+      safe.url = _rcSanitizeUrl(snapshot?.url || window.location.href);
+      if (safe.page?.path) safe.page.path = String(safe.page.path).split(/[?#]/)[0].slice(0, 300);
+      return safe;
+    }
     function _rcScheduleSnapshot() {
+      if (window.top !== window) return;
       if (_rcSnapshotTimer) return;
       _rcSnapshotTimer = window.setTimeout(function () {
         _rcSnapshotTimer = null;
+        _rcLastSnapshotAt = Date.now();
         try {
-          var snapshot = _rcCollector.getContext();
+          var snapshot = _rcSanitizeSnapshot(_rcCollector.getContext());
           if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
             chrome.runtime.sendMessage({ type: 'resonant-context-snapshot', payload: snapshot });
           }
         } catch (_e) { /* extension may have been reloaded */ }
-      }, 500);
+      }, Math.max(500, 1500 - (Date.now() - _rcLastSnapshotAt)));
     }
 
     // Send an initial snapshot and re-send on navigation or meaningful DOM changes.
@@ -54,6 +118,15 @@ window.__resonantOSContentScriptLoaded = true;
     document.addEventListener('visibilitychange', _rcScheduleSnapshot);
     window.addEventListener('popstate', _rcScheduleSnapshot);
     window.addEventListener('hashchange', _rcScheduleSnapshot);
+    if (typeof MutationObserver !== 'undefined') {
+      var _rcMutationTarget = document.body || document.documentElement;
+      if (_rcMutationTarget) {
+        new MutationObserver(_rcScheduleSnapshot).observe(_rcMutationTarget, {
+          childList: true,
+          subtree: true
+        });
+      }
+    }
 
     // Expose collector on window for debugging / other content-script modules.
     window._resonantContextCollector = _rcCollector;
@@ -119,17 +192,17 @@ const visiblePageText = () => [
 
 const pageSnapshot = () => ({
   title: document.title,
-  url: location.href,
+  url: sanitizeBrowserContextUrl(location.href),
   frame: {
     isTop: window.top === window,
-    referrer: document.referrer || ""
+    referrer: sanitizeBrowserContextUrl(document.referrer)
   },
   text: visiblePageText(),
   iframes: querySelectorAllDeep("iframe")
     .slice(0, 20)
     .map((frame) => ({
       title: frame.getAttribute("title") || frame.getAttribute("aria-label") || "",
-      src: frame.src || "",
+      src: sanitizeBrowserContextUrl(frame.src),
       width: frame.width || frame.getBoundingClientRect().width,
       height: frame.height || frame.getBoundingClientRect().height
     })),
@@ -142,7 +215,7 @@ const pageSnapshot = () => ({
     .slice(0, 80)
     .map((link) => ({
       text: link.textContent?.trim().slice(0, 160) ?? "",
-      href: link.href
+      href: sanitizeBrowserContextUrl(link.href)
     })),
   controls: candidateClickElements()
     .slice(0, 80)
@@ -181,7 +254,7 @@ const describeForms = () => ({
       index,
       id: form.id || "",
       name: form.getAttribute("name") || "",
-      action: form.action || "",
+      action: sanitizeBrowserContextUrl(form.action),
       method: form.method || "get",
       fields: querySelectorAllDeep(editableSelector, { root: form })
         .filter((field) => !isResonantosInternalElement(field))
@@ -277,7 +350,7 @@ const formContextDetails = (element) => {
   if (!form) return null;
   const forms = querySelectorAllDeep("form");
   return {
-    action: clippedText(form.action || form.getAttribute("action") || "", 160),
+    action: clippedText(sanitizeBrowserContextUrl(form.action || form.getAttribute("action") || ""), 160),
     id: form.id || "",
     index: Math.max(1, forms.indexOf(form) + 1),
     label: contextLabel(form),
@@ -916,7 +989,7 @@ const runInlineAction = async (action) => {
     await chrome.storage?.local?.set?.({
       augmentorInlineDraft: {
         selection,
-        url: location.href,
+        url: sanitizeBrowserContextUrl(location.href),
         title: document.title,
         createdAt: new Date().toISOString()
       }
@@ -975,7 +1048,7 @@ const runInlineAction = async (action) => {
         action,
         prompt,
         selection,
-        pageContext: `${document.title}\n${location.href}\n${document.body?.innerText?.slice(0, 3000) ?? ""}`
+        pageContext: `${document.title}\n${sanitizeBrowserContextUrl(location.href)}\n${document.body?.innerText?.slice(0, 3000) ?? ""}`
       }
       }),
       timeoutAfter(5000, "Inline assistant provider timed out.")
@@ -1030,6 +1103,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || message.channel !== "resonantos.browser_first.content") {
     return false;
   }
+  if (!isTopWindow()) {
+    return false;
+  }
 
   if (message.type === "read_page") {
     if (isTopWindow() && document.getElementById(controlOverlayId)?.dataset.session !== "active") {
@@ -1043,7 +1119,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "get_selection") {
-    sendResponse({ ok: true, selection: currentSelectionDetails(), title: document.title, url: location.href });
+    sendResponse({ ok: true, selection: currentSelectionDetails(), title: document.title, url: sanitizeBrowserContextUrl(location.href) });
     return true;
   }
 
@@ -1067,6 +1143,32 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     button.style.top = `${Math.min(window.innerHeight - 42, Math.max(8, rect.bottom + 8))}px`;
     button.style.display = "block";
     sendResponse({ ok: true, textLength: text.length });
+    return true;
+  }
+
+  if (message.type === "resonator") {
+    const action = String(message.action ?? "").toLowerCase();
+    const allowedActions = new Set(["arrow", "clear", "highlight", "spotlight", "step"]);
+    if (!allowedActions.has(action)) {
+      sendResponse({ ok: false, error: "Unknown Resonator action." });
+      return true;
+    }
+    const resonator = window.Resonator;
+    if (!resonator || typeof resonator[action] !== "function") {
+      sendResponse({ ok: false, error: "Resonator is not available on this page." });
+      return true;
+    }
+    const payload = message.payload && typeof message.payload === "object" ? message.payload : {};
+    if (action !== "clear") {
+      resonator.clear?.();
+    }
+    const result = resonator[action](payload);
+    sendResponse({
+      ok: action === "clear" ? true : result?.ok !== false,
+      action,
+      result,
+      error: result?.ok === false ? result.error : undefined
+    });
     return true;
   }
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  isTopFrameSender,
   sanitizeInlineAssistantBody,
   sanitizeResonantContextSnapshot
 } from "../resonantos-side-panel-extension/src/lib/background-message-policy.js";
@@ -45,4 +46,65 @@ test("background policy bounds and redacts Resonant Context snapshots", () => {
   assert.equal(snapshot.text.length, 7000);
   assert.equal(snapshot.sections.length, 8);
   assert.match(snapshot.sections[0].text, /\[redacted\]/);
+});
+
+test("background policy enforces top-frame snapshot ownership", () => {
+  assert.equal(isTopFrameSender({ frameId: 0 }), true);
+  assert.equal(isTopFrameSender({ frameId: 1 }), false);
+  assert.equal(isTopFrameSender({}), false);
+});
+
+test("background policy preserves rich context while redacting nested secrets", () => {
+  const snapshot = sanitizeResonantContextSnapshot({
+    v: "1.0",
+    domain: "github.com",
+    title: "Repo",
+    url: "https://github.com/org/repo?token=ghp_abcdefghijklmnop#access_token=secret",
+    summary: "Active api_key=supersecret-value",
+    page: {
+      path: "/org/repo/pull/1?code=SECRET",
+      title: "Repo",
+      headings: [
+        "Review ghp_abcdefghijklmnop",
+        "Card 4111 2222 3333 4444"
+      ],
+      visibleText: "Bearer token=abc1234567890"
+    },
+    viewport: {
+      visibleSections: [
+        { id: "#readme", label: "README", text: "sk-ant-abcdefghijklmnop", currentlyVisible: true, pctVisible: 77 }
+      ],
+      activeOverlay: { id: "dialog", type: "dialog", content: "JWT eyJabcdefghijkl.mnopqrstuv.wxyzabcdef" }
+    },
+    forms: [
+      {
+        id: "#login",
+        name: "Login",
+        completeness: 1,
+        fields: [
+          { name: "password", type: "password", value: "hunter2" },
+          { name: "q", type: "search", fieldKind: "search-query", value: "resonantos" }
+        ]
+      }
+    ],
+    session: {
+      navigation: [{ path: "/settings?token=secret", title: "Settings", dwellMs: 12 }],
+      clickTrail: [{ selector: "#save", text: "Save sk-or-v1-abcdefghijklmnop", ts: 9 }],
+      entryPoint: "https://example.com/start?session=secret"
+    },
+    domain_data: {
+      token: "abc1234567890",
+      nested: { heading: "safe", card: "4111-2222-3333-4444" }
+    }
+  }, { tabId: 9 });
+
+  const serialized = JSON.stringify(snapshot);
+  assert.equal(snapshot.tabId, 9);
+  assert.equal(snapshot.url, "https://github.com/org/repo");
+  assert.equal(snapshot.page.path, "/org/repo/pull/1");
+  assert.match(serialized, /github\.com|README|resonantos/);
+  assert.doesNotMatch(serialized, /ghp_abcdefghijklmnop|4111 2222 3333 4444|4111-2222-3333-4444|hunter2|supersecret-value|sk-ant|sk-or-v1|abc1234567890/);
+  assert.match(snapshot.forms[0].fields[0].value, /\[redacted:credential\]/);
+  assert.equal(snapshot.forms[0].fields[1].value, "resonantos");
+  assert.equal(snapshot.domain_data.token, "[redacted]");
 });

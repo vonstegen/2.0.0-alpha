@@ -44,6 +44,9 @@ export function createSidePanelCommandRouter(handlers) {
       if (name === "approve-control") return handlers.approveControlPreflight(body);
       if (name === "allow-control-once") return handlers.allowControlPreflightOnceForTaskClass(body);
       if (name === "deny-control") return handlers.denyControlPreflight(body);
+      if (["arrow", "clear", "highlight", "spotlight", "step"].includes(name)) {
+        return handlers.runResonatorCommand(name, body);
+      }
       if (name === "browser") return handlers.runBrowserCommand(body);
       if (name === "control") return handlers.runControlCommand(body);
       if (name === "save" || name === "archive" || name === "intake") return handlers.saveIntake(body);

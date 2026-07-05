@@ -59,6 +59,11 @@ test("2.0.0 alpha release scope is Chrome extension and bridge only", async () =
   assert.match(manifest.content_security_policy.extension_pages, /connect-src 'self' http:\/\/127\.0\.0\.1:\*/);
   assert.doesNotMatch(manifest.content_security_policy.extension_pages, /https?:\/\/\*:\*/);
   assert.equal(manifest.content_scripts[0].js[0], "src/lib/resonant-context.js");
+  assert.deepEqual(
+    manifest.content_scripts[0].js.slice(0, 3),
+    ["src/lib/resonant-context.js", "src/lib/context-plugins.js", "src/lib/resonator.js"],
+  );
+  assert.ok(manifest.content_scripts[0].js.includes("src/lib/content-field-safety.js"));
 });
 
 test("2.0.0 alpha release scope excludes local credential artifacts", () => {

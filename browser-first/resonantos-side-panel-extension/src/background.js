@@ -27,7 +27,7 @@ async function loadBridgeConfig() {
   return __bridgeConfigPromise;
 }
 import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, resolveBridgeConfig, initCapabilityTokens, isUnauthorizedBridgeError } from "./lib/bridge-client.js";
-import { sanitizeInlineAssistantBody, sanitizeResonantContextSnapshot } from "./lib/background-message-policy.js";
+import { isTopFrameSender, sanitizeInlineAssistantBody, sanitizeResonantContextSnapshot } from "./lib/background-message-policy.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 
 const APPROVAL_REQUIRED_ACTIONS = new Set([
@@ -210,6 +210,9 @@ const handoffToResonantSidePanel = async ({ senderTab, targetUrl = "" } = {}) =>
 };
 
 const rememberResonantContextSnapshot = (message, sender) => {
+  if (!isTopFrameSender(sender)) {
+    return { ok: false, ignored: true, error: "Only top-frame context snapshots can update active-tab context." };
+  }
   const tabId = sender.tab?.id ?? null;
   if (tabId === null) {
     return { ok: false, error: "No tab was associated with the context snapshot." };
