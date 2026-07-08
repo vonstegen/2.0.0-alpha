@@ -17,12 +17,14 @@ import { createRateLimiter } from "../src/rate-limit.mjs";
 import { createSessionToken } from "../src/auth.mjs";
 import { signState } from "../src/github-oauth.mjs";
 import { fixtures } from "../seed/fixtures.mjs";
+import { sendNodeResponse, handleListEvents } from "../src/handlers.mjs";
 import {
   handleCreateEvent,
   handleRsvp,
   handleCheckin,
   handleClaimTask,
   handleSetPresence,
+  handleAuthStart,
   handleAuthCallback,
 } from "../src/write-handlers.mjs";
 
@@ -254,6 +256,80 @@ describe("write path: GitHub OAuth callback provisions a member + issues a usabl
     const res = await handleAuthCallback({ params: { code: "abc", state: "forged.state.sig" } }, ctx);
     assert.equal(res.status, 400);
     assert.equal(res.body.error, "bad_state");
+  });
+});
+
+describe("write path: OAuth endpoints are IP rate-limited (constitution Art. VII, spec §9)", () => {
+  // The OAuth start/callback are UNauthenticated writes (no member to key on), so
+  // they must be throttled by client IP via a dedicated authRateLimiter.
+  function oauthCtx({ limit = 2 } = {}) {
+    const now = () => NOW;
+    const repo = createMemoryRepository(fixtures(), { now });
+    const rateLimiter = createRateLimiter({ limit: 100, windowMs: 60_000, now });
+    const authRateLimiter = createRateLimiter({ limit, windowMs: 60_000, now });
+    return { ctx: { repo, auth: { secret: SECRET, repo, now }, rateLimiter, authRateLimiter, oauth: fakeOAuth }, repo };
+  }
+
+  test("start: the (limit+1)th call from one IP is 429 + Retry-After", () => {
+    const { ctx } = oauthCtx({ limit: 2 });
+    const req = { ip: "203.0.113.7" };
+    assert.equal(handleAuthStart(req, ctx).status, 302);
+    assert.equal(handleAuthStart(req, ctx).status, 302);
+    const third = handleAuthStart(req, ctx);
+    assert.equal(third.status, 429);
+    assert.equal(third.body.error, "rate_limited");
+    assert.ok(third.headers["retry-after"]);
+  });
+
+  test("callback: throttled by IP BEFORE any GitHub call or member provisioning", async () => {
+    const { ctx } = oauthCtx({ limit: 1 });
+    let ghCalls = 0;
+    ctx.oauth = { ...fakeOAuth, exchangeCodeForToken: async (code) => { ghCalls += 1; return `gho_${code}`; } };
+    const state = signState(SECRET, { now: () => NOW });
+    const first = await handleAuthCallback({ params: { code: "abc", state }, ip: "203.0.113.9" }, ctx);
+    assert.equal(first.status, 200);
+    assert.equal(ghCalls, 1);
+    const second = await handleAuthCallback({ params: { code: "def", state }, ip: "203.0.113.9" }, ctx);
+    assert.equal(second.status, 429);
+    assert.equal(second.body.error, "rate_limited");
+    assert.equal(ghCalls, 1, "no outbound GitHub call once the IP is rate-limited");
+  });
+
+  test("callback limit is per-IP: a different client keeps its own budget", async () => {
+    const { ctx } = oauthCtx({ limit: 1 });
+    const state = signState(SECRET, { now: () => NOW });
+    assert.equal((await handleAuthCallback({ params: { code: "a", state }, ip: "198.51.100.1" }, ctx)).status, 200);
+    assert.equal((await handleAuthCallback({ params: { code: "b", state }, ip: "198.51.100.1" }, ctx)).status, 429);
+    assert.equal((await handleAuthCallback({ params: { code: "c", state }, ip: "198.51.100.2" }, ctx)).status, 200, "separate IP is not throttled");
+  });
+});
+
+describe("cache-control: tokens/mutations are no-store; only public reads are cacheable", () => {
+  test("the OAuth callback body (session token) is NOT publicly cacheable", async () => {
+    const { ctx } = makeCtx();
+    const state = signState(SECRET, { now: () => NOW });
+    const result = await handleAuthCallback({ params: { code: "abc", state }, ip: "203.0.113.5" }, ctx);
+    assert.equal(result.status, 200);
+    assert.ok(result.body.token, "callback returns a bearer session token");
+    const res = mockRes();
+    sendNodeResponse(res, result);
+    assert.equal(res.getHeader("cache-control"), "no-store", "token response must be no-store");
+  });
+
+  test("a 200 mutation (RSVP) is no-store", async () => {
+    const { ctx } = makeCtx();
+    const result = await handleRsvp(authed(tokenFor("m_grace"), { state: "going" }, { id: "e_kickoff" }), ctx);
+    assert.equal(result.status, 200);
+    const res = mockRes();
+    sendNodeResponse(res, result);
+    assert.equal(res.getHeader("cache-control"), "no-store");
+  });
+
+  test("a public GET read still opts into shared caching", async () => {
+    const { repo } = makeCtx();
+    const res = mockRes();
+    sendNodeResponse(res, await handleListEvents(repo));
+    assert.match(res.getHeader("cache-control"), /public, max-age=10/);
   });
 });
 

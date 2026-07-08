@@ -5,22 +5,29 @@
 // Node req/res <-> these values, so the same logic runs under `node --test`
 // offline. Reads are public (constitution Art. IV) — no auth guard here.
 
+// Cache directive for the idempotent public GET reads (events/tasks/presence).
+// ONLY these reads opt into shared/proxy caching. Everything else (writes, auth,
+// errors) is `no-store` by default in sendNodeResponse — a session token or a
+// mutation response must never be publicly cacheable (see sendNodeResponse).
+export const PUBLIC_READ_CACHE_CONTROL = "public, max-age=10, stale-while-revalidate=20";
+const READ_HEADERS = { "cache-control": PUBLIC_READ_CACHE_CONTROL };
+
 /** @param {import("./repository.mjs").Repository} repo */
 export async function handleListEvents(repo) {
   const events = await repo.listEvents();
-  return { status: 200, body: { events } };
+  return { status: 200, body: { events }, headers: { ...READ_HEADERS } };
 }
 
 /** @param {import("./repository.mjs").Repository} repo */
 export async function handleListTasks(repo) {
   const tasks = await repo.listTasks();
-  return { status: 200, body: { tasks } };
+  return { status: 200, body: { tasks }, headers: { ...READ_HEADERS } };
 }
 
 /** @param {import("./repository.mjs").Repository} repo */
 export async function handleListPresence(repo) {
   const presence = await repo.listPresence();
-  return { status: 200, body: { presence } };
+  return { status: 200, body: { presence }, headers: { ...READ_HEADERS } };
 }
 
 /**
@@ -78,15 +85,21 @@ export function requireMethod(method, allowed) {
 
 /**
  * Write a { status, body, headers } result to a Node/Vercel response.
- * Read endpoints are cache-friendly (Art. VIII availability: serve/degrade from
- * cache); tune max-age at the CDN edge in M3.
+ *
+ * Cache policy (fail-safe): `no-store` is the DEFAULT for every response, so
+ * auth-token and mutation bodies are never retained by a browser/back cache or a
+ * shared proxy — regardless of status code. Only the idempotent public GET reads
+ * opt in, by returning an explicit `cache-control` header (PUBLIC_READ_CACHE_CONTROL,
+ * see handleListEvents/Tasks/Presence). An explicit header in `headers` always wins.
+ * Tune the read max-age at the CDN edge in M3.
  */
 export function sendNodeResponse(res, result) {
   const { status = 200, body = {}, headers = {} } = result || {};
   res.statusCode = status;
   res.setHeader("content-type", "application/json; charset=utf-8");
-  if (status === 200) {
-    res.setHeader("cache-control", "public, max-age=10, stale-while-revalidate=20");
+  const hasCacheControl = Object.keys(headers).some((k) => k.toLowerCase() === "cache-control");
+  if (!hasCacheControl) {
+    res.setHeader("cache-control", "no-store");
   }
   for (const [key, value] of Object.entries(headers)) {
     res.setHeader(key, value);

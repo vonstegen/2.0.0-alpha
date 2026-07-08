@@ -147,13 +147,49 @@ export function handleSetPresence(req, ctx) {
 // --- GitHub OAuth sign-in ---------------------------------------------------
 
 /**
+ * Rate-limit an UNauthenticated OAuth endpoint by client IP (constitution Art. VII:
+ * "Every write endpoint is rate-limited"; spec §9). These endpoints have no member
+ * to key on — the callback is an unauthenticated write that provisions a member and
+ * calls GitHub — so we key by IP and use the dedicated `authRateLimiter` (falling
+ * back to the shared write limiter if a caller wired only that, e.g. unit tests).
+ *
+ * @param {{ ip?: string }} req
+ * @param {{ authRateLimiter?: any, rateLimiter: any }} ctx
+ * @param {string} route stable bucket name, e.g. "auth:github:callback"
+ * @returns {{ headers: object, limited?: object }}
+ */
+function rateLimitOAuth(req, ctx, route) {
+  const limiter = ctx.authRateLimiter ?? ctx.rateLimiter;
+  const clientKey = req?.ip || "unknown";
+  const decision = limiter.consume(`${route}:${clientKey}`);
+  const headers = {
+    "x-ratelimit-limit": String(decision.limit),
+    "x-ratelimit-remaining": String(decision.remaining),
+    "x-ratelimit-reset": String(Math.ceil(decision.resetAt / 1000)),
+  };
+  if (!decision.allowed) {
+    return {
+      headers,
+      limited: err(429, "rate_limited", "Too many sign-in attempts; slow down.", {
+        ...headers,
+        "retry-after": String(Math.ceil(decision.retryAfterMs / 1000)),
+      }),
+    };
+  }
+  return { headers };
+}
+
+/**
  * GET /v1/auth/github/start — redirect the client to GitHub's authorize page with
  * a signed, expiring CSRF `state` (plan: GitHub OAuth only, no anonymous writes).
+ * IP rate-limited: even minting `state` is throttled so it can't be used to probe.
  */
 export function handleAuthStart(req, ctx) {
+  const gate = rateLimitOAuth(req, ctx, "auth:github:start");
+  if (gate.limited) return gate.limited;
   const state = signState(ctx.auth.secret, { now: ctx.auth.now });
   const location = ctx.oauth.buildAuthorizeUrl({ state });
-  return { status: 302, headers: { location }, body: { redirect: location } };
+  return { status: 302, headers: { ...gate.headers, location }, body: { redirect: location } };
 }
 
 /**
@@ -162,6 +198,10 @@ export function handleAuthStart(req, ctx) {
  * redirect that hands the token back to the local bridge.
  */
 export async function handleAuthCallback(req, ctx) {
+  // Throttle BEFORE any provisioning or outbound GitHub call: this is an
+  // unauthenticated write, so the limiter is keyed by client IP, not member.
+  const gate = rateLimitOAuth(req, ctx, "auth:github:callback");
+  if (gate.limited) return gate.limited;
   const { code, state } = req.params ?? {};
   try {
     verifyState(state, ctx.auth.secret, { now: ctx.auth.now });
@@ -176,6 +216,7 @@ export async function handleAuthCallback(req, ctx) {
     );
     return {
       status: 200,
+      headers: { ...gate.headers },
       body: {
         token,
         member: { id: member.id, handle: member.handle, displayName: member.displayName, roles: member.roles },

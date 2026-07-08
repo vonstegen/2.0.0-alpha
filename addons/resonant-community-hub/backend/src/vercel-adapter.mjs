@@ -6,6 +6,20 @@ import { readJsonBody, sendNodeResponse } from "./handlers.mjs";
 import { getWriteContext, getOAuthContext } from "./write-context.mjs";
 
 /**
+ * Best-effort client IP for keying the unauthenticated OAuth rate limiter.
+ * On Vercel the platform sets `x-forwarded-for` (client first). Falls back to the
+ * socket address, then "unknown" (a shared bucket — still bounds total abuse).
+ * @param {any} req
+ * @returns {string}
+ */
+export function clientIp(req) {
+  const xff = req?.headers?.["x-forwarded-for"];
+  if (typeof xff === "string" && xff.trim() !== "") return xff.split(",")[0].trim();
+  if (Array.isArray(xff) && xff.length) return String(xff[0]).trim();
+  return req?.socket?.remoteAddress || req?.connection?.remoteAddress || "unknown";
+}
+
+/**
  * @param {any} req  Node/Vercel request
  * @param {any} res  Node/Vercel response
  * @param {(nreq: object, ctx: object) => Promise<{status,body,headers?}>} handler
@@ -25,7 +39,7 @@ export async function runEndpoint(req, res, handler, { needsBody = true, needsOA
   }
   try {
     const ctx = needsOAuth ? await getOAuthContext() : await getWriteContext();
-    const nreq = { headers: req.headers ?? {}, body, params: params ? params(req) : {} };
+    const nreq = { headers: req.headers ?? {}, body, params: params ? params(req) : {}, ip: clientIp(req) };
     sendNodeResponse(res, await handler(nreq, ctx));
   } catch (e) {
     sendNodeResponse(res, { status: 500, body: { error: "internal_error", message: e.message } });

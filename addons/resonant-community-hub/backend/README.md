@@ -62,7 +62,15 @@ backend/
   extension directly (Art. II).
 - **Fail closed.** Missing/forged/expired token or unknown member → 401.
 - **Rate limiting on every write** (Art. VII): fixed window keyed `<route>:<memberId>`,
-  429 + `Retry-After`, `X-RateLimit-*` headers on success.
+  429 + `Retry-After`, `X-RateLimit-*` headers on success. The **unauthenticated**
+  OAuth start/callback endpoints have no member to key on, so they run a **separate
+  limiter keyed by client IP** (`x-forwarded-for`) — the callback provisions a member
+  and calls GitHub, so it must be throttled with zero credentials.
+- **Cache policy is fail-safe.** `sendNodeResponse` defaults every response to
+  `Cache-Control: no-store`; only the idempotent public GET reads
+  (events/tasks/presence) opt into `public, max-age=10, stale-while-revalidate=20`.
+  Session-token (OAuth callback) and mutation responses are therefore never publicly
+  cacheable by a browser/back cache or shared proxy.
 
 ### Env vars (secrets from host vault / env, never committed)
 
@@ -71,7 +79,8 @@ backend/
 | `COMMUNITY_HUB_AUTH_SECRET` | HMAC key for session tokens + OAuth state (>=16 chars) |
 | `GITHUB_OAUTH_CLIENT_ID` / `_SECRET` | GitHub OAuth app credentials |
 | `GITHUB_OAUTH_REDIRECT_URI` | callback URL (optional; GitHub app default otherwise) |
-| `COMMUNITY_HUB_RATE_LIMIT` / `_WINDOW_MS` | write limit + window (default 20 / 60000) |
+| `COMMUNITY_HUB_RATE_LIMIT` / `_WINDOW_MS` | member write limit + window (default 20 / 60000) |
+| `COMMUNITY_HUB_AUTH_RATE_LIMIT` / `_WINDOW_MS` | per-IP OAuth start/callback limit + window (default 10 / 60000) |
 
 ## Design
 
