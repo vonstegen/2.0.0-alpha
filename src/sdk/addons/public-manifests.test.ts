@@ -94,4 +94,14 @@ describe("bundled add-on manifests", () => {
 
     expect(validation.issues.filter((issue) => issue.severity === "error")).toEqual([]);
   });
+
+  it("keeps the Community Hub add-on manifest sideloadable", () => {
+    const manifest = JSON.parse(
+      readFileSync(resolve(process.cwd(), "examples", "addons", "community-hub.json"), "utf8"),
+    ) as unknown;
+
+    const validation = validateAddOnManifest(manifest, { source: "sideload" });
+
+    expect(validation.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+  });
 });

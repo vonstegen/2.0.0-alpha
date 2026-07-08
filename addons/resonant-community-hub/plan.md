@@ -1,0 +1,80 @@
+# Community Hub — Technical Plan
+
+- Derived from [`spec.md`](./spec.md); governed by [`constitution.md`](./constitution.md).
+- Plan version: 0.1.0 · 2026-07-07
+
+> This plan translates the spec into buildable technical decisions and a task
+> breakdown. Decisions marked **(default)** are recommended defaults chosen to
+> keep M1 unblocked; they may be revisited via a spec amendment before the
+> affected milestone starts.
+
+## Decisions
+
+| Area | Decision | Rationale |
+|---|---|---|
+| Serverless platform | **Vercel Functions (default)** | The environment already carries Vercel tooling/skills; lowest-friction deploys. Cloudflare Workers is the fallback if edge-only/cost pushes it. |
+| Managed DB | **Neon Postgres (default)** | Serverless Postgres, branchable, pairs cleanly with Vercel. Turso/libSQL is the fallback for SQLite-style edge reads. |
+| Auth | **GitHub OAuth + magic-link fallback (default)** | Dev-community audience skews GitHub; magic-link covers non-GitHub members. No anonymous writes (constitution Art. IV). |
+| Communities in v1 | **Single global community (default)** | Ship the loop first; multi-community is a later schema/route addition. |
+| Sync | **Polling, ~20s** | Constitution Art. VI — localhost bridge cannot receive webhooks. |
+| Token storage | **Host vault / user-config scope** | Per-user Plane-style secret never committed; connector `configScope: host-vault`. |
+
+Open items still needing a call before M2: final OAuth provider set, and platform/DB
+pair confirmation (see spec §11).
+
+## Architecture (build view)
+
+```
+extension UI (src/modules/community-hub)          <- M3
+      │  bridge RPC
+local-service host (addons/resonant-community-hub/src)  <- M3, proxies + polls
+      │  HTTPS (outbound, like provider-bridge-service.mjs)
+Community API  (backend/ — Vercel Functions)      <- M1/M2
+      │
+Neon Postgres  (backend/db — schema + migrations) <- M1
+```
+
+## Milestone → task breakdown
+
+### M0 — Scaffold  ✅ (this change)
+- [x] Plugin dir `addons/resonant-community-hub/`
+- [x] `constitution.md`, `spec.md`, `CLAUDE.md`, `README.md`, `plan.md`
+- [x] Draft manifest `examples/addons/community-hub.json` — passes `validateAddOnManifest` (zero issues)
+- [x] Validation test case in `src/sdk/addons/public-manifests.test.ts`
+
+### M1 — Backend read path
+- [ ] `backend/` scaffold (Vercel Functions project) + `package.json`
+- [ ] DB schema + migrations for `Member, Event, Rsvp, CheckIn, Task, Presence, Report` (spec §5)
+- [ ] `GET /v1/events`, `GET /v1/tasks`, `GET /v1/presence` (public reads, with counts)
+- [ ] Seed script + fixtures for local/preview
+- [ ] Read-path integration tests
+
+### M2 — Auth + write path
+- [ ] OAuth (GitHub) + magic-link sign-in; `Member` provisioning
+- [ ] `POST /v1/events`, `/events/:id/rsvp`, `/events/:id/checkin`
+- [ ] `POST /v1/tasks/:id/claim`, `PUT /v1/presence`
+- [ ] Rate limiting on all writes; anonymous writes rejected (Art. IV, VII)
+- [ ] Auth + rate-limit unit tests
+
+### M3 — Add-on client
+- [ ] `addons/resonant-community-hub/src/` local-service host: bridge RPC + outbound Community API proxy + poller
+- [ ] `src/modules/community-hub/` shell surfaces: events feed (RSVP + check-in), tasks board, presence rail
+- [ ] Wire tools `community.*` through the host (writes approval-gated)
+- [ ] Promote manifest `examples/addons/community-hub.json` → `public/addons/community-hub.json` + `index.json`
+
+### M4 — Moderation + erasure
+- [ ] `POST /v1/reports`, `POST /v1/mod/hide`; hidden entries excluded from public reads
+- [ ] Account deletion + write erasure (Art. VIII)
+
+### M5 — Agent bridge
+- [ ] Map `Task` ↔ `GoalWorkspace` step / `GoalStepStatus` (`src/core/goal-workspace.ts`)
+- [ ] Approval-gated agent writes via `delegation.acceptsTasks`
+
+## Verification per milestone
+Each milestone is done only when the matching acceptance criteria in `spec.md` §9
+pass. Manifest changes keep `public-manifests.test.ts` green.
+
+## Risks
+- **Public writes + abuse** — mitigated by required sign-in + rate limits + report/hide in v1.
+- **Polling load** — cap client interval; serve reads from cache/CDN where possible.
+- **Secret handling** — tokens only in host vault; never in committed config or the extension.

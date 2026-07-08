@@ -1,0 +1,225 @@
+{
+  "id": "addon.community-hub",
+  "name": "Community Hub",
+  "version": "0.1.0",
+  "author": "Resonant Alpha",
+  "category": "integration",
+  "sdkVersion": "0.1.0",
+  "description": "Public community hub: check in to see community events (RSVP + live attendance), claim community tasks, and share presence. Shared state lives in a hosted serverless backend; the add-on is the local client, reached through the local bridge.",
+  "runtimeType": "local-service",
+  "surfaces": [
+    {
+      "id": "community-hub-home",
+      "type": "page",
+      "label": "Community Hub",
+      "description": "Events feed, community task board, and presence strip for the shared community.",
+      "shellNavigation": {
+        "sectionId": "community-hub",
+        "dockIcon": "community-hub",
+        "eyebrow": "Community"
+      }
+    },
+    {
+      "id": "community-hub-events",
+      "type": "panel",
+      "label": "Events",
+      "description": "Upcoming and past community events with RSVP and live check-in."
+    },
+    {
+      "id": "community-hub-tasks",
+      "type": "panel",
+      "label": "Community Tasks",
+      "description": "Open community tasks members can claim and mark progress on."
+    },
+    {
+      "id": "community-hub-presence",
+      "type": "rail",
+      "label": "Presence",
+      "description": "Opt-in presence strip showing who is around and what they are working on."
+    }
+  ],
+  "requestedCapabilities": [
+    {
+      "capability": "network",
+      "granted": false,
+      "scope": "self",
+      "revocationBehavior": "hard-stop"
+    },
+    {
+      "capability": "notifications",
+      "granted": false,
+      "scope": "shared",
+      "revocationBehavior": "degrade"
+    },
+    {
+      "capability": "agent-delegation",
+      "granted": false,
+      "scope": "workspace",
+      "revocationBehavior": "degrade"
+    }
+  ],
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
+  },
+  "runtimeIsolation": {
+    "boundary": "host-mediated-service",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": true
+  },
+  "grantPresets": [
+    {
+      "id": "community-hub-standard",
+      "label": "Community Hub standard",
+      "description": "Enable the Community Hub to reach the shared community backend, notify on events, and accept delegated community tasks.",
+      "grants": [
+        {
+          "capability": "network",
+          "granted": true,
+          "scope": "self",
+          "revocationBehavior": "hard-stop"
+        },
+        {
+          "capability": "notifications",
+          "granted": true,
+          "scope": "shared",
+          "revocationBehavior": "degrade"
+        },
+        {
+          "capability": "agent-delegation",
+          "granted": true,
+          "scope": "workspace",
+          "revocationBehavior": "degrade"
+        }
+      ]
+    }
+  ],
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "community-api-status"
+  },
+  "service": {
+    "protocol": "http-json",
+    "entrypoint": "http://127.0.0.1:4890",
+    "healthCommand": "community.status"
+  },
+  "connectors": [
+    {
+      "id": "community-api",
+      "name": "Community API",
+      "type": "api",
+      "description": "Connects the add-on to the hosted serverless Community backend (events, tasks, check-ins, presence). Base URL configured per install; per-user token held in the host vault.",
+      "requiredCapabilities": ["network"],
+      "configScope": "host-vault"
+    }
+  ],
+  "workflowBoundaries": [
+    {
+      "id": "public-community-hub",
+      "label": "Public community hub",
+      "jobToBeDone": "Let anyone browse community events and tasks, and let signed-in members RSVP, check in, claim tasks, and share presence against one shared backend.",
+      "userValue": "Members see when the community is hosting events and what tasks are open, from inside ResonantOS, without a separate app.",
+      "repeatability": "workflow-package",
+      "owner": "human",
+      "nonGoals": [
+        "Anonymous writes",
+        "Server-to-client push as a dependency (polling only)",
+        "Writing community data into trusted Living Archive knowledge pages",
+        "Automated real-world actions such as emailing attendees or handling payments"
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "community.list_events",
+      "description": "List community events with RSVP and attendance counts (public read).",
+      "requiredCapabilities": ["network"],
+      "inputSchema": {},
+      "outputSchema": {},
+      "audit": { "logRequest": true, "logResult": false, "artifactTypes": ["log"] },
+      "requiresHumanApproval": false
+    },
+    {
+      "name": "community.rsvp",
+      "description": "Set the signed-in member's RSVP state (going / interested / no) for an event.",
+      "requiredCapabilities": ["network"],
+      "inputSchema": {},
+      "outputSchema": {},
+      "audit": { "logRequest": true, "logResult": true, "artifactTypes": ["log"] },
+      "requiresHumanApproval": true
+    },
+    {
+      "name": "community.checkin",
+      "description": "Record live attendance check-in for the signed-in member during an event window.",
+      "requiredCapabilities": ["network"],
+      "inputSchema": {},
+      "outputSchema": {},
+      "audit": { "logRequest": true, "logResult": true, "artifactTypes": ["log"] },
+      "requiresHumanApproval": true
+    },
+    {
+      "name": "community.list_tasks",
+      "description": "List open community tasks (public read).",
+      "requiredCapabilities": ["network"],
+      "inputSchema": {},
+      "outputSchema": {},
+      "audit": { "logRequest": true, "logResult": false, "artifactTypes": ["log"] },
+      "requiresHumanApproval": false
+    },
+    {
+      "name": "community.claim_task",
+      "description": "Claim, un-claim, or mark progress on a community task for the signed-in member.",
+      "requiredCapabilities": ["network"],
+      "inputSchema": {},
+      "outputSchema": {},
+      "audit": { "logRequest": true, "logResult": true, "artifactTypes": ["log"] },
+      "requiresHumanApproval": true
+    },
+    {
+      "name": "community.set_presence",
+      "description": "Set or clear the signed-in member's opt-in presence status and note.",
+      "requiredCapabilities": ["network"],
+      "inputSchema": {},
+      "outputSchema": {},
+      "audit": { "logRequest": true, "logResult": true, "artifactTypes": ["log"] },
+      "requiresHumanApproval": true
+    },
+    {
+      "name": "community.report",
+      "description": "Report an event, task, or presence entry for moderation.",
+      "requiredCapabilities": ["network"],
+      "inputSchema": {},
+      "outputSchema": {},
+      "audit": { "logRequest": true, "logResult": true, "artifactTypes": ["log"] },
+      "requiresHumanApproval": true
+    }
+  ],
+  "delegation": {
+    "acceptsTasks": true,
+    "taskTypes": ["community-task"],
+    "artifactReturnTypes": ["summary", "log"],
+    "defaultTargetRuntime": "local-service",
+    "requiresHumanApprovalBeforeExecution": true,
+    "notes": [
+      "Agents may surface and update community tasks that map to GoalWorkspace steps.",
+      "All agent-initiated writes are human-approval gated."
+    ]
+  },
+  "installHooks": {
+    "onInstall": "configure-community-endpoint"
+  },
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS", "linux", "windows"]
+  }
+}
