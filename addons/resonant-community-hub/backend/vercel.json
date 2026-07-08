@@ -13,6 +13,9 @@
     { "source": "/v1/tasks", "destination": "/api/v1/tasks" },
     { "source": "/v1/tasks/:id/claim", "destination": "/api/v1/tasks/:id/claim" },
     { "source": "/v1/presence", "destination": "/api/v1/presence" },
+    { "source": "/v1/reports", "destination": "/api/v1/reports" },
+    { "source": "/v1/mod/hide", "destination": "/api/v1/mod/hide" },
+    { "source": "/v1/account", "destination": "/api/v1/account" },
     { "source": "/v1/auth/github/start", "destination": "/api/v1/auth/github/start" },
     { "source": "/v1/auth/github/callback", "destination": "/api/v1/auth/github/callback" }
   ]

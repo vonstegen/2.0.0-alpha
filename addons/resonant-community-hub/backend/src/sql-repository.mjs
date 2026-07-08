@@ -80,6 +80,7 @@ const LIST_PRESENCE_SQL = `
     p.updated_at
   FROM presence p
   JOIN members m ON m.id = p.member_id
+  WHERE p.hidden = false
   ORDER BY p.updated_at DESC;
 `;
 
@@ -298,9 +299,11 @@ export function createSqlRepository(db, opts = {}) {
 
     async setPresence({ memberId, status, note }) {
       const updatedAt = nowIso();
+      // Re-opting-in clears any prior moderator hide (hidden = false), matching the
+      // in-memory repository (M4).
       await db.query(
-        `INSERT INTO presence (member_id, status, note, updated_at) VALUES ($1,$2,$3,$4)
-         ON CONFLICT (member_id) DO UPDATE SET status = EXCLUDED.status, note = EXCLUDED.note, updated_at = EXCLUDED.updated_at`,
+        `INSERT INTO presence (member_id, status, note, updated_at, hidden) VALUES ($1,$2,$3,$4,false)
+         ON CONFLICT (member_id) DO UPDATE SET status = EXCLUDED.status, note = EXCLUDED.note, updated_at = EXCLUDED.updated_at, hidden = false`,
         [memberId, status, note ?? null, updatedAt],
       );
       const { rows } = await db.query(
@@ -327,6 +330,101 @@ export function createSqlRepository(db, opts = {}) {
         [memberId],
       );
       return { cleared: Array.isArray(rows) && rows.length > 0 };
+    },
+
+    // --- moderation + erasure (M4) ------------------------------------------
+
+    async getPresence(memberId) {
+      const { rows } = await db.query(
+        "SELECT member_id, status, note, updated_at, hidden FROM presence WHERE member_id = $1",
+        [memberId],
+      );
+      const p = rows[0];
+      if (!p) return null;
+      return {
+        memberId: p.member_id,
+        status: p.status,
+        note: p.note ?? null,
+        updatedAt: iso(p.updated_at),
+        hidden: p.hidden === true,
+      };
+    },
+
+    async createReport({ targetType, targetId, reporterId, reason }) {
+      const id = newId("rep");
+      const createdAt = nowIso();
+      await db.query(
+        `INSERT INTO reports (id, target_type, target_id, reporter_id, reason, created_at, resolved)
+         VALUES ($1,$2,$3,$4,$5,$6,false)`,
+        [id, targetType, targetId, reporterId ?? null, reason ?? null, createdAt],
+      );
+      return { id, targetType, targetId, reporterId: reporterId ?? null, reason: reason ?? null, createdAt, resolved: false };
+    },
+
+    async hideEntry({ targetType, targetId }) {
+      let found = false;
+      if (targetType === "event") {
+        const { rows } = await db.query("UPDATE events SET hidden = true WHERE id = $1 RETURNING id", [targetId]);
+        found = rows.length > 0;
+      } else if (targetType === "task") {
+        const { rows } = await db.query("UPDATE tasks SET hidden = true WHERE id = $1 RETURNING id", [targetId]);
+        found = rows.length > 0;
+      } else if (targetType === "presence") {
+        const { rows } = await db.query("UPDATE presence SET hidden = true WHERE member_id = $1 RETURNING member_id", [targetId]);
+        found = rows.length > 0;
+      }
+      let resolvedReports = 0;
+      if (found) {
+        const { rows } = await db.query(
+          "UPDATE reports SET resolved = true WHERE target_type = $1 AND target_id = $2 AND resolved = false RETURNING id",
+          [targetType, targetId],
+        );
+        resolvedReports = Array.isArray(rows) ? rows.length : 0;
+      }
+      return { found, targetType, targetId, resolvedReports };
+    },
+
+    async deleteMember(memberId) {
+      const exists = await write.getMemberById(memberId);
+      if (!exists) return { deleted: false, memberId, erased: null };
+
+      // Capture affected tasks + erasure counts BEFORE the cascade removes the rows.
+      const affected = await db.query("SELECT DISTINCT task_id FROM task_claims WHERE member_id = $1", [memberId]);
+      const affectedTaskIds = affected.rows.map((r) => r.task_id);
+      const counts = await db.query(
+        `SELECT
+           (SELECT COUNT(*)::int FROM rsvps      WHERE member_id = $1) AS rsvps,
+           (SELECT COUNT(*)::int FROM check_ins  WHERE member_id = $1) AS check_ins,
+           (SELECT COUNT(*)::int FROM task_claims WHERE member_id = $1) AS task_claims,
+           (SELECT COUNT(*)::int FROM presence   WHERE member_id = $1) AS presence`,
+        [memberId],
+      );
+      const c = counts.rows[0] ?? {};
+
+      // ON DELETE CASCADE removes rsvps/check_ins/task_claims/presence; ON DELETE
+      // SET NULL de-identifies hosted events + filed reports (0001_init.sql).
+      await db.query("DELETE FROM members WHERE id = $1", [memberId]);
+
+      // The cascade does not recompute task.status, so do it explicitly (parity with
+      // the in-memory repo + claimTask semantics): a lost claim can reopen a task.
+      for (const taskId of affectedTaskIds) {
+        const { rows: taskRows } = await db.query("SELECT status FROM tasks WHERE id = $1", [taskId]);
+        if (!taskRows[0] || taskRows[0].status === "done") continue;
+        const { rows: countRows } = await db.query("SELECT COUNT(*)::int AS n FROM task_claims WHERE task_id = $1", [taskId]);
+        const remaining = num(countRows[0]?.n);
+        await db.query("UPDATE tasks SET status = $2 WHERE id = $1", [taskId, remaining > 0 ? "claimed" : "open"]);
+      }
+
+      return {
+        deleted: true,
+        memberId,
+        erased: {
+          rsvps: num(c.rsvps),
+          checkIns: num(c.check_ins),
+          taskClaims: num(c.task_claims),
+          presence: num(c.presence),
+        },
+      };
     },
   };
 

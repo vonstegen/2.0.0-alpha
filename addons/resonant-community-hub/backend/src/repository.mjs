@@ -269,8 +269,10 @@ export function createMemoryRepository(seed = {}, opts = {}) {
         row.status = status;
         row.note = note ?? null;
         row.updatedAt = nowIso();
+        // Re-opting-in is fresh content: clear any prior moderator hide (M4).
+        row.hidden = false;
       } else {
-        row = { memberId, status, note: note ?? null, updatedAt: nowIso() };
+        row = { memberId, status, note: note ?? null, updatedAt: nowIso(), hidden: false };
         tables.presence.push(row);
       }
       return shapePresence(row, { members: tables.members });
@@ -311,9 +313,103 @@ export function createMemoryRepository(seed = {}, opts = {}) {
 
     async listPresence() {
       return tables.presence
-        .slice()
+        .filter((p) => !p.hidden)
         .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
         .map((row) => shapePresence(row, { members: tables.members }));
+    },
+
+    // --- moderation + erasure (M4) ------------------------------------------
+
+    /** Fetch a single presence row by member (existence check for reports). */
+    async getPresence(memberId) {
+      const p = tables.presence.find((x) => x.memberId === memberId);
+      return p ? { ...p } : null;
+    },
+
+    /** File a report against an entry (FR-M2, Art. VII). */
+    async createReport({ targetType, targetId, reporterId, reason }) {
+      const row = {
+        id: newId("rep"),
+        targetType,
+        targetId,
+        reporterId: reporterId ?? null,
+        reason: reason ?? null,
+        createdAt: nowIso(),
+        resolved: false,
+      };
+      tables.reports.push(row);
+      return { ...row };
+    },
+
+    /**
+     * Hide an entry so it drops out of public reads (FR-M2, Art. VII). Also
+     * resolves any open reports for that target. Returns `{ found, resolvedReports }`.
+     */
+    async hideEntry({ targetType, targetId }) {
+      let found = false;
+      if (targetType === "event") {
+        const e = tables.events.find((x) => x.id === targetId);
+        if (e) { e.hidden = true; found = true; }
+      } else if (targetType === "task") {
+        const t = tables.tasks.find((x) => x.id === targetId);
+        if (t) { t.hidden = true; found = true; }
+      } else if (targetType === "presence") {
+        const p = tables.presence.find((x) => x.memberId === targetId);
+        if (p) { p.hidden = true; found = true; }
+      }
+      let resolvedReports = 0;
+      if (found) {
+        for (const r of tables.reports) {
+          if (r.targetType === targetType && r.targetId === targetId && !r.resolved) {
+            r.resolved = true;
+            resolvedReports += 1;
+          }
+        }
+      }
+      return { found, targetType, targetId, resolvedReports };
+    },
+
+    /**
+     * Delete a member and erase their personal writes (FR-A3, Art. VIII — right to
+     * erasure). Mirrors the SQL cascade: removes the member's RSVPs, check-ins, task
+     * claims, and presence; de-identifies authored content (hosted events -> null
+     * host, filed reports -> null reporter). Task status is recomputed for any task
+     * the member had claimed (a removed claim can return claimed -> open).
+     */
+    async deleteMember(memberId) {
+      const member = tables.members.find((m) => m.id === memberId);
+      if (!member) return { deleted: false, memberId, erased: null };
+
+      const affectedTaskIds = [
+        ...new Set(tables.taskClaims.filter((c) => c.memberId === memberId).map((c) => c.taskId)),
+      ];
+      const erased = {
+        rsvps: tables.rsvps.filter((r) => r.memberId === memberId).length,
+        checkIns: tables.checkIns.filter((c) => c.memberId === memberId).length,
+        taskClaims: tables.taskClaims.filter((c) => c.memberId === memberId).length,
+        presence: tables.presence.some((p) => p.memberId === memberId) ? 1 : 0,
+      };
+
+      // Cascade-delete personal participation writes.
+      tables.rsvps = tables.rsvps.filter((r) => r.memberId !== memberId);
+      tables.checkIns = tables.checkIns.filter((c) => c.memberId !== memberId);
+      tables.taskClaims = tables.taskClaims.filter((c) => c.memberId !== memberId);
+      tables.presence = tables.presence.filter((p) => p.memberId !== memberId);
+      // De-identify authored content (ON DELETE SET NULL in the schema).
+      for (const e of tables.events) if (e.hostId === memberId) e.hostId = null;
+      for (const r of tables.reports) if (r.reporterId === memberId) r.reporterId = null;
+      // Remove the member row itself.
+      tables.members = tables.members.filter((m) => m.id !== memberId);
+
+      // Recompute status for tasks that lost a claim (done is sticky).
+      for (const taskId of affectedTaskIds) {
+        const task = tables.tasks.find((t) => t.id === taskId);
+        if (!task || task.status === "done") continue;
+        const remaining = tables.taskClaims.filter((c) => c.taskId === taskId).length;
+        task.status = remaining > 0 ? "claimed" : "open";
+      }
+
+      return { deleted: true, memberId, erased };
     },
   };
 }

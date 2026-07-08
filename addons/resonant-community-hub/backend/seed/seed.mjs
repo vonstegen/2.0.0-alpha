@@ -13,14 +13,11 @@
 // SQL against Neon and cannot be exercised in this sandbox. The --inmemory path
 // is fully offline and is what CI/tests run.
 
-import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { fixtures } from "./fixtures.mjs";
 import { createMemoryRepository } from "../src/repository.mjs";
-
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const MIGRATION = path.join(HERE, "..", "db", "migrations", "0001_init.sql");
+import { readMigrations } from "../db/migrate.mjs";
 
 const INSERTS = [
   {
@@ -92,8 +89,8 @@ async function runAgainstDatabase({ migrateOnly }) {
   const { createNeonExecutor } = await import("../db/neon.mjs");
   const db = await createNeonExecutor();
   try {
-    const migrationSql = await readFile(MIGRATION, "utf8");
-    console.log(`[seed] applying migration ${path.basename(MIGRATION)} ...`);
+    const migrationSql = await readMigrations();
+    console.log(`[seed] applying all migrations (db/migrations/*.sql) ...`);
     await db.query(migrationSql);
     if (migrateOnly) {
       console.log("[seed] migrate-only: done.");

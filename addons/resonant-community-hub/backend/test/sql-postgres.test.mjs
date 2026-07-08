@@ -21,18 +21,13 @@
 // branch remains deferred (needs DATABASE_URL + cloud creds) — see README.
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import { after, before, describe, test } from "node:test";
 
 import { createSqlRepository } from "../src/sql-repository.mjs";
 import { createMemoryRepository } from "../src/repository.mjs";
 import { fixtures } from "../seed/fixtures.mjs";
 import { INSERTS } from "../seed/seed.mjs";
-
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const MIGRATION = path.join(HERE, "..", "db", "migrations", "0001_init.sql");
+import { applyMigrations } from "../db/migrate.mjs";
 
 // Load the real embedded Postgres. If it is absent, skip (don't fail) so the
 // deterministic offline suite still passes without dev deps installed.
@@ -56,7 +51,7 @@ describe("SQL read path against a real Postgres planner (PGlite)", { skip }, () 
   before(async () => {
     db = await PGlite.create();
     // 1. Run the ACTUAL migration DDL — throws on any SQL syntax/typo error.
-    await db.exec(await readFile(MIGRATION, "utf8"));
+    await applyMigrations(db);
     // 2. Seed with the real INSERT statements from seed.mjs against the real schema.
     const f = fixtures();
     for (const spec of INSERTS) {
@@ -136,7 +131,7 @@ describe("SQL write path against a real Postgres planner (PGlite)", { skip }, ()
 
   before(async () => {
     db = await PGlite.create();
-    await db.exec(await readFile(MIGRATION, "utf8"));
+    await applyMigrations(db);
     const f = fixtures();
     for (const spec of INSERTS) {
       for (const row of spec.rows(f)) await db.query(spec.sql, spec.params(row));

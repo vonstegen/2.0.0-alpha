@@ -95,6 +95,7 @@ Stateless functions; polling clients.
 | PUT | `/v1/presence` | member | Set/clear own presence |
 | POST | `/v1/reports` | member | Report an entry |
 | POST | `/v1/mod/hide` | moderator | Hide an entry |
+| DELETE | `/v1/account` | member | Delete own account + erase writes (FR-A3) |
 | POST | `/v1/auth/*` | — | OAuth/magic-link sign-in |
 
 All write endpoints: rate-limited, auth-guarded, input-validated.

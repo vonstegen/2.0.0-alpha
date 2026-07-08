@@ -16,6 +16,8 @@ export class ValidationError extends Error {
 
 const RSVP_STATES = new Set(["going", "interested", "no"]);
 const CLAIM_ACTIONS = new Set(["claim", "unclaim"]);
+// Moderation targets (spec §5 reports.target_type; matches the DB CHECK constraint).
+const TARGET_TYPES = new Set(["event", "task", "presence"]);
 
 function str(value, field, { required = false, max = 2000, trim = true } = {}) {
   if (value == null) {
@@ -94,6 +96,35 @@ export function validateClaim(body) {
     throw new ValidationError("`action` must be `claim` or `unclaim`.", { field: "action" });
   }
   return { action };
+}
+
+/**
+ * Shared moderation-target validator. `targetType` must be one of event/task/
+ * presence and `targetId` a non-empty string. For presence, the target id is the
+ * member id (presence is keyed by member — spec §5).
+ */
+function validateTarget(b) {
+  const targetType = str(b.targetType, "targetType", { required: true, max: 20 });
+  if (!TARGET_TYPES.has(targetType)) {
+    throw new ValidationError("`targetType` must be one of: event, task, presence.", { field: "targetType" });
+  }
+  const targetId = str(b.targetId, "targetId", { required: true, max: 200 });
+  return { targetType, targetId };
+}
+
+/** POST /v1/reports — report an entry for moderation (spec FR-M2). */
+export function validateReport(body) {
+  const b = asObject(body);
+  const { targetType, targetId } = validateTarget(b);
+  // Reason is optional context for the moderator (schema: reports.reason nullable).
+  const reason = str(b.reason, "reason", { max: 1000 });
+  return { targetType, targetId, reason };
+}
+
+/** POST /v1/mod/hide — moderator hides an entry (spec FR-M2). */
+export function validateHide(body) {
+  const b = asObject(body);
+  return validateTarget(b);
 }
 
 /**

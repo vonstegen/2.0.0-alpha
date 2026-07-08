@@ -1,4 +1,4 @@
-# Community Hub — Backend (M1 read path · M2 auth + write path)
+# Community Hub — Backend (M1 read path · M2 auth + write path · M4 moderation + erasure)
 
 Serverless backend for the Community Hub add-on. **Vercel Functions + Neon
 Postgres** (plan.md decisions).
@@ -9,6 +9,12 @@ Postgres** (plan.md decisions).
   `POST /v1/tasks/:id/claim`, `PUT /v1/presence`, and
   `GET /v1/auth/github/{start,callback}`. Every write is auth-guarded and
   rate-limited; **anonymous writes are rejected**.
+- **M4 — moderation + erasure:** `POST /v1/reports` (any member reports an
+  event/task/presence entry), `POST /v1/mod/hide` (moderator-gated; hidden entries
+  drop out of public reads and the target's open reports are resolved), and
+  `DELETE /v1/account` (self-service account deletion + right-to-erasure, Art. VIII).
+  Presence gained a `hidden` flag (`0002_moderation.sql`) so it is hideable like
+  events/tasks.
 
 Governed by [`../constitution.md`](../constitution.md) and [`../spec.md`](../spec.md).
 
@@ -21,10 +27,14 @@ backend/
     {events,tasks,presence}.mjs      # GET reads (+ POST events / PUT presence)
     events/[id]/{rsvp,checkin}.mjs   # POST writes
     tasks/[id]/claim.mjs             # POST write
+    reports.mjs                      # POST report an entry (M4)
+    mod/hide.mjs                     # POST moderator hide (M4)
+    account.mjs                      # DELETE self account + erasure (M4)
     auth/github/{start,callback}.mjs # OAuth sign-in (302 -> GitHub -> session token)
   src/
     handlers.mjs           # pure read handlers + Node response writer + body reader
     write-handlers.mjs      # pure write handlers: guardWrite pipeline + OAuth callback
+    mod-handlers.mjs        # pure M4 handlers: report / hide / delete-account (guardWrite)
     auth.mjs               # HMAC session tokens + fail-closed authenticate() guard
     rate-limit.mjs          # fixed-window per-member rate limiter (injectable clock/store)
     github-oauth.mjs        # GitHub OAuth (injectable fetchImpl) + signed CSRF state
@@ -35,7 +45,9 @@ backend/
     sql-repository.mjs     # Neon Postgres impl (reads + writes; injected SQL executor)
     goal-mapping.mjs       # Task.status -> GoalStepStatus (FR-T3)
   db/
-    migrations/0001_init.sql   # schema for all 7 entities (spec §5); no M2 schema change
+    migrations/0001_init.sql        # schema for all 7 entities (spec §5)
+    migrations/0002_moderation.sql  # M4: presence.hidden flag + moderation indexes
+    migrate.mjs            # ordered migration loader (readMigrations / applyMigrations)
     neon.mjs               # Neon Pool executor (live path; deferred creds)
     index.mjs              # createRepositoryFromEnv() — picks impl from env
   seed/
@@ -47,6 +59,7 @@ backend/
     rate-limit.test.mjs    # fixed-window limiting, per-key isolation, reset (offline)
     github-oauth.test.mjs  # OAuth flow with a FAKE fetch + CSRF state (offline)
     write-path.test.mjs    # write pipeline (401/403/400/409/429) + read reflection + real endpoints
+    moderation.test.mjs    # M4: report/hide (excluded-from-reads) + erasure + real endpoints + PGlite
     sql-postgres.test.mjs  # migration DDL + read AND write SQL vs a REAL PG planner (PGlite)
 ```
 
@@ -90,7 +103,14 @@ backend/
     fallback (`COMMUNITY_HUB_INMEMORY=1`).
   - `createSqlRepository(db)` — real Neon Postgres via an injected
     `{ query(text, params) }` executor.
-- **Public reads exclude `hidden` rows** (constitution Art. VII).
+- **Public reads exclude `hidden` rows** for events, tasks **and presence**
+  (constitution Art. VII). A moderator hide flips `hidden` and resolves the target's
+  open reports.
+- **Right to erasure (Art. VIII):** `deleteMember` cascades a member's RSVPs,
+  check-ins, task claims, and presence; reopens tasks they solely claimed; and
+  de-identifies authored content (hosted events + filed reports → `NULL` via
+  `ON DELETE SET NULL`). The deleted member's still-valid HMAC token then fails the
+  auth guard's member lookup (401), so no session table is needed to revoke it.
 - **Live attendance (`check_ins`) is counted distinctly from RSVP** (spec FR-E4).
 - **Tasks carry a `goalStepStatus`** so agents can pick them up (FR-T3).
 - **No fake cloud calls.** With neither `DATABASE_URL` nor `COMMUNITY_HUB_INMEMORY`
