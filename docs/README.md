@@ -6,6 +6,8 @@ This folder is the documentation entrypoint for the current codebase.
 
 - [PRODUCT_GUIDE_BROWSER_FIRST.md](./PRODUCT_GUIDE_BROWSER_FIRST.md)
   - current human-readable product guide: overview, feature list, status, known limits, roadmap, and where to look in code
+- [AUGMENTOR_WORKFLOW_RECIPES.md](./AUGMENTOR_WORKFLOW_RECIPES.md)
+  - safe Augmentor workflow recipes and fixture criteria for job search, travel, education/tracking, and product research
 - [BROWSER_FIRST_STABILIZATION_2026-06-02.md](./BROWSER_FIRST_STABILIZATION_2026-06-02.md)
   - release-scope checkpoint for the browser-first branch: dirty-tree classification, verification evidence, risks, and push rules
 - [PROJECT_STATUS.md](./PROJECT_STATUS.md)
