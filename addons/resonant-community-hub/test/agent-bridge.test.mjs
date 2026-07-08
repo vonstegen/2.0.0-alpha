@@ -21,9 +21,11 @@ import {
   goalStepIdForTask,
   goalStepStatusToTaskAction,
   taskIdFromGoalStep,
+  taskStatusToGoalStepStatus,
 } from "../src/agent-bridge.mjs";
 import { createCommunityHubService, CommunityHostError } from "../src/community-host.mjs";
 import { createTokenVault } from "../src/token-vault.mjs";
+import { createCommunityHubServer, dispatch, listen } from "../src/http-server.mjs";
 
 // The real manifest delegation contract — the bridge is configured from exactly
 // what ships in the manifest, so a manifest change that disabled delegation would
@@ -73,11 +75,28 @@ describe("agent-bridge mapping", () => {
     assert.match(step.notes, /source=community-task:task-42/);
   });
 
-  it("rejects a task whose upstream goalStepStatus is not a real GoalStepStatus", () => {
+  it("rejects a task whose upstream status is not a real community task status", () => {
     assert.throws(
-      () => communityTaskToGoalStep({ id: "t", title: "x", status: "open", goalStepStatus: "bogus" }),
+      () => communityTaskToGoalStep({ id: "t", title: "x", status: "bogus" }),
       (e) => e instanceof AgentBridgeError && e.code === "bad_upstream_status",
     );
+  });
+
+  it("derives the step status from task.status, not the denormalized goalStepStatus (no drift with the TS half)", () => {
+    // task.status and task.goalStepStatus deliberately DISAGREE. Both runtime halves
+    // key off task.status through the same table, so this must map to "active"
+    // (from status:"claimed") and ignore the stale goalStepStatus:"planned".
+    const step = communityTaskToGoalStep({
+      id: "task-drift",
+      title: "Conflicting task",
+      status: "claimed",
+      goalStepStatus: "planned",
+    });
+    assert.equal(step.status, "active");
+    // The TS half (community-goal-bridge.ts communityTaskToGoalStep) uses
+    // taskStatusToGoalStepStatus(task.status) too, so it produces the identical
+    // status for this same input — the two halves cannot drift.
+    assert.equal(taskStatusToGoalStepStatus("claimed"), "active");
   });
 
   it("maps agent-writable GoalStepStatus values to claim/unclaim", () => {
@@ -231,5 +250,122 @@ describe("agent-bridge wiring guards", () => {
   it("exposes the single accepted task type", () => {
     assert.equal(AGENT_TASK_TYPE, "community-task");
     assert.ok(DELEGATION.taskTypes.includes(AGENT_TASK_TYPE));
+  });
+});
+
+// The agent delegation path must be reachable THROUGH the running host, not just as
+// an in-process bridge object. These drive the real http-server dispatch (and a
+// guarded live loopback POST) so the manifest contract + approval gates actually run
+// against an agent that reaches the loopback server.
+describe("agent-bridge over the real http-server host", () => {
+  function httpStack({ token, delegation = DELEGATION } = {}) {
+    const claimCalls = [];
+    const client = {
+      baseUrl: "https://hub.example.com",
+      listTasks: async () => ({
+        tasks: [
+          { id: "task-1", title: "Run the meetup", status: "open", goalStepStatus: "planned", claimedBy: [], dueAt: null, createdAt: "2026-07-01T00:00:00.000Z" },
+          { id: "task-2", title: "Edit recap", status: "claimed", goalStepStatus: "active", claimedBy: ["m9"], dueAt: null, createdAt: "2026-07-02T00:00:00.000Z" },
+        ],
+      }),
+      listEvents: async () => ({ events: [] }),
+      listPresence: async () => ({ presence: [] }),
+      claimTask: async (args) => {
+        claimCalls.push(args);
+        return { ok: true, task: { id: args.taskId, status: args.action === "unclaim" ? "open" : "claimed" } };
+      },
+    };
+    const vault = createTokenVault({ env: {} });
+    if (token) vault.set(token);
+    const service = createCommunityHubService({ client, vault });
+    const agentBridge = createAgentDelegationBridge({ service, delegation });
+    const server = createCommunityHubServer({ service, poller: null, agentBridge });
+    return { client, vault, service, agentBridge, server, claimCalls };
+  }
+
+  it("reads community tasks as GoalSteps via community.list_task_steps through dispatch", async () => {
+    const { agentBridge, service } = httpStack();
+    const { status, body } = await dispatch({ service, agentBridge }, { method: "community.list_task_steps" });
+    assert.equal(status, 200);
+    assert.equal(body.result.degraded, false);
+    assert.deepEqual(body.result.steps.map((s) => s.status), ["planned", "active"]);
+    assert.equal(taskIdFromGoalStep(body.result.steps[0]), "task-1");
+  });
+
+  it("performs an approved agent write via community.submit_task_write through dispatch (token reaches the client)", async () => {
+    const { agentBridge, service, claimCalls } = httpStack({ token: "member-token-http" });
+    const { status, body } = await dispatch(
+      { service, agentBridge },
+      { method: "community.submit_task_write", params: { taskId: "task-1", targetStatus: "active", approved: true } },
+    );
+    assert.equal(status, 200);
+    assert.equal(body.result.ok, true);
+    assert.deepEqual(claimCalls, [{ taskId: "task-1", action: "claim", token: "member-token-http" }]);
+  });
+
+  it("refuses an UNapproved agent write via dispatch at the delegation gate (never reaches the client)", async () => {
+    const { agentBridge, service, claimCalls } = httpStack({ token: "member-token-http" });
+    await assert.rejects(
+      dispatch({ service, agentBridge }, { method: "community.submit_task_write", params: { taskId: "task-1", action: "claim" } }),
+      (e) => e.code === "approval_required" && e.status === 403,
+    );
+    assert.equal(claimCalls.length, 0);
+  });
+
+  it("does NOT launder approved:true — the host's own gate still refuses when the delegation gate is off (defense in depth)", async () => {
+    // Delegation contract with the approval gate disabled: the bridge skips its own
+    // gate, but it forwards the caller's real approved:false to the host, so the
+    // host's independent Art. V gate refuses the write. The two locks stay separate.
+    const { agentBridge, service, claimCalls } = httpStack({
+      token: "member-token-http",
+      delegation: { ...DELEGATION, requiresHumanApprovalBeforeExecution: false },
+    });
+    await assert.rejects(
+      dispatch({ service, agentBridge }, { method: "community.submit_task_write", params: { taskId: "task-1", action: "claim", approved: false } }),
+      (e) => e instanceof CommunityHostError && e.code === "approval_required",
+    );
+    assert.equal(claimCalls.length, 0, "no unapproved agent write may reach the API client");
+  });
+
+  it("fails closed for agent methods when no bridge is wired", async () => {
+    const { service } = httpStack();
+    await assert.rejects(
+      dispatch({ service, agentBridge: null }, { method: "community.list_task_steps" }),
+      (e) => e.code === "agent_delegation_unavailable" && e.status === 501,
+    );
+  });
+
+  it("round-trips an approved agent write over a live loopback POST", async (t) => {
+    const { server, claimCalls } = httpStack({ token: "member-token-live" });
+    let bound;
+    try {
+      bound = await listen(server, { port: 0 });
+    } catch (error) {
+      if (error?.code === "EPERM" || error?.code === "EACCES") return t.skip("loopback bind denied in this sandbox");
+      throw error;
+    }
+    try {
+      const readRes = await fetch(bound.url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: "r1", method: "community.list_task_steps" }),
+      });
+      const readBody = await readRes.json();
+      assert.equal(readRes.status, 200);
+      assert.deepEqual(readBody.result.steps.map((s) => s.status), ["planned", "active"]);
+
+      const writeRes = await fetch(bound.url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: "w1", method: "community.submit_task_write", params: { taskId: "task-2", targetStatus: "planned", approved: true } }),
+      });
+      const writeBody = await writeRes.json();
+      assert.equal(writeRes.status, 200);
+      assert.equal(writeBody.id, "w1");
+      assert.equal(writeBody.result.ok, true);
+      assert.deepEqual(claimCalls, [{ taskId: "task-2", action: "unclaim", token: "member-token-live" }]);
+    } finally {
+      await new Promise((resolve) => server.close(() => resolve()));
+    }
   });
 });

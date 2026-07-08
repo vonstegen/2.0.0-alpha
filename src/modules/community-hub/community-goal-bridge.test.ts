@@ -73,6 +73,16 @@ describe("communityTaskToGoalStep", () => {
   it("returns null taskId for a non-community step id", () => {
     expect(taskIdFromGoalStep({ id: "goal-step-something-else" })).toBeNull();
   });
+
+  it("derives status from task.status, ignoring a disagreeing denormalized goalStepStatus (no drift with the mjs half)", () => {
+    // status and goalStepStatus deliberately disagree. Both runtime halves key off
+    // task.status through the same table, so this maps to "active" (from
+    // status:"claimed") and the stale goalStepStatus:"planned" is ignored — matching
+    // the host-side agent-bridge.mjs communityTaskToGoalStep for the same input.
+    const step = communityTaskToGoalStep(task({ id: "task-drift", status: "claimed", goalStepStatus: "planned" }));
+    expect(step.status).toBe("active");
+    expect(taskStatusToGoalStepStatus("claimed")).toBe("active");
+  });
 });
 
 describe("buildCommunityGoalWorkspace", () => {

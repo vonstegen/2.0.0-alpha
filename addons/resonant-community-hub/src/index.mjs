@@ -14,12 +14,43 @@
 // Run directly (`node src/index.mjs`) or import `createCommunityHubHost` to embed.
 
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import process from "node:process";
 import { createCommunityApiClient } from "./api-client.mjs";
 import { createTokenVault } from "./token-vault.mjs";
 import { createCommunityHubService } from "./community-host.mjs";
 import { createCommunityPoller } from "./poller.mjs";
 import { createCommunityHubServer, listen } from "./http-server.mjs";
+import { createAgentDelegationBridge } from "./agent-bridge.mjs";
+
+/**
+ * Load the manifest `delegation` contract that gates the M5 agent bridge. In a real
+ * install the host is handed its manifest by the shell; here we resolve the bundled
+ * manifest (the single source of truth the SDK validation tests also read) so the
+ * wired bridge enforces exactly the contract that ships. Override with
+ * COMMUNITY_HUB_MANIFEST_PATH.
+ * @returns {object | null} the delegation contract, or null if none is resolvable.
+ */
+export function loadDelegationContract(env = process.env) {
+  const explicit = String(env.COMMUNITY_HUB_MANIFEST_PATH ?? "").trim();
+  const candidates = explicit
+    ? [explicit]
+    : [
+        new URL("../../../public/addons/community-hub.json", import.meta.url),
+        new URL("../../../examples/addons/community-hub.json", import.meta.url),
+      ];
+  for (const candidate of candidates) {
+    try {
+      const manifest = JSON.parse(readFileSync(candidate, "utf8"));
+      if (manifest && typeof manifest.delegation === "object" && manifest.delegation) {
+        return manifest.delegation;
+      }
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
+}
 
 export function createCommunityHubHost(env = process.env) {
   const baseUrl = String(env.COMMUNITY_HUB_API_BASE_URL ?? "").trim();
@@ -38,9 +69,17 @@ export function createCommunityHubHost(env = process.env) {
     service,
     intervalMs: Number.isFinite(pollMs) && pollMs > 0 ? pollMs : 20_000,
   });
-  const server = createCommunityHubServer({ service, poller });
 
-  return { vault, client, service, poller, server };
+  // Wire the M5 agent-delegation bridge so agents actually reach the delegation
+  // read/write path over the loopback host (community.list_task_steps /
+  // community.submit_task_write), with the manifest delegation contract + approval
+  // gate enforced before any write is dispatched into the community-host.
+  const delegation = loadDelegationContract(env);
+  const agentBridge = delegation ? createAgentDelegationBridge({ service, delegation }) : null;
+
+  const server = createCommunityHubServer({ service, poller, agentBridge });
+
+  return { vault, client, service, poller, agentBridge, server };
 }
 
 export async function startCommunityHubHost(env = process.env) {

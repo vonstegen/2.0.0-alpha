@@ -125,7 +125,10 @@ export type DelegationTaskType =
   | "system-diagnosis"
   | "system-repair"
   | "design"
-  | "routine-work";
+  | "routine-work"
+  // Public Community Hub tasks an agent can surface as GoalWorkspace steps and
+  // act on (claim / un-claim) under a human-approval-gated delegation contract.
+  | "community-task";
 export type DelegationTargetRuntime =
   | "native-agent"
   | "addon-agent"

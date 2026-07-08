@@ -52,12 +52,23 @@ async function readJsonBody(req) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
+/** Refusal raised when an agent-delegation method is called but no bridge is wired. */
+function agentDelegationUnavailable() {
+  const err = new Error(
+    "Agent delegation is not available: the host has no delegation contract wired (agent bridge missing).",
+  );
+  err.status = 501;
+  err.code = "agent_delegation_unavailable";
+  return err;
+}
+
 /**
- * Dispatch a single decoded request object against the service/poller. Pure enough
- * to unit-test without a socket.
+ * Dispatch a single decoded request object against the service/poller/agentBridge.
+ * Pure enough to unit-test without a socket.
+ * @param {{ service: any, poller?: any, agentBridge?: any }} deps
  * @returns {Promise<{ status: number, body: object }>}
  */
-export async function dispatch({ service, poller }, request) {
+export async function dispatch({ service, poller, agentBridge }, request) {
   const method = String(request?.method ?? "");
   const params = request?.params ?? {};
 
@@ -78,16 +89,30 @@ export async function dispatch({ service, poller }, request) {
     return { status: 200, body: { result: service.audit() } };
   }
 
+  // Agent-delegation (M5) entry points. These are the ONLY agent-facing path: they
+  // run the manifest delegation contract + approval gate in the agent bridge, which
+  // then dispatches the actual write through service.call() (source: "agent"), so
+  // the host's own token guard (Art. IV) + approval gate (Art. V) apply again. If no
+  // bridge is wired the host fails closed rather than silently exposing writes.
+  if (method === "community.list_task_steps") {
+    if (!agentBridge) throw agentDelegationUnavailable();
+    return { status: 200, body: { result: await agentBridge.readTasksAsGoalSteps() } };
+  }
+  if (method === "community.submit_task_write") {
+    if (!agentBridge) throw agentDelegationUnavailable();
+    return { status: 200, body: { result: await agentBridge.submitTaskWrite(params) } };
+  }
+
   // Everything else is a community.* tool call routed through the policy layer.
   const result = await service.call(method, params);
   return { status: 200, body: { result } };
 }
 
 /**
- * @param {{ service: any, poller?: any }} deps
+ * @param {{ service: any, poller?: any, agentBridge?: any }} deps
  * @returns {http.Server}
  */
-export function createCommunityHubServer({ service, poller }) {
+export function createCommunityHubServer({ service, poller, agentBridge }) {
   if (!service) throw new Error("createCommunityHubServer requires a service.");
 
   return http.createServer(async (req, res) => {
@@ -106,7 +131,7 @@ export function createCommunityHubServer({ service, poller }) {
       }
       const id = request?.id ?? null;
       try {
-        const { status, body } = await dispatch({ service, poller }, request);
+        const { status, body } = await dispatch({ service, poller, agentBridge }, request);
         return send(res, status, { id, ...body });
       } catch (error) {
         return send(res, error?.status ?? 500, { id, ...errorPayload(error) });

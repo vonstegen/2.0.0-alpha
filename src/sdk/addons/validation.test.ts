@@ -774,3 +774,66 @@ describe("add-on SDK manifest validation", () => {
     expect(result.valid).toBe(true);
   });
 });
+
+describe("delegation contract validation", () => {
+  const communityDelegation = (over: Record<string, unknown> = {}) => ({
+    acceptsTasks: true,
+    taskTypes: ["community-task"],
+    artifactReturnTypes: ["summary", "log"],
+    defaultTargetRuntime: "local-service",
+    requiresHumanApprovalBeforeExecution: true,
+    ...over,
+  });
+
+  it("accepts a well-formed community-task delegation contract", () => {
+    const result = validateAddOnManifest(validManifest({ delegation: communityDelegation() as never }));
+    expect(result.issues.filter((issue) => issue.code.startsWith("delegation"))).toEqual([]);
+  });
+
+  it("rejects a community-task delegation with the human-approval gate disabled (Art. V)", () => {
+    const result = validateAddOnManifest(
+      validManifest({ delegation: communityDelegation({ requiresHumanApprovalBeforeExecution: false }) as never }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((issue) => issue.code === "delegation-requires-human-approval")).toBe(true);
+  });
+
+  it("rejects a community-task delegation that omits the approval flag entirely", () => {
+    const contract = communityDelegation();
+    delete (contract as Record<string, unknown>).requiresHumanApprovalBeforeExecution;
+    const result = validateAddOnManifest(validManifest({ delegation: contract as never }));
+    expect(result.valid).toBe(false);
+    // Both the boolean-shape check and the community-task approval rule fire.
+    expect(result.issues.some((issue) => issue.code === "delegation-approval-boolean")).toBe(true);
+    expect(result.issues.some((issue) => issue.code === "delegation-requires-human-approval")).toBe(true);
+  });
+
+  it("rejects an unknown delegation task type", () => {
+    const result = validateAddOnManifest(
+      validManifest({ delegation: communityDelegation({ taskTypes: ["not-a-real-type"] }) as never }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((issue) => issue.path === "delegation.taskTypes[0]")).toBe(true);
+  });
+
+  it("rejects a non-object delegation", () => {
+    const result = validateAddOnManifest(validManifest({ delegation: "nope" as never }));
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((issue) => issue.code === "delegation-object")).toBe(true);
+  });
+
+  it("still allows a non-community task delegation to opt out of the approval gate", () => {
+    // Mirrors public/addons/browser.json: research/browser-inspection tasks may run
+    // without a pre-execution approval gate. The community-task rule must not leak
+    // onto other task types.
+    const result = validateAddOnManifest(
+      validManifest({
+        delegation: communityDelegation({
+          taskTypes: ["research", "browser-inspection"],
+          requiresHumanApprovalBeforeExecution: false,
+        }) as never,
+      }),
+    );
+    expect(result.issues.filter((issue) => issue.code.startsWith("delegation"))).toEqual([]);
+  });
+});

@@ -65,6 +65,34 @@ const artifactTypes: readonly DelegationArtifactType[] = [
   "verification-report",
   "archive-intake-bundle",
 ];
+const delegationTaskTypes = [
+  "code-change",
+  "bug-fix",
+  "research",
+  "browser-inspection",
+  "knowledge-organization",
+  "archive-prep",
+  "communication",
+  "system-diagnosis",
+  "system-repair",
+  "design",
+  "routine-work",
+  "community-task",
+] as const;
+const delegationTargetRuntimes = [
+  "native-agent",
+  "addon-agent",
+  "embedded-workspace",
+  "local-service",
+  "terminal-service",
+  "external-agent",
+] as const;
+// Task types whose agent-initiated writes touch a public/shared or otherwise
+// human-owned surface and therefore MUST be human-approval gated before an agent
+// executes them (constitution Art. V — "Agent-initiated writes go through a
+// human-approval gate"). Enforced against the manifest's delegation contract so an
+// add-on that accepts these tasks cannot ship with the approval gate disabled.
+const approvalGatedDelegationTaskTypes: readonly string[] = ["community-task"];
 const installModes = ["detect-existing-only", "detect-existing-or-install", "bundled", "manual"] as const;
 const credentialSetupModes = ["none", "user-guided", "host-vault", "external"] as const;
 const auditRemediationPolicies = ["suggest-only", "approval-gated", "automatic-safe"] as const;
@@ -583,6 +611,71 @@ export const validateAddOnManifest = (
       "service",
       "Local-service add-ons should declare a service entrypoint before they can be executed by the host.",
     );
+  }
+
+  // Delegation contract (AddOnDelegationContract). Previously unvalidated, so a
+  // manifest could declare that it accepts delegated agent work with the human
+  // approval gate switched off, and nothing caught it (constitution Art. V). We
+  // validate the contract shape and, for approval-gated task types, require
+  // requiresHumanApprovalBeforeExecution === true.
+  if (candidate.delegation !== undefined) {
+    if (!isRecord(candidate.delegation)) {
+      pushIssue(issues, "error", "delegation-object", "delegation", "delegation must be an object when present.");
+    } else {
+      const delegation = candidate.delegation;
+      if (typeof delegation.acceptsTasks !== "boolean") {
+        pushIssue(issues, "error", "delegation-accepts-boolean", "delegation.acceptsTasks", "delegation.acceptsTasks must be boolean.");
+      }
+      if (typeof delegation.requiresHumanApprovalBeforeExecution !== "boolean") {
+        pushIssue(
+          issues,
+          "error",
+          "delegation-approval-boolean",
+          "delegation.requiresHumanApprovalBeforeExecution",
+          "delegation.requiresHumanApprovalBeforeExecution must be boolean.",
+        );
+      }
+      validateEnum(issues, delegation.defaultTargetRuntime, delegationTargetRuntimes, "delegation.defaultTargetRuntime");
+      const taskTypes = delegation.taskTypes;
+      if (!Array.isArray(taskTypes)) {
+        pushIssue(issues, "error", "delegation-task-types-array", "delegation.taskTypes", "delegation.taskTypes must be an array.");
+      } else {
+        taskTypes.forEach((taskType, taskTypeIndex) => {
+          validateEnum(issues, taskType, delegationTaskTypes, `delegation.taskTypes[${taskTypeIndex}]`);
+        });
+      }
+      if (!Array.isArray(delegation.artifactReturnTypes)) {
+        pushIssue(
+          issues,
+          "error",
+          "delegation-artifact-types-array",
+          "delegation.artifactReturnTypes",
+          "delegation.artifactReturnTypes must be an array.",
+        );
+      } else {
+        delegation.artifactReturnTypes.forEach((artifactType, artifactIndex) => {
+          validateEnum(issues, artifactType, artifactTypes, `delegation.artifactReturnTypes[${artifactIndex}]`);
+        });
+      }
+      // Art. V — an add-on that accepts approval-gated delegated work (e.g.
+      // community-task writes into a public/shared backend) may not disable the
+      // human-approval gate. Without this, the host's defense-in-depth approval
+      // check could be the only gate, and a manifest could silently opt out of it.
+      if (
+        delegation.acceptsTasks === true &&
+        Array.isArray(taskTypes) &&
+        taskTypes.some((taskType) => approvalGatedDelegationTaskTypes.includes(taskType as string)) &&
+        delegation.requiresHumanApprovalBeforeExecution !== true
+      ) {
+        pushIssue(
+          issues,
+          "error",
+          "delegation-requires-human-approval",
+          "delegation.requiresHumanApprovalBeforeExecution",
+          "Add-ons accepting community-task (or other approval-gated) delegated work must set requiresHumanApprovalBeforeExecution: true (constitution Art. V).",
+        );
+      }
+    }
   }
 
   const declaredToolNames = new Set<string>();

@@ -36,6 +36,37 @@ export const AGENT_TASK_TYPE = "community-task";
 export const GOAL_STEP_STATUSES = Object.freeze(["planned", "active", "blocked", "completed", "cancelled"]);
 
 /**
+ * Community task lifecycle (open -> claimed -> done) -> GoalStepStatus. This is the
+ * SINGLE source of truth for how a community task becomes a GoalStep status, and it
+ * is deliberately identical to the TS half (src/modules/community-hub/
+ * community-goal-bridge.ts TASK_STATUS_TO_GOAL_STEP_STATUS) and the backend
+ * (backend/src/goal-mapping.mjs). Both runtime halves derive the step status from
+ * `task.status` through this table so they cannot drift; the backend's denormalized
+ * `task.goalStepStatus` is NOT trusted as an independent source (a stale/wrong cache
+ * value can never diverge the two halves).
+ */
+export const TASK_STATUS_TO_GOAL_STEP_STATUS = Object.freeze({
+  open: "planned",
+  claimed: "active",
+  done: "completed",
+});
+
+/**
+ * @param {string} status a community Task.status
+ * @returns {string} the GoalStepStatus
+ */
+export function taskStatusToGoalStepStatus(status) {
+  const mapped = TASK_STATUS_TO_GOAL_STEP_STATUS[status];
+  if (!mapped) {
+    throw new AgentBridgeError(
+      `Task carries an unknown community task status: ${JSON.stringify(status)}`,
+      { status: 502, code: "bad_upstream_status" },
+    );
+  }
+  return mapped;
+}
+
+/**
  * Reverse map: a desired GoalStepStatus -> the community task write that realizes
  * it. v1 exposes only claim/un-claim on the backend (backend validateClaim), so:
  *   active  -> "claim"    (an agent signs up to work the task)
@@ -81,10 +112,12 @@ export function goalStepStatusToTaskAction(status) {
 
 /**
  * Project one shaped community task (as returned by `community.list_tasks`) into a
- * plain GoalStep-shaped object an agent can read. The backend already stamps
- * `goalStepStatus` on each task (backend/src/goal-mapping.mjs); we trust it but
- * validate it is a legal GoalStepStatus so a bad backend value cannot leak into a
- * GoalWorkspace.
+ * plain GoalStep-shaped object an agent can read. The step status is derived
+ * authoritatively from `task.status` through TASK_STATUS_TO_GOAL_STEP_STATUS — the
+ * exact same source of truth the TS half uses — so the two runtime halves cannot
+ * drift. The backend's denormalized `task.goalStepStatus` is intentionally ignored
+ * here; if it ever disagreed with `task.status`, both halves still agree because
+ * both key off `task.status`.
  * @param {object} task
  * @param {() => number} [now]
  */
@@ -92,13 +125,7 @@ export function communityTaskToGoalStep(task, now = Date.now) {
   if (!task || typeof task !== "object" || !task.id) {
     throw new AgentBridgeError("communityTaskToGoalStep requires a task with an id.", { code: "bad_task" });
   }
-  const status = task.goalStepStatus;
-  if (!GOAL_STEP_STATUSES.includes(status)) {
-    throw new AgentBridgeError(
-      `Task ${task.id} carries an invalid goalStepStatus: ${JSON.stringify(status)}`,
-      { status: 502, code: "bad_upstream_status" },
-    );
-  }
+  const status = taskStatusToGoalStepStatus(task.status);
   const createdAt = task.createdAt ?? new Date(now()).toISOString();
   const noteParts = [];
   if (Array.isArray(task.claimedBy) && task.claimedBy.length) noteParts.push(`claimedBy=${task.claimedBy.join(",")}`);
@@ -212,11 +239,17 @@ export function createAgentDelegationBridge({ service, delegation, now = Date.no
         );
       }
 
+      // Forward the caller's REAL approval decision to the host — never a hardcoded
+      // `true`. This keeps the host's own approval gate (community-host.assertApproved)
+      // an independent second lock: if the manifest contract ever failed to require
+      // approval (or was tampered/omitted), an unapproved agent write still arrives at
+      // the host as `approved: false` and is refused there. Laundering `approved: true`
+      // would collapse the two Art. V locks into one.
       return service.call("community.claim_task", {
         taskId: id,
         action: resolvedAction,
         source: "agent",
-        approved: true,
+        approved: approved === true,
       });
     },
   };
