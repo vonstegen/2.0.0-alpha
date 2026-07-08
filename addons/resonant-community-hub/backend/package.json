@@ -1,0 +1,20 @@
+{
+  "name": "@resonantos/community-hub-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Community Hub serverless backend (Vercel Functions + Neon Postgres). M1: public read path (events/tasks/presence) behind a DB adapter with an offline in-memory test double.",
+  "main": "src/handlers.mjs",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "seed": "node seed/seed.mjs",
+    "migrate": "node seed/seed.mjs --migrate-only",
+    "dev": "vercel dev"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@neondatabase/serverless": "^0.10.0"
+  }
+}

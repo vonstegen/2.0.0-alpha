@@ -40,12 +40,13 @@ Neon Postgres  (backend/db — schema + migrations) <- M1
 - [x] Draft manifest `examples/addons/community-hub.json` — passes `validateAddOnManifest` (zero issues)
 - [x] Validation test case in `src/sdk/addons/public-manifests.test.ts`
 
-### M1 — Backend read path
-- [ ] `backend/` scaffold (Vercel Functions project) + `package.json`
-- [ ] DB schema + migrations for `Member, Event, Rsvp, CheckIn, Task, Presence, Report` (spec §5)
-- [ ] `GET /v1/events`, `GET /v1/tasks`, `GET /v1/presence` (public reads, with counts)
-- [ ] Seed script + fixtures for local/preview
-- [ ] Read-path integration tests
+### M1 — Backend read path  ✅
+- [x] `backend/` scaffold (Vercel Functions project) + `package.json`
+- [x] DB schema + migrations for `Member, Event, Rsvp, CheckIn, Task, Presence, Report` (spec §5) — `backend/db/migrations/0001_init.sql`
+- [x] `GET /v1/events`, `GET /v1/tasks`, `GET /v1/presence` (public reads, with counts) — `backend/api/v1/`
+- [x] Seed script + fixtures for local/preview — `backend/seed/` (offline `--inmemory` dry-run)
+- [x] Read-path integration tests — `backend/test/` (`node --test`, offline; 14 tests green)
+- DB behind a `Repository` adapter (in-memory test double + Neon SQL impl). Live Neon connect/seed + `vercel dev` deferred (no cloud creds in sandbox).
 
 ### M2 — Auth + write path
 - [ ] GitHub OAuth sign-in; `Member` provisioning

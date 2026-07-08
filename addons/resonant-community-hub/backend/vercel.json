@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/v1/*.mjs": {
+      "runtime": "nodejs20.x",
+      "maxDuration": 10
+    }
+  },
+  "rewrites": [
+    { "source": "/v1/events", "destination": "/api/v1/events" },
+    { "source": "/v1/tasks", "destination": "/api/v1/tasks" },
+    { "source": "/v1/presence", "destination": "/api/v1/presence" }
+  ]
+}
