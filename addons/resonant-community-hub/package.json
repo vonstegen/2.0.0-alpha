@@ -1,0 +1,12 @@
+{
+  "name": "@resonantos/resonant-community-hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Community Hub add-on: local-service host that proxies the hosted Community API outbound, holds the per-member token in the host vault, and polls for sync. The backend (Vercel Functions + Neon) lives under ./backend.",
+  "main": "src/index.mjs",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}

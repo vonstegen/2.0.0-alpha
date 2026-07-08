@@ -57,11 +57,12 @@ Neon Postgres  (backend/db — schema + migrations) <- M1
 - [x] Auth + rate-limit + OAuth + write-path unit/integration tests (offline; 60 M2 tests) — `backend/test/{auth,rate-limit,github-oauth,write-path}.test.mjs`; SQL writes also exercised against a real Postgres planner (PGlite) in `sql-postgres.test.mjs`
 - Write methods live behind the same `Repository` adapter (memory + Neon SQL impls). Live Neon/`vercel dev` + a real GitHub OAuth app remain deferred (no cloud creds in sandbox).
 
-### M3 — Add-on client
-- [ ] `addons/resonant-community-hub/src/` local-service host: bridge RPC + outbound Community API proxy + poller
-- [ ] `src/modules/community-hub/` shell surfaces: events feed (RSVP + check-in), tasks board, presence rail
-- [ ] Wire tools `community.*` through the host (writes approval-gated)
-- [ ] Promote manifest `examples/addons/community-hub.json` → `public/addons/community-hub.json` + `index.json`
+### M3 — Add-on client  ✅
+- [x] `addons/resonant-community-hub/src/` local-service host: outbound Community API proxy (`api-client.mjs`), session-token vault (`token-vault.mjs`), policy layer (`community-host.mjs`), ~20s poller (`poller.mjs`), loopback http-json server (`http-server.mjs`), entrypoint (`index.mjs`)
+- [x] `src/modules/community-hub/` shell surfaces: events feed (RSVP + check-in) + tasks board (`CommunityHubWorkspace.tsx`), presence rail (`PresenceRail.tsx`), pure view-model (`community-view-model.ts`), bridge client (`community-bridge.ts`), CSS
+- [x] Wire tools `community.*` through the host, writes approval-gated (agent-initiated writes need `approved:true`; user surface writes tagged `source:"user"`) + fail-closed write auth (no token ⇒ refused, never sent anonymously)
+- [x] Promote manifest `examples/addons/community-hub.json` → `public/addons/community-hub.json` (+ `index.json` + `dev-index.json`; provenance bumped to `curated-signed`/`verified` for the bundled catalog)
+- Tests: host proxy + poller under `node --test` (35 green); view-model + bridge under vitest (16 green); `public-manifests.test.ts` still green. Live loopback bind is exercised where the sandbox permits (guarded skip otherwise). Live Neon/Vercel + a real GitHub OAuth app remain deferred (no cloud creds in sandbox).
 
 ### M4 — Moderation + erasure
 - [ ] `POST /v1/reports`, `POST /v1/mod/hide`; hidden entries excluded from public reads
