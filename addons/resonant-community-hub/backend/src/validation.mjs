@@ -127,6 +127,12 @@ export function validateHide(body) {
   return validateTarget(b);
 }
 
+/** POST /v1/mod/unhide — moderator reverses a hide (spec FR-M2). Same target shape. */
+export function validateUnhide(body) {
+  const b = asObject(body);
+  return validateTarget(b);
+}
+
 /**
  * PUT /v1/presence (spec FR-P1). Two shapes:
  *   - clear:  { clear: true }  (or an empty body) -> remove presence.

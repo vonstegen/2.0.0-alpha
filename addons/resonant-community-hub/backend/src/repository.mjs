@@ -262,15 +262,21 @@ export function createMemoryRepository(seed = {}, opts = {}) {
       return shapeTask(task, { claims: tables.taskClaims });
     },
 
-    /** Upsert opt-in presence for a member (FR-P1). One row per member. */
+    /**
+     * Upsert opt-in presence for a member (FR-P1). One row per member.
+     *
+     * A moderator hide is STICKY: a member's own self-write must NOT clear a prior
+     * moderator hide (constitution Art. VII — a control the reported party can
+     * reverse at will is not a control). `hidden` is preserved on update and only
+     * ever cleared via the moderator-gated un-hide path (unhideEntry).
+     */
     async setPresence({ memberId, status, note }) {
       let row = tables.presence.find((p) => p.memberId === memberId);
       if (row) {
         row.status = status;
         row.note = note ?? null;
         row.updatedAt = nowIso();
-        // Re-opting-in is fresh content: clear any prior moderator hide (M4).
-        row.hidden = false;
+        // Intentionally do NOT touch row.hidden here — see doc comment above.
       } else {
         row = { memberId, status, note: note ?? null, updatedAt: nowIso(), hidden: false };
         tables.presence.push(row);
@@ -367,6 +373,26 @@ export function createMemoryRepository(seed = {}, opts = {}) {
         }
       }
       return { found, targetType, targetId, resolvedReports };
+    },
+
+    /**
+     * Un-hide an entry so it returns to public reads (FR-M2, Art. VII). Moderator-
+     * gated at the handler layer: the ONLY way to reverse a moderator hide, for all
+     * three target types. Mirrors hideEntry: `{ found, targetType, targetId }`.
+     */
+    async unhideEntry({ targetType, targetId }) {
+      let found = false;
+      if (targetType === "event") {
+        const e = tables.events.find((x) => x.id === targetId);
+        if (e) { e.hidden = false; found = true; }
+      } else if (targetType === "task") {
+        const t = tables.tasks.find((x) => x.id === targetId);
+        if (t) { t.hidden = false; found = true; }
+      } else if (targetType === "presence") {
+        const p = tables.presence.find((x) => x.memberId === targetId);
+        if (p) { p.hidden = false; found = true; }
+      }
+      return { found, targetType, targetId };
     },
 
     /**

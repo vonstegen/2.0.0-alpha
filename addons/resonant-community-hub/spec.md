@@ -65,7 +65,11 @@ no writes into trusted Living Archive pages.
 
 ### 4.5 Moderation
 - FR-M1: Every write endpoint is rate-limited.
-- FR-M2: Any event/task/presence entry can be **reported**; moderators can **hide** it.
+- FR-M2: Any event/task/presence entry can be **reported**; moderators can **hide**
+  it and **un-hide** it. A moderator hide is *sticky*: it stays hidden until a
+  moderator un-hides it. The reported party cannot reverse it (e.g. re-setting one's
+  own presence does **not** clear a moderator hide) — moderation is reversible by
+  moderators, and only by moderators (constitution Art. VII).
 
 ## 5. Data model (managed DB)
 
@@ -95,6 +99,7 @@ Stateless functions; polling clients.
 | PUT | `/v1/presence` | member | Set/clear own presence |
 | POST | `/v1/reports` | member | Report an entry |
 | POST | `/v1/mod/hide` | moderator | Hide an entry |
+| POST | `/v1/mod/unhide` | moderator | Un-hide an entry (reverse a hide) |
 | DELETE | `/v1/account` | member | Delete own account + erase writes (FR-A3) |
 | POST | `/v1/auth/*` | — | OAuth/magic-link sign-in |
 
@@ -139,6 +144,8 @@ All write endpoints: rate-limited, auth-guarded, input-validated.
 - [ ] Setting/clearing presence works and is opt-in.
 - [ ] Write endpoints reject anonymous callers and are rate-limited.
 - [ ] Reported entries can be hidden by a moderator and disappear from public reads.
+- [ ] A moderator hide is sticky (the reported party cannot self-reverse it) and is
+      reversible only by a moderator via `POST /v1/mod/unhide`.
 - [ ] Two ResonantOS instances see the same hub state (shared-source proof).
 - [ ] All add-on API traffic flows through the local bridge (never the extension directly).
 

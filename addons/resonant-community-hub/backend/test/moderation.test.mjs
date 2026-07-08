@@ -19,7 +19,7 @@ import { createRateLimiter } from "../src/rate-limit.mjs";
 import { createSessionToken } from "../src/auth.mjs";
 import { fixtures } from "../seed/fixtures.mjs";
 import { handleRsvp } from "../src/write-handlers.mjs";
-import { handleCreateReport, handleHideEntry, handleDeleteAccount } from "../src/mod-handlers.mjs";
+import { handleCreateReport, handleHideEntry, handleUnhideEntry, handleDeleteAccount } from "../src/mod-handlers.mjs";
 
 const SECRET = "moderation-secret-16-plus-chars";
 const NOW = Date.parse("2026-07-08T12:00:00.000Z");
@@ -126,12 +126,58 @@ describe("moderation: hide excludes an entry from public reads (spec §9)", () =
     assert.equal((await handleHideEntry({ headers: {}, body: { targetType: "event", targetId: "e_kickoff" } }, ctx)).status, 401);
   });
 
-  test("re-setting presence after a hide clears the hide (fresh opt-in)", async () => {
+  test("a moderator hide is STICKY: the reported member cannot self-unhide by re-setting presence", async () => {
     const { ctx, repo } = makeCtx();
     await handleHideEntry(authed(tokenFor("m_grace", ["moderator"]), { targetType: "presence", targetId: "m_ada" }), ctx);
-    assert.ok(!(await repo.listPresence()).some((p) => p.memberId === "m_ada"));
+    assert.ok(!(await repo.listPresence()).some((p) => p.memberId === "m_ada"), "hidden by moderator");
+    // The reported member re-sets their own presence — this must NOT reverse the hide
+    // (constitution Art. VII: the reported party cannot reverse a moderation control).
     await repo.setPresence({ memberId: "m_ada", status: "back online", note: null });
-    assert.ok((await repo.listPresence()).some((p) => p.memberId === "m_ada"), "re-set presence is visible again");
+    assert.ok(!(await repo.listPresence()).some((p) => p.memberId === "m_ada"), "still hidden after a member self-write");
+    // ...but the fresh status/note are persisted for when a moderator un-hides.
+    const row = await repo.getPresence("m_ada");
+    assert.equal(row.hidden, true);
+    assert.equal(row.status, "back online");
+  });
+});
+
+// --- un-hide (FR-M2) : moderation is reversible, by moderators only -----------
+
+describe("moderation: un-hide restores an entry (moderator-only reversal, Art. VII)", () => {
+  test("moderator un-hides a hidden event -> it returns to GET /v1/events", async () => {
+    const { ctx, repo } = makeCtx();
+    const mod = tokenFor("m_grace", ["moderator"]);
+    await handleHideEntry(authed(mod, { targetType: "event", targetId: "e_kickoff" }), ctx);
+    assert.ok(!(await repo.listEvents()).some((e) => e.id === "e_kickoff"), "hidden");
+    const res = await handleUnhideEntry(authed(mod, { targetType: "event", targetId: "e_kickoff" }), ctx);
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.unhidden, { targetType: "event", targetId: "e_kickoff" });
+    assert.ok((await repo.listEvents()).some((e) => e.id === "e_kickoff"), "visible again after un-hide");
+  });
+
+  test("moderator un-hides a hidden task -> it returns to GET /v1/tasks", async () => {
+    const { ctx, repo } = makeCtx();
+    const mod = tokenFor("m_grace", ["moderator"]);
+    await handleHideEntry(authed(mod, { targetType: "task", targetId: "t_venue" }), ctx);
+    assert.ok(!(await repo.listTasks()).some((t) => t.id === "t_venue"));
+    await handleUnhideEntry(authed(mod, { targetType: "task", targetId: "t_venue" }), ctx);
+    assert.ok((await repo.listTasks()).some((t) => t.id === "t_venue"), "visible again after un-hide");
+  });
+
+  test("moderator un-hides a hidden presence entry -> it returns to GET /v1/presence", async () => {
+    const { ctx, repo } = makeCtx();
+    const mod = tokenFor("m_grace", ["moderator"]);
+    await handleHideEntry(authed(mod, { targetType: "presence", targetId: "m_ada" }), ctx);
+    assert.ok(!(await repo.listPresence()).some((p) => p.memberId === "m_ada"));
+    await handleUnhideEntry(authed(mod, { targetType: "presence", targetId: "m_ada" }), ctx);
+    assert.ok((await repo.listPresence()).some((p) => p.memberId === "m_ada"), "visible again after moderator un-hide");
+  });
+
+  test("un-hide is moderator-only (403); anon 401; missing target 404", async () => {
+    const { ctx } = makeCtx();
+    assert.equal((await handleUnhideEntry(authed(tokenFor("m_ada", ["organizer"]), { targetType: "event", targetId: "e_kickoff" }), ctx)).status, 403);
+    assert.equal((await handleUnhideEntry({ headers: {}, body: { targetType: "event", targetId: "e_kickoff" } }, ctx)).status, 401);
+    assert.equal((await handleUnhideEntry(authed(tokenFor("m_grace", ["moderator"]), { targetType: "event", targetId: "ghost" }), ctx)).status, 404);
   });
 });
 
@@ -215,7 +261,7 @@ async function call(endpoint, { method = "GET", headers = {}, body, query = {} }
 }
 
 describe("real Vercel entrypoints (COMMUNITY_HUB_INMEMORY) enforce auth + method guards", () => {
-  let reportsEndpoint, hideEndpoint, accountEndpoint, getWriteContext;
+  let reportsEndpoint, hideEndpoint, unhideEndpoint, accountEndpoint, getWriteContext;
 
   before(async () => {
     process.env.COMMUNITY_HUB_INMEMORY = "1";
@@ -224,6 +270,7 @@ describe("real Vercel entrypoints (COMMUNITY_HUB_INMEMORY) enforce auth + method
     delete process.env.DATABASE_URL;
     ({ default: reportsEndpoint } = await import("../api/v1/reports.mjs"));
     ({ default: hideEndpoint } = await import("../api/v1/mod/hide.mjs"));
+    ({ default: unhideEndpoint } = await import("../api/v1/mod/unhide.mjs"));
     ({ default: accountEndpoint } = await import("../api/v1/account.mjs"));
     ({ getWriteContext } = await import("../src/write-context.mjs"));
   });
@@ -258,6 +305,25 @@ describe("real Vercel entrypoints (COMMUNITY_HUB_INMEMORY) enforce auth + method
     assert.equal(res.status, 200);
     const { repo } = await getWriteContext();
     assert.ok(!(await repo.listTasks()).some((t) => t.id === "t_recap"), "hidden in the singleton repo");
+  });
+
+  test("POST /v1/mod/unhide enforces method + moderator guard, then restores in the shared repo", async () => {
+    const modToken = createSessionToken({ sub: "m_grace", handle: "grace", roles: ["moderator"] }, SECRET);
+    // GET -> 405 with Allow header.
+    const getRes = await call(unhideEndpoint, { method: "GET" });
+    assert.equal(getRes.status, 405);
+    assert.equal(getRes.headers["allow"], "POST");
+    // Anonymous -> 401.
+    assert.equal((await call(unhideEndpoint, { method: "POST", body: { targetType: "event", targetId: "e_kickoff" } })).status, 401);
+    // Non-moderator -> 403.
+    const memberToken = createSessionToken({ sub: "m_alan", handle: "alan", roles: [] }, SECRET);
+    assert.equal((await call(unhideEndpoint, { method: "POST", headers: { authorization: `Bearer ${memberToken}` }, body: { targetType: "event", targetId: "e_kickoff" } })).status, 403);
+    // Moderator hides then un-hides t_recap in the singleton repo -> visible again.
+    await call(hideEndpoint, { method: "POST", headers: { authorization: `Bearer ${modToken}` }, body: { targetType: "task", targetId: "t_recap" } });
+    const res = await call(unhideEndpoint, { method: "POST", headers: { authorization: `Bearer ${modToken}` }, body: { targetType: "task", targetId: "t_recap" } });
+    assert.equal(res.status, 200);
+    const { repo } = await getWriteContext();
+    assert.ok((await repo.listTasks()).some((t) => t.id === "t_recap"), "restored in the singleton repo");
   });
 
   test("DELETE /v1/account without a token -> 401; GET -> 405", async () => {
@@ -333,6 +399,45 @@ describe("M4 moderation + erasure against a real Postgres planner (PGlite)", { s
     const res = await repo.hideEntry({ targetType: "task", targetId: "ghost" });
     assert.equal(res.found, false);
     assert.equal(res.resolvedReports, 0);
+  });
+
+  test("presence hide is sticky in SQL: a member self-write does NOT clear hidden (matches in-memory)", async () => {
+    // Fresh, isolated dbs so earlier hides don't interfere.
+    const d = await freshDb();
+    const sqlRepo = createSqlRepository({ query: (t, p) => d.query(t, p) }, { now });
+    const memRepo = createMemoryRepository(fixtures(), { now });
+    try {
+      await sqlRepo.hideEntry({ targetType: "presence", targetId: "m_ada" });
+      await memRepo.hideEntry({ targetType: "presence", targetId: "m_ada" });
+      // The reported member re-sets their own presence — must stay hidden in both.
+      await sqlRepo.setPresence({ memberId: "m_ada", status: "back online", note: null });
+      await memRepo.setPresence({ memberId: "m_ada", status: "back online", note: null });
+      assert.ok(!(await sqlRepo.listPresence()).some((p) => p.memberId === "m_ada"), "SQL: still hidden after self-write");
+      assert.deepEqual(await sqlRepo.listPresence(), await memRepo.listPresence());
+      assert.equal((await sqlRepo.getPresence("m_ada")).hidden, true);
+      assert.equal((await sqlRepo.getPresence("m_ada")).status, "back online");
+      // A moderator un-hide is the only reversal -> visible again (both repos).
+      assert.equal((await sqlRepo.unhideEntry({ targetType: "presence", targetId: "m_ada" })).found, true);
+      await memRepo.unhideEntry({ targetType: "presence", targetId: "m_ada" });
+      assert.ok((await sqlRepo.listPresence()).some((p) => p.memberId === "m_ada"), "SQL: visible after moderator un-hide");
+      assert.deepEqual(await sqlRepo.listPresence(), await memRepo.listPresence());
+    } finally {
+      await d.close();
+    }
+  });
+
+  test("unhideEntry restores events/tasks in SQL; missing target -> found:false", async () => {
+    const d = await freshDb();
+    const sqlRepo = createSqlRepository({ query: (t, p) => d.query(t, p) }, { now });
+    try {
+      await sqlRepo.hideEntry({ targetType: "event", targetId: "e_kickoff" });
+      assert.ok(!(await sqlRepo.listEvents()).some((e) => e.id === "e_kickoff"));
+      assert.equal((await sqlRepo.unhideEntry({ targetType: "event", targetId: "e_kickoff" })).found, true);
+      assert.ok((await sqlRepo.listEvents()).some((e) => e.id === "e_kickoff"), "event restored");
+      assert.equal((await sqlRepo.unhideEntry({ targetType: "task", targetId: "ghost" })).found, false);
+    } finally {
+      await d.close();
+    }
   });
 
   test("deleteMember cascade matches the in-memory reference (task reopen + counts)", async () => {

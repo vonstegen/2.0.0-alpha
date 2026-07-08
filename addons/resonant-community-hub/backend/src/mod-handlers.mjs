@@ -6,7 +6,7 @@
 // ({ status, body, headers }) so they run under `node --test` offline.
 
 import { guardWrite } from "./write-handlers.mjs";
-import { validateReport, validateHide } from "./validation.mjs";
+import { validateReport, validateHide, validateUnhide } from "./validation.mjs";
 
 const err = (status, code, message) => ({ status, body: { error: code, message } });
 
@@ -50,6 +50,24 @@ export function handleHideEntry(req, ctx) {
       status: 200,
       body: { hidden: { targetType, targetId }, resolvedReports: result.resolvedReports },
     };
+  });
+}
+
+/**
+ * POST /v1/mod/unhide — moderators only. Reverses a hide so the target returns to
+ * public reads. This is the ONLY way to clear a `hidden` flag for any of the three
+ * target types (events/tasks/presence); member self-writes never clear it
+ * (constitution Art. VII — moderation is reversible by moderators and only by them).
+ */
+export function handleUnhideEntry(req, ctx) {
+  return guardWrite(req, ctx, "mod:unhide", async ({ member, body }) => {
+    if (!Array.isArray(member.roles) || !member.roles.includes("moderator")) {
+      return err(403, "forbidden", "Only moderators can un-hide entries.");
+    }
+    const { targetType, targetId } = validateUnhide(body);
+    const result = await ctx.repo.unhideEntry({ targetType, targetId });
+    if (!result.found) return err(404, "not_found", "Un-hide target not found.");
+    return { status: 200, body: { unhidden: { targetType, targetId } } };
   });
 }
 

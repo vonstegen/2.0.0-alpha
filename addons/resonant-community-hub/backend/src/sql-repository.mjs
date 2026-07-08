@@ -299,11 +299,14 @@ export function createSqlRepository(db, opts = {}) {
 
     async setPresence({ memberId, status, note }) {
       const updatedAt = nowIso();
-      // Re-opting-in clears any prior moderator hide (hidden = false), matching the
+      // A moderator hide is STICKY: a member's own self-write must NOT clear it
+      // (constitution Art. VII — the reported party cannot reverse a moderation
+      // control). On a fresh insert hidden defaults to false; on conflict we
+      // deliberately DO NOT touch `hidden` (only unhideEntry clears it). Mirrors the
       // in-memory repository (M4).
       await db.query(
         `INSERT INTO presence (member_id, status, note, updated_at, hidden) VALUES ($1,$2,$3,$4,false)
-         ON CONFLICT (member_id) DO UPDATE SET status = EXCLUDED.status, note = EXCLUDED.note, updated_at = EXCLUDED.updated_at, hidden = false`,
+         ON CONFLICT (member_id) DO UPDATE SET status = EXCLUDED.status, note = EXCLUDED.note, updated_at = EXCLUDED.updated_at`,
         [memberId, status, note ?? null, updatedAt],
       );
       const { rows } = await db.query(
@@ -382,6 +385,22 @@ export function createSqlRepository(db, opts = {}) {
         resolvedReports = Array.isArray(rows) ? rows.length : 0;
       }
       return { found, targetType, targetId, resolvedReports };
+    },
+
+    async unhideEntry({ targetType, targetId }) {
+      // Moderator-gated reversal of a hide (the only path that clears `hidden`).
+      let found = false;
+      if (targetType === "event") {
+        const { rows } = await db.query("UPDATE events SET hidden = false WHERE id = $1 RETURNING id", [targetId]);
+        found = rows.length > 0;
+      } else if (targetType === "task") {
+        const { rows } = await db.query("UPDATE tasks SET hidden = false WHERE id = $1 RETURNING id", [targetId]);
+        found = rows.length > 0;
+      } else if (targetType === "presence") {
+        const { rows } = await db.query("UPDATE presence SET hidden = false WHERE member_id = $1 RETURNING member_id", [targetId]);
+        found = rows.length > 0;
+      }
+      return { found, targetType, targetId };
     },
 
     async deleteMember(memberId) {
