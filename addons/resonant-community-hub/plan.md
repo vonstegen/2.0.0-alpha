@@ -4,23 +4,21 @@
 - Plan version: 0.1.0 · 2026-07-07
 
 > This plan translates the spec into buildable technical decisions and a task
-> breakdown. Decisions marked **(default)** are recommended defaults chosen to
-> keep M1 unblocked; they may be revisited via a spec amendment before the
-> affected milestone starts.
+> breakdown. The decisions below were **confirmed 2026-07-07** and are no longer
+> defaults; changing one now requires a spec/plan amendment.
 
-## Decisions
+## Decisions (confirmed 2026-07-07)
 
 | Area | Decision | Rationale |
 |---|---|---|
-| Serverless platform | **Vercel Functions (default)** | The environment already carries Vercel tooling/skills; lowest-friction deploys. Cloudflare Workers is the fallback if edge-only/cost pushes it. |
-| Managed DB | **Neon Postgres (default)** | Serverless Postgres, branchable, pairs cleanly with Vercel. Turso/libSQL is the fallback for SQLite-style edge reads. |
-| Auth | **GitHub OAuth + magic-link fallback (default)** | Dev-community audience skews GitHub; magic-link covers non-GitHub members. No anonymous writes (constitution Art. IV). |
-| Communities in v1 | **Single global community (default)** | Ship the loop first; multi-community is a later schema/route addition. |
+| Serverless platform | **Vercel Functions** | The environment already carries Vercel tooling/skills; lowest-friction deploys and previews. |
+| Managed DB | **Neon Postgres** | Serverless Postgres, branchable, pairs cleanly with Vercel. |
+| Auth | **GitHub OAuth only (v1)** | Dev-leaning community; strong identity, low friction. No magic-link/Google in v1. No anonymous writes (constitution Art. IV). |
+| Communities in v1 | **Single global community** | Ship the loop first; multi-community is a later schema/route addition. |
 | Sync | **Polling, ~20s** | Constitution Art. VI — localhost bridge cannot receive webhooks. |
-| Token storage | **Host vault / user-config scope** | Per-user Plane-style secret never committed; connector `configScope: host-vault`. |
+| Token storage | **Host vault / user-config scope** | Per-user secret never committed; connector `configScope: host-vault`. |
 
-Open items still needing a call before M2: final OAuth provider set, and platform/DB
-pair confirmation (see spec §11).
+No platform/auth/scope decisions remain open for M1–M2.
 
 ## Architecture (build view)
 
@@ -50,7 +48,7 @@ Neon Postgres  (backend/db — schema + migrations) <- M1
 - [ ] Read-path integration tests
 
 ### M2 — Auth + write path
-- [ ] OAuth (GitHub) + magic-link sign-in; `Member` provisioning
+- [ ] GitHub OAuth sign-in; `Member` provisioning
 - [ ] `POST /v1/events`, `/events/:id/rsvp`, `/events/:id/checkin`
 - [ ] `POST /v1/tasks/:id/claim`, `PUT /v1/presence`
 - [ ] Rate limiting on all writes; anonymous writes rejected (Art. IV, VII)

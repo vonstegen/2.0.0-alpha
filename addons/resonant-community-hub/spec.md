@@ -59,7 +59,7 @@ no writes into trusted Living Archive pages.
 - FR-P2: A presence strip shows who is currently around and what they're working on.
 
 ### 4.4 Identity & access
-- FR-A1: Reads are public; **writes require sign-in** (OAuth GitHub/Google or magic-link).
+- FR-A1: Reads are public; **writes require sign-in** (GitHub OAuth in v1).
 - FR-A2: First sign-in provisions a `Member` (handle, display name, OAuth sub).
 - FR-A3: A member can delete their account and associated writes (erasure).
 
@@ -122,7 +122,7 @@ All write endpoints: rate-limited, auth-guarded, input-validated.
 ## 8. Non-functional requirements
 
 - **Hosting:** serverless functions + managed DB (Turso/libSQL or Neon Postgres).
-- **Security:** OAuth/magic-link; secrets in host vault, never committed; per-user
+- **Security:** GitHub OAuth (v1); secrets in host vault, never committed; per-user
   token stored via host-vault/user-config scope.
 - **Privacy:** minimal PII; presence opt-in; erasure supported.
 - **Abuse:** rate limits + report/hide in v1.
@@ -150,11 +150,13 @@ All write endpoints: rate-limited, auth-guarded, input-validated.
 5. **M4 — Moderation + erasure:** report/hide, account deletion.
 6. **M5 — Agent bridge:** tasks ↔ `GoalWorkspace`, approval-gated agent writes.
 
-## 11. Open questions
+## 11. Resolved decisions (2026-07-07)
 
-- OAuth provider(s) for v1 — GitHub, Google, or both? Magic-link fallback?
-- Serverless platform + managed DB choice (Cloudflare Workers + Turso vs. Vercel + Neon).
-- Single global community vs. multiple named communities in v1.
+Previously-open questions, now settled (see `plan.md` §Decisions):
+
+- **Auth:** GitHub OAuth only for v1 (no Google, no magic-link).
+- **Backend:** Vercel Functions + Neon Postgres.
+- **Scope:** single global community for v1 (multi-community deferred).
 
 ## 12. References
 
