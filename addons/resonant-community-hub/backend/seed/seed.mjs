@@ -130,9 +130,16 @@ async function main() {
   await runAgainstDatabase({ migrateOnly: args.has("--migrate-only") });
 }
 
-main().catch((err) => {
-  console.error("[seed] failed:", err.message);
-  process.exitCode = 1;
-});
+// Only run the CLI when executed directly (`node seed/seed.mjs ...`), not when a
+// test or the SQL-parity harness imports INSERTS — otherwise the no-DATABASE_URL
+// branch would set process.exitCode = 1 and poison `node --test`.
+const invokedDirectly =
+  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
+  main().catch((err) => {
+    console.error("[seed] failed:", err.message);
+    process.exitCode = 1;
+  });
+}
 
 export { INSERTS };

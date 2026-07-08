@@ -24,7 +24,9 @@ backend/
   seed/
     fixtures.mjs           # deterministic seed data (incl. hidden rows)
     seed.mjs               # migrate + seed (live) / --inmemory (offline dry-run)
-  test/                    # node --test, fully offline
+  test/
+    read-path.test.mjs     # in-memory repo + real handlers + row-mapper (fake db)
+    sql-postgres.test.mjs  # migration DDL + all 3 queries vs a REAL PG planner (PGlite)
 ```
 
 ## Design
@@ -41,10 +43,22 @@ backend/
 - **No fake cloud calls.** With neither `DATABASE_URL` nor `COMMUNITY_HUB_INMEMORY`
   set, the factory throws a clear config error rather than fabricating data.
 
+## Testing the SQL for real (offline)
+
+`0001_init.sql` and the three read queries are executed against a **real
+PostgreSQL engine** — not just the JS row-mapper. `test/sql-postgres.test.mjs`
+runs the migration DDL and `LIST_EVENTS/TASKS/PRESENCE_SQL` against
+[PGlite](https://pglite.dev) (Postgres compiled to WASM), fully in-process with no
+docker and no network. This catches SQL that the fake-executor tests cannot: a
+wrong column, a broken `FILTER`/`ARRAY()` clause, or a DDL syntax error all make
+`db.query` throw and the test fail. PGlite is a `devDependency`; if it is not
+installed the suite **skips** that file rather than failing.
+
 ## Run
 
 ```bash
-# Offline tests (no DB, no network):
+# Offline tests (no live DB, no network — runs the real SQL via PGlite):
+npm install                 # installs @electric-sql/pglite (devDependency)
 node --test test/*.test.mjs
 
 # Offline seed dry-run (loads fixtures into the in-memory repo, prints counts):
@@ -59,9 +73,13 @@ vercel dev                                   # serve /v1/* locally
 
 ## Deferred (needs live cloud creds)
 
-- Actually connecting to Neon (`db/neon.mjs`) and running migrations/seed against a
-  real branch — no `DATABASE_URL` or `@neondatabase/serverless` in this sandbox.
+- Actually connecting to **Neon specifically** (`db/neon.mjs`, `@neondatabase/serverless`)
+  and running migrations/seed against a real Neon branch — no `DATABASE_URL` or driver
+  in this sandbox. Note the SQL/DDL itself is no longer deferred: it is exercised
+  offline against a real Postgres planner (PGlite), so a Neon run is a
+  driver/networking smoke test, not the first time the SQL meets a planner.
 - A live `vercel dev` / deploy smoke test of the functions.
 
-The offline in-memory path is byte-for-byte identical in read shape, so handler and
-mapping logic are fully exercised without cloud access.
+The offline in-memory path is byte-for-byte identical in read shape (asserted in
+`sql-postgres.test.mjs`), so handler and mapping logic are fully exercised without
+cloud access.
