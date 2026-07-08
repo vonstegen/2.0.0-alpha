@@ -70,9 +70,10 @@ Neon Postgres  (backend/db — schema + migrations) <- M1
 - [x] `DELETE /v1/account` — self-service account deletion + write erasure (FR-A3, Art. VIII): cascades RSVPs/check-ins/claims/presence, reopens sole-claimed tasks, de-identifies authored content (hosted events + filed reports → null), and the member's still-valid HMAC token then fails the auth guard's member lookup (401) — `backend/api/v1/account.mjs`, `deleteMember` in both repositories
 - [x] Ordered migration loader (`db/migrate.mjs`) so seed / live Neon / offline PGlite all apply `0001` + `0002`; moderation + erasure tests offline (`node --test`), including a real-Postgres (PGlite) parity block. Live Neon + `vercel dev` remain deferred (no cloud creds in sandbox).
 
-### M5 — Agent bridge
-- [ ] Map `Task` ↔ `GoalWorkspace` step / `GoalStepStatus` (`src/core/goal-workspace.ts`)
-- [ ] Approval-gated agent writes via `delegation.acceptsTasks`
+### M5 — Agent bridge  ✅
+- [x] Map `Task` ↔ `GoalWorkspace` step / `GoalStepStatus` — shell-side `src/modules/community-hub/community-goal-bridge.ts` builds real `GoalStep`/`GoalWorkspace` values via the core factories (`createGoalStep`/`createGoalWorkspace` in `src/core/goal-workspace.ts`), with a deterministic reversible step id (`goal-step-community::<taskId>`) so writes round-trip. Forward map `open→planned / claimed→active / done→completed`; reverse `active→claim / planned→unclaim` (completed/blocked/cancelled have no v1 write path and are refused, not mis-mapped).
+- [x] Approval-gated agent writes via `delegation.acceptsTasks` — host-side `addons/resonant-community-hub/src/agent-bridge.mjs` configures itself from the manifest `delegation` contract: refuses task types the manifest doesn't declare and all writes when `acceptsTasks:false`; enforces `requiresHumanApprovalBeforeExecution` (unapproved agent write → 403 `approval_required`), then dispatches through `community-host.mjs` as `source:"agent", approved:true` so the host's own approval gate (Art. V) **and** fail-closed token guard (Art. IV) also apply.
+- Tests: `test/agent-bridge.test.mjs` (node --test, 16) — mapping, contract gate, approval gate, and an end-to-end block through the **real** community-host (approved write reaches the client with the member token; anonymous write blocked 401; host gate still fires if the bridge is bypassed). `src/modules/community-hub/community-goal-bridge.test.ts` (vitest, 10) — mapping ties to the real core primitives (`buildGoalWorkspaceStatus`/`updateGoalStepStatus` consume the projected workspace unchanged). No new cloud creds required; nothing deferred for M5.
 
 ## Verification per milestone
 Each milestone is done only when the matching acceptance criteria in `spec.md` §9
