@@ -122,10 +122,11 @@ describe("Vercel Function handlers (COMMUNITY_HUB_INMEMORY)", () => {
     assert.equal(json.presence.length, 2);
   });
 
-  test("non-GET is rejected with 405 + Allow header", async () => {
-    const { status, headers, json } = await invoke(events, "POST");
+  test("an unsupported method is rejected with 405 + Allow header", async () => {
+    // POST is now the M2 create route, so probe with DELETE (still unsupported).
+    const { status, headers, json } = await invoke(events, "DELETE");
     assert.equal(status, 405);
-    assert.equal(headers["allow"], "GET");
+    assert.equal(headers["allow"], "GET, POST");
     assert.equal(json.error, "method_not_allowed");
   });
 });

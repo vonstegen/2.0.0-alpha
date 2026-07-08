@@ -1,8 +1,14 @@
-# Community Hub — Backend (M1: read path)
+# Community Hub — Backend (M1 read path · M2 auth + write path)
 
 Serverless backend for the Community Hub add-on. **Vercel Functions + Neon
-Postgres** (plan.md decisions). This milestone (M1) ships the **public read path**
-only: `GET /v1/events`, `GET /v1/tasks`, `GET /v1/presence`. Auth and writes are M2.
+Postgres** (plan.md decisions).
+
+- **M1 — public read path:** `GET /v1/events`, `GET /v1/tasks`, `GET /v1/presence`.
+- **M2 — GitHub OAuth sign-in + authenticated write path:** `POST /v1/events`,
+  `POST /v1/events/:id/rsvp`, `POST /v1/events/:id/checkin`,
+  `POST /v1/tasks/:id/claim`, `PUT /v1/presence`, and
+  `GET /v1/auth/github/{start,callback}`. Every write is auth-guarded and
+  rate-limited; **anonymous writes are rejected**.
 
 Governed by [`../constitution.md`](../constitution.md) and [`../spec.md`](../spec.md).
 
@@ -10,24 +16,62 @@ Governed by [`../constitution.md`](../constitution.md) and [`../spec.md`](../spe
 
 ```
 backend/
-  vercel.json              # function config + /v1/* rewrites
-  api/v1/{events,tasks,presence}.mjs   # Vercel Function entrypoints (GET only)
+  vercel.json              # function config + /v1/* rewrites (incl. :id + auth)
+  api/v1/
+    {events,tasks,presence}.mjs      # GET reads (+ POST events / PUT presence)
+    events/[id]/{rsvp,checkin}.mjs   # POST writes
+    tasks/[id]/claim.mjs             # POST write
+    auth/github/{start,callback}.mjs # OAuth sign-in (302 -> GitHub -> session token)
   src/
-    handlers.mjs           # pure { status, body } handlers + Node response writer
-    repository.mjs         # Repository contract + in-memory impl + read-shaping
-    sql-repository.mjs     # Neon Postgres impl (injected SQL executor)
+    handlers.mjs           # pure read handlers + Node response writer + body reader
+    write-handlers.mjs      # pure write handlers: guardWrite pipeline + OAuth callback
+    auth.mjs               # HMAC session tokens + fail-closed authenticate() guard
+    rate-limit.mjs          # fixed-window per-member rate limiter (injectable clock/store)
+    github-oauth.mjs        # GitHub OAuth (injectable fetchImpl) + signed CSRF state
+    validation.mjs          # input validators for every write body
+    write-context.mjs       # per-instance repo + secret + rate-limiter singleton
+    vercel-adapter.mjs      # req/res <-> pure-handler translation for write endpoints
+    repository.mjs         # Repository contract + in-memory impl (reads + writes)
+    sql-repository.mjs     # Neon Postgres impl (reads + writes; injected SQL executor)
     goal-mapping.mjs       # Task.status -> GoalStepStatus (FR-T3)
   db/
-    migrations/0001_init.sql   # schema for all 7 entities (spec §5)
+    migrations/0001_init.sql   # schema for all 7 entities (spec §5); no M2 schema change
     neon.mjs               # Neon Pool executor (live path; deferred creds)
     index.mjs              # createRepositoryFromEnv() — picks impl from env
   seed/
     fixtures.mjs           # deterministic seed data (incl. hidden rows)
     seed.mjs               # migrate + seed (live) / --inmemory (offline dry-run)
   test/
-    read-path.test.mjs     # in-memory repo + real handlers + row-mapper (fake db)
-    sql-postgres.test.mjs  # migration DDL + all 3 queries vs a REAL PG planner (PGlite)
+    read-path.test.mjs     # in-memory repo + real read handlers + row-mapper (fake db)
+    auth.test.mjs          # session token mint/verify/tamper/expiry + guard (offline)
+    rate-limit.test.mjs    # fixed-window limiting, per-key isolation, reset (offline)
+    github-oauth.test.mjs  # OAuth flow with a FAKE fetch + CSRF state (offline)
+    write-path.test.mjs    # write pipeline (401/403/400/409/429) + read reflection + real endpoints
+    sql-postgres.test.mjs  # migration DDL + read AND write SQL vs a REAL PG planner (PGlite)
 ```
+
+## Auth model (M2)
+
+- **GitHub OAuth only** (plan decision; no anonymous writes — Art. IV). The web flow:
+  `start` → 302 to GitHub with a signed, expiring CSRF `state` → `callback` verifies
+  state, exchanges the code, fetches the user, provisions a `Member` (stable by
+  `oauth_sub`), and mints a session token.
+- **Stateless session tokens.** `base64url(payload).hmac_sha256` signed with
+  `COMMUNITY_HUB_AUTH_SECRET`; verified in constant time, no session table (Art. VI).
+  Clients send `Authorization: Bearer <token>` — via the local bridge, never the
+  extension directly (Art. II).
+- **Fail closed.** Missing/forged/expired token or unknown member → 401.
+- **Rate limiting on every write** (Art. VII): fixed window keyed `<route>:<memberId>`,
+  429 + `Retry-After`, `X-RateLimit-*` headers on success.
+
+### Env vars (secrets from host vault / env, never committed)
+
+| Var | Purpose |
+|---|---|
+| `COMMUNITY_HUB_AUTH_SECRET` | HMAC key for session tokens + OAuth state (>=16 chars) |
+| `GITHUB_OAUTH_CLIENT_ID` / `_SECRET` | GitHub OAuth app credentials |
+| `GITHUB_OAUTH_REDIRECT_URI` | callback URL (optional; GitHub app default otherwise) |
+| `COMMUNITY_HUB_RATE_LIMIT` / `_WINDOW_MS` | write limit + window (default 20 / 60000) |
 
 ## Design
 
@@ -76,9 +120,21 @@ vercel dev                                   # serve /v1/* locally
 - Actually connecting to **Neon specifically** (`db/neon.mjs`, `@neondatabase/serverless`)
   and running migrations/seed against a real Neon branch — no `DATABASE_URL` or driver
   in this sandbox. Note the SQL/DDL itself is no longer deferred: it is exercised
-  offline against a real Postgres planner (PGlite), so a Neon run is a
-  driver/networking smoke test, not the first time the SQL meets a planner.
+  offline against a real Postgres planner (PGlite) — both the M1 reads and the M2
+  write methods — so a Neon run is a driver/networking smoke test, not the first
+  time the SQL meets a planner.
 - A live `vercel dev` / deploy smoke test of the functions.
+- A **real GitHub OAuth app** end-to-end (browser → GitHub consent → callback). The
+  token exchange + user fetch are fully unit-tested offline with an injected fake
+  `fetchImpl`; only the live consent round-trip needs a registered app + secrets.
+
+## Known limitations (documented, not blocking M2)
+
+- **Rate limiter store is per-instance in-memory.** Limits apply per warm Vercel
+  Function instance, not globally. The `store` seam (`rate-limit.mjs`) makes a shared
+  Neon/Upstash store a drop-in with no handler changes — deferred to a later milestone.
+- **OAuth CSRF `state` is stateless** (signed + expiring, not bound to a bridge-held
+  session). Binding it to the initiating bridge session is a later hardening.
 
 The offline in-memory path is byte-for-byte identical in read shape (asserted in
 `sql-postgres.test.mjs`), so handler and mapping logic are fully exercised without

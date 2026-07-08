@@ -123,3 +123,96 @@ describe("SQL read path against a real Postgres planner (PGlite)", { skip }, () 
     assert.deepEqual(await repo.listPresence(), await mem.listPresence());
   });
 });
+
+// --- M2: write path against the real Postgres planner -----------------------
+// Exercises the ON CONFLICT upserts, RETURNING clauses, ARRAY() re-aggregation,
+// and status transitions of the SQL write methods — catching SQL that the memory
+// repo cannot (a wrong column, a bad conflict target, a malformed RETURNING).
+
+describe("SQL write path against a real Postgres planner (PGlite)", { skip }, () => {
+  let db;
+  let repo;
+  let mem;
+
+  before(async () => {
+    db = await PGlite.create();
+    await db.exec(await readFile(MIGRATION, "utf8"));
+    const f = fixtures();
+    for (const spec of INSERTS) {
+      for (const row of spec.rows(f)) await db.query(spec.sql, spec.params(row));
+    }
+    const now = () => Date.parse("2026-07-20T18:30:00.000Z"); // inside kickoff window
+    repo = createSqlRepository({ query: (t, p) => db.query(t, p) }, { now });
+    mem = createMemoryRepository(fixtures(), { now });
+  });
+
+  after(async () => {
+    if (db) await db.close();
+  });
+
+  test("provisionMember: inserts once, is idempotent by oauth_sub, unique handle", async () => {
+    const a = await repo.provisionMember({ oauthSub: "github|555", handle: "newbie", displayName: "New Bie" });
+    assert.equal(a.created, true);
+    assert.equal(a.member.handle, "newbie");
+    const again = await repo.provisionMember({ oauthSub: "github|555", handle: "newbie", displayName: "New Bie 2" });
+    assert.equal(again.created, false);
+    assert.equal(again.member.id, a.member.id, "same oauth_sub -> same member");
+    // handle collision with existing 'ada' gets a suffix.
+    const collide = await repo.provisionMember({ oauthSub: "github|999", handle: "ada", displayName: "Ada Two" });
+    assert.equal(collide.member.handle, "ada-2");
+    assert.ok(await repo.getMemberById(a.member.id));
+  });
+
+  test("createEvent: INSERT + shaped read with zero counts and host handle", async () => {
+    const event = await repo.createEvent({
+      title: "SQL Planning",
+      description: null,
+      startsAt: "2026-08-01T10:00:00.000Z",
+      endsAt: "2026-08-01T11:00:00.000Z",
+      location: null,
+      url: "https://meet.example.org/sql",
+      hostId: "m_ada",
+    });
+    assert.equal(event.hostHandle, "ada");
+    assert.deepEqual(event.rsvpCounts, { going: 0, interested: 0, no: 0 });
+    assert.equal(event.attendanceCount, 0);
+    assert.ok((await repo.listEvents()).some((e) => e.title === "SQL Planning"));
+  });
+
+  test("setRsvp: upsert changes state and read counts (ON CONFLICT event_id,member_id)", async () => {
+    await repo.setRsvp({ eventId: "e_kickoff", memberId: "m_grace", state: "going" }); // was 'no'
+    await mem.setRsvp({ eventId: "e_kickoff", memberId: "m_grace", state: "going" });
+    const k = (await repo.listEvents()).find((e) => e.id === "e_kickoff");
+    assert.deepEqual(k.rsvpCounts, { going: 3, interested: 1, no: 0 });
+  });
+
+  test("checkIn: idempotent insert (ON CONFLICT DO NOTHING) + distinct attendance", async () => {
+    const first = await repo.checkIn({ eventId: "e_kickoff", memberId: "m_grace" });
+    assert.equal(first.created, true);
+    const second = await repo.checkIn({ eventId: "e_kickoff", memberId: "m_grace" });
+    assert.equal(second.created, false, "second check-in is a no-op");
+    const k = (await repo.listEvents()).find((e) => e.id === "e_kickoff");
+    assert.equal(k.attendanceCount, 1);
+  });
+
+  test("claimTask: claim->status claimed, ARRAY() ordering, unclaim->open", async () => {
+    const claimed = await repo.claimTask({ taskId: "t_venue", memberId: "m_alan", action: "claim" });
+    assert.equal(claimed.status, "claimed");
+    assert.equal(claimed.goalStepStatus, "active");
+    assert.deepEqual(claimed.claimedBy, ["m_alan"]);
+    const unclaimed = await repo.claimTask({ taskId: "t_venue", memberId: "m_alan", action: "unclaim" });
+    assert.equal(unclaimed.status, "open");
+    assert.deepEqual(unclaimed.claimedBy, []);
+  });
+
+  test("setPresence + clearPresence: upsert then RETURNING delete", async () => {
+    const set = await repo.setPresence({ memberId: "m_grace", status: "around", note: null });
+    assert.equal(set.status, "around");
+    assert.equal(set.handle, "grace");
+    assert.ok((await repo.listPresence()).some((p) => p.memberId === "m_grace"));
+    const cleared = await repo.clearPresence("m_grace");
+    assert.equal(cleared.cleared, true);
+    assert.ok(!(await repo.listPresence()).some((p) => p.memberId === "m_grace"));
+    assert.equal((await repo.clearPresence("m_grace")).cleared, false, "second clear removes nothing");
+  });
+});

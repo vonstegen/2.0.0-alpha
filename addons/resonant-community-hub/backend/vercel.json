@@ -1,14 +1,19 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/v1/*.mjs": {
+    "api/v1/**/*.mjs": {
       "runtime": "nodejs20.x",
       "maxDuration": 10
     }
   },
   "rewrites": [
     { "source": "/v1/events", "destination": "/api/v1/events" },
+    { "source": "/v1/events/:id/rsvp", "destination": "/api/v1/events/:id/rsvp" },
+    { "source": "/v1/events/:id/checkin", "destination": "/api/v1/events/:id/checkin" },
     { "source": "/v1/tasks", "destination": "/api/v1/tasks" },
-    { "source": "/v1/presence", "destination": "/api/v1/presence" }
+    { "source": "/v1/tasks/:id/claim", "destination": "/api/v1/tasks/:id/claim" },
+    { "source": "/v1/presence", "destination": "/api/v1/presence" },
+    { "source": "/v1/auth/github/start", "destination": "/api/v1/auth/github/start" },
+    { "source": "/v1/auth/github/callback", "destination": "/api/v1/auth/github/callback" }
   ]
 }

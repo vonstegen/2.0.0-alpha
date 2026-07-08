@@ -40,6 +40,43 @@ export function methodGuard(method) {
 }
 
 /**
+ * Read and JSON-parse a request body, framework-agnostically. Vercel's Node helper
+ * may pre-parse `req.body`; when it doesn't (or under `node --test`), fall back to
+ * draining the stream. Returns {} for an empty body. Throws on malformed JSON.
+ * @param {any} req
+ * @returns {Promise<any>}
+ */
+export async function readJsonBody(req) {
+  if (req && req.body !== undefined && req.body !== null) {
+    if (typeof req.body === "string") {
+      return req.body.trim() === "" ? {} : JSON.parse(req.body);
+    }
+    return req.body; // already-parsed object (Vercel Node helper)
+  }
+  if (!req || typeof req.on !== "function") return {};
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  return raw === "" ? {} : JSON.parse(raw);
+}
+
+/**
+ * Guard a write endpoint to a specific method. Returns a 405 result if the method
+ * is not allowed, otherwise null.
+ * @param {string | undefined} method
+ * @param {string} allowed e.g. "POST" or "PUT"
+ */
+export function requireMethod(method, allowed) {
+  const m = (method || "GET").toUpperCase();
+  if (m === allowed.toUpperCase()) return null;
+  return {
+    status: 405,
+    headers: { Allow: allowed.toUpperCase() },
+    body: { error: "method_not_allowed", message: `Method ${m} not allowed; use ${allowed}.` },
+  };
+}
+
+/**
  * Write a { status, body, headers } result to a Node/Vercel response.
  * Read endpoints are cache-friendly (Art. VIII availability: serve/degrade from
  * cache); tune max-age at the CDN edge in M3.

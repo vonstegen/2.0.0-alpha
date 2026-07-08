@@ -48,12 +48,14 @@ Neon Postgres  (backend/db — schema + migrations) <- M1
 - [x] Read-path integration tests — `backend/test/` (`node --test`, offline; 14 tests green)
 - DB behind a `Repository` adapter (in-memory test double + Neon SQL impl). Live Neon connect/seed + `vercel dev` deferred (no cloud creds in sandbox).
 
-### M2 — Auth + write path
-- [ ] GitHub OAuth sign-in; `Member` provisioning
-- [ ] `POST /v1/events`, `/events/:id/rsvp`, `/events/:id/checkin`
-- [ ] `POST /v1/tasks/:id/claim`, `PUT /v1/presence`
-- [ ] Rate limiting on all writes; anonymous writes rejected (Art. IV, VII)
-- [ ] Auth + rate-limit unit tests
+### M2 — Auth + write path  ✅
+- [x] GitHub OAuth sign-in (`/v1/auth/github/start` + `/callback`) behind an injectable `fetchImpl`; `Member` provisioning (`provisionMember`, stable by `oauth_sub`) — `backend/src/github-oauth.mjs`, `backend/api/v1/auth/github/*`
+- [x] `POST /v1/events` (organizer-gated), `POST /v1/events/:id/rsvp`, `POST /v1/events/:id/checkin` (live-window guard, distinct from RSVP)
+- [x] `POST /v1/tasks/:id/claim` (claim/unclaim + status transition), `PUT /v1/presence` (set/clear, opt-in)
+- [x] Stateless HMAC session tokens + fail-closed auth guard; **anonymous writes rejected 401** (Art. IV) — `backend/src/auth.mjs`
+- [x] Rate limiting on **every** write, keyed per-member, 429 + `Retry-After` (Art. VII) — `backend/src/rate-limit.mjs`
+- [x] Auth + rate-limit + OAuth + write-path unit/integration tests (offline; 60 M2 tests) — `backend/test/{auth,rate-limit,github-oauth,write-path}.test.mjs`; SQL writes also exercised against a real Postgres planner (PGlite) in `sql-postgres.test.mjs`
+- Write methods live behind the same `Repository` adapter (memory + Neon SQL impls). Live Neon/`vercel dev` + a real GitHub OAuth app remain deferred (no cloud creds in sandbox).
 
 ### M3 — Add-on client
 - [ ] `addons/resonant-community-hub/src/` local-service host: bridge RPC + outbound Community API proxy + poller

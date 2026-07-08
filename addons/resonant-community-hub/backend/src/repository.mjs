@@ -97,12 +97,20 @@ export function shapePresence(row, { members }) {
 
 /**
  * In-memory repository over raw tables. Faithful to the SQL semantics: filters
- * hidden rows, orders identically, computes the same counts.
+ * hidden rows, orders identically, computes the same counts. As of M2 it is also
+ * write-capable (member provisioning + RSVP/check-in/claim/presence/event create)
+ * so the auth + rate-limit guards can be exercised end-to-end offline.
  *
  * @param {object} [seed] raw tables { members, events, rsvps, checkIns, tasks, taskClaims, presence, reports }
+ * @param {{ now?: () => number, newId?: (prefix: string) => string }} [opts]
  * @returns {Repository & { tables: object, load: (t: object) => void }}
  */
-export function createMemoryRepository(seed = {}) {
+export function createMemoryRepository(seed = {}, opts = {}) {
+  const now = opts.now ?? Date.now;
+  let seq = 0;
+  const newId = opts.newId ?? ((prefix) => `${prefix}_${(++seq).toString(36)}${now().toString(36)}`);
+  const nowIso = () => new Date(now()).toISOString();
+
   const tables = {
     members: [],
     events: [],
@@ -123,9 +131,159 @@ export function createMemoryRepository(seed = {}) {
 
   const statusOrder = { open: 0, claimed: 1, done: 2 };
 
+  function uniqueHandle(desired) {
+    const base = String(desired || "member").toLowerCase().replace(/[^a-z0-9_-]+/g, "").slice(0, 39) || "member";
+    let handle = base;
+    let n = 1;
+    while (tables.members.some((m) => m.handle === handle)) {
+      handle = `${base}-${++n}`;
+    }
+    return handle;
+  }
+
   return {
     tables,
     load,
+
+    // --- write path (M2) ----------------------------------------------------
+
+    /** Look up a member by opaque id (used by the auth guard). */
+    async getMemberById(id) {
+      const m = tables.members.find((x) => x.id === id);
+      return m ? { ...m } : null;
+    },
+
+    async getMemberByOauthSub(oauthSub) {
+      const m = tables.members.find((x) => x.oauthSub === oauthSub);
+      return m ? { ...m } : null;
+    },
+
+    async getEventById(id) {
+      const e = tables.events.find((x) => x.id === id);
+      return e ? { ...e } : null;
+    },
+
+    async getTaskById(id) {
+      const t = tables.tasks.find((x) => x.id === id);
+      return t ? { ...t } : null;
+    },
+
+    /**
+     * Upsert a member from an OAuth identity (FR-A2). Stable by oauthSub; the
+     * handle is assigned once and kept stable, displayName refreshes on re-login.
+     * @returns {Promise<{ member: object, created: boolean }>}
+     */
+    async provisionMember({ oauthSub, handle, displayName, roles }) {
+      let existing = tables.members.find((m) => m.oauthSub === oauthSub);
+      if (existing) {
+        if (displayName) existing.displayName = displayName;
+        return { member: { ...existing }, created: false };
+      }
+      const member = {
+        id: newId("m"),
+        handle: uniqueHandle(handle),
+        displayName: displayName || handle,
+        oauthSub,
+        roles: Array.isArray(roles) ? roles : [],
+        joinedAt: nowIso(),
+      };
+      tables.members.push(member);
+      return { member: { ...member }, created: true };
+    },
+
+    /** Create an event (FR-E2). Returns the public read shape. */
+    async createEvent({ title, description, startsAt, endsAt, location, url, hostId }) {
+      const event = {
+        id: newId("e"),
+        title,
+        description: description ?? null,
+        startsAt,
+        endsAt: endsAt ?? null,
+        location: location ?? null,
+        url: url ?? null,
+        hostId: hostId ?? null,
+        createdAt: nowIso(),
+        hidden: false,
+      };
+      tables.events.push(event);
+      return shapeEvent(event, {
+        rsvps: tables.rsvps,
+        checkIns: tables.checkIns,
+        members: tables.members,
+      });
+    },
+
+    /** Set (upsert) a member's standing RSVP for an event (FR-E3). */
+    async setRsvp({ eventId, memberId, state }) {
+      const existing = tables.rsvps.find((r) => r.eventId === eventId && r.memberId === memberId);
+      if (existing) {
+        existing.state = state;
+        existing.updatedAt = nowIso();
+        return { eventId, memberId, state, updatedAt: existing.updatedAt };
+      }
+      const row = { id: newId("rsvp"), eventId, memberId, state, updatedAt: nowIso() };
+      tables.rsvps.push(row);
+      return { eventId, memberId, state, updatedAt: row.updatedAt };
+    },
+
+    /**
+     * Record live attendance, counted once per member/event (FR-E4). Idempotent:
+     * a repeat check-in returns the original timestamp.
+     */
+    async checkIn({ eventId, memberId }) {
+      let row = tables.checkIns.find((c) => c.eventId === eventId && c.memberId === memberId);
+      let created = false;
+      if (!row) {
+        row = { id: newId("ci"), eventId, memberId, at: nowIso() };
+        tables.checkIns.push(row);
+        created = true;
+      }
+      return { eventId, memberId, at: row.at, created };
+    },
+
+    /**
+     * Claim / un-claim a task (FR-T2). Also advances task.status:
+     * first claim: open -> claimed; last un-claim: claimed -> open (done is sticky).
+     * @returns the shaped task after mutation.
+     */
+    async claimTask({ taskId, memberId, action }) {
+      const task = tables.tasks.find((t) => t.id === taskId);
+      if (!task) return null;
+      const idx = tables.taskClaims.findIndex((c) => c.taskId === taskId && c.memberId === memberId);
+      if (action === "unclaim") {
+        if (idx !== -1) tables.taskClaims.splice(idx, 1);
+      } else if (idx === -1) {
+        tables.taskClaims.push({ taskId, memberId, claimedAt: nowIso() });
+      }
+      const remaining = tables.taskClaims.filter((c) => c.taskId === taskId).length;
+      if (task.status !== "done") {
+        task.status = remaining > 0 ? "claimed" : "open";
+      }
+      return shapeTask(task, { claims: tables.taskClaims });
+    },
+
+    /** Upsert opt-in presence for a member (FR-P1). One row per member. */
+    async setPresence({ memberId, status, note }) {
+      let row = tables.presence.find((p) => p.memberId === memberId);
+      if (row) {
+        row.status = status;
+        row.note = note ?? null;
+        row.updatedAt = nowIso();
+      } else {
+        row = { memberId, status, note: note ?? null, updatedAt: nowIso() };
+        tables.presence.push(row);
+      }
+      return shapePresence(row, { members: tables.members });
+    },
+
+    /** Clear a member's presence (opt-in + revocable, FR-P1 / Art. V). */
+    async clearPresence(memberId) {
+      const before = tables.presence.length;
+      tables.presence = tables.presence.filter((p) => p.memberId !== memberId);
+      return { cleared: tables.presence.length < before };
+    },
+
+    // --- read path (M1) -----------------------------------------------------
 
     async listEvents() {
       return tables.events
