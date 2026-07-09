@@ -134,6 +134,18 @@ installed the suite **skips** that file rather than failing.
 npm install                 # installs @electric-sql/pglite (devDependency)
 node --test test/*.test.mjs
 
+# Local end-to-end dev server (OFFLINE: in-memory + shared store, no Vercel/Neon):
+npm run dev:local           # serves /v1/* on 127.0.0.1:4891, prints dev tokens
+# then, in another shell:
+curl -s http://127.0.0.1:4891/v1/events        # public read (hidden rows excluded)
+# authenticated write (token from the dev-server banner):
+curl -s -X POST http://127.0.0.1:4891/v1/events/e_workshop/rsvp \
+  -H "authorization: Bearer <ADA_TOKEN>" -H 'content-type: application/json' \
+  -d '{"state":"going"}'
+# `dev-server.mjs` mounts the real api/v1/**.mjs functions behind a router that
+# mirrors vercel.json; COMMUNITY_HUB_SHARED_MEMORY=1 makes every function share one
+# seeded store, so writes reflect in reads. It is a local test harness only.
+
 # Offline seed dry-run (loads fixtures into the in-memory repo, prints counts):
 node seed/seed.mjs --inmemory
 

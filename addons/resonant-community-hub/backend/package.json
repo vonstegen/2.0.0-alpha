@@ -9,6 +9,7 @@
     "test": "node --test test/*.test.mjs",
     "seed": "node seed/seed.mjs",
     "migrate": "node seed/seed.mjs --migrate-only",
+    "dev:local": "node dev-server.mjs",
     "dev": "vercel dev"
   },
   "engines": {
