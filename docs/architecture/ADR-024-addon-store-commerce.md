@@ -1,7 +1,13 @@
 # ADR-024: Add-on Store And Commerce Model
 
-Status: Accepted  
-Date: 2026-04-28
+## Decision Metadata
+
+- Decision status: Accepted
+- Alpha applicability: Deferred
+- Superseded by: None
+- Owner: Add-on store
+- Decision date: 2026-04-28
+- Alpha note: Store and commerce behavior is not Alpha scope.
 
 ## Decision
 

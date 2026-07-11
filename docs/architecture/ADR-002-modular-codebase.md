@@ -1,7 +1,14 @@
 # ADR-002: Modular Codebase Structure
 
-Status: Accepted  
-Date: 2026-04-23
+## Decision Metadata
+
+- Decision status: Accepted
+- Alpha applicability: Applies
+- Superseded by: None
+- Owner: Core architecture
+- Decision date: 2026-04-23
+- Alpha note: Domain ownership and thin composition rules apply to Alpha
+  extension, bridge, and supporting source modules.
 
 ## Decision
 

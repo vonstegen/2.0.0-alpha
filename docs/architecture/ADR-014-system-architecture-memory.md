@@ -1,8 +1,14 @@
 # ADR-014: System Architecture Memory
 
-## Status
+## Decision Metadata
 
-Accepted.
+- Decision status: Accepted
+- Alpha applicability: Deferred
+- Superseded by: None
+- Owner: Living Archive
+- Decision date: Not recorded
+- Alpha note: System Architecture Memory remains long-term direction but is not
+  an Alpha release requirement.
 
 ## Decision
 

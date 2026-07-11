@@ -1,88 +1,136 @@
 # Module Ownership
 
-Last updated: 2026-06-22
-
 ## Purpose
 
-This document is the current contributor-facing ownership contract for the browser-first ResonantOS product branch. Use it when adding a module, moving behavior out of `App.tsx`, changing shared state, or touching host/IPC boundaries.
+This document is the normative contributor-facing ownership contract. Use it
+before adding a module, moving behavior across modules, changing shared state,
+or changing an authenticated bridge route.
 
-Related context:
+The [Alpha runtime boundary](ALPHA_RUNTIME_BOUNDARY.md) defines what ships. The
+[module map](MODULE_MAP.md) describes the repository layout. The
+[ADR index](README.md) separates decision status from Alpha applicability.
 
-- `docs/architecture/ADR-002-modular-codebase.md`
-- `docs/architecture/ADR-003-engineering-standards.md`
-- `docs/architecture/MODULE_MAP.md`
-- `docs/architecture/VNEXT_SYSTEM_DIAGRAM.md`
+## Alpha Ownership
 
-## Ownership Table
-
-| Path | Owns | Reads | Writes / Mutates | Boundary Notes |
+| Path | Owns | May read | May write or mutate | Must not own |
 | --- | --- | --- | --- | --- |
-| `src/modules/addons/` | Add-on catalog, manifest details, grant controls, add-on setup panels, and add-on-specific workspace entry points. | Add-on manifests, capability grants, provider/memory availability, host status payloads. | Add-on install/grant mutations through controllers and host-mediated routes. | Keep add-on lifecycle policy here or in `src/sdk/addons/`; do not push add-on mutation logic into `App.tsx`. |
-| `src/modules/archive/` | Living Archive workspace, search, intake, review, promotion, source registry, import, diagnostics, and archive action center. | Memory-provider broker results, archive runtime status, source scan/review queues, trusted wiki/search/read payloads. | Archive intake/review/promotion commands through `controller.ts` and browser-first memory host routes. | Living Archive remains the default `memory-system` add-on; replacement memory providers must not be bypassed by local archive UI. |
-| `src/modules/browser/` | Browser workspace surface and browser add-on presentation inside the React shell. | Browser capability/grant state and browser runtime status. | Workspace UI state only; browser page actions belong to browser-first extension controllers. | Browser automation and page mutation are host/extension concerns, not React module concerns. |
-| `src/modules/chat/` | Strategist/Augmentor chat rail, messages, composer, thread controls, context memory panel, archive intake handoff, and provider turn orchestration. | `ResonantShellState`, provider routing, context memory state, archive context, active agent/thread state. | Conversation threads, compact memory edits, chat runs, archive-intake captures, and local composer/dictation state through chat controllers. | Provider calls stay behind `src/core/provider-service.ts` and host/provider boundaries; chat does not own provider credential storage. |
-| `src/modules/compute/` | Compute Fabric workspace preview and compute fabric controller/model surfaces. | Compute/runtime fabric state and provider/runtime descriptions. | Compute fabric view/controller state. | Runtime execution policy remains a host/add-on boundary; this module is not a privileged runner. |
-| `src/modules/delegation/` | Delegation Monitor workspace for task workspaces, result review, verification review, and explicit start controls. | Delegation task summaries, results, verification artifacts, selected workspace state. | Task selection and host-mediated delegation start/finalization actions. | Augmentor manages delegation intent; this module supervises task workspace state and reviews outcomes. |
-| `src/modules/hermes/` | Hermes add-on workspace status and dashboard surface. | Hermes runtime/add-on status, grants, dashboard availability. | UI-only Hermes start/open requests through host-mediated add-on routes. | Hermes execution remains optional add-on host work, not shell core behavior. |
-| `src/modules/obsidian/` | Obsidian-compatible workspace, vault tree, markdown editor/preview, metadata panel, and vault index panel. | Selected vault state, note listings, note content, backlinks, frontmatter/tags. | Audited note edits through host-mediated Obsidian/notes commands when enabled. | Filesystem access must stay behind host commands and explicit grants. |
-| `src/modules/opencode/` | OpenCode add-on workspace, runtime status, connection controls, and embedded UI frame. | OpenCode runtime status, scoped workspace path, grants. | Host-mediated OpenCode launch/connect/disconnect actions. | OpenCode remains optional and must not become a shell dependency. |
-| `src/modules/overview/` | Home/workbench overview surface, service snapshots, and workspace framing. | Shell route, high-level service status, active workspace summaries. | Navigation intent and UI-only selections. | Planned migration target is the Home / Apps launcher from `docs/product/UX-001-resonantos-app-shell.md`. |
-| `src/modules/paperclip/` | Paperclip optional organizational-runtime workspace and connector status. | Paperclip endpoint status, grants, company/agent/issue summaries. | Host-mediated local endpoint connection and delegation handoff controls. | Public default catalog must not expose development-only Paperclip until a future add-on release approves it. |
-| `src/modules/recovery/` | Recovery dashboard, recovery mode/session controller, and recovery route promotion workflow. | Recovery runtime snapshot, recovery session state, route candidates. | Recovery mode/session state and bounded host-mediated recovery actions. | Recovery tools must stay inside documented allowlists and audited host routes. |
-| `src/modules/settings/` | Settings workspace, provider profiles, provider diagnostics, memory settings, browser/add-on/privacy/advanced sections. | Runtime state, provider profiles, bridge/provider health, memory source settings, archived chats/projects. | Provider profile updates, workload strategy updates, memory settings writes, and UI preferences through controllers/host routes. | Provider secrets must not become browser-only source-of-truth state. |
-| `src/modules/shell/` | Shell boot/hydration controller, selectors, top-level slot resolution, replacement-slot gates, and shell-derived view state. | Persisted shell state, bundled/sideloaded manifests, runtime snapshots, UI preferences. | Shell state hydration, shell selectors, system slot decisions, and first-run recommended add-on activation. | Cross-module reads should route through shell selectors or `src/core/`; module-specific mutation should stay in each module controller. |
-| `src/modules/strategist/` | Strategist identity/channel workspace and Strategist thread/channel controller. | Agent/channel/thread state and active strategist context. | Strategist channel/thread management state. | Chat message execution remains in `src/modules/chat/`; strategist owns identity/channel organization. |
+| `browser-first/resonantos-side-panel-extension/src/background.js` | Extension lifecycle and privileged Chrome API message mediation | Chrome extension state and validated messages | Chrome tabs, side-panel state, and extension lifecycle state | Provider credentials, local files, provider routing, or local process state |
+| `browser-first/resonantos-side-panel-extension/src/content.js` and `src/lib/content-*.js` | Page observation and bounded in-page interaction | Current page DOM and approved frame context | Page controls allowed by field safety and approval policy | Bridge secrets, provider credentials, wallet signing, login credentials, or unrestricted page execution |
+| `browser-first/resonantos-side-panel-extension/src/side-panel.js` and `src/lib/side-panel-*.js` | Side-panel composition, conversation, command routing, browser jobs, and approvals | Extension session state, page observations, bounded bridge results | Browser-side UI/session/job state and approved Chrome actions | Host filesystem/process/provider state |
+| `browser-first/resonantos-side-panel-extension/src/main-workspace.js` and `src/lib/main-workspace-*.js` | New-tab workspace composition and feature presentation | Bounded bridge results and extension state | Workspace UI state and explicit user intents | Privileged local mutations except through named bridge routes |
+| `browser-first/resonantos-side-panel-extension/src/lib/bridge-client.js` | Bridge request transport and scoped capability-token acquisition | Generated bridge config and in-memory scoped tokens | Request headers and in-memory token cache | Route policy, provider secrets, or filesystem access |
+| `browser-first/resonantos-side-panel-extension/src/lib/browser-page-actions.js` and `src/lib/control-*.js` | Governed browser observation, planning flow, consent, action execution, and verification | Active tab/page snapshots, site/task consent, bounded plans | Chrome/page state allowed by approval policy | Wallet/payment/login/credential/public-submit authority or host privileges |
+| `browser-first/host/run-bridge-minimal.mjs` | Bridge composition root, route-service wiring, token creation, startup, and shutdown | Service constructors and environment configuration | Listener lifecycle and generated bridge config | Domain route behavior that belongs in a service |
+| `browser-first/host/bridge-server.mjs` | HTTP transport, listener binding, bridge auth, capability checks, CORS, and route dispatch | Route declarations and bridge configuration | Network listener and generated config file | Provider, memory, archive, add-on, or diagnostics policy |
+| `browser-first/host/provider-host-service.mjs` and `provider-bridge-service.mjs` | Provider profiles, session credentials, routing, diagnostics, and model invocation | Exported environment credentials, configured local endpoints, provider preferences | Session secret memory and external provider requests | Extension UI state or direct browser-page mutation |
+| `browser-first/host/agent-control-host-service.mjs` | Provider-backed plan/next-action decisions and bounded web reads | Sanitized page snapshots and provider routes | Approved provider/network requests | Browser action execution or human-only approval decisions |
+| `browser-first/host/memory-host-service.mjs` and `memory-*.mjs` | Memory settings, approved sources, intake, sync, search, versions, wiki checks, and route capabilities | External user-state root and user-approved source roots | Capability-gated memory state, intake, and reversible source operations | Unapproved filesystem roots or direct trusted promotion bypasses |
+| `browser-first/host/archive-review-host-service.mjs` and archive policy modules | Archive review, verification, promotion, restore, and trusted-write policy | Intake/review artifacts and verifier results | Governed archive artifacts and promoted pages | Unreviewed direct writes to trusted memory |
+| `browser-first/host/addon-delegation-host-service.mjs` and `addon-delegation-service.mjs` | Optional local add-on status/control, scoped delegation, artifacts, and goals | Reviewed add-on manifests, bounded workspace state, provider availability | Capability-gated local runtime processes and delegation records | Core bridge authentication, raw provider secrets, wallet actions, or trusted-memory bypasses |
+| `browser-first/host/browser-diagnostics-host-service.mjs` | Redacted status, inspection, report export, and approved download actions | Runtime metadata and bounded local diagnostics | Capability-gated redacted reports and download actions | Secrets, unrestricted home paths, or provider/model execution |
+| `browser-first/host/extension-prefs-host-service.mjs` | External user-state persistence for extension preferences | Stored preference document | Validated preference state | Provider credentials, route capabilities, or unrelated user files |
+| `browser-first/test/` | Extension/bridge behavioral contracts and Alpha scope proof | Runtime modules and fixtures | Test-local state only | Product behavior |
+
+## Shared Source Ownership
+
+`src/`, `src/sdk/`, `public/addons/`, `addons/`, `examples/`, and `scripts/`
+are supporting, shared, optional, or future-facing paths. They are not extra
+required Alpha processes.
+
+| Path | Primary owner | Boundary |
+| --- | --- | --- |
+| `src/core/` | Shared contracts and pure cross-domain policy | No feature-specific UI or privileged process/filesystem behavior |
+| `src/sdk/addons/` | Add-on manifests, capabilities, protocols, and validation | SDK contracts do not grant runtime capabilities |
+| `src/modules/addons/` | Add-on catalog, grants, setup, and workspace entrypoints | Host mutations stay behind add-on routes and SDK capability policy |
+| `src/modules/archive/` | Living Archive UI, intake, review, promotion, and source management | Trusted writes stay behind archive review and promotion routes |
+| `src/modules/browser/` | Shared/legacy browser workspace presentation | Alpha page actions stay in extension controllers |
+| `src/modules/chat/` | Conversation UI, composer, threads, and turn orchestration | Provider credentials and routing stay host-side |
+| `src/modules/compute/` | Deferred Compute Fabric UI model | No privileged execution authority |
+| `src/modules/delegation/` | Delegation monitoring and result review | Runtime execution stays behind host-mediated add-on routes |
+| `src/modules/hermes/` | Optional Hermes workspace presentation | Hermes is not a core or required runtime |
+| `src/modules/obsidian/` | Deferred notes and vault workspace | Filesystem access stays host-mediated |
+| `src/modules/opencode/` | Optional OpenCode workspace presentation | OpenCode remains an optional local service |
+| `src/modules/overview/` | Shared overview and workbench framing | UI navigation only |
+| `src/modules/paperclip/` | Deferred Paperclip workspace presentation | Development-only add-on boundary |
+| `src/modules/recovery/` | Recovery product workflow | Recovery tools remain bounded and audited |
+| `src/modules/settings/` | Shared settings UI and controllers | Secrets stay host-side |
+| `src/modules/shell/` | Shared React shell hydration, selectors, and composition | Keep domain mutations in their feature owners |
+| `src/modules/strategist/` | Strategist identity, channels, and thread organization | Chat execution remains in the chat owner |
+| `src/App.tsx` | React composition only | Route, mount, wire, and pass callbacks; do not accumulate domain behavior |
+| `public/addons/` | Bundled manifest/catalog data | Manifest presence is not install, enablement, or grant authority |
+| `addons/resonant-browser-host/` | Optional browser-host add-on package | Not the required Alpha bridge or browser runtime |
+| `examples/` | Optional examples | Never required for Alpha startup |
+| `scripts/` | Repository validation and development tooling | Not shipped runtime authority |
+
+If two domains need the same data shape or pure helper, place it in
+`src/core/` or the established SDK layer. Shared placement does not transfer
+ownership of behavior.
 
 ## State And Data Flow
 
-Use this flow as the default ownership rule:
-
-1. `src/App.tsx` composes the shell, owns top-level React wiring, and calls `commitReadyState` for persisted `ResonantShellState` updates.
-2. `src/modules/shell/` owns boot, hydration, replacement-slot resolution, and derived shell selectors.
-3. Domain modules under `src/modules/*` own their feature UI, local controllers, local selectors, tests, and domain-specific mutation orchestration.
-4. Cross-module contracts, durable app state shapes, provider routing, memory-provider interfaces, and policy helpers live in `src/core/`.
-5. Browser-first extension state and browser automation state live under `browser-first/resonantos-side-panel-extension/src/lib/` and should not be mirrored into React modules unless a narrow view model is needed.
-6. Host calls cross through `browser-first/host/` route services or add-on host packages. UI modules should call controllers or host clients, not read or write privileged filesystem/process state directly.
-
-Dependency rule:
-
-- UI modules may depend on `src/core/`, `src/modules/shell/` selectors, and narrow props/callbacks from `App.tsx`.
-- Feature modules should not import another feature module's controller as a shortcut. If two modules need the same contract, move the contract or pure helper to `src/core/` or a shared SDK package.
-- New shared state must name one owner. If ownership is unclear, add a short architecture note or ADR before implementation.
+1. Extension modules may read browser state and bounded bridge responses.
+2. Extension modules mutate browser/page state only through Chrome APIs,
+   content-script controls, and approval policy.
+3. Privileged local reads and writes cross `bridge-client.js` and a declared
+   bridge route.
+4. `bridge-server.mjs` authenticates transport; the named route service owns
+   domain validation and resource policy.
+5. Provider credentials remain in bridge process memory or the exported bridge
+   environment. They never become browser storage or repository state.
+6. Local state defaults to `~/ResonantOS_User`; approved external source roots
+   remain explicit inputs, not implicit filesystem authority.
+7. Wallet, payment, login, credential, signing, transfer, destructive, and
+   public-submit actions remain human-only regardless of UI consent state.
 
 ## Host And IPC Boundary
 
-The active browser-first branch does not contain `src-tauri/src/`; `src-tauri/src/` is not present in this checkout. If a future shell reintroduces a Rust/Tauri host, this document must add the concrete service modules and privileged IPC commands before that PR is merged.
+`src-tauri/src/` is not present in this checkout and has no Alpha ownership.
+The authenticated Node bridge is the current IPC-like privileged boundary.
 
-Current host and IPC-like boundaries:
+### Host Route Contract
 
-| Path | Boundary |
-| --- | --- |
-| `browser-first/host/bridge-server.mjs` | Loopback bridge authentication, JSON route registration, generated side-panel bridge config, and bridge auth self-tests. |
-| `browser-first/host/*-host-service.mjs` | Route service ownership for provider, memory, archive review, Agent Control, add-on delegation, extension prefs, and browser diagnostics. |
-| `browser-first/host/provider-fabric-core.mjs` | Browser-first provider routing and route selection model used by host services. |
-| `browser-first/host/memory-*.mjs` | Living Archive memory source settings, ingest, move, versioning, wiki health/lint/search, and host-mediated memory operations. |
-| `browser-first/resonantos-side-panel-extension/src/lib/bridge-client.js` | Authenticated extension-to-host bridge calls. |
-| `browser-first/resonantos-side-panel-extension/src/lib/*controller*.js` | Browser-side command, chat, control, page action, rendering, and job state controllers. |
-| `addons/resonant-browser-host/` | Browser host add-on package, host tests, and browser-host integration surface. |
+Every new or changed host route must identify:
 
-Host-boundary rules:
+- one primary owner service;
+- its method and exact path;
+- whether the bridge token alone is sufficient or which scoped capability is
+  required;
+- the provider, network endpoint, process, or filesystem roots it may access;
+- input validation and redaction rules;
+- focused tests in `browser-first/test/` or the owning package.
 
-- Provider credentials, filesystem access, browser process launch, archive promotion, memory source movement, and privileged add-on lifecycle actions must stay behind host-mediated routes.
-- Browser extension controllers may hold session/UI state but must not become the source of truth for secrets or privileged host state.
-- New host routes need a named owner service, capability requirement, and focused host or browser-first test.
+Do not add domain behavior directly to `run-bridge-minimal.mjs`. Do not move
+authentication or capability enforcement out of `bridge-server.mjs`. Do not
+treat an extension button, hidden control, or confirmation copy as an
+authorization boundary.
+
+## Historical Runtime Ownership
+
+Tauri, Electron, native CEF, Rust/Cargo, custom Chromium packaging, external
+browser sidecars, terminal workspaces, and Audio2TOL have no Alpha runtime
+ownership. Historical ADRs may describe those systems, but new Alpha work must
+not assign routes, secrets, process control, packaging, or validation to them.
+
+Future native/browser-distribution work requires an explicit release scope and
+an ownership update before implementation. It does not inherit Alpha bridge
+authority automatically.
 
 ## Pull Request Checklist Hook
 
-When a PR adds a module, moves ownership between modules, changes a host route, or moves behavior out of `App.tsx`, the PR must answer:
+When a pull request adds a module, moves behavior between modules, changes
+shared state, or changes a bridge route, answer all of these:
 
-- Which `src/modules/*` path owns the behavior after this change?
-- Does a shared contract belong in `src/core/` instead of another feature module?
-- Did any module start importing another module's controller or private helper?
-- Did a host/IPC route, capability, provider, filesystem, or browser automation boundary change?
-- Does this file need an update alongside the code change?
+- Which path owns the behavior after this change?
+- What state does it read, and what state may it mutate?
+- Does any shared contract belong in `src/core/` or an SDK package?
+- Does the change cross browser, provider, network, process, filesystem,
+  credential, archive-promotion, or human-approval boundaries?
+- Which bridge capability protects the route?
+- Which focused test proves the boundary?
+- Do this ownership contract, the module map, the Alpha boundary, or an ADR
+  need an update in the same pull request?
 
-For module additions, this document must be updated in the same PR. The focused check is:
+Run the focused ownership check:
 
 ```bash
 node --test --test-concurrency=1 scripts/module-ownership-doc.test.mjs
@@ -90,7 +138,10 @@ node --test --test-concurrency=1 scripts/module-ownership-doc.test.mjs
 
 ## Drift Handling
 
-- If `App.tsx` gains substantial domain mutation logic, treat that as architecture drift and open a follow-up issue or move the logic into the owning module controller.
-- If a module grows large enough to mix rendering, state mutation, host access, and policy, split it by concern before adding another feature to it.
-- If a legacy architecture document disagrees with this file, prefer this file for current branch ownership and update the older document when touching the same area.
-
+- If an entrypoint accumulates domain logic, move it to the named owner.
+- If a route service mixes unrelated provider, filesystem, process, or policy
+  responsibilities, split it before adding another privileged operation.
+- If docs and executable paths disagree, treat the executable Alpha path as
+  evidence, correct the normative docs, and record a new ADR when the decision
+  itself changes.
+- If ownership cannot be named, stop and resolve it before implementation.
