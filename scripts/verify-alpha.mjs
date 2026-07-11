@@ -19,6 +19,8 @@ export const ALPHA_COMMANDS = [
   { command: "npm", args: ["run", "test:living-archive-memory-service"] },
   { command: "npm", args: ["run", "test:health"] },
   { command: "npm", args: ["run", "test:engineer-runner"] },
+  { command: "npm", args: ["run", "test:security-pipeline"] },
+  { command: "npm", args: ["run", "test:module-ownership"] },
   { command: "node", args: ["scripts/security-pipeline/run-check.mjs"] },
   {
     command: "node",

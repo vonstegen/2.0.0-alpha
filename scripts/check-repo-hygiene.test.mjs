@@ -178,6 +178,16 @@ test("classifyContent ignores credential regex source and obvious placeholders",
   }
 });
 
+test("classifyContent accepts the protected provider bridge's explicit synthetic fixture", () => {
+  assert.equal(
+    classifyContent(
+      "browser-first/test/provider-bridge-session-secrets.test.mjs",
+      'MINIMAX_API_KEY: "minimax-env-credential"',
+    ),
+    null,
+  );
+});
+
 test("classifyContent safely skips binary buffers", () => {
   const binary = Buffer.from([0, 255, 254, ...Buffer.from("/Users/dr.tom/private")]);
   assert.doesNotThrow(() => classifyContent("fixtures/profile.db", binary));

@@ -4,7 +4,9 @@
 
 Do not open a public issue for a suspected vulnerability.
 
-Email Vladimir Rondelli at `rondellivladimir@gmail.com` with the subject prefix
+**Disclosure contact:** Vladimir Rondelli at `rondellivladimir@gmail.com`.
+
+Email that address with the subject prefix
 `[SECURITY]`. Include only the minimum information needed to understand and
 reproduce the problem:
 
