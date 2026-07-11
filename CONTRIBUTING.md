@@ -85,7 +85,12 @@ Use the rows that match the change:
 | Alpha release scope | `npm run pre-release:scan` plus the release checks routed from `docs/README.md` |
 
 Run broader checks when ownership, contracts, or release behavior crosses more
-than one row.
+than one row. Run the complete deterministic gate for release-impacting,
+cross-module, or final-certification work:
+
+```bash
+npm run verify:alpha
+```
 
 ## Open The Pull Request
 

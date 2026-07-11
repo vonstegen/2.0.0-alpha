@@ -7,6 +7,9 @@ on:
       - main
       - dev
     paths:
+      - ".github/**"
+      - ".nvmrc"
+      - "*.md"
       - ".github/workflows/alpha-build.yml"
       - "addons/resonant-browser-host/**"
       - "browser-first/**"
@@ -24,6 +27,9 @@ on:
       - main
       - dev
     paths:
+      - ".github/**"
+      - ".nvmrc"
+      - "*.md"
       - ".github/workflows/alpha-build.yml"
       - "addons/resonant-browser-host/**"
       - "browser-first/**"
@@ -44,12 +50,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install app dependencies
@@ -64,34 +70,10 @@ jobs:
       - name: Audit browser host dependencies
         run: npm audit --prefix addons/resonant-browser-host --audit-level=high
 
-      - name: Typecheck and build app
-        run: npm run build
-
-      - name: Run frontend tests
-        run: npm test -- --run
-
-      - name: Run browser host tests
+      - name: Verify Alpha
         env:
           RESONANTOS_BROWSER_HOST_CHANNEL: chrome
-        run: npm run test:browser-host
-
-      - name: Run browser-first extension tests
-        run: npm run test:browser-first
-
-      - name: Run Living Archive memory service tests
-        run: npm run test:living-archive-memory-service
-
-      - name: Run Living Archive MCP tests
-        run: npm run test:living-archive-mcp
-
-      - name: Run health checks
-        run: npm run test:health
-
-      - name: Run engineer runner tests
-        run: npm run test:engineer-runner
-
-      - name: Run security pipeline
-        run: node scripts/security-pipeline/run-check.mjs
+        run: npm run verify:alpha
 
       - name: Package Chrome extension
         run: |
@@ -102,7 +84,7 @@ jobs:
         run: npm run pre-release:scan
 
       - name: Upload extension artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: resonantos-side-panel-extension
           path: resonantos-side-panel-extension.zip

@@ -57,28 +57,16 @@ release installer, and no CI artifact that bundles the Node bridge.
 ## Candidate Checks
 
 The `alpha-build` workflow is the reproducible candidate gate. It installs and
-audits both Node dependency trees, then runs:
+audits both Node dependency trees, then runs the unified gate:
 
 ```bash
-npm run build
-npm test -- --run
-npm run test:browser-host
-npm run test:browser-first
-npm run test:living-archive-memory-service
-npm run test:living-archive-mcp
-npm run test:health
-npm run test:engineer-runner
-node scripts/security-pipeline/run-check.mjs
+npm run verify:alpha
 ```
 
-It then packages the extension, runs `npm run pre-release:scan`, and uploads the
-artifact. Documentation-only release preparation also runs:
-
-```bash
-npm run docs:check
-npm run test:docs
-npm run repo:hygiene
-```
+That gate includes repository hygiene, documentation contracts, build,
+frontend and browser suites, Living Archive suites, health and engineer checks,
+the security pipeline, and the browser-first scope audit. CI then packages the
+extension, runs `npm run pre-release:scan`, and uploads the artifact.
 
 Use `npm run browser-first:audit-scope:staged` on the intentionally staged
 candidate paths. A strict scope audit is meaningful only when the index contains

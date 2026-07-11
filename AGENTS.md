@@ -90,7 +90,8 @@ the files you will change.
 | Alpha release scope | `npm run pre-release:scan` and the release checks in the relevant docs |
 
 Run every row touched by the change. A pull request may require more checks than
-the minimum listed here.
+the minimum listed here. Run `npm run verify:alpha` for release-impacting,
+cross-module, or final-certification work.
 
 ## Definition Of Done
 
