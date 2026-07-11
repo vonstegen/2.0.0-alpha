@@ -1,46 +1,59 @@
-# ResonantOS Browser-First Alpha
+# Browser-First Alpha Components
 
-This directory contains the browser-first alpha surface:
+This directory owns the two active ResonantOS 2.0.0 Alpha runtime components:
 
-- `resonantos-side-panel-extension/` is the loadable Chrome Manifest V3
-  extension.
-- `host/` is the local Node.js bridge used by the extension.
+- `resonantos-side-panel-extension/` is the Chrome Manifest V3 extension.
+- `host/` is the authenticated local Node.js bridge.
 
-The 2.0.0 alpha does not ship a packaged desktop browser, Electron sidecar,
-native CEF host, or Rust/Tauri shell.
+Use the root [installation guide](../INSTALL.md) for the complete setup path and
+the [Alpha runtime boundary](../docs/architecture/ALPHA_RUNTIME_BOUNDARY.md) for
+security and scope rules.
 
-## Run The Bridge
+## Run Locally
+
+From the repository root:
 
 ```bash
+npm install
 npm run browser-first:bridge
 ```
 
-The bridge starts on loopback, generates a per-run bridge token, and writes
-`resonantos-side-panel-extension/src/bridge-config.generated.js`. The generated
-config is ignored by git.
+The bridge binds to loopback by default and writes
+`resonantos-side-panel-extension/src/bridge-config.generated.js`. That file
+contains generated credentials, is ignored by Git, and must remain local.
 
-## Load The Extension
+Load `browser-first/resonantos-side-panel-extension` through **Load unpacked**
+on `chrome://extensions`, then open the ResonantOS side panel. Keep the bridge
+process running.
 
-1. Open `chrome://extensions`.
-2. Enable Developer mode.
-3. Choose Load unpacked.
-4. Select `browser-first/resonantos-side-panel-extension`.
+## Extension Boundary
 
-## Browser Control Boundary
+The side panel communicates with the local bridge through authenticated,
+capability-scoped routes. Browser Agent Control is mediated by typed extension
+tools and visible browser state. Wallet approvals, signatures, payments,
+credential entry, public submission, and destructive actions remain blocked or
+human-only according to the capability contract.
 
-Augmentor runs in the side panel and can only act through typed mediated browser
-tools. It can read pages, inspect forms, click visible non-submit controls, type
-into editable fields, scroll, and switch to observed tabs.
+Provider secrets and trusted memory writes are host-owned. Do not place secrets
+in extension source, generated config, Chrome storage, fixtures, or diagnostics.
 
-The alpha blocks wallet approvals, signatures, credential autofill, payments,
-public form submission, destructive document actions, and other privileged
-browser operations unless a human performs them directly in the browser.
-
-## Tests
+## Validate Changes
 
 ```bash
 npm run test:browser-first
-npm run test:browser-host
 ```
 
-Use the root validation commands before tagging or merging release work.
+Bridge or shared-package changes may also require:
+
+```bash
+npm run test:browser-host
+npm test -- --run
+npm run build
+```
+
+Read the [bridge README](host/README.md) for host-specific details and
+[CONTRIBUTING.md](../CONTRIBUTING.md) before opening a pull request into `dev`.
+Current responsibility, verified status, and release workflow are routed by
+[Module Ownership](../docs/architecture/MODULE-OWNERSHIP.md),
+[Status](../docs/STATUS.md), and
+[Project Governance](../docs/PROJECT_GOVERNANCE.md).
