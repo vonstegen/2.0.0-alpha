@@ -27,14 +27,17 @@ const stagedChangedPaths = () =>
 const changedPaths = stagedOnly ? stagedChangedPaths() : worktreeChangedPaths();
 
 const includeDocs = new Set([
-  "docs/ALPHA_DISTRIBUTION.md",
-  "docs/ALPHA_PREVIEW_AUDIT_2026-04-28.md",
-  "docs/BROWSER_FIRST_STABILIZATION_2026-06-02.md",
-  "docs/FEATURE_INVENTORY_2026-05-26.md",
-  "docs/PRODUCT_GUIDE_BROWSER_FIRST.md",
-  "docs/PROJECT_STATUS.md",
   "docs/README.md",
-  "docs/UX_AUDIT_2026-06-01.md",
+  "docs/STATUS.md",
+  "docs/ROADMAP.md",
+  "docs/PROJECT_GOVERNANCE.md",
+  "docs/architecture/README.md",
+  "docs/architecture/ALPHA_RUNTIME_BOUNDARY.md",
+  "docs/architecture/MODULE_MAP.md",
+  "docs/architecture/MODULE-OWNERSHIP.md",
+  "docs/product/PRODUCT_GUIDE.md",
+  "docs/reference/CAPABILITY_MATRIX.md",
+  "docs/release/ALPHA_DISTRIBUTION.md",
   "docs/architecture/addon-skills/living-archive/SOURCE_TO_WIKI_INTAKE.md",
 ]);
 
@@ -119,12 +122,6 @@ function classify(path) {
       reason: "Living Archive MCP/example bridge scope needs separate release decision",
     };
   }
-  if (path.startsWith("docs/architecture/AUDIO2TOL_INTAKE_ANALYSIS.md")) {
-    return {
-      bucket: "defer",
-      reason: "specialist media-intake documentation is not browser-first stabilization scope",
-    };
-  }
   if (path.startsWith("docs/")) {
     return {
       bucket: "review",
@@ -169,8 +166,7 @@ printGroup("Defer to separate commit/release", groups.get("defer"));
 printGroup("Needs manual review", groups.get("review"));
 
 const missing = [...includeDocs]
-  .filter((path) => !existsSync(new URL(`../${path}`, import.meta.url)))
-  .filter((path) => path !== "docs/BROWSER_FIRST_STABILIZATION_2026-06-02.md");
+  .filter((path) => !existsSync(new URL(`../${path}`, import.meta.url)));
 
 if (missing.length > 0) {
   console.log("\nMissing expected release-scope files:");

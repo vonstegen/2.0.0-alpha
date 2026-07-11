@@ -20,16 +20,16 @@ to Arcanum after the local rule is in place.
 
 ## Evidence
 
-- [VLAD PR guide](../../docs/VLAD-PR-GUIDE.md) - explicitly excludes `development/`, refinement runs, and research packages from the product PR scope.
-- [Browser-first stabilization release rules](../../docs/BROWSER_FIRST_STABILIZATION_2026-06-02.md) - excludes generated memory, runtime logs, private vault contents, credentials, and mixed release-scope artifacts.
-- [Agent instructions](../../AGENTS.md) - requires the smallest safe write set, deterministic validation, and explicit reporting of the mutation boundary.
-- [Local-first routing reflection](../reflections/2026-06-22-local-first-discipline-routing.md) - records the correction that local ResonantOS discipline should precede framework promotion.
+- [Agent instructions](../../AGENTS.md) define the repository scope, secret, local-state, and unrelated-work boundaries.
+- [Contribution workflow](../../CONTRIBUTING.md) requires focused branches, ownership review, and exact validation evidence.
+- [Project governance](../../docs/PROJECT_GOVERNANCE.md) keeps raw execution output out of project authority and routes durable work through Issues and Project 2.
+- [Alpha distribution](../../docs/release/ALPHA_DISTRIBUTION.md) excludes local runtime state, browser profiles, output, runs, and generated credentials from release artifacts.
 
 ## Validation
 
 - Mode: mixed
 - Check: `npm run discipline:validate` plus `npm run browser-first:audit-scope:staged` before publishing PRs that touch governance or release-scope files.
-- Latest result: pass (2026-06-22 local catalog validation and staged scope audit).
+- Result is established by the current catalog validation and staged scope audit, not a dated narrative report.
 
 ## Quality Bar
 

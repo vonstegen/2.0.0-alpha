@@ -33,8 +33,7 @@ in [docs/STATUS.md](docs/STATUS.md); planned work lives in
 ### Fixed
 
 - Opening a new tab now resolves to `src/main-workspace.html`, and startup
-  selects the `answer` workspace when no deep link is present. This consolidates
-  the durable startup fact previously recorded in `CHANGELOG-P0-FIXES.md`.
+  selects the `answer` workspace when no deep link is present.
 - Browser-first side-panel control routing, chat startup rendering, composer
   keyboard behavior, clipboard handling, status presentation, and blank draft
   chat visibility.

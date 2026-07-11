@@ -65,8 +65,8 @@ Current baseline:
 
 - Do not move a module controller back into `App.tsx` for convenience.
 - Do not let read-only selector logic sprawl through the shell root; prefer a selector module when the derivation block becomes substantial.
-- When a refactor extracts a controller or selector, update `MODULE_MAP.md` and `FEATURE_BACKLOG.md` in the same change.
-- If a file is still intentionally oversized after a cleanup pass, record the reason and the next split target in `FEATURE_BACKLOG.md`.
+- When a refactor extracts a controller or selector, update `MODULE_MAP.md` and the governing GitHub issue in the same change.
+- If a file is still intentionally oversized after a cleanup pass, record the reason and next split target in the governing issue and Project 2.
 
 ## Why
 

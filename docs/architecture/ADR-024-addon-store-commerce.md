@@ -192,4 +192,4 @@ Related documents:
 - `ADR-008: Wallet / Web3 Security`
 - `ADR-018: Add-on SDK V0`
 - `ADR-023: Add-on Repository And Registry Model`
-- `UX-002: Glocal Discovery Interface`
+- `docs/product/PRODUCT_GUIDE.md` and the issue-linked `docs/ROADMAP.md`

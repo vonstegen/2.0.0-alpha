@@ -209,4 +209,4 @@ Related documents:
 
 - `ADR-006: Add-on Runtime & SDK`
 - `ADR-018: Add-on SDK V0`
-- `docs/ALPHA_DISTRIBUTION.md`
+- `docs/release/ALPHA_DISTRIBUTION.md`

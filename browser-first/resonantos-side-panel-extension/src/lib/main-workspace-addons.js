@@ -1,5 +1,5 @@
 // Intent citation: docs/architecture/ADR-015-delegation-fabric-addon-catalog-native-tools.md
-// Intent citation: docs/FEATURE_INVENTORY_2026-05-26.md
+// Intent citation: docs/reference/CAPABILITY_MATRIX.md
 
 import { capabilityReviewElement } from "./addon-capability-review.js";
 import { addonWorkspaceMessage } from "./runtime-error-messages.js";

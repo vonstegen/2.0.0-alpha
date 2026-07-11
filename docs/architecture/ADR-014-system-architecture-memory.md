@@ -49,7 +49,7 @@ This also protects recovery mode. The Resonant Engineer Agent needs a reliable l
 Required bootstrap sources are architecture documents:
 
 - `docs/README.md`
-- `docs/FEATURE_BACKLOG.md`
+- `docs/ROADMAP.md`
 - `docs/architecture/MODULE_MAP.md`
 - core ADRs covering platform, modularity, standards, provider routing, add-ons, archive boundaries, IPC, recovery, host archive service, approval policy, and memory domains
 
