@@ -483,6 +483,12 @@ test("canonical product docs preserve implemented chat, project, and draft hando
     "site permission",
     "wallet status",
     "read-only workflow guidance",
+    "save a page",
+    "save selected text",
+    "save a generated summary",
+    "save a multi-tab research trail",
+    "browser-job report",
+    "artifacts workspace",
   ]) {
     assert.match(guide.toLowerCase(), new RegExp(phrase));
   }
@@ -492,6 +498,7 @@ test("canonical product docs preserve implemented chat, project, and draft hando
   assert.match(matrix, /Browser history search and intake/);
   assert.match(matrix, /Per-site browser permissions/);
   assert.match(matrix, /Wallet and DAO read-only helpers/);
+  assert.match(matrix, /Browser evidence capture and Artifacts review/);
 });
 
 test("validateRepositoryDocs reports tracked documentation unreachable from canonical or implicit roots", () => {

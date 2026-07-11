@@ -104,6 +104,17 @@ requesting wallet access. `/dao <goal>` prepares read-only workflow guidance;
 Living Archive intake. ResonantOS does not connect, sign, vote, transfer,
 submit, expose key material, or approve a wallet action.
 
+## Capture And Review Browser Evidence
+
+From a readable page, you can save a page, save selected text, save a generated
+summary, or save a multi-tab research trail. A completed browser task can also
+save its browser-job report. Each capture enters raw Living Archive intake and
+does not become trusted wiki memory automatically.
+
+Open the **Artifacts workspace** to list and preview captured evidence, intake
+artifacts, reports, and review status. Promote useful knowledge only through the
+normal draft, verification, review, and promotion path.
+
 ## Add Knowledge To Living Archive
 
 1. Open **Living Archive** and choose a source or single-file intake action.
