@@ -45,6 +45,7 @@ test("classifyPath rejects generated, local-state, archive, and environment path
     ".abacusai/session.json",
     "tools/.codex/config.toml",
     ".understand-anything/graph.json",
+    "ResonantOS_User/settings.json",
     "tools/.venv/bin/python",
     "examples/venv/pyvenv.cfg",
     "release/resonantos.zip",
@@ -118,7 +119,7 @@ test("classifyContent detects supported provider credentials assigned through en
     ["MINIMAX_API_KEY", "mM7qR9sT2uV4wX6yZ8aB1cD3", "credential-minimax"],
     ["ZAI_API_KEY", "zA8bC1dE3fG5hJ7kL9mN2pQ4", "credential-zai"],
     ["GLM_API_KEY", "gL9mN2pQ4rS6tV8wX1yZ3aB5", "credential-glm"],
-    ["ZHIPU_API_KEY", "zH1jK3mN5pQ7rS9tV2wX4yZ6", "credential-zhipu"],
+    ["ZHIPUAI_API_KEY", "zH1jK3mN5pQ7rS9tV2wX4yZ6", "credential-zhipu"],
   ];
 
   for (const [name, credential, expectedRule] of credentials) {
@@ -132,6 +133,20 @@ test("classifyContent does not treat placeholder words embedded in a credential 
   assert.equal(
     classifyContent("config/provider.env", `OPENAI_API_KEY=${credential}\n`)?.rule,
     "credential-openai",
+  );
+});
+
+test("classifyContent does not treat repeated or sequential substrings as placeholders", () => {
+  const embeddedRepeat = token("sk-", "aB3dE5ffffffffffffG7hJ9kL2mN4pQ6");
+  const embeddedSequence = "mM7qR9sT2uV40123456789wX6yZ8aB1cD3";
+
+  assert.equal(
+    classifyContent("config/provider.env", `OPENAI_API_KEY=${embeddedRepeat}\n`)?.rule,
+    "credential-openai",
+  );
+  assert.equal(
+    classifyContent("config/provider.env", `MINIMAX_API_KEY=${embeddedSequence}\n`)?.rule,
+    "credential-minimax",
   );
 });
 

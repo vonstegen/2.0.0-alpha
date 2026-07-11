@@ -514,6 +514,10 @@ function isFixedTestCount(line) {
     || /\b(?:pass(?:ed|ing)?|completed?|green|successful)\b[^.\n]{0,40}\ball\s+\d+\s+(?:tests?|checks?)\b/i.test(line);
 }
 
+function isDatedVerificationSnapshot(line) {
+  return /\b(?:verified snapshot|verification (?:passed|completed|succeeded)(?:\s+on)?)\b[^\n]{0,64}\b\d{4}-\d{2}-\d{2}\b/i.test(line);
+}
+
 function isStatusAuthorityClaim(line) {
   const normalized = line.replace(/[`*_]/g, "");
   if (!/\b(?:current|canonical|authoritative)\s+status\s+source\s+of\s+truth\b/i.test(normalized)) return false;
@@ -557,6 +561,9 @@ export function validateCanonicalClaims(context) {
         }
         if (isFixedTestCount(line)) {
           findings.push(createFinding(document.path, index + 1, "fixed test count must not be presented as current truth"));
+        }
+        if (document.path === "docs/STATUS.md" && isDatedVerificationSnapshot(line)) {
+          findings.push(createFinding(document.path, index + 1, "dated verification snapshot is not freshness evidence; describe the executable verification contract instead"));
         }
         if (/\/Users\/dr\.tom(?:\/|$)/.test(line)) {
           findings.push(createFinding(document.path, index + 1, "founder-specific absolute path is not portable"));

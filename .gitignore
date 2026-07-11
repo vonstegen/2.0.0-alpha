@@ -17,6 +17,7 @@ build/native-browser/*
 # Local runtime state and generated memory
 Memory/
 Living_Archive/
+ResonantOS_User/
 .resonantos/
 
 # Development-only add-on manifests excluded from the current public catalog

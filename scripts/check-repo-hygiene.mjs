@@ -16,6 +16,7 @@ const FORBIDDEN_DIRECTORY_NAMES = new Set([
   ".abacusai",
   ".codex",
   ".understand-anything",
+  "ResonantOS_User",
   ".venv",
   "venv",
 ]);
@@ -73,7 +74,7 @@ const CREDENTIAL_RULES = [
   },
   {
     rule: "credential-zhipu",
-    pattern: /\bZHIPU_API_KEY\s*[:=]\s*["']?[A-Za-z0-9][A-Za-z0-9._-]{19,}["']?/g,
+    pattern: /\bZHIPUAI_API_KEY\s*[:=]\s*["']?[A-Za-z0-9][A-Za-z0-9._-]{19,}["']?/g,
   },
 ];
 
@@ -178,8 +179,8 @@ function isObviousCredentialPlaceholder(candidate) {
   const collapsed = value.toLowerCase().replace(/[^a-z0-9]/g, "");
   const placeholderWords = /^(?:(?:example|placeholder|redacted|replacewithyour(?:api)?(?:key|token)|dummy|fake|sample|test|your(?:api)?(?:key|token)|changeme|notareal(?:key|token)?))+(?:\d+)?$/;
   return placeholderWords.test(collapsed)
-    || /([A-Za-z0-9])\1{11,}/.test(value)
-    || /0123456789|1234567890|abcdefghijklmnop/i.test(value);
+    || /^([A-Za-z0-9])\1{11,}$/.test(value)
+    || /^(?:(?:0123456789|1234567890|abcdefghijklmnop))+$/.test(value.toLowerCase());
 }
 
 export function classifyContent(path, content, options = {}) {

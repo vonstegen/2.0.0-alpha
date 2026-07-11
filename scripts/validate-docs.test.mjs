@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -449,6 +449,40 @@ test("validateCanonicalClaims rejects fixed counts after a passing verb", () => 
     const output = messages(validateCanonicalClaims({ root }));
     assert(output.some((message) => message.includes("fixed test count")));
   });
+});
+
+test("validateCanonicalClaims rejects dated verification snapshots", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/STATUS.md", [
+      "# Status",
+      "",
+      "Verified snapshot: 2026-07-10.",
+      "The current deterministic verification passed on 2026-07-10.",
+    ].join("\n"));
+
+    const output = messages(validateCanonicalClaims({ root }));
+    assert(output.some((message) => message.includes("dated verification snapshot")));
+  });
+});
+
+test("canonical product docs preserve implemented chat, project, and draft handoff workflows", () => {
+  const guide = readFileSync(
+    new URL("../docs/product/PRODUCT_GUIDE.md", import.meta.url),
+    "utf8",
+  ).replace(/\s+/g, " ");
+  const matrix = readFileSync(new URL("../docs/reference/CAPABILITY_MATRIX.md", import.meta.url), "utf8");
+
+  for (const phrase of [
+    "pin or unpin a chat",
+    "fork a chat",
+    "archive a chat",
+    "create and manage projects",
+    "move chats into or out of projects",
+  ]) {
+    assert.match(guide.toLowerCase(), new RegExp(phrase));
+  }
+  assert.match(matrix, /Chat and project workspace management/);
+  assert.match(matrix, /Gmail and Google Calendar draft handoff/);
 });
 
 test("validateRepositoryDocs reports tracked documentation unreachable from canonical or implicit roots", () => {

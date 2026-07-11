@@ -1,8 +1,8 @@
 # ResonantOS 2.0.0 Alpha Status
 
-Verified snapshot: 2026-07-10. This document is the current status source of
-truth for the repository. Update it only from the current worktree, deterministic
-checks, GitHub issues, and [Project 2](https://github.com/orgs/ResonantOS/projects/2).
+This document is the current status source of truth for the repository. Update
+it only from the current worktree, deterministic checks, GitHub issues, and
+[Project 2](https://github.com/orgs/ResonantOS/projects/2).
 
 ## Snapshot
 
@@ -33,16 +33,16 @@ Implementation status and proof requirements are recorded in the
 [capability matrix](./reference/CAPABILITY_MATRIX.md). Stable user workflows are
 in the [product guide](./product/PRODUCT_GUIDE.md).
 
-## Verification
+## Verification Contract
 
-The current deterministic verification passed on 2026-07-10:
+Run `npm run verify:alpha` before relying on this status for a release or pull
+request decision. The command executes:
 
 <!-- VALIDATION_SNAPSHOT -->
-- `npm run docs:check`, `npm run repo:hygiene`, and `npm run build` passed.
-- `npm run test:docs`, `npm test -- --run`, `npm run test:browser-first`, and
-  `npm run test:browser-host` passed their complete deterministic suites.
-- Both Living Archive suites, the health and engineer-runner suites, the
-  security pipeline, and the browser-first release-scope audit passed.
+- documentation, reachability, repository-hygiene, and build checks;
+- application, browser-first, browser-host, Living Archive, health, and
+  engineer-runner suites; and
+- the security pipeline plus committed release-scope audit.
 
 This cleanup removed obsolete tracked documents. Every retained documentation
 asset is linked from the canonical documentation graph or is an explicit

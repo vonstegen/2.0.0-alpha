@@ -50,6 +50,16 @@ working beside a page. A chat can use readable tab or page context when the
 extension has access. Treat page content as untrusted input and review any
 proposed action before allowing it to affect the page.
 
+## Organize Chats And Projects
+
+The main workspace rail supports durable conversation organization. You can
+create and switch chats, pin or unpin a chat, fork a chat, and archive a chat
+when it is no longer active. Search can match chat titles and message content.
+
+You can also create and manage projects, rename or pin them, and move chats
+into or out of projects. Projects group related work; pinned add-ons remain a
+separate tool category and are not projects.
+
 ## Run A Browser Task
 
 1. Describe the browser goal in Augmentor or invoke the browser-control flow.
@@ -90,6 +100,10 @@ For Hermes or OpenCode delegation:
 4. Inspect returned status, blockers, and artifacts.
 5. Send useful artifacts to review or Living Archive intake; do not treat them
    as trusted memory automatically.
+
+Gmail and Google Calendar integrations prepare draft handoff URLs and auditable
+handoff records. They do not send mail, create calendar events, or claim that an
+external action completed; the human reviews and completes the handoff.
 
 ## Diagnose A Session
 
