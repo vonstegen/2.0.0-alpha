@@ -113,6 +113,28 @@ test("classifyContent detects high-confidence provider and source-control creden
   }
 });
 
+test("classifyContent detects supported provider credentials assigned through environment variables", () => {
+  const credentials = [
+    ["MINIMAX_API_KEY", "mM7qR9sT2uV4wX6yZ8aB1cD3", "credential-minimax"],
+    ["ZAI_API_KEY", "zA8bC1dE3fG5hJ7kL9mN2pQ4", "credential-zai"],
+    ["GLM_API_KEY", "gL9mN2pQ4rS6tV8wX1yZ3aB5", "credential-glm"],
+    ["ZHIPU_API_KEY", "zH1jK3mN5pQ7rS9tV2wX4yZ6", "credential-zhipu"],
+  ];
+
+  for (const [name, credential, expectedRule] of credentials) {
+    const result = classifyContent("config/provider.env", `${name}=${credential}\n`);
+    assert.equal(result?.rule, expectedRule, `expected ${expectedRule}`);
+  }
+});
+
+test("classifyContent does not treat placeholder words embedded in a credential as safe", () => {
+  const credential = token("sk-", "aB3dE5testG7hJ9kL2mN4pQ6rS8");
+  assert.equal(
+    classifyContent("config/provider.env", `OPENAI_API_KEY=${credential}\n`)?.rule,
+    "credential-openai",
+  );
+});
+
 test("classifyContent ignores credential regex source and obvious placeholders", () => {
   const safeContents = [
     String.raw`/\bsk-[A-Za-z0-9_-]{16,}\b/`,

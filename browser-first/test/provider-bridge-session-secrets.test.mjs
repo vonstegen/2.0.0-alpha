@@ -221,7 +221,7 @@ function abortingFetch() {
 
 test("provider chat times out a strategy route and falls back to the next configured route", async () => {
   const restoreEnv = withProviderEnv({
-    MINIMAX_API_KEY: "minimax-env-credential",
+    MINIMAX_API_KEY: "REPLACE_WITH_YOUR_KEY",
     OPENAI_API_KEY: "openai-env-credential",
     RESONANTOS_PROVIDER_CHAT_TIMEOUT_MS: "5",
   });

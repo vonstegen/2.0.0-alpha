@@ -6,42 +6,10 @@ on:
     branches:
       - main
       - dev
-    paths:
-      - ".github/**"
-      - ".nvmrc"
-      - "*.md"
-      - ".github/workflows/alpha-build.yml"
-      - "addons/resonant-browser-host/**"
-      - "browser-first/**"
-      - "docs/**"
-      - "package-lock.json"
-      - "package.json"
-      - "public/**"
-      - "scripts/**"
-      - "src/**"
-      - "index.html"
-      - "vite.config.ts"
-      - "tsconfig*.json"
   push:
     branches:
       - main
       - dev
-    paths:
-      - ".github/**"
-      - ".nvmrc"
-      - "*.md"
-      - ".github/workflows/alpha-build.yml"
-      - "addons/resonant-browser-host/**"
-      - "browser-first/**"
-      - "docs/**"
-      - "package-lock.json"
-      - "package.json"
-      - "public/**"
-      - "scripts/**"
-      - "src/**"
-      - "index.html"
-      - "vite.config.ts"
-      - "tsconfig*.json"
 
 jobs:
   build-alpha:

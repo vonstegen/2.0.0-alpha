@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { parse } from "yaml";
 
 const auditModule = await import("./browser-first-release-scope-audit.mjs");
 
@@ -99,6 +100,7 @@ test("alpha workflow fetches history and supplies event-specific audit refs", as
     new URL("../.github/workflows/alpha-build.yml", import.meta.url),
     "utf8",
   );
+  const parsed = parse(workflow);
 
   assert.match(workflow, /uses: actions\/checkout@[a-f0-9]+[^\n]*\n\s+with:\n\s+fetch-depth: 0/);
   assert.match(
@@ -106,6 +108,24 @@ test("alpha workflow fetches history and supplies event-specific audit refs", as
     /RESONANTOS_SCOPE_BASE: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.base\.sha \|\| github\.event_name == 'push' && github\.event\.before \|\| 'origin\/dev' \}\}/,
   );
   assert.match(workflow, /RESONANTOS_SCOPE_HEAD: \$\{\{ github\.sha \}\}/);
+  assert.equal(parsed.on.pull_request.paths, undefined);
+  assert.equal(parsed.on.push.paths, undefined);
+});
+
+test("project sync is skipped as a job for forks and fails closed without its token", async () => {
+  const workflow = parse(await readFile(
+    new URL("../.github/workflows/project-issue-sync.yml", import.meta.url),
+    "utf8",
+  ));
+  const job = workflow.jobs.sync;
+  const requireToken = job.steps.find((step) => step.name === "Require Project token");
+
+  assert.equal(
+    job.if,
+    "github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository",
+  );
+  assert.equal(requireToken.if, "steps.project-token.outputs.configured != 'true'");
+  assert.match(requireToken.run, /exit 1/);
 });
 
 test("committed mode preserves added and deleted branch paths in a clean worktree", async () => {

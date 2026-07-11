@@ -59,9 +59,23 @@ const CREDENTIAL_RULES = [
     rule: "credential-replicate",
     pattern: /(?<![A-Za-z0-9_])rpa_[A-Za-z0-9_-]{16,}(?![A-Za-z0-9_-])/g,
   },
+  {
+    rule: "credential-minimax",
+    pattern: /\bMINIMAX_API_KEY\s*[:=]\s*["']?[A-Za-z0-9][A-Za-z0-9._-]{19,}["']?/g,
+  },
+  {
+    rule: "credential-zai",
+    pattern: /\bZAI_API_KEY\s*[:=]\s*["']?[A-Za-z0-9][A-Za-z0-9._-]{19,}["']?/g,
+  },
+  {
+    rule: "credential-glm",
+    pattern: /\bGLM_API_KEY\s*[:=]\s*["']?[A-Za-z0-9][A-Za-z0-9._-]{19,}["']?/g,
+  },
+  {
+    rule: "credential-zhipu",
+    pattern: /\bZHIPU_API_KEY\s*[:=]\s*["']?[A-Za-z0-9][A-Za-z0-9._-]{19,}["']?/g,
+  },
 ];
-const CREDENTIAL_PLACEHOLDER_MARKER =
-  /example|placeholder|redacted|replace|dummy|fake|sample|test|your[_-]?(?:api[_-]?)?(?:key|token)|change[_-]?me|not[_-]?(?:a[_-]?)?real/i;
 
 function normalizePath(path) {
   const nativePath = String(path);
@@ -157,9 +171,15 @@ function decodeText(content) {
 }
 
 function isObviousCredentialPlaceholder(candidate) {
-  return CREDENTIAL_PLACEHOLDER_MARKER.test(candidate)
-    || /([A-Za-z0-9])\1{11,}/.test(candidate)
-    || /0123456789|1234567890|abcdefghijklmnop/i.test(candidate);
+  const assignment = candidate.match(/[:=]\s*["']?([^\s"']+)/);
+  const value = (assignment?.[1] ?? candidate)
+    .replace(/^(?:sk-ant-api\d*-|sk-api-|sk-|AIza|AKIA|xai-|ghp_|github_pat_|gsk_|rpa_)/i, "")
+    .replace(/["']$/, "");
+  const collapsed = value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const placeholderWords = /^(?:(?:example|placeholder|redacted|replacewithyour(?:api)?(?:key|token)|dummy|fake|sample|test|your(?:api)?(?:key|token)|changeme|notareal(?:key|token)?))+(?:\d+)?$/;
+  return placeholderWords.test(collapsed)
+    || /([A-Za-z0-9])\1{11,}/.test(value)
+    || /0123456789|1234567890|abcdefghijklmnop/i.test(value);
 }
 
 export function classifyContent(path, content, options = {}) {

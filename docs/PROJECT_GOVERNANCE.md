@@ -189,9 +189,9 @@ Review the run log before dispatching with `dry_run=false`.
 
 The workflow uses the repository secret `PROJECT_SYNC_TOKEN`. Repository-owned
 events fail when the secret is absent so Project 2 drift cannot appear green.
-Fork pull requests may skip because repository secrets are intentionally
-unavailable to untrusted fork workflows. If the token is expired, revoked, or
-cannot see Project 2:
+The entire synchronization job is marked skipped for fork pull requests
+because repository secrets are intentionally unavailable to untrusted fork
+workflows. If the token is expired, revoked, or cannot see Project 2:
 
 1. create or rotate a token with repository issue/pull-request access and
    organization Project read/write access;

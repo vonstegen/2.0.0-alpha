@@ -39,19 +39,16 @@ The current deterministic verification passed on 2026-07-10:
 
 <!-- VALIDATION_SNAPSHOT -->
 - `npm run docs:check`, `npm run repo:hygiene`, and `npm run build` passed.
-- `npm run test:docs` passed all 100 documentation, repository-hygiene, and
-  verifier tests.
-- `npm test -- --run` passed all 312 Vitest tests.
-- `npm run test:browser-first` passed all 626 browser-first tests.
-- `npm run test:browser-host` passed all 13 controlled browser-host tests.
+- `npm run test:docs`, `npm test -- --run`, `npm run test:browser-first`, and
+  `npm run test:browser-host` passed their complete deterministic suites.
 - Both Living Archive suites, the health and engineer-runner suites, the
   security pipeline, and the browser-first release-scope audit passed.
 
-This cleanup removed 61 obsolete tracked documents. All 90 retained or newly
-added tracked documents are reachable from the canonical documentation entry
-points. The disposition ledger records run evidence; it is not repository
-authority and does not override the current repository, GitHub issues, or
-Project 2.
+This cleanup removed obsolete tracked documents. Every retained documentation
+asset is linked from the canonical documentation graph or is an explicit
+runtime/GitHub consumer. The disposition ledger records run evidence; it is not
+repository authority and does not override the current repository, GitHub
+issues, or Project 2.
 
 ## Open Alpha Gates
 

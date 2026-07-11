@@ -24,6 +24,7 @@ jobs:
   sync:
     name: Sync Project 2 release fields and issue labels
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -45,8 +46,8 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Require Project token for repository events
-        if: steps.project-token.outputs.configured != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      - name: Require Project token
+        if: steps.project-token.outputs.configured != 'true'
         run: |
           echo "::error::PROJECT_SYNC_TOKEN is required for repository-owned Project 2 synchronization."
           exit 1

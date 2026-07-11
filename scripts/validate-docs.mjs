@@ -16,6 +16,13 @@ const CANONICAL_ENTRYPOINTS = [
   "CONTRIBUTING.md",
   "docs/README.md",
 ];
+const IMPLICIT_DOCUMENT_CONSUMERS = new Set([
+  ".github/pull_request_template.md",
+  "index.html",
+  "browser-first/resonantos-side-panel-extension/src/main-workspace.html",
+  "browser-first/resonantos-side-panel-extension/src/side-panel.html",
+]);
+const DOCUMENTATION_PATH = /\.(?:md|markdown|mdx|txt|html|pdf|docx)$/i;
 
 const NORMATIVE_DOCUMENTS = new Set([
   "AGENTS.md",
@@ -503,7 +510,8 @@ function isMainDevelopmentBranch(line) {
 }
 
 function isFixedTestCount(line) {
-  return /\b\d+\s+(?:tests?|checks?)\s+(?:are\s+)?(?:pass(?:ed|ing)?|green|successful|complete)\b/i.test(line);
+  return /\b\d+\s+(?:tests?|checks?)\s+(?:are\s+)?(?:pass(?:ed|ing)?|green|successful|complete)\b/i.test(line)
+    || /\b(?:pass(?:ed|ing)?|completed?|green|successful)\b[^.\n]{0,40}\ball\s+\d+\s+(?:tests?|checks?)\b/i.test(line);
 }
 
 function isStatusAuthorityClaim(line) {
@@ -627,6 +635,59 @@ function trackedFiles(root, fallback) {
   } catch {
     return fallback;
   }
+}
+
+function reachableDocumentTarget(context, tracked, sourcePath, target) {
+  const { file } = splitTarget(target);
+  if (!file || isExternalTarget(file)) return null;
+
+  let decoded;
+  try {
+    decoded = decodeURIComponent(file);
+  } catch {
+    return null;
+  }
+
+  const destination = toRelative(context.root, resolve(context.root, dirname(sourcePath), decoded));
+  if (destination === ".." || destination.startsWith("../")) return null;
+  if (tracked.has(destination)) return destination;
+  const readme = `${destination.replace(/\/$/, "")}/README.md`;
+  return tracked.has(readme) ? readme : null;
+}
+
+export function validateDocumentationReachability(context) {
+  const resolvedContext = buildContext(context.root, context);
+  const tracked = new Set(
+    (context.trackedFiles ?? trackedFiles(resolvedContext.root, resolvedContext.files))
+      .filter((path) => DOCUMENTATION_PATH.test(path)),
+  );
+  const documents = new Map(resolvedContext.documents.map((document) => [document.path, document]));
+  const reached = new Set(
+    [...CANONICAL_ENTRYPOINTS, ...IMPLICIT_DOCUMENT_CONSUMERS]
+      .filter((path) => tracked.has(path)),
+  );
+  const queue = CANONICAL_ENTRYPOINTS.filter((path) => tracked.has(path));
+
+  while (queue.length > 0) {
+    const source = queue.shift();
+    const document = documents.get(source);
+    if (!document) continue;
+    for (const link of parsedMarkdownLinks(document.content)) {
+      const destination = reachableDocumentTarget(resolvedContext, tracked, source, link.target);
+      if (!destination || reached.has(destination)) continue;
+      reached.add(destination);
+      if (documents.has(destination)) queue.push(destination);
+    }
+  }
+
+  return [...tracked]
+    .filter((path) => !reached.has(path))
+    .sort()
+    .map((path) => createFinding(
+      path,
+      1,
+      "tracked documentation is not reachable from a canonical entrypoint or an explicit runtime/GitHub consumer",
+    ));
 }
 
 function normalizeTableCell(cell) {
@@ -1097,6 +1158,7 @@ export function validateRepositoryDocs(root, options = {}) {
     ...validateNpmScripts(context),
     ...validateCanonicalClaims(context),
     ...validateEntrypoints(context),
+    ...validateDocumentationReachability(context),
     ...validateAdrIndex({ ...context, ...options }),
     ...validateNodeVersions(context),
   ].sort((left, right) => (

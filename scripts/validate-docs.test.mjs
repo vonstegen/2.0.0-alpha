@@ -98,6 +98,7 @@ function makeRepository() {
     "",
     "[Status](STATUS.md)",
     "[Linked page](linked.md#linked-heading)",
+    "[Architecture decisions](architecture/README.md)",
   ].join("\n"));
   writeFixture(root, "docs/STATUS.md", "# Status\n\nThis is the current status source of truth.\n");
   writeFixture(root, "docs/linked.md", "# Linked Heading\n");
@@ -434,6 +435,37 @@ test("validateCanonicalClaims rejects stale current-truth claims", () => {
     assert(output.some((message) => message.includes("fixed test count")));
     assert(output.some((message) => message.includes("founder-specific absolute path")));
     assert(output.some((message) => message.includes("docs/STATUS.md") && message.includes("status source")));
+  });
+});
+
+test("validateCanonicalClaims rejects fixed counts after a passing verb", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/STATUS.md", [
+      "# Status",
+      "",
+      "The documentation suite passed all 100 checks.",
+    ].join("\n"));
+
+    const output = messages(validateCanonicalClaims({ root }));
+    assert(output.some((message) => message.includes("fixed test count")));
+  });
+});
+
+test("validateRepositoryDocs reports tracked documentation unreachable from canonical or implicit roots", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/orphan.md", "# Orphan\n");
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(output.some((message) => message.includes("docs/orphan.md") && message.includes("not reachable")));
+  });
+});
+
+test("validateRepositoryDocs accepts implicit runtime and GitHub documentation consumers", () => {
+  withRepository((root) => {
+    writeFixture(root, ".github/pull_request_template.md", "# Pull request\n");
+    writeFixture(root, "index.html", "<!doctype html><title>Runtime</title>\n");
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(!output.some((message) => message.includes("pull_request_template.md") && message.includes("not reachable")));
+    assert(!output.some((message) => message.includes("index.html") && message.includes("not reachable")));
   });
 });
 
