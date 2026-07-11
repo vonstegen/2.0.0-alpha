@@ -75,6 +75,15 @@ npm run docs:check
 npm run test:docs
 ```
 
+Related contributor references:
+
+- [Repository discipline catalog](../disciplines/README.md)
+- [Browser research skill](addons/browser/skills/browser-research-session.md)
+- [Icon system decision](product/ICON-001-resonantos-svg-system.md) and
+  [icon asset index](../public/icons/README.md)
+- [GitHub Action SHA-pinning policy](security-pipeline/sha-pin-policy.md)
+- [Architecture templates, runbooks, and add-on skill contracts](architecture/README.md#contributor-contracts)
+
 ## Release The Alpha
 
 Use [Alpha Distribution](release/ALPHA_DISTRIBUTION.md),

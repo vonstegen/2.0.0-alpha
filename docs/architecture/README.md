@@ -41,6 +41,32 @@ Chromium distribution.
 - Electron shells and native CEF hosts
 - terminal workspaces and Audio2TOL
 
+## Contributor Contracts
+
+These retained references are implementation contracts, not Alpha runtime
+components:
+
+- [Add-on agent contract template](ADDON_AGENT_CONTRACT_TEMPLATE.md)
+- [Add-on Augmentor skill template](ADDON_AUGMENTOR_SKILL_TEMPLATE.md)
+- [Add-on engineer setup runbook template](ADDON_ENGINEER_SETUP_RUNBOOK_TEMPLATE.md)
+- [Paperclip engineer setup](addon-runbooks/paperclip/ENGINEER_SETUP.md)
+- [RecursiveMAS engineer setup](addon-runbooks/recursive-mas/ENGINEER_SETUP.md)
+
+Add-on skill contracts:
+
+- [Augmentor strategist conversation](addon-skills/augmentor-chat/STRATEGIST_CONVERSATION.md)
+- [Hermes Augmentor skill](addon-skills/hermes/AUGMENTOR_SKILL.md)
+- [Living Archive source intake](addon-skills/living-archive/SOURCE_TO_WIKI_INTAKE.md)
+- [Logician verification policy](addon-skills/logician/VERIFICATION_POLICY_DESIGN.md)
+- [Obsidian vault organization](addon-skills/obsidian/VAULT_ORGANIZATION_ASSIST.md)
+- [OpenClaw task handoff](addon-skills/openclaw/TASK_HANDOFF.md)
+- [OpenCode coding handoff](addon-skills/opencode/CODING_HANDOFF.md)
+- [Paperclip Augmentor skill](addon-skills/paperclip/AUGMENTOR_SKILL.md)
+- [R-Awareness context injection policy](addon-skills/r-awareness/CONTEXT_INJECTION_POLICY.md)
+- [RecursiveMAS Augmentor skill](addon-skills/recursive-mas/AUGMENTOR_SKILL.md)
+- [Shield security posture review](addon-skills/shield/SECURITY_POSTURE_REVIEW.md)
+- [Telegram remote-channel conversation](addon-skills/telegram/REMOTE_CHANNEL_CONVERSATION.md)
+
 ## ADR Index
 
 | ADR | Decision status | Alpha applicability | Superseded by | Owner | Alpha scope note |
