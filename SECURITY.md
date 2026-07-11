@@ -1,66 +1,65 @@
 # Security Policy
 
-## Reporting a Vulnerability
+## Report Privately
 
-If you believe you have found a security vulnerability in this project, please
-report it privately. **Do not open a public issue for security reports.**
+Do not open a public issue for a suspected vulnerability.
 
-- **Disclosure contact:** Vladimir Rondelli (rondellivladimir@gmail.com)
-- **Report channel:** email the disclosure contact above with the subject line
-  prefix `[SECURITY]`. Provide a description, reproduction steps, affected
-  version/commit, and impact assessment. No project PGP key is published for
-  the private internal alpha; use the disclosure contact's agreed secure channel
-  if encrypted material must be exchanged.
+Email Vladimir Rondelli at `rondellivladimir@gmail.com` with the subject prefix
+`[SECURITY]`. Include only the minimum information needed to understand and
+reproduce the problem:
 
-The disclosure contact is the single accountable owner for triage and
-coordinated-disclosure decisions for this repository.
+- affected version or commit;
+- affected extension or bridge surface;
+- reproduction steps using test data;
+- expected impact; and
+- a safe way to contact you for follow-up.
 
-## Response SLA
+Do not send access tokens, provider keys, wallet credentials, cookies, browser
+profiles, login databases, private user content, or unredacted production logs.
+If sensitive evidence is necessary, first use email to agree on a secure
+transfer method. No project PGP key is currently published.
+
+The disclosure contact owns initial triage and coordinates remediation and any
+public disclosure. General support, non-sensitive bugs, and feature requests
+belong in the public issue forms described in [SUPPORT.md](SUPPORT.md).
+
+## Response Targets
 
 | Stage | Target |
 | --- | --- |
-| Acknowledgement of report | Within 3 business days |
-| Triage / severity assignment | Within 7 business days |
-| Fix or mitigation plan | Within 14 business days for confirmed high-impact findings |
-| Coordinated public disclosure | Not applicable to private internal alpha unless the owner approves external disclosure |
+| Acknowledge the report | 3 business days |
+| Assign severity and scope | 7 business days |
+| Provide a fix or mitigation plan for a confirmed high-impact finding | 14 business days |
 
-These targets apply to the private internal alpha. Public-release support terms
-must be reviewed before broader external distribution.
+These are response targets for the active alpha, not a paid support guarantee.
+Public disclosure timing is coordinated with the reporter after users have a
+reasonable remediation path.
 
-## Supported Scope
+## Supported Security Boundary
 
-Security reports are accepted for the following in-scope surfaces:
+Security reports are accepted for the current browser-first alpha:
 
-- The Chrome extension capability surface, including side-panel, new-tab,
-  content-script, and background-service-worker message routing.
-- The local Node.js bridge routes and capability-token boundaries.
-- Subprocess / shell invocation and environment handling.
-- Provider URL handling, the memory-service listener, and loopback/LAN exposure.
-- Add-on trust (`allowed-tools` declarations, allowlist/denylist, scoped bridge
-  APIs).
-- The release-trust surface (action pinning, signing, provenance) — see
-  [`docs/security-pipeline/sha-pin-policy.md`](docs/security-pipeline/sha-pin-policy.md)
-  and
-  [`docs/security-pipeline/release-trust-roadmap.md`](docs/security-pipeline/release-trust-roadmap.md)
-  (owner: release-trust lane, Tom Pennington / @tompennington).
+- the Chrome Manifest V3 side panel, new-tab page, content scripts, background
+  service worker, and their message boundaries;
+- the authenticated loopback Node.js bridge and its capability tokens;
+- provider routing, subprocess invocation, and process environment handling;
+- memory-service and local-service listener exposure;
+- add-on manifests, capability grants, allowed-tools declarations, and scoped
+  bridge APIs; and
+- repository and release integrity, including CI credentials, action pinning,
+  artifacts, and provenance.
 
-**Out of scope** (non-exhaustive): findings in third-party dependencies that
-have no demonstrated impact on this project, social-engineering reports, and
-denial-of-service that requires privileged local access already granted by the
-threat model.
+The latest `dev` branch and alpha tags still in active testing receive security
+fixes. A third-party dependency report is in scope when it demonstrates impact
+on this repository. Social engineering, disruption that requires already
+trusted local access, and reports without a plausible repository impact are out
+of scope.
 
-## Supported Versions
+## Researcher Expectations
 
-| Version / branch | Supported |
-| --- | --- |
-| `dev` (latest browser-first alpha) | yes |
-| Internal alpha tags | yes, while actively used for internal testing |
-| Public releases | not yet supported |
+Good-faith research must use accounts and data you are authorized to access.
+Do not exfiltrate data, access third-party accounts, disrupt provider services,
+modify trusted memory outside disposable test data, bypass required human
+approval boundaries, or publish details before coordinated disclosure.
 
-## Safe Harbor
-
-Good-faith research conducted in accordance with this policy will not be pursued
-or reported as abuse. Researchers must avoid accessing third-party accounts,
-exfiltrating secrets, disrupting provider services, modifying trusted memory
-outside test data, or publishing vulnerability details before the disclosure
-owner confirms remediation or an approved disclosure plan.
+Good-faith work within this policy will not be treated as abuse by the project.
