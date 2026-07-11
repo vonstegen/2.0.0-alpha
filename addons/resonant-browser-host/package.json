@@ -9,6 +9,9 @@
     "test": "node --test test/*.test.mjs",
     "start": "node src/browser-host.mjs"
   },
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "dependencies": {
     "playwright": "^1.59.1"
   }

@@ -22,12 +22,15 @@
     "engineer:verify": "node scripts/engineer-runner.mjs verify",
     "test:engineer-runner": "node --test scripts/engineer-runner.test.mjs",
     "discipline:validate": "node scripts/validate-discipline-catalog.mjs",
+    "repo:hygiene": "node scripts/check-repo-hygiene.mjs --content-allowlist scripts/check-repo-hygiene.mjs --content-allowlist scripts/check-repo-hygiene.test.mjs --content-allowlist scripts/validate-docs.test.mjs",
+    "docs:check": "node scripts/validate-docs.mjs",
+    "test:docs": "node --test scripts/validate-docs.test.mjs scripts/check-repo-hygiene.test.mjs",
     "pre-release:scan": "bash scripts/pre-release-scan.sh",
     "browser-first:audit-scope": "node scripts/browser-first-release-scope-audit.mjs",
     "browser-first:audit-scope:staged": "node scripts/browser-first-release-scope-audit.mjs --staged --strict"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.13.0"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",
@@ -49,8 +52,12 @@
     "@vitejs/plugin-react": "^5.0.0",
     "jsdom": "^29.0.2",
     "playwright": "^1.59.1",
+    "remark-parse": "^11.0.0",
+    "semver": "^7.8.5",
     "typescript": "^5.0.0",
+    "unified": "^11.0.5",
     "vite": "^6.4.2",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "yaml": "^2.9.0"
   }
 }
