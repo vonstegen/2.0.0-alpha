@@ -32,6 +32,7 @@ const includeDocs = new Set([
   "docs/architecture/MODULE-OWNERSHIP.md",
   "docs/product/PRODUCT_GUIDE.md",
   "docs/reference/CAPABILITY_MATRIX.md",
+  "docs/reference/COMMANDS.md",
   "docs/release/ALPHA_DISTRIBUTION.md",
   "docs/architecture/addon-skills/living-archive/SOURCE_TO_WIKI_INTAKE.md",
 ]);
