@@ -112,18 +112,27 @@ test("alpha workflow fetches history and supplies event-specific audit refs", as
   assert.equal(parsed.on.push.paths, undefined);
 });
 
-test("project sync is skipped as a job for forks and fails closed without its token", async () => {
-  const workflow = parse(await readFile(
+test("project sync executes pull-request events only from trusted base code", async () => {
+  const workflowText = await readFile(
     new URL("../.github/workflows/project-issue-sync.yml", import.meta.url),
     "utf8",
-  ));
+  );
+  const workflow = parse(workflowText);
   const job = workflow.jobs.sync;
+  const checkout = job.steps.find((step) => step.name === "Checkout");
   const requireToken = job.steps.find((step) => step.name === "Require Project token");
 
+  assert.equal(workflow.on.pull_request, undefined);
+  assert.ok(workflow.on.pull_request_target);
+  assert.equal(job.if, undefined);
   assert.equal(
-    job.if,
-    "github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository",
+    checkout.with.ref,
+    "${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}",
   );
+  assert.equal(checkout.with["persist-credentials"], false);
+  assert.equal(workflow.permissions.contents, "read");
+  assert.equal(workflow.permissions.issues, undefined);
+  assert.equal(workflow.permissions["pull-requests"], undefined);
   assert.equal(requireToken.if, "steps.project-token.outputs.configured != 'true'");
   assert.match(requireToken.run, /exit 1/);
 });

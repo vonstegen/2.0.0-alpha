@@ -118,8 +118,9 @@ unexplained planning decision.
 
 ## Project And Label Sync
 
-The `project-issue-sync` workflow runs for issue and pull-request events, on a
-six-hour schedule, and by manual dispatch. It uses
+The `project-issue-sync` workflow runs for issue and trusted-base
+`pull_request_target` events, on a six-hour schedule, and by manual dispatch.
+It uses
 `scripts/sync-project-issue-labels.mjs` for open items in
 `ResonantOS/2.0.0-alpha`.
 
@@ -187,11 +188,11 @@ gh workflow run project-issue-sync.yml -f dry_run=true
 
 Review the run log before dispatching with `dry_run=false`.
 
-The workflow uses the repository secret `PROJECT_SYNC_TOKEN`. Repository-owned
-events fail when the secret is absent so Project 2 drift cannot appear green.
-The entire synchronization job is marked skipped for fork pull requests
-because repository secrets are intentionally unavailable to untrusted fork
-workflows. If the token is expired, revoked, or cannot see Project 2:
+The workflow uses the repository secret `PROJECT_SYNC_TOKEN`. Events fail when
+the secret is absent so Project 2 drift cannot appear green. Pull-request runs
+execute only the trusted base revision of the workflow and synchronization
+script, never the pull-request checkout, and checkout does not persist Git
+credentials. If the token is expired, revoked, or cannot see Project 2:
 
 1. create or rotate a token with repository issue/pull-request access and
    organization Project read/write access;

@@ -3,7 +3,7 @@ name: project-issue-sync
 on:
   issues:
     types: [opened, reopened, edited, labeled, unlabeled, closed]
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, ready_for_review, converted_to_draft, closed, labeled, unlabeled]
   schedule:
     - cron: "0 */6 * * *"
@@ -17,17 +17,17 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
 
 jobs:
   sync:
     name: Sync Project 2 release fields and issue labels
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4

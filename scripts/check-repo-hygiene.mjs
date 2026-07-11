@@ -50,7 +50,7 @@ const CREDENTIAL_RULES = [
   },
   {
     rule: "credential-github",
-    pattern: /(?<![A-Za-z0-9_])(?:ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{50,})(?![A-Za-z0-9_])/g,
+    pattern: /(?<![A-Za-z0-9_])(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{50,})(?![A-Za-z0-9_])/g,
   },
   {
     rule: "credential-groq",
@@ -174,7 +174,7 @@ function decodeText(content) {
 function isObviousCredentialPlaceholder(candidate) {
   const assignment = candidate.match(/[:=]\s*["']?([^\s"']+)/);
   const value = (assignment?.[1] ?? candidate)
-    .replace(/^(?:sk-ant-api\d*-|sk-api-|sk-|AIza|AKIA|xai-|ghp_|github_pat_|gsk_|rpa_)/i, "")
+    .replace(/^(?:sk-ant-api\d*-|sk-api-|sk-|AIza|AKIA|xai-|gh[pousr]_|github_pat_|gsk_|rpa_)/i, "")
     .replace(/["']$/, "");
   const collapsed = value.toLowerCase().replace(/[^a-z0-9]/g, "");
   const placeholderWords = /^(?:(?:example|placeholder|redacted|replacewithyour(?:api)?(?:key|token)|dummy|fake|sample|test|your(?:api)?(?:key|token)|changeme|notareal(?:key|token)?))+(?:\d+)?$/;
