@@ -84,6 +84,10 @@ mutation. Permission changes are recorded in a bounded local audit history.
 
 ## Run A Browser Task
 
+Use the [Side-Panel Command Reference](../reference/COMMANDS.md) when you need
+the exact `/browser`, `/control`, durable-job, approval, evidence, or delegation
+syntax.
+
 1. Describe the browser goal in Augmentor or invoke the browser-control flow.
 2. Review the proposed target, steps, and any preflight warning.
 3. Approve only the bounded action you intend.

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { assertNoManagedLabelConflicts } from "./project-sync-policy.mjs";
+
 const DEFAULT_REPO = "ResonantOS/2.0.0-alpha";
 const DEFAULT_PROJECT_OWNER = "ResonantOS";
 const DEFAULT_PROJECT_NUMBER = 2;
@@ -90,6 +92,21 @@ const contentIdToProjectItem = new Map(
 );
 
 const openItems = await listOpenIssuesAndPullRequests(repoOwner, repoName);
+const syncCandidates = openItems.map((item) => {
+  const projectItem = contentIdToProjectItem.get(item.node_id);
+  const fields = projectItem ? readSingleSelectFieldValues(projectItem) : new Map();
+  return {
+    url: item.html_url,
+    labels: item.labels.map((label) => label.name),
+    releaseScope: fields.get(SCOPE_FIELD) ?? "",
+    area: fields.get(AREA_FIELD) ?? "",
+  };
+});
+assertNoManagedLabelConflicts(syncCandidates, {
+  scopeLabels: managedScopeLabels,
+  areaLabels: managedAreaLabels,
+});
+
 for (const item of openItems) {
   if (contentIdToProjectItem.has(item.node_id)) {
     continue;
@@ -116,6 +133,24 @@ for (const item of openItems) {
 }
 
 const refreshedItems = await listProjectItems(projectOwner, projectNumber);
+assertNoManagedLabelConflicts(
+  refreshedItems
+    .filter((item) => isTargetContent(item.content) && item.content.state !== "CLOSED" && item.content.state !== "MERGED")
+    .map((item) => {
+      const fields = readSingleSelectFieldValues(item);
+      return {
+        url: item.content.url,
+        labels: item.content.labels.nodes.map((label) => label.name),
+        releaseScope: fields.get(SCOPE_FIELD) ?? "",
+        area: fields.get(AREA_FIELD) ?? "",
+      };
+    }),
+  {
+    scopeLabels: managedScopeLabels,
+    areaLabels: managedAreaLabels,
+  },
+);
+
 for (const item of refreshedItems) {
   if (!isTargetContent(item.content) || item.content.state === "CLOSED" || item.content.state === "MERGED") {
     continue;

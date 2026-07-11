@@ -16,6 +16,8 @@ scope, area, and delivery state belong in
 - [Product Guide](product/PRODUCT_GUIDE.md) explains stable user workflows.
 - [Capability Matrix](reference/CAPABILITY_MATRIX.md) maps implemented,
   experimental, and deferred capabilities to tests and issues.
+- [Side-Panel Command Reference](reference/COMMANDS.md) lists the supported
+  Augmentor slash commands and their safety boundaries.
 - [Status](STATUS.md) records the latest verified snapshot.
 
 ## Change The Extension
@@ -43,7 +45,8 @@ host-owned local state and must not cross into extension storage or logs.
 
 Read the browser-control sections of the
 [Product Guide](product/PRODUCT_GUIDE.md), the
-[Capability Matrix](reference/CAPABILITY_MATRIX.md), and
+[Capability Matrix](reference/CAPABILITY_MATRIX.md), the
+[Side-Panel Command Reference](reference/COMMANDS.md), and
 [Module Ownership](architecture/MODULE-OWNERSHIP.md). Use the issue and Project 2
 item to determine required live-browser proof and human-only actions.
 

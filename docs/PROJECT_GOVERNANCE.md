@@ -133,6 +133,9 @@ The synchronization contract is:
    fields.
 4. Once fields are populated, Project 2 wins and the script reconciles only
    the managed scope and area labels to the field values.
+5. Before any write, validate the complete open-item snapshot. Multiple managed
+   scope labels with an empty `Release Scope`, or multiple managed area labels
+   with an empty `Area`, fail the run without partial synchronization.
 
 Managed release-scope labels are:
 
@@ -158,13 +161,13 @@ The script does not synchronize `Priority`, `Size`, or general status labels.
 ### Label Conflicts
 
 Never leave multiple managed scope labels or multiple managed area labels on an
-item with an empty corresponding Project field. The script selects the first
-recognized label returned by GitHub, so conflicting managed labels make
-hydration ambiguous. A triager must remove the conflict, set the intended
-Project field, and run the sync again. Do not solve a conflict by adding another
-label. Unmapped topical labels do not override the Project field. Project 2 has
-no `P3` priority option even though some issues carry a `P3` label; resolve that
-case explicitly in Project 2 rather than inventing an automatic mapping.
+item with an empty corresponding Project field. The script aggregates all such
+conflicts and exits before its first write. A triager must remove the conflict,
+set the intended Project field, and run the sync again. Do not solve a conflict
+by adding another label. Unmapped topical labels do not override the Project
+field. Project 2 has no `P3` priority option even though some issues carry a
+`P3` label; resolve that case explicitly in Project 2 rather than inventing an
+automatic mapping.
 
 ## Dry Run And Recovery
 
@@ -187,6 +190,19 @@ gh workflow run project-issue-sync.yml -f dry_run=true
 ```
 
 Review the run log before dispatching with `dry_run=false`.
+
+Before changing roadmap classifications, compare the canonical roadmap to a
+fresh read-only Project 2 snapshot:
+
+```bash
+GH_TOKEN="$(gh auth token)" gh project item-list 2 --owner ResonantOS --format json --limit 500 > /tmp/resonantos-project-2.json
+npm run project:check-roadmap -- --project-json /tmp/resonantos-project-2.json
+```
+
+The workflow runs the same check before synchronization writes. The comparator
+uses a populated `Release Scope` field when present, otherwise the one unique
+managed scope label allowed by the hydration contract. Beta milestone headings
+are not duplicate `Release Scope` fields and are not compared by this check.
 
 The workflow uses the repository secret `PROJECT_SYNC_TOKEN`. Events fail when
 the secret is absent so Project 2 drift cannot appear green. Pull-request runs

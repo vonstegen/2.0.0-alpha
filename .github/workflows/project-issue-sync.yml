@@ -52,6 +52,16 @@ jobs:
           echo "::error::PROJECT_SYNC_TOKEN is required for repository-owned Project 2 synchronization."
           exit 1
 
+      - name: Capture Project 2 scope snapshot
+        if: steps.project-token.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}
+        run: gh project item-list 2 --owner ResonantOS --format json --limit 500 > "$RUNNER_TEMP/project-2.json"
+
+      - name: Verify roadmap scope against Project 2
+        if: steps.project-token.outputs.configured == 'true'
+        run: npm run project:check-roadmap -- --project-json "$RUNNER_TEMP/project-2.json"
+
       - name: Sync project and labels
         if: steps.project-token.outputs.configured == 'true'
         env:

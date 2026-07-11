@@ -11,6 +11,7 @@ state, milestone, and project fields decide scheduling.
 
 ## Community Test
 
+- [#179: Living Archive knowledge export](https://github.com/ResonantOS/2.0.0-alpha/issues/179)
 - [#217: Augmentor Future List acceptance matrix](https://github.com/ResonantOS/2.0.0-alpha/issues/217)
 - [#223: Agent Control safe click/type/scroll certification fixtures](https://github.com/ResonantOS/2.0.0-alpha/issues/223)
 - [#228: Living Archive context continuity acceptance proof](https://github.com/ResonantOS/2.0.0-alpha/issues/228)
@@ -41,14 +42,13 @@ state, milestone, and project fields decide scheduling.
 - [#129: Browser-first first-run onboarding flow](https://github.com/ResonantOS/2.0.0-alpha/issues/129)
 - [#136: Add-on install, uninstall, and update UI](https://github.com/ResonantOS/2.0.0-alpha/issues/136)
 - [#163: Pin PATH-resolved binary execution and installer shell sites](https://github.com/ResonantOS/2.0.0-alpha/issues/163)
-- [#179: Living Archive knowledge export](https://github.com/ResonantOS/2.0.0-alpha/issues/179)
 - [#180: Add-on uninstall and capability cleanup](https://github.com/ResonantOS/2.0.0-alpha/issues/180)
 
-## Experimental
+## Closed Context
 
 - [#238: Shared human-forward task board backed by Plane](https://github.com/ResonantOS/2.0.0-alpha/issues/238)
-  is the closed experiment currently represented in the issue export. No open
-  `scope:experimental` item is implied by this entry.
+  is a closed experiment retained for context. It is not an active roadmap
+  classification.
 
 ## Native Future
 

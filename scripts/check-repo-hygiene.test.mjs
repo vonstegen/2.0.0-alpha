@@ -188,6 +188,16 @@ test("classifyContent accepts the protected provider bridge's explicit synthetic
   );
 });
 
+test("classifyContent rejects random-looking provider values ending in env-credential", () => {
+  assert.equal(
+    classifyContent(
+      "config/provider.env",
+      'MINIMAX_API_KEY="qR7tV9xB2dF4hJ6kL8mN-env-credential"',
+    )?.rule,
+    "credential-minimax",
+  );
+});
+
 test("classifyContent safely skips binary buffers", () => {
   const binary = Buffer.from([0, 255, 254, ...Buffer.from("/Users/dr.tom/private")]);
   assert.doesNotThrow(() => classifyContent("fixtures/profile.db", binary));

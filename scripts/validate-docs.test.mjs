@@ -294,6 +294,21 @@ test("validateRepositoryDocs resolves local Markdown files and heading anchors",
   });
 });
 
+test("validateRepositoryDocs reports missing Markdown and HTML resource assets", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/README.md", [
+      "# Documentation",
+      "",
+      "![Missing diagram](assets/missing-diagram.png)",
+      '<img src="assets/missing-preview.webp" alt="Missing preview">',
+    ].join("\n"));
+
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(output.some((message) => message.includes("assets/missing-diagram.png") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-preview.webp") && message.includes("does not exist")));
+  });
+});
+
 test("validateRepositoryDocs reports missing npm scripts only from current command documents", () => {
   withRepository((root) => {
     writeFixture(root, "README.md", "# Fixture\n\nRun `npm run missing-current-command`.\n\n[Install](INSTALL.md)\n");
@@ -465,6 +480,24 @@ test("validateCanonicalClaims rejects dated verification snapshots", () => {
   });
 });
 
+test("validateCanonicalClaims rejects obsolete runtime commands in normative shell fences", () => {
+  withRepository((root) => {
+    writeFixture(root, "INSTALL.md", [
+      "# Install",
+      "",
+      "```bash",
+      "npm install",
+      "cargo build",
+      "```",
+      "",
+      "[Contribute](CONTRIBUTING.md)",
+    ].join("\n"));
+
+    const output = messages(validateCanonicalClaims({ root }));
+    assert(output.some((message) => message.includes("INSTALL.md:5") && message.includes('obsolete runtime "cargo"')));
+  });
+});
+
 test("canonical product docs preserve implemented chat, project, and draft handoff workflows", () => {
   const guide = readFileSync(
     new URL("../docs/product/PRODUCT_GUIDE.md", import.meta.url),
@@ -499,6 +532,20 @@ test("canonical product docs preserve implemented chat, project, and draft hando
   assert.match(matrix, /Per-site browser permissions/);
   assert.match(matrix, /Wallet and DAO read-only helpers/);
   assert.match(matrix, /Browser evidence capture and Artifacts review/);
+});
+
+test("canonical command reference covers every side-panel slash command", () => {
+  const router = readFileSync(
+    new URL("../browser-first/resonantos-side-panel-extension/src/lib/side-panel-command-router.js", import.meta.url),
+    "utf8",
+  );
+  const reference = readFileSync(new URL("../docs/reference/COMMANDS.md", import.meta.url), "utf8");
+  const commands = new Set(
+    [...router.matchAll(/name === "([a-z-]+)"/g)].map((match) => match[1]),
+  );
+  for (const command of ["read", "context", "summarize", ...commands]) {
+    assert.match(reference, new RegExp("`/" + command + "(?:\\s|`)"), `missing /${command}`);
+  }
 });
 
 test("validateRepositoryDocs reports tracked documentation unreachable from canonical or implicit roots", () => {

@@ -179,7 +179,7 @@ function isObviousCredentialPlaceholder(candidate) {
   const collapsed = value.toLowerCase().replace(/[^a-z0-9]/g, "");
   const placeholderWords = /^(?:(?:example|placeholder|redacted|replacewithyour(?:api)?(?:key|token)|dummy|fake|sample|test|your(?:api)?(?:key|token)|changeme|notareal(?:key|token)?))+(?:\d+)?$/;
   return placeholderWords.test(collapsed)
-    || /^(?:[a-z0-9]+)?envcredential$/.test(collapsed)
+    || collapsed === "minimaxenvcredential"
     || /^([A-Za-z0-9])\1{11,}$/.test(value)
     || /^(?:(?:0123456789|1234567890|abcdefghijklmnop))+$/.test(value.toLowerCase());
 }

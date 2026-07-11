@@ -41,6 +41,7 @@ const NORMATIVE_DOCUMENTS = new Set([
   "docs/product/PRODUCT_GUIDE.md",
   "docs/release/ALPHA_DISTRIBUTION.md",
   "docs/reference/CAPABILITY_MATRIX.md",
+  "docs/reference/COMMANDS.md",
   "browser-first/README.md",
   "browser-first/host/README.md",
 ]);
@@ -58,6 +59,16 @@ const CURRENT_COMMAND_DOCUMENTS = new Set([
 
 const REQUIRED_DOCS_SCRIPTS = ["docs:check", "test:docs"];
 const OBSOLETE_RUNTIME = /\b(?:tauri|electron|cef|rust|cargo|src-tauri|native packaging)\b/gi;
+const EXECUTABLE_FENCE_LANGUAGES = new Set([
+  "bash",
+  "cmd",
+  "console",
+  "powershell",
+  "ps1",
+  "sh",
+  "shell",
+  "zsh",
+]);
 const ALLOWED_ADR_STATUSES = new Set(["Accepted", "Deferred", "Superseded", "Historical"]);
 const ALLOWED_ALPHA_APPLICABILITY = new Set([
   "Applies",
@@ -191,12 +202,30 @@ function htmlMarkupOnly(value) {
   return markup + uncommented.slice(cursor);
 }
 
-function htmlAnchorHrefs(value) {
-  const hrefs = [];
+function htmlResourceTargets(value) {
+  const targets = [];
   const markup = htmlMarkupOnly(value);
-  const expression = /<a\b(?:(?:"[^"]*"|'[^']*'|[^'">])*)\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi;
-  for (const match of markup.matchAll(expression)) hrefs.push(match[1] ?? match[2] ?? match[3]);
-  return hrefs;
+  const allowedAttributes = new Map([
+    ["a", new Set(["href"])],
+    ["audio", new Set(["src"])],
+    ["img", new Set(["src"])],
+    ["link", new Set(["href"])],
+    ["script", new Set(["src"])],
+    ["source", new Set(["src"])],
+    ["video", new Set(["poster", "src"])],
+  ]);
+  const elementExpression = /<([A-Za-z][\w:-]*)\b((?:"[^"]*"|'[^']*'|[^'">])*)>/g;
+  const attributeExpression = /\b([A-Za-z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+
+  for (const element of markup.matchAll(elementExpression)) {
+    const allowed = allowedAttributes.get(element[1].toLowerCase());
+    if (!allowed) continue;
+    for (const attribute of element[2].matchAll(attributeExpression)) {
+      if (!allowed.has(attribute[1].toLowerCase())) continue;
+      targets.push(attribute[2] ?? attribute[3] ?? attribute[4]);
+    }
+  }
+  return targets;
 }
 
 function parsedMarkdownLinks(markdown) {
@@ -212,11 +241,16 @@ function parsedMarkdownLinks(markdown) {
     const index = node.position?.start?.offset ?? 0;
     if (node.type === "link") {
       links.push({ label: markdownText(node), target: node.url, line, index });
+    } else if (node.type === "image") {
+      links.push({ label: node.alt ?? "", target: node.url, line, index });
     } else if (node.type === "linkReference") {
       const target = definitions.get(node.identifier);
       if (target) links.push({ label: markdownText(node), target, line, index });
+    } else if (node.type === "imageReference") {
+      const target = definitions.get(node.identifier);
+      if (target) links.push({ label: node.alt ?? "", target, line, index });
     } else if (node.type === "html") {
-      for (const target of htmlAnchorHrefs(node.value)) links.push({ label: "", target, line, index });
+      for (const target of htmlResourceTargets(node.value)) links.push({ label: "", target, line, index });
     }
   });
   return links.sort((left, right) => left.index - right.index || left.target.localeCompare(right.target));
@@ -325,7 +359,6 @@ function resolveLocalDocument(root, sourcePath, target) {
     return { error: `local Markdown target \"${file}\" has invalid URL encoding` };
   }
   if (isExternalTarget(decoded)) return null;
-  if (decoded && !/\.md(?:own)?$/i.test(decoded)) return null;
 
   const absolute = decoded
     ? resolve(root, dirname(sourcePath), decoded)
@@ -354,11 +387,25 @@ function validateMarkdownLinks(context) {
         continue;
       }
       const targetDocument = documentByPath.get(destination.path);
-      if (!targetDocument) {
-        findings.push(createFinding(document.path, line, `local Markdown target \"${splitTarget(link.target).file}\" does not exist`));
+      let targetExists = Boolean(targetDocument);
+      if (!targetExists) {
+        try {
+          const absoluteTarget = resolve(context.root, destination.path);
+          lstatSync(absoluteTarget);
+          const realTarget = toRelative(context.root, realpathSync(absoluteTarget));
+          targetExists = realTarget !== ".." && !realTarget.startsWith("../");
+        } catch {
+          targetExists = false;
+        }
+      }
+      if (!targetExists) {
+        const target = splitTarget(link.target).file;
+        const label = /\.md(?:own)?$/i.test(target) ? "local Markdown target" : "local target";
+        findings.push(createFinding(document.path, line, `${label} \"${target}\" does not exist`));
         continue;
       }
       if (!destination.anchor) continue;
+      if (!targetDocument) continue;
       if (!markdownAnchors(targetDocument.content).has(destination.anchor)) {
         findings.push(createFinding(
           document.path,
@@ -493,6 +540,15 @@ function runtimeClaimBlocks(markdown) {
   const blocks = [];
   let negativeListHeading = false;
   for (const node of markdownParser.parse(markdown).children) {
+    if (node.type === "code" && EXECUTABLE_FENCE_LANGUAGES.has(String(node.lang ?? "").toLowerCase())) {
+      const firstContentLine = (node.position?.start?.line ?? 1) + 1;
+      for (const [offset, text] of node.value.split("\n").entries()) {
+        if (!text.trim()) continue;
+        blocks.push({ text, line: firstContentLine + offset, structuralNegative: false });
+      }
+      negativeListHeading = false;
+      continue;
+    }
     if (node.type === "heading") {
       const heading = markdownText(node).replace(/\s+/g, " ").trim().toLowerCase();
       negativeListHeading = NEGATIVE_RUNTIME_LIST_HEADINGS.has(heading);
