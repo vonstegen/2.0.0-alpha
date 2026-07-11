@@ -189,10 +189,12 @@ test("classifyContent accepts the protected provider bridge's explicit synthetic
 });
 
 test("classifyContent rejects random-looking provider values ending in env-credential", () => {
+  const name = ["MINIMAX", "API", "KEY"].join("_");
+  const value = ["qR7tV9xB2dF4hJ6kL8mN", "env", "credential"].join("-");
   assert.equal(
     classifyContent(
       "config/provider.env",
-      'MINIMAX_API_KEY="qR7tV9xB2dF4hJ6kL8mN-env-credential"',
+      `${name}="${value}"`,
     )?.rule,
     "credential-minimax",
   );
