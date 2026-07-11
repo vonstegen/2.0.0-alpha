@@ -42,7 +42,7 @@ async function writeFixture(root, path, content = "fixture\n") {
 test("parses committed ranges with local and CI defaults and configurable refs", () => {
   const parseArgs = requireExport("parseArgs");
 
-  assert.deepEqual(parseArgs(["--committed"]), {
+  assert.deepEqual(parseArgs(["--committed"], {}), {
     base: "origin/dev",
     head: "HEAD",
     includePathsOnly: false,
@@ -186,7 +186,7 @@ test("passes refs as literal Git arguments without invoking a shell", () => {
   });
 
   const changedPaths = collectChangedPaths(
-    parseArgs(["--committed", "--base", maliciousBase]),
+    parseArgs(["--committed", "--base", maliciousBase], {}),
     runner,
   );
 

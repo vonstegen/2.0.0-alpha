@@ -50,6 +50,14 @@ working beside a page. A chat can use readable tab or page context when the
 extension has access. Treat page content as untrusted input and review any
 proposed action before allowing it to affect the page.
 
+## Use Inline Assistant
+
+Select text on a readable page to open Inline Assistant. Its bounded actions
+include ask, summarize, explain, fact-check, translate, rewrite, send selected
+context to the side panel, and insert a reviewed result into an editable field.
+Page content remains untrusted, and insertion still follows site permission and
+safe-typing policy.
+
 ## Organize Chats And Projects
 
 The main workspace rail supports durable conversation organization. You can
@@ -59,6 +67,20 @@ when it is no longer active. Search can match chat titles and message content.
 You can also create and manage projects, rename or pin them, and move chats
 into or out of projects. Projects group related work; pinned add-ons remain a
 separate tool category and are not projects.
+
+## Search Browser Activity
+
+Use `/history <query> | site:example.com | days:7 | tabs` to search local browser
+history metadata and readable tabs. Add `| intake` to save the bounded result to
+Living Archive intake and create a review request. Incognito activity is
+excluded.
+
+## Set Site Permissions
+
+Each site defaults to ask-before-action. The human can set a site permission to
+read-only, trusted-for-safe-actions, or blocked, and can reset it later. Blocking
+disables reading and action; read-only permits context reading but disables page
+mutation. Permission changes are recorded in a bounded local audit history.
 
 ## Run A Browser Task
 
@@ -73,6 +95,14 @@ separate tool category and are not projects.
 Wallet connection, signing, credential entry, payment, purchase, transfer, and
 similar high-risk actions remain human-only. Public or non-search submission
 must stop for an explicit human handoff.
+
+## Review Wallet And DAO Context
+
+`/wallet status` checks for page-visible Phantom provider state without
+requesting wallet access. `/dao <goal>` prepares read-only workflow guidance;
+`/wallet audit` and `/dao audit <goal>` save evidence and a review request to
+Living Archive intake. ResonantOS does not connect, sign, vote, transfer,
+submit, expose key material, or approve a wallet action.
 
 ## Add Knowledge To Living Archive
 

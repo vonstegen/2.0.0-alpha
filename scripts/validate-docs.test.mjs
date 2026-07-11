@@ -478,11 +478,20 @@ test("canonical product docs preserve implemented chat, project, and draft hando
     "archive a chat",
     "create and manage projects",
     "move chats into or out of projects",
+    "inline assistant",
+    "search local browser history",
+    "site permission",
+    "wallet status",
+    "read-only workflow guidance",
   ]) {
     assert.match(guide.toLowerCase(), new RegExp(phrase));
   }
   assert.match(matrix, /Chat and project workspace management/);
   assert.match(matrix, /Gmail and Google Calendar draft handoff/);
+  assert.match(matrix, /Inline Assistant page actions/);
+  assert.match(matrix, /Browser history search and intake/);
+  assert.match(matrix, /Per-site browser permissions/);
+  assert.match(matrix, /Wallet and DAO read-only helpers/);
 });
 
 test("validateRepositoryDocs reports tracked documentation unreachable from canonical or implicit roots", () => {
