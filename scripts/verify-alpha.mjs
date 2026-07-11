@@ -20,7 +20,14 @@ export const ALPHA_COMMANDS = [
   { command: "npm", args: ["run", "test:health"] },
   { command: "npm", args: ["run", "test:engineer-runner"] },
   { command: "node", args: ["scripts/security-pipeline/run-check.mjs"] },
-  { command: "npm", args: ["run", "browser-first:audit-scope"] },
+  {
+    command: "node",
+    args: [
+      "scripts/browser-first-release-scope-audit.mjs",
+      "--committed",
+      "--strict",
+    ],
+  },
 ];
 
 function formatCommand({ command, args }) {

@@ -35,22 +35,23 @@ in the [product guide](./product/PRODUCT_GUIDE.md).
 
 ## Verification
 
-The snapshot was derived from the package metadata, extension manifest, bridge
-launcher and services, workflow definitions, deterministic tests, and
-`/tmp/resonantos-issues.json`. It does not copy historical test counts.
-
-Validation for this documentation slice:
+The current deterministic verification passed on 2026-07-10:
 
 <!-- VALIDATION_SNAPSHOT -->
-- `npm run test:docs` - passed on 2026-07-10.
-- Focused bridge-auth, Provider Fabric, Agent Control policy/planner, Archive
-  promotion, source-intake, and add-on delegation tests - passed on 2026-07-10.
-- `npm run docs:check` - blocked on concurrent architecture cleanup: the ADR
-  index and Alpha runtime boundary are not present yet, and the old module docs
-  still contain current native-runtime claims.
-- `npm run repo:hygiene` - blocked because the dated cleanup plan contains a
-  founder-specific absolute path. The plan is scheduled for removal by the
-  cleanup blueprint and is outside this worker's file ownership.
+- `npm run docs:check`, `npm run repo:hygiene`, and `npm run build` passed.
+- `npm run test:docs` passed all 100 documentation, repository-hygiene, and
+  verifier tests.
+- `npm test -- --run` passed all 312 Vitest tests.
+- `npm run test:browser-first` passed all 626 browser-first tests.
+- `npm run test:browser-host` passed all 13 controlled browser-host tests.
+- Both Living Archive suites, the health and engineer-runner suites, the
+  security pipeline, and the browser-first release-scope audit passed.
+
+This cleanup removed 61 obsolete tracked documents. All 90 retained or newly
+added tracked documents are reachable from the canonical documentation entry
+points. The disposition ledger records run evidence; it is not repository
+authority and does not override the current repository, GitHub issues, or
+Project 2.
 
 ## Open Alpha Gates
 

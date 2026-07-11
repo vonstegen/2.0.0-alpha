@@ -187,9 +187,11 @@ gh workflow run project-issue-sync.yml -f dry_run=true
 
 Review the run log before dispatching with `dry_run=false`.
 
-The workflow uses the repository secret `PROJECT_SYNC_TOKEN`. If the workflow
-warns that the secret is absent, it intentionally skips synchronization. If the
-token is expired, revoked, or cannot see Project 2:
+The workflow uses the repository secret `PROJECT_SYNC_TOKEN`. Repository-owned
+events fail when the secret is absent so Project 2 drift cannot appear green.
+Fork pull requests may skip because repository secrets are intentionally
+unavailable to untrusted fork workflows. If the token is expired, revoked, or
+cannot see Project 2:
 
 1. create or rotate a token with repository issue/pull-request access and
    organization Project read/write access;

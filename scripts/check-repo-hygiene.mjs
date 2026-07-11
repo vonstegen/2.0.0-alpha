@@ -26,6 +26,42 @@ const BROWSER_PROFILE_DATABASES = new Set([
   "Web Data",
   "Local State",
 ]);
+const CREDENTIAL_RULES = [
+  {
+    rule: "credential-anthropic",
+    pattern: /(?<![A-Za-z0-9_-])sk-ant-[A-Za-z0-9_-]{24,}(?![A-Za-z0-9_-])/g,
+  },
+  {
+    rule: "credential-openai",
+    pattern: /(?<![A-Za-z0-9_-])sk-(?!ant-)(?:api-)?[A-Za-z0-9][A-Za-z0-9_-]{15,}(?![A-Za-z0-9_-])/g,
+  },
+  {
+    rule: "credential-google-ai",
+    pattern: /(?<![A-Za-z0-9_-])AIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])/g,
+  },
+  {
+    rule: "credential-aws",
+    pattern: /(?<![A-Z0-9])AKIA[A-Z0-9]{16}(?![A-Z0-9])/g,
+  },
+  {
+    rule: "credential-xai",
+    pattern: /(?<![A-Za-z0-9_-])xai-[A-Za-z0-9_-]{16,}(?![A-Za-z0-9_-])/g,
+  },
+  {
+    rule: "credential-github",
+    pattern: /(?<![A-Za-z0-9_])(?:ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{50,})(?![A-Za-z0-9_])/g,
+  },
+  {
+    rule: "credential-groq",
+    pattern: /(?<![A-Za-z0-9_])gsk_[A-Za-z0-9_-]{16,}(?![A-Za-z0-9_-])/g,
+  },
+  {
+    rule: "credential-replicate",
+    pattern: /(?<![A-Za-z0-9_])rpa_[A-Za-z0-9_-]{16,}(?![A-Za-z0-9_-])/g,
+  },
+];
+const CREDENTIAL_PLACEHOLDER_MARKER =
+  /example|placeholder|redacted|replace|dummy|fake|sample|test|your[_-]?(?:api[_-]?)?(?:key|token)|change[_-]?me|not[_-]?(?:a[_-]?)?real/i;
 
 function normalizePath(path) {
   const nativePath = String(path);
@@ -120,19 +156,38 @@ function decodeText(content) {
   }
 }
 
+function isObviousCredentialPlaceholder(candidate) {
+  return CREDENTIAL_PLACEHOLDER_MARKER.test(candidate)
+    || /([A-Za-z0-9])\1{11,}/.test(candidate)
+    || /0123456789|1234567890|abcdefghijklmnop/i.test(candidate);
+}
+
 export function classifyContent(path, content, options = {}) {
   const normalizedPath = normalizePath(path);
-  if (isAllowlisted(normalizedPath, options.contentAllowlist)) {
+  const text = decodeText(content);
+  if (text === null) {
     return null;
   }
 
-  const text = decodeText(content);
-  if (text !== null && /\/Users\/dr\.tom\//.test(text)) {
+  if (!isAllowlisted(normalizedPath, options.contentAllowlist)
+      && /\/Users\/dr\.tom\//.test(text)) {
     return violation(
       normalizedPath,
       "founder-path",
       "Replace the founder-specific /Users/dr.tom/ path or add this historical fixture to the explicit content allowlist.",
     );
+  }
+
+  for (const { rule, pattern } of CREDENTIAL_RULES) {
+    for (const match of text.matchAll(pattern)) {
+      if (!isObviousCredentialPlaceholder(match[0])) {
+        return violation(
+          normalizedPath,
+          rule,
+          "Remove the detected credential from the repository and rotate it if it was active.",
+        );
+      }
+    }
   }
 
   return null;

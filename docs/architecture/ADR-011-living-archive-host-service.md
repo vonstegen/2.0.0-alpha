@@ -4,8 +4,7 @@
 
 - Decision status: Accepted
 - Alpha applicability: Partial
-- Superseded by: ADR-013 for user-facing library import, memory domains, and
-  canonical managed source storage
+- Superseded by: ADR-013 (library/domain portion)
 - Owner: Living Archive
 - Decision date: 2026-04-23
 - Alpha note: Host mediation applies through Node bridge services. Tauri

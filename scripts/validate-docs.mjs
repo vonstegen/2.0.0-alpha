@@ -52,6 +52,20 @@ const CURRENT_COMMAND_DOCUMENTS = new Set([
 const REQUIRED_DOCS_SCRIPTS = ["docs:check", "test:docs"];
 const OBSOLETE_RUNTIME = /\b(?:tauri|electron|cef|rust|cargo|src-tauri|native packaging)\b/gi;
 const ALLOWED_ADR_STATUSES = new Set(["Accepted", "Deferred", "Superseded", "Historical"]);
+const ALLOWED_ALPHA_APPLICABILITY = new Set([
+  "Applies",
+  "Partial",
+  "Deferred",
+  "Not applicable",
+  "Development only",
+]);
+const ADR_METADATA_FIELDS = [
+  { key: "decision status", label: "Decision status", column: "status" },
+  { key: "alpha applicability", label: "Alpha applicability", column: "alphaApplicability" },
+  { key: "superseded by", label: "Superseded by", column: "supersededBy" },
+  { key: "owner", label: "Owner", column: "owner" },
+];
+const ADR_METADATA_BY_KEY = new Map(ADR_METADATA_FIELDS.map((field) => [field.key, field]));
 const NEGATIVE_RUNTIME_LIST_HEADINGS = new Set([
   "not included",
   "out of scope",
@@ -619,6 +633,15 @@ function normalizeTableCell(cell) {
   return markdownText(cell).replace(/[\`*_]/g, "").trim();
 }
 
+function normalizeMetadataValue(value) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized === "-" ? "None" : normalized;
+}
+
+function allowedValue(values, value) {
+  return [...values].some((candidate) => candidate.toLowerCase() === value.toLowerCase());
+}
+
 function parseAdrIndexTable(markdown) {
   const tree = markdownParser.parse(markdown);
   const definitions = new Map();
@@ -634,11 +657,15 @@ function parseAdrIndexTable(markdown) {
     const adr = normalizedHeaders.indexOf("adr");
     const status = normalizedHeaders.indexOf("decision status");
     const alphaApplicability = normalizedHeaders.indexOf("alpha applicability");
-    if (adr === -1 || status === -1 || alphaApplicability === -1) return;
+    const supersededBy = normalizedHeaders.indexOf("superseded by");
+    const owner = normalizedHeaders.indexOf("owner");
+    if ([adr, status, alphaApplicability, supersededBy, owner].includes(-1)) return;
     result = {
       adr,
       status,
       alphaApplicability,
+      supersededBy,
+      owner,
       definitions,
       rows: node.children.slice(1).map((row) => ({
         line: row.position?.start?.line ?? 1,
@@ -669,6 +696,109 @@ function adrCellMatches(cell, id, filename, definitions) {
   return matches;
 }
 
+function parseMetadataListItem(node) {
+  const text = markdownText(node).replace(/\s+/g, " ").trim();
+  const separator = text.indexOf(":");
+  if (separator !== -1) {
+    const key = text.slice(0, separator).replace(/\s+/g, " ").trim().toLowerCase();
+    const field = ADR_METADATA_BY_KEY.get(key);
+    if (field) {
+      return {
+        field,
+        line: node.position?.start?.line ?? 1,
+        value: normalizeMetadataValue(text.slice(separator + 1)),
+        malformed: false,
+      };
+    }
+  }
+
+  const normalized = text.toLowerCase();
+  const field = ADR_METADATA_FIELDS.find(({ key }) => normalized === key || normalized.startsWith(`${key} `));
+  if (!field) return null;
+  return {
+    field,
+    line: node.position?.start?.line ?? 1,
+    value: "",
+    malformed: true,
+  };
+}
+
+function metadataListItems(nodes) {
+  const items = [];
+  for (const node of nodes) {
+    walkMarkdown(node, (candidate) => {
+      if (candidate.type !== "listItem") return;
+      const entry = parseMetadataListItem(candidate);
+      if (entry) items.push(entry);
+    });
+  }
+  return items;
+}
+
+function parseAdrMetadata(document, findings) {
+  const tree = markdownParser.parse(document.content);
+  const sections = tree.children;
+  const firstH2 = sections.findIndex((node) => node.type === "heading" && node.depth === 2);
+  const metadataHeadings = sections
+    .map((node, index) => ({ node, index }))
+    .filter(({ node }) => node.type === "heading" && node.depth === 2 && markdownText(node).trim() === "Decision Metadata");
+  const topMetadata = firstH2 !== -1 && metadataHeadings.some(({ index }) => index === firstH2);
+
+  if (!topMetadata) {
+    const line = metadataHeadings[0]?.node.position?.start?.line ?? 1;
+    findings.push(createFinding(document.path, line, `${document.path} must have a top ## Decision Metadata block`));
+  }
+
+  const metadataStart = topMetadata ? firstH2 : -1;
+  let metadataEnd = metadataStart === -1 ? -1 : sections.length;
+  if (metadataStart !== -1) {
+    const nextSection = sections.findIndex((node, index) => {
+      return index > metadataStart && node.type === "heading" && node.depth <= 2;
+    });
+    if (nextSection !== -1) metadataEnd = nextSection;
+  }
+
+  const entries = new Map();
+  if (metadataStart !== -1) {
+    for (const entry of metadataListItems(sections.slice(metadataStart + 1, metadataEnd))) {
+      if (entry.malformed || !entry.value) {
+        findings.push(createFinding(
+          document.path,
+          entry.line,
+          `${document.path} has malformed ${entry.field.label} metadata; expected "- ${entry.field.label}: value"`,
+        ));
+        continue;
+      }
+      if (entries.has(entry.field.key)) {
+        findings.push(createFinding(document.path, entry.line, `${document.path} has duplicate ${entry.field.label} metadata`));
+        continue;
+      }
+      entries.set(entry.field.key, entry);
+    }
+  }
+
+  for (const field of ADR_METADATA_FIELDS) {
+    if (!entries.has(field.key)) {
+      findings.push(createFinding(document.path, metadataStart === -1 ? 1 : sections[metadataStart].position?.start?.line ?? 1, `${document.path} is missing ${field.label} metadata`));
+    }
+  }
+
+  for (const { node, index } of metadataHeadings) {
+    if (index === metadataStart) continue;
+    findings.push(createFinding(document.path, node.position?.start?.line ?? 1, `${document.path} has a body-level Decision Metadata block`));
+  }
+
+  const bodyNodes = sections.filter((node, index) => {
+    return metadataStart === -1 || index < metadataStart || index >= metadataEnd;
+  });
+  for (const entry of metadataListItems(bodyNodes)) {
+    if (entry.malformed || !entry.value) continue;
+    findings.push(createFinding(document.path, entry.line, `${document.path} has body-level ${entry.field.label} metadata outside the top metadata block`));
+  }
+
+  return entries;
+}
+
 export function validateAdrIndex(context) {
   const resolvedContext = buildContext(context.root, context);
   const findings = [];
@@ -690,28 +820,93 @@ export function validateAdrIndex(context) {
     findings.push(createFinding(
       "docs/architecture/README.md",
       1,
-      "ADR index must contain a Markdown table with ADR, Decision status, and Alpha applicability columns",
+      "ADR index must contain a Markdown table with ADR, Decision status, Alpha applicability, Superseded by, and Owner columns",
     ));
     return findings;
   }
 
+  const documentByPath = new Map(resolvedContext.documents.map((document) => [document.path, document]));
   for (const adr of adrs) {
     const id = adr.match(/ADR-\d+/i)[0];
-    const row = table.rows.find(({ cells }) => {
+    const rows = table.rows.filter(({ cells }) => {
       return adrCellMatches(cells[table.adr], id, adr.split("/").pop(), table.definitions);
     });
+    const row = rows[0];
     if (!row) {
       findings.push(createFinding(adr, 1, `${adr} is missing from docs/architecture/README.md`));
       continue;
     }
+    if (rows.length > 1) {
+      findings.push(createFinding(
+        "docs/architecture/README.md",
+        rows[1].line,
+        `${adr} has duplicate ADR index rows`,
+      ));
+    }
 
-    const status = normalizeTableCell(row.cells[table.status]);
-    if (![...ALLOWED_ADR_STATUSES].some((candidate) => candidate.toLowerCase() === status.toLowerCase())) {
+    const rowValues = new Map();
+    let malformed = false;
+    for (const field of ADR_METADATA_FIELDS) {
+      const value = normalizeMetadataValue(normalizeTableCell(row.cells[table[field.column]]));
+      rowValues.set(field.key, value);
+      if (!value) malformed = true;
+    }
+    if (malformed) {
+      findings.push(createFinding(
+        "docs/architecture/README.md",
+        row.line,
+        `${adr} has a malformed ADR index row; all metadata columns require values`,
+      ));
+    }
+
+    const status = rowValues.get("decision status");
+    if (!allowedValue(ALLOWED_ADR_STATUSES, status)) {
       findings.push(createFinding(adr, 1, `${adr} must declare an allowed decision status: Accepted, Deferred, Superseded, or Historical`));
     }
 
-    if (!normalizeTableCell(row.cells[table.alphaApplicability])) {
+    const alphaApplicability = rowValues.get("alpha applicability");
+    if (!alphaApplicability) {
       findings.push(createFinding(adr, 1, `${adr} must declare Alpha applicability in docs/architecture/README.md`));
+    } else if (!allowedValue(ALLOWED_ALPHA_APPLICABILITY, alphaApplicability)) {
+      findings.push(createFinding(
+        adr,
+        1,
+        `${adr} must declare an allowed Alpha applicability: Applies, Partial, Deferred, Not applicable, or Development only`,
+      ));
+    }
+
+    const adrDocument = documentByPath.get(adr);
+    if (!adrDocument) {
+      findings.push(createFinding(adr, 1, `${adr} is tracked but could not be read as Markdown`));
+      continue;
+    }
+    const metadata = parseAdrMetadata(adrDocument, findings);
+    const adrStatus = metadata.get("decision status");
+    if (adrStatus && !allowedValue(ALLOWED_ADR_STATUSES, adrStatus.value)) {
+      findings.push(createFinding(
+        adr,
+        adrStatus.line,
+        `${adr} must declare an allowed decision status: Accepted, Deferred, Superseded, or Historical`,
+      ));
+    }
+    const adrApplicability = metadata.get("alpha applicability");
+    if (adrApplicability && !allowedValue(ALLOWED_ALPHA_APPLICABILITY, adrApplicability.value)) {
+      findings.push(createFinding(
+        adr,
+        adrApplicability.line,
+        `${adr} must declare an allowed Alpha applicability: Applies, Partial, Deferred, Not applicable, or Development only`,
+      ));
+    }
+
+    for (const field of ADR_METADATA_FIELDS) {
+      const entry = metadata.get(field.key);
+      const indexValue = rowValues.get(field.key);
+      if (!entry || !indexValue || entry.value === indexValue) continue;
+      findings.push(createFinding(
+        adr,
+        entry.line,
+        `${field.label} metadata "${entry.value}" does not match ADR index value "${indexValue}"`,
+      ));
     }
   }
 

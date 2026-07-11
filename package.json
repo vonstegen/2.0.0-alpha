@@ -24,7 +24,7 @@
     "discipline:validate": "node scripts/validate-discipline-catalog.mjs",
     "repo:hygiene": "node scripts/check-repo-hygiene.mjs --content-allowlist scripts/check-repo-hygiene.mjs --content-allowlist scripts/check-repo-hygiene.test.mjs --content-allowlist scripts/validate-docs.test.mjs",
     "docs:check": "node scripts/validate-docs.mjs",
-    "test:docs": "node --test scripts/validate-docs.test.mjs scripts/check-repo-hygiene.test.mjs scripts/verify-alpha.test.mjs",
+    "test:docs": "node --test --test-concurrency=1 scripts/validate-docs.test.mjs scripts/check-repo-hygiene.test.mjs scripts/browser-first-release-scope-audit.test.mjs scripts/verify-alpha.test.mjs",
     "verify:alpha": "node scripts/verify-alpha.mjs",
     "pre-release:scan": "bash scripts/pre-release-scan.sh",
     "browser-first:audit-scope": "node scripts/browser-first-release-scope-audit.mjs",

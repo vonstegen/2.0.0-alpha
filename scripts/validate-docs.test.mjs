@@ -104,12 +104,19 @@ function makeRepository() {
   writeFixture(root, "docs/architecture/README.md", [
     "# Architecture Decisions",
     "",
-    "| ADR | Decision status | Alpha applicability |",
-    "| --- | --- | --- |",
-    "| [ADR-001: Fixture decision](ADR-001-fixture.md) | Accepted | Applies |",
+    "| ADR | Decision status | Alpha applicability | Superseded by | Owner |",
+    "| --- | --- | --- | --- | --- |",
+    "| [ADR-001: Fixture decision](ADR-001-fixture.md) | Accepted | Applies | - | Core architecture |",
   ].join("\n"));
   writeFixture(root, "docs/architecture/ADR-001-fixture.md", [
     "# ADR-001: Fixture decision",
+    "",
+    "## Decision Metadata",
+    "",
+    "- Decision status: Accepted",
+    "- Alpha applicability: Applies",
+    "- Superseded by: None",
+    "- Owner: Core architecture",
     "",
     "## Decision",
     "The fixture uses the supported runtime.",
@@ -562,10 +569,10 @@ test("validateAdrIndex requires every tracked ADR to have an allowed status and 
     writeFixture(root, "docs/architecture/README.md", [
       "# Architecture Decisions",
       "",
-      "| ADR | Decision status | Alpha applicability | Notes |",
-      "| --- | --- | --- | --- |",
-      "| [ADR-001: Fixture decision](ADR-001-fixture.md) | Proposed | Applies | Accepted historically |",
-      "| [ADR-002: Missing index entry](ADR-002-missing.md) | Accepted | | Historical |",
+      "| ADR | Decision status | Alpha applicability | Superseded by | Owner | Notes |",
+      "| --- | --- | --- | --- | --- | --- |",
+      "| [ADR-001: Fixture decision](ADR-001-fixture.md) | Proposed | Applies | - | Core architecture | Accepted historically |",
+      "| [ADR-002: Missing index entry](ADR-002-missing.md) | Accepted | | - | Core architecture | Historical |",
     ].join("\n"));
     const metadata = messages(validateAdrIndex({ root }));
     assert(metadata.some((message) => message.includes("ADR-001-fixture.md") && message.includes("decision status")));
@@ -578,9 +585,9 @@ test("validateAdrIndex accepts optional outer pipes and escaped cells but requir
     writeFixture(root, "docs/architecture/README.md", [
       "# Architecture Decisions",
       "",
-      "ADR | Decision status | Alpha applicability",
-      "--- | --- | ---",
-      "[ADR-001: Fixture\\| decision](ADR-001-other.md) | Accepted | Applies",
+      "ADR | Decision status | Alpha applicability | Superseded by | Owner",
+      "--- | --- | --- | --- | ---",
+      "[ADR-001: Fixture\\| decision](ADR-001-other.md) | Accepted | Applies | - | Core architecture",
     ].join("\n"));
     const mismatched = messages(validateAdrIndex({ root }));
     assert(mismatched.some((message) => message.includes("ADR-001-fixture.md") && message.includes("missing from")));
@@ -588,9 +595,9 @@ test("validateAdrIndex accepts optional outer pipes and escaped cells but requir
     writeFixture(root, "docs/architecture/README.md", [
       "# Architecture Decisions",
       "",
-      "ADR | Decision status | Alpha applicability",
-      "--- | --- | ---",
-      "[ADR-001: Fixture\\| decision](ADR-001-fixture.md) | Accepted | Applies",
+      "ADR | Decision status | Alpha applicability | Superseded by | Owner",
+      "--- | --- | --- | --- | ---",
+      "[ADR-001: Fixture\\| decision](ADR-001-fixture.md) | Accepted | Applies | - | Core architecture",
     ].join("\n"));
     assert.deepEqual(validateAdrIndex({ root }), []);
   });
@@ -601,8 +608,8 @@ test("validateAdrIndex handles short rows with findings instead of throwing", ()
     writeFixture(root, "docs/architecture/README.md", [
       "# Architecture Decisions",
       "",
-      "| ADR | Decision status | Alpha applicability |",
-      "| --- | --- | --- |",
+      "| ADR | Decision status | Alpha applicability | Superseded by | Owner |",
+      "| --- | --- | --- | --- | --- |",
       "| [ADR-001: Fixture decision](ADR-001-fixture.md) |",
     ].join("\n"));
     assert.doesNotThrow(() => validateAdrIndex({ root }));
@@ -617,14 +624,192 @@ test("validateAdrIndex resolves reference links to exact ADR filenames", () => {
     writeFixture(root, "docs/architecture/README.md", [
       "# Architecture Decisions",
       "",
-      "| ADR | Decision status | Alpha applicability |",
-      "| --- | --- | --- |",
-      "| [ADR-001: Fixture decision][fixture-adr] | Accepted | Applies |",
+      "| ADR | Decision status | Alpha applicability | Superseded by | Owner |",
+      "| --- | --- | --- | --- | --- |",
+      "| [ADR-001: Fixture decision][fixture-adr] | Accepted | Applies | - | Core architecture |",
       "",
       "[fixture-adr]: ADR-001-fixture.md",
       "[fixture-adr]: ADR-001-wrong.md",
     ].join("\n"));
     assert.deepEqual(validateAdrIndex({ root }), []);
+  });
+});
+
+test("validateAdrIndex accepts case-insensitive metadata labels and normalized matching values", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/architecture/README.md", [
+      "# Architecture Decisions",
+      "",
+      "| ADR | Decision status | Alpha applicability | Superseded by | Owner |",
+      "| --- | --- | --- | --- | --- |",
+      "| [ADR-001: Fixture decision](ADR-001-fixture.md) | Accepted | Applies | - | Core architecture |",
+    ].join("\n"));
+    writeFixture(root, "docs/architecture/ADR-001-fixture.md", [
+      "# ADR-001: Fixture decision",
+      "",
+      "## Decision Metadata",
+      "",
+      "- decision STATUS: **Accepted**",
+      "- ALPHA applicability: Applies",
+      "- superseded BY: None",
+      "- OWNER: Core",
+      "  architecture",
+      "",
+      "## Decision",
+      "The fixture uses the supported runtime.",
+    ].join("\n"));
+
+    assert.deepEqual(validateAdrIndex({ root }), []);
+  });
+});
+
+test("validateAdrIndex reports every ADR metadata value that differs from its index row", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/architecture/ADR-001-fixture.md", [
+      "# ADR-001: Fixture decision",
+      "",
+      "## Decision Metadata",
+      "",
+      "- Decision status: Deferred",
+      "- Alpha applicability: Partial",
+      "- Superseded by: ADR-002",
+      "- Owner: Product architecture",
+      "",
+      "## Decision",
+      "The fixture uses the supported runtime.",
+    ].join("\n"));
+
+    const output = messages(validateAdrIndex({ root }));
+    for (const label of ["Decision status", "Alpha applicability", "Superseded by", "Owner"]) {
+      assert(output.some((message) => message.includes("ADR-001-fixture.md") && message.includes(label) && message.includes("does not match")));
+    }
+  });
+});
+
+test("validateAdrIndex reports missing, duplicate, and malformed header metadata", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/architecture/ADR-001-fixture.md", [
+      "# ADR-001: Fixture decision",
+      "",
+      "## Decision Metadata",
+      "",
+      "- Decision status: Accepted",
+      "- Decision STATUS: Accepted",
+      "- Alpha applicability Applies",
+      "- Superseded by: None",
+      "",
+      "## Decision",
+      "The fixture uses the supported runtime.",
+    ].join("\n"));
+
+    const output = messages(validateAdrIndex({ root }));
+    assert(output.some((message) => message.includes("duplicate Decision status")));
+    assert(output.some((message) => message.includes("malformed Alpha applicability")));
+    assert(output.some((message) => message.includes("missing Alpha applicability")));
+    assert(output.some((message) => message.includes("missing Owner")));
+  });
+});
+
+test("validateAdrIndex rejects unsupported status and Alpha applicability values", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/architecture/README.md", [
+      "# Architecture Decisions",
+      "",
+      "| ADR | Decision status | Alpha applicability | Superseded by | Owner |",
+      "| --- | --- | --- | --- | --- |",
+      "| [ADR-001: Fixture decision](ADR-001-fixture.md) | Proposed | Experimental | - | Core architecture |",
+    ].join("\n"));
+    writeFixture(root, "docs/architecture/ADR-001-fixture.md", [
+      "# ADR-001: Fixture decision",
+      "",
+      "## Decision Metadata",
+      "",
+      "- Decision status: Proposed",
+      "- Alpha applicability: Experimental",
+      "- Superseded by: None",
+      "- Owner: Core architecture",
+      "",
+      "## Decision",
+      "The fixture uses the supported runtime.",
+    ].join("\n"));
+
+    const output = messages(validateAdrIndex({ root }));
+    assert(output.some((message) => message.includes("allowed decision status")));
+    assert(output.some((message) => message.includes("allowed Alpha applicability")));
+  });
+});
+
+test("validateAdrIndex requires the metadata block at the top and rejects body-level duplicates", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/architecture/ADR-001-fixture.md", [
+      "# ADR-001: Fixture decision",
+      "",
+      "## Decision",
+      "The fixture uses the supported runtime.",
+      "",
+      "- Owner: Product architecture",
+      "",
+      "## Decision Metadata",
+      "",
+      "- Decision status: Accepted",
+      "- Alpha applicability: Applies",
+      "- Superseded by: None",
+      "- Owner: Core architecture",
+    ].join("\n"));
+
+    const output = messages(validateAdrIndex({ root }));
+    assert(output.some((message) => message.includes("top ## Decision Metadata block")));
+    assert(output.some((message) => message.includes("body-level Owner metadata")));
+    assert(output.some((message) => message.includes("body-level Decision Metadata block")));
+  });
+});
+
+test("validateAdrIndex ignores bare metadata field names in ADR body schemas", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/architecture/ADR-001-fixture.md", [
+      "# ADR-001: Fixture decision",
+      "",
+      "## Decision Metadata",
+      "",
+      "- Decision status: Accepted",
+      "- Alpha applicability: Applies",
+      "- Superseded by: None",
+      "- Owner: Core architecture",
+      "",
+      "## Decision",
+      "",
+      "Required fields:",
+      "",
+      "- `owner`",
+      "- `status`",
+    ].join("\n"));
+
+    assert.deepEqual(validateAdrIndex({ root }), []);
+  });
+});
+
+test("validateAdrIndex reports duplicate and malformed index rows", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/architecture/README.md", [
+      "# Architecture Decisions",
+      "",
+      "| ADR | Decision status | Alpha applicability | Superseded by | Owner |",
+      "| --- | --- | --- | --- | --- |",
+      "| [ADR-001: Fixture decision](ADR-001-fixture.md) | Accepted | Applies | - | Core architecture |",
+      "| [ADR-001: Fixture duplicate](ADR-001-fixture.md) | Accepted | Applies | - | Core architecture |",
+    ].join("\n"));
+    const duplicate = messages(validateAdrIndex({ root }));
+    assert(duplicate.some((message) => message.includes("duplicate ADR index rows")));
+
+    writeFixture(root, "docs/architecture/README.md", [
+      "# Architecture Decisions",
+      "",
+      "| ADR | Decision status | Alpha applicability | Superseded by | Owner |",
+      "| --- | --- | --- | --- | --- |",
+      "| [ADR-001: Fixture decision](ADR-001-fixture.md) | Accepted |",
+    ].join("\n"));
+    const malformed = messages(validateAdrIndex({ root }));
+    assert(malformed.some((message) => message.includes("malformed ADR index row")));
   });
 });
 

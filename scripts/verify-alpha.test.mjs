@@ -26,7 +26,14 @@ test("defines the alpha commands in their required order", () => {
     { command: "npm", args: ["run", "test:health"] },
     { command: "npm", args: ["run", "test:engineer-runner"] },
     { command: "node", args: ["scripts/security-pipeline/run-check.mjs"] },
-    { command: "npm", args: ["run", "browser-first:audit-scope"] },
+    {
+      command: "node",
+      args: [
+        "scripts/browser-first-release-scope-audit.mjs",
+        "--committed",
+        "--strict",
+      ],
+    },
   ]);
 });
 
@@ -157,6 +164,31 @@ test("propagates a nonzero result to the process exit code", async () => {
 
   assert.deepEqual(result, { exitCode: 47, signal: null });
   assert.equal(processRef.exitCode, 47);
+});
+
+test("propagates a strict committed-range audit failure", async () => {
+  const processRef = { exitCode: undefined, pid: 1234 };
+  const auditCommand = ALPHA_COMMANDS.at(-1);
+
+  const result = await main({
+    commands: [auditCommand],
+    processRef,
+    report: () => {},
+    runner: async (command) => {
+      assert.deepEqual(command, {
+        command: "node",
+        args: [
+          "scripts/browser-first-release-scope-audit.mjs",
+          "--committed",
+          "--strict",
+        ],
+      });
+      return { exitCode: 1, signal: null };
+    },
+  });
+
+  assert.deepEqual(result, { exitCode: 1, signal: null });
+  assert.equal(processRef.exitCode, 1);
 });
 
 test("propagates a terminating signal to the verifier process", async () => {

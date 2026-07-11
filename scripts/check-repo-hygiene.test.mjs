@@ -16,6 +16,7 @@ import {
 const TEN_MIB = 10 * 1024 * 1024;
 const SCRIPT_PATH = fileURLToPath(new URL("./check-repo-hygiene.mjs", import.meta.url));
 const fileStat = (size = 0) => ({ isFile: () => true, size });
+const token = (prefix, body) => `${prefix}${body}`;
 
 async function withTempDirectory(run) {
   const root = await mkdtemp(join(tmpdir(), "repo-hygiene-"));
@@ -90,6 +91,46 @@ test("classifyContent detects founder-specific paths and honors its allowlist", 
     }),
     null,
   );
+});
+
+test("classifyContent detects high-confidence provider and source-control credentials", () => {
+  const credentials = [
+    [token("sk-", "aB3dE5fG7hJ9kL2mN4pQ6rS8"), "credential-openai"],
+    [token("sk-api-", "Z9yX7wV5uT3sR1qP8nM6kJ4h"), "credential-openai"],
+    [token("sk-ant-api03-", "Q7wE9rT2yU4iO6pA8sD1fG3hJ5kL7zX9"), "credential-anthropic"],
+    [token("AIza", "Q7wE9rT2yU4iO6pA8sD1fG3hJ5kL7zX9bC4"), "credential-google-ai"],
+    [token("AKIA", "7EXAMPLE9ISBAD2X".replace("EXAMPLE", "Q6M4N8P")), "credential-aws"],
+    [token("xai-", "K8mN2pQ4rS6tV9wX3yZ5"), "credential-xai"],
+    [token("ghp_", "aB3dE5fG7hJ9kL2mN4pQ6rS8tV1wX3yZ5cD7"), "credential-github"],
+    [token("github_pat_", `${"A7bC9dE2fG4hJ6kL8mN1pQ"}_${"R3sT5uV7wX9yZ2aB4cD6eF8gH1jK3mN5pQ7rS9tU2vW4xY6z"}`), "credential-github"],
+    [token("gsk_", "B7dF9hJ2kL4mN6pQ8rS1tV3w"), "credential-groq"],
+    [token("rpa_", "C8eG1jK3mN5pQ7rT9vX2zA4b"), "credential-replicate"],
+  ];
+
+  for (const [credential, expectedRule] of credentials) {
+    const result = classifyContent("config/provider.env", `API_KEY=${credential}\n`);
+    assert.equal(result?.rule, expectedRule, `expected ${expectedRule}`);
+  }
+});
+
+test("classifyContent ignores credential regex source and obvious placeholders", () => {
+  const safeContents = [
+    String.raw`/\bsk-[A-Za-z0-9_-]{16,}\b/`,
+    String.raw`github_pat_[A-Za-z0-9_]{50,}`,
+    "OPENAI_API_KEY=sk-abcdefghijklmnop",
+    "OPENAI_API_KEY=sk-EXAMPLEEXAMPLEEXAMPLE",
+    "ANTHROPIC_API_KEY=sk-ant-api03-REPLACE_WITH_YOUR_KEY",
+    "GOOGLE_API_KEY=AIzaPLACEHOLDERPLACEHOLDERPLACEHOLDER123",
+    "AWS_ACCESS_KEY_ID=AKIATESTTESTTESTTEST",
+    "XAI_API_KEY=xai-REDACTEDREDACTED",
+    "GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "GROQ_API_KEY=gsk_DUMMYDUMMYDUMMYDUMMY",
+    "REPLICATE_API_TOKEN=rpa_FAKEFAKEFAKEFAKE",
+  ];
+
+  for (const content of safeContents) {
+    assert.equal(classifyContent("docs/example.md", content), null, content);
+  }
 });
 
 test("classifyContent safely skips binary buffers", () => {
@@ -319,6 +360,25 @@ test("scanRepository still rejects tracked files under ignored paths", async () 
   });
 });
 
+test("scanRepository does not allow tracked credentials to bypass content scanning", async () => {
+  await withTempDirectory(async (root) => {
+    execFileSync("git", ["init", "--quiet", root]);
+    await writeFixture(root, ".gitignore", "*.env\n");
+    const credential = token("sk-api-", "N8pQ2rS4tV6wX9yZ3aB5cD7e");
+    await writeFixture(root, "provider.env", `OPENAI_API_KEY=${credential}\n`);
+    execFileSync("git", ["-C", root, "add", "-f", "provider.env"]);
+
+    const violations = await scanRepository(root, {
+      checkContent: true,
+      contentAllowlist: ["provider.env"],
+    });
+
+    assert.equal(violations.length, 1);
+    assert.equal(violations[0].path, "provider.env");
+    assert.equal(violations[0].rule, "credential-openai");
+  });
+});
+
 test("CLI exits zero for a clean repository", async () => {
   await withTempDirectory(async (root) => {
     await writeFixture(root, "README.md", "Clean fixture\n");
@@ -345,6 +405,23 @@ test("CLI enables founder-path content scanning", async () => {
     assert.notEqual(result.status, 0);
     assert.match(`${result.stdout}\n${result.stderr}`, /docs\/setup\.md/);
     assert.match(`${result.stdout}\n${result.stderr}`, /founder-path/);
+  });
+});
+
+test("CLI credential diagnostics identify the path and rule without logging the value", async () => {
+  await withTempDirectory(async (root) => {
+    const credential = token("ghp_", "qR3sT5uV7wX9yZ2aB4cD6eF8gH1jK3mN5pQ7");
+    await writeFixture(root, "config/provider.txt", `TOKEN=${credential}\n`);
+    const result = spawnSync(process.execPath, [SCRIPT_PATH], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+
+    assert.notEqual(result.status, 0);
+    assert.match(output, /config\/provider\.txt/);
+    assert.match(output, /credential-github/);
+    assert.equal(output.includes(credential), false);
   });
 });
 
