@@ -87,8 +87,9 @@ Related contributor references:
 ## Release The Alpha
 
 Use [Alpha Distribution](release/ALPHA_DISTRIBUTION.md),
-[Status](STATUS.md), [Security Policy](../SECURITY.md), and Project 2. Release
-evidence must identify the exact commands and live Chrome checks performed.
+[Status](STATUS.md), the [Changelog](../CHANGELOG.md),
+[Security Policy](../SECURITY.md), and Project 2. Release evidence must identify
+the exact commands and live Chrome checks performed.
 
 ## Inspect Decision History
 
