@@ -233,7 +233,7 @@ function decodeHtmlCharacterReferences(value) {
 
 function removeTemplateContents(value) {
   const preserveLines = (text) => text.replace(/[^\r\n]/g, "");
-  const templateTag = /<template\b(?:(?:"[^"]*"|'[^']*'|[^'">])*)>|<\/template\b(?:(?:"[^"]*"|'[^']*'|[^'">])*)>/gi;
+  const templateTag = /<template(?=[\s/>])(?:(?:"[^"]*"|'[^']*'|[^'">])*)>|<\/template(?=[\s/>])(?:(?:"[^"]*"|'[^']*'|[^'">])*)>/gi;
   let output = "";
   let cursor = 0;
   let depth = 0;
@@ -336,14 +336,13 @@ function htmlResourceTargets(value) {
         const valueGroup = match[1] !== undefined ? 1 : match[2] !== undefined ? 2 : 3;
         const rawValue = match[valueGroup];
         const valueOffset = location.startOffset + match.indices[valueGroup][0];
-        const decoded = decodeHtmlCharacterReferences(rawValue);
         if (attributeName !== "srcset" && attributeName !== "imagesrcset") {
-          targets.push({ target: decoded.text, offset: valueOffset });
+          targets.push({ target: attribute.value, offset: valueOffset });
           continue;
         }
-        targets.push(...srcsetResourceTargets(decoded.text, 0).map((target) => ({
+        targets.push(...srcsetResourceTargets(attribute.value, 0).map((target) => ({
           target: target.target,
-          offset: valueOffset + (decoded.offsets[target.offset] ?? rawValue.length),
+          offset: valueOffset + Math.max(0, rawValue.indexOf(target.target)),
         })));
       }
     }

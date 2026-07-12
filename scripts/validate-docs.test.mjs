@@ -345,6 +345,7 @@ test("validateRepositoryDocs reports missing Markdown and HTML resource assets",
       '<svg><script href="assets/missing-svg-script.js"></script></svg>',
       '<svg><a xlink:href="assets/missing-svg-guide.md"></a></svg>',
       '<link imagesrcset="assets/missing-preload-small.png 1x, assets/missing-preload-large.png 2x">',
+      '<img src="assets&sol;missing-entity.png">',
     ].join("\n"));
 
     const output = messages(validateRepositoryDocs(root).findings);
@@ -369,6 +370,7 @@ test("validateRepositoryDocs reports missing Markdown and HTML resource assets",
     assert(output.some((message) => message.includes("assets/missing-svg-guide.md") && message.includes("does not exist")));
     assert(output.some((message) => message.includes("assets/missing-preload-small.png") && message.includes("does not exist")));
     assert(output.some((message) => message.includes("assets/missing-preload-large.png") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-entity.png") && message.includes("does not exist")));
     assert(!output.some((message) => message.includes("%3Csvg%3E")));
   });
 });
@@ -712,12 +714,13 @@ test("validateCanonicalClaims handles nested templates and batch fence aliases",
       "```",
       "<pre><code>car<template>outer<template>inner</template>tail</template>go check</code></pre>",
       "<pre><code>car<template>hidden</template data-x>go build</code></pre>",
+      "<pre><code><template-widget>cargo build</template-widget></code></pre>",
       "",
       "[Contribute](CONTRIBUTING.md)",
     ].join("\n"));
 
     const output = messages(validateCanonicalClaims({ root }));
-    for (const line of [4, 7, 9, 10]) {
+    for (const line of [4, 7, 9, 10, 11]) {
       assert(output.some((message) => message.includes(`INSTALL.md:${line}`) && message.includes('obsolete runtime "cargo"')));
     }
   });

@@ -177,6 +177,7 @@ test("uncertain Project add compensation performs final item recovery", async ()
 
   assert.match(addOperation, /compensate:\s*async[\s\S]*if \(!projectItem\)[\s\S]*recoverProjectItem/);
   assert.match(addOperation, /removeIssueOrPullRequestFromProject/);
+  assert.match(addOperation, /PROJECT_SYNC_UNCERTAIN_STATE/);
 });
 
 test("rejects missing Project options before synchronization writes", () => {

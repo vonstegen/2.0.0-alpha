@@ -149,7 +149,10 @@ for (const item of openItems) {
           projectItem = await recoverProjectItem(projectOwner, projectNumber, item.node_id, 8);
         }
         if (!projectItem?.id) {
-          throw new Error(`Unable to identify the uncertain Project 2 item for compensation: ${item.html_url}.`);
+          throw new Error(
+            `PROJECT_SYNC_UNCERTAIN_STATE content=${item.node_id} url=${item.html_url}: `
+            + "the add response was lost and the item is not yet observable; rerun synchronization before claiming completion.",
+          );
         }
         await removeIssueOrPullRequestFromProject(project.id, projectItem.id, item.html_url);
       },
