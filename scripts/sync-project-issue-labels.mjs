@@ -137,6 +137,12 @@ for (const item of openItems) {
       apply: async () => {
         projectItem = await addIssueOrPullRequestToProject(project.id, item.node_id, item.html_url);
       },
+      recover: async () => {
+        projectItem = await recoverProjectItem(projectOwner, projectNumber, item.node_id);
+        if (!projectItem) {
+          throw new Error(`Unable to determine whether Project 2 contains ${item.html_url} after an uncertain add response.`);
+        }
+      },
       compensate: async () => {
         if (projectItem?.id) {
           await removeIssueOrPullRequestFromProject(project.id, projectItem.id, item.html_url);
@@ -451,6 +457,18 @@ async function listProjectItems(owner, number) {
   return items;
 }
 
+async function recoverProjectItem(owner, number, contentId, attempts = 3) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const projectItem = (await listProjectItems(owner, number))
+      .find((item) => item.content?.id === contentId);
+    if (projectItem) return projectItem;
+    if (attempt < attempts) {
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, attempt * 250));
+    }
+  }
+  return null;
+}
+
 async function listOpenIssuesAndPullRequests(owner, name) {
   const items = [];
   let page = 1;
@@ -508,7 +526,11 @@ async function addIssueOrPullRequestToProject(projectId, contentId, url) {
     { projectId, contentId },
   );
 
-  return data.addProjectV2ItemById.item;
+  const projectItem = data?.addProjectV2ItemById?.item;
+  if (!projectItem?.id) {
+    throw new Error(`Project 2 add returned no item ID for ${url}.`);
+  }
+  return projectItem;
 }
 
 async function removeIssueOrPullRequestFromProject(projectId, itemId, url) {

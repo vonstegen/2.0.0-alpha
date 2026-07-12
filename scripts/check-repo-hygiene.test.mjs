@@ -259,6 +259,31 @@ test("classifyContent detects offset, truncated, UTF-32, and NUL-split GitHub to
   }
 });
 
+test("classifyContent preserves encoded credential prefixes before malformed trailers", () => {
+  const githubToken = ["ghs", "qR7tV9xB2dF4hJ6kL8mN0pQ2sT4vW6yZ8aB0cD2eF4g"].join("_");
+  const utf16le = Buffer.from(githubToken, "utf16le");
+  const utf32le = Buffer.concat([...githubToken].map((character) => Buffer.from([
+    character.charCodeAt(0), 0, 0, 0,
+  ])));
+  const utf32be = Buffer.concat([...githubToken].map((character) => Buffer.from([
+    0, 0, 0, character.charCodeAt(0),
+  ])));
+
+  for (const [path, content] of [
+    ["fixtures/utf16le-malformed.bin", Buffer.concat([
+      Buffer.from("a"), utf16le, Buffer.from([0x00, 0xd8]),
+    ])],
+    ["fixtures/utf32le-malformed.bin", Buffer.concat([
+      Buffer.from("a"), utf32le, Buffer.from([0x00, 0x00, 0x11, 0x00]),
+    ])],
+    ["fixtures/utf32be-malformed.bin", Buffer.concat([
+      Buffer.from("a"), utf32be, Buffer.from([0x00, 0x11, 0x00, 0x00]),
+    ])],
+  ]) {
+    assert.equal(classifyContent(path, content)?.rule, "credential-github", path);
+  }
+});
+
 test("classifyContent safely skips binary buffers", () => {
   const binary = Buffer.from([0, 255, 254, ...Buffer.from("/Users/dr.tom/private")]);
   assert.doesNotThrow(() => classifyContent("fixtures/profile.db", binary));

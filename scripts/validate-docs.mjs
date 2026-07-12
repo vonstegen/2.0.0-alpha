@@ -63,14 +63,21 @@ const EXECUTABLE_FENCE_LANGUAGES = new Set([
   "bash",
   "bash-session",
   "cmd",
+  "cmd-session",
   "console",
   "fish",
+  "fish-session",
   "powershell",
+  "powershell-session",
   "ps1",
+  "pwsh",
   "sh",
+  "sh-session",
   "shell",
   "shell-session",
+  "terminal",
   "zsh",
+  "zsh-session",
 ]);
 const ALLOWED_ADR_STATUSES = new Set(["Accepted", "Deferred", "Superseded", "Historical"]);
 const ALLOWED_ALPHA_APPLICABILITY = new Set([
@@ -210,6 +217,44 @@ function htmlMarkupOnly(value) {
   return markup + uncommented.slice(cursor);
 }
 
+function decodeHtmlCharacterReferences(value) {
+  const text = [];
+  const offsets = [];
+  const expression = /&(?:#(\d+);?|#x([\da-f]+);?|(?:nbsp|Tab|NewLine|amp|lt|gt|quot|apos);)/gi;
+  const named = {
+    amp: "&", apos: "'", gt: ">", lt: "<", newline: "\n", nbsp: " ", quot: '"', tab: "\t",
+  };
+  let cursor = 0;
+
+  for (const match of value.matchAll(expression)) {
+    for (let index = cursor; index < match.index; index += 1) {
+      text.push(value[index]);
+      offsets.push(index);
+    }
+
+    let replacement;
+    if (match[1] || match[2]) {
+      const codePoint = Number.parseInt(match[1] ?? match[2], match[1] ? 10 : 16);
+      replacement = codePoint <= 0x10ffff && !(codePoint >= 0xd800 && codePoint <= 0xdfff)
+        ? String.fromCodePoint(codePoint)
+        : "\uFFFD";
+    } else {
+      replacement = named[match[0].slice(1, -1).toLowerCase()] ?? match[0];
+    }
+    for (let index = 0; index < replacement.length; index += 1) {
+      text.push(replacement[index]);
+      offsets.push(match.index);
+    }
+    cursor = match.index + match[0].length;
+  }
+
+  for (let index = cursor; index < value.length; index += 1) {
+    text.push(value[index]);
+    offsets.push(index);
+  }
+  return { text: text.join(""), offsets };
+}
+
 function srcsetResourceTargets(value, valueOffset) {
   const targets = [];
   let cursor = 0;
@@ -282,7 +327,11 @@ function htmlResourceTargets(value) {
         targets.push({ target: attributeValue, offset: valueOffset });
         continue;
       }
-      targets.push(...srcsetResourceTargets(attributeValue, valueOffset));
+      const decoded = decodeHtmlCharacterReferences(attributeValue);
+      targets.push(...srcsetResourceTargets(decoded.text, 0).map((target) => ({
+        target: target.target,
+        offset: valueOffset + (decoded.offsets[target.offset] ?? attributeValue.length),
+      })));
     }
   }
   return targets;
@@ -625,18 +674,12 @@ function appendExecutableRuntimeBlocks(markdown, blocks) {
     for (const pre of node.value.matchAll(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi)) {
       for (const code of pre[1].matchAll(/<code\b[^>]*>([\s\S]*?)<\/code>/gi)) {
         const rawContent = code[1];
-        const content = rawContent
-          .replace(/<!--[\s\S]*?-->/g, "")
+        const renderedContent = rawContent
+          .replace(/<template\b[^>]*>[\s\S]*?<\/template\s*>/gi, (value) => value.replace(/[^\r\n]/g, ""))
+          .replace(/<!--[\s\S]*?-->/g, (value) => value.replace(/[^\r\n]/g, ""))
           .replace(/<br\s*\/?\s*>/gi, "\n")
-          .replace(/<[^>]+>/g, "")
-          .replace(/&(?:#(\d+)|#x([\da-f]+)|nbsp|Tab|NewLine|amp|lt|gt|quot|apos);/gi, (entity, decimal, hexadecimal) => {
-            if (decimal) return String.fromCodePoint(Number.parseInt(decimal, 10));
-            if (hexadecimal) return String.fromCodePoint(Number.parseInt(hexadecimal, 16));
-            const named = {
-              amp: "&", apos: "'", gt: ">", lt: "<", newline: "\n", nbsp: " ", quot: '"', tab: "\t",
-            };
-            return named[entity.slice(1, -1).toLowerCase()] ?? entity;
-          });
+          .replace(/<[^>]+>/g, "");
+        const content = decodeHtmlCharacterReferences(renderedContent).text;
         const contentOffset = pre.index
           + pre[0].indexOf(pre[1])
           + code.index

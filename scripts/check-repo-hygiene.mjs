@@ -191,11 +191,7 @@ function decodeCredentialSurfaces(content, text) {
       if (length < 2) continue;
       const candidate = bytes.subarray(offset, offset + length);
       for (const encoding of ["utf-16le", "utf-16be"]) {
-        try {
-          surfaces.add(new TextDecoder(encoding, { fatal: true }).decode(candidate));
-        } catch {
-          // NUL-normalized byte surfaces and other alignments remain available.
-        }
+        surfaces.add(new TextDecoder(encoding).decode(candidate));
       }
     }
 
@@ -206,13 +202,19 @@ function decodeCredentialSurfaces(content, text) {
         for (let index = offset; index + 3 < bytes.length; index += 4) {
           const codePoint = view.getUint32(index, littleEndian);
           if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) {
-            decoded = "";
+            decoded += "\uFFFD";
             break;
           }
           decoded += String.fromCodePoint(codePoint);
         }
         if (decoded) surfaces.add(decoded);
       }
+    }
+  }
+
+  for (const surface of [...surfaces]) {
+    for (const marker of surface.matchAll(/ghs_|gh[pour]_|github_pat_/g)) {
+      surfaces.add(surface.slice(marker.index));
     }
   }
   return [...surfaces];

@@ -310,6 +310,7 @@ test("validateRepositoryDocs reports missing Markdown and HTML resource assets",
       '<track src="assets/missing-captions.vtt">',
       '<source srcset="data:image/svg+xml,%3Csvg%3E 1x, assets/missing-local.avif 2x">',
       '<source srcset="data:image/png;base64,AAAA, assets/missing-after-data.avif 2x">',
+      '<source srcset="data:image/png;base64,AAAA,&#32;assets/missing-after-entity.avif 2x">',
       '<input src="assets/missing-input.png" type="image">',
       '<svg><image href="assets/missing-svg-image.png"></image></svg>',
       '<svg><use href="assets/missing-symbol.svg#icon"></use></svg>',
@@ -327,6 +328,7 @@ test("validateRepositoryDocs reports missing Markdown and HTML resource assets",
     assert(output.some((message) => message.includes("assets/missing-captions.vtt") && message.includes("does not exist")));
     assert(output.some((message) => message.includes("assets/missing-local.avif") && message.includes("does not exist")));
     assert(output.some((message) => message.includes("assets/missing-after-data.avif") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-after-entity.avif") && message.includes("does not exist")));
     assert(output.some((message) => message.includes("assets/missing-input.png") && message.includes("does not exist")));
     assert(output.some((message) => message.includes("assets/missing-svg-image.png") && message.includes("does not exist")));
     assert(output.some((message) => message.includes("assets/missing-symbol.svg") && message.includes("does not exist")));
@@ -631,6 +633,32 @@ test("validateCanonicalClaims rejects obsolete runtime commands in normative she
     assert(rendered.some((message) => message.includes("INSTALL.md:7") && message.includes('obsolete runtime "cargo"')));
     assert(rendered.some((message) => message.includes("INSTALL.md:8") && message.includes('obsolete runtime "cargo"')));
     assert(rendered.some((message) => message.includes("INSTALL.md:9") && message.includes('obsolete runtime "cargo"')));
+
+    writeFixture(root, "INSTALL.md", [
+      "# Install",
+      "",
+      "```zsh-session",
+      "cargo build",
+      "```",
+      "```fish-session",
+      "cargo test",
+      "```",
+      "```terminal",
+      "cargo check",
+      "```",
+      "```pwsh",
+      "cargo fmt",
+      "```",
+      "<pre><code>&#99argo build</code></pre>",
+      "<pre><code>car&#x67o test</code></pre>",
+      "<pre><code>car<template>not rendered</template>go check</code></pre>",
+      "",
+      "[Contribute](CONTRIBUTING.md)",
+    ].join("\n"));
+    const parserEdges = messages(validateCanonicalClaims({ root }));
+    for (const line of [4, 7, 10, 13, 15, 16, 17]) {
+      assert(parserEdges.some((message) => message.includes(`INSTALL.md:${line}`) && message.includes('obsolete runtime "cargo"')));
+    }
   });
 });
 

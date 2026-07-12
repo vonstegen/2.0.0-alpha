@@ -123,6 +123,30 @@ test("failed writes compensate the uncertain write and roll back prior writes", 
   ]);
 });
 
+test("failed writes recover an uncertain remote result before compensation", async () => {
+  const state = { remoteItem: null, capturedItem: null };
+  const lostResponse = new Error("response lost after commit");
+
+  await assert.rejects(
+    () => projectSyncPolicy.runCompensatingWrites([{
+      apply: async () => {
+        state.remoteItem = { id: "project-item-1" };
+        throw lostResponse;
+      },
+      recover: async () => {
+        state.capturedItem = state.remoteItem;
+      },
+      compensate: async () => {
+        if (state.capturedItem?.id === state.remoteItem?.id) state.remoteItem = null;
+      },
+    }]),
+    (error) => error === lostResponse,
+  );
+
+  assert.equal(state.remoteItem, null);
+  assert.deepEqual(state.capturedItem, { id: "project-item-1" });
+});
+
 test("rejects missing Project options before synchronization writes", () => {
   const fields = {
     releaseScope: { name: "Release Scope", options: [{ name: "Alpha MVP" }] },

@@ -13,6 +13,14 @@ export async function runCompensatingWrites(operations) {
     } catch (writeError) {
       const compensationErrors = [];
 
+      if (operation.recover) {
+        try {
+          await operation.recover();
+        } catch (recoveryError) {
+          compensationErrors.push(recoveryError);
+        }
+      }
+
       // A failed response may follow a committed remote write, so compensate it too.
       for (const candidate of [operation, ...[...completed].reverse()]) {
         try {
@@ -25,7 +33,7 @@ export async function runCompensatingWrites(operations) {
       if (compensationErrors.length > 0) {
         throw new AggregateError(
           [writeError, ...compensationErrors],
-          `Project sync write failed and ${compensationErrors.length} compensation write(s) also failed.`,
+          `Project sync write failed and ${compensationErrors.length} recovery or compensation operation(s) also failed.`,
           { cause: writeError },
         );
       }
