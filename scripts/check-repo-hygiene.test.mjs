@@ -200,6 +200,22 @@ test("classifyContent rejects random-looking provider values ending in env-crede
   );
 });
 
+test("classifyContent detects stateless GitHub App installation tokens", () => {
+  const header = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+  const payload = "eyJpc3MiOiJmaXh0dXJlIiwiaWF0IjoxMjM0NTY3ODkwfQ";
+  const signature = "qR7tV9xB2dF4hJ6kL8mN0pQ2sT4vW6yZ8aB0cD2eF4g";
+  const token = `ghs_1234567_${header}.${payload}.${signature}`;
+
+  assert.equal(classifyContent("config/app-token.txt", token)?.rule, "credential-github");
+});
+
+test("classifyContent scans ASCII credentials inside NUL-tainted buffers", () => {
+  const token = ["ghs", "qR7tV9xB2dF4hJ6kL8mN0pQ2sT4vW6yZ8aB0cD2eF4g"].join("_");
+  const binary = Buffer.concat([Buffer.from([0, 255, 254]), Buffer.from(token)]);
+
+  assert.equal(classifyContent("fixtures/tainted.bin", binary)?.rule, "credential-github");
+});
+
 test("classifyContent safely skips binary buffers", () => {
   const binary = Buffer.from([0, 255, 254, ...Buffer.from("/Users/dr.tom/private")]);
   assert.doesNotThrow(() => classifyContent("fixtures/profile.db", binary));

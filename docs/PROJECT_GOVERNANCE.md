@@ -206,9 +206,10 @@ are not duplicate `Release Scope` fields and are not compared by this check.
 
 The workflow uses the repository secret `PROJECT_SYNC_TOKEN`. Events fail when
 the secret is absent so Project 2 drift cannot appear green. Pull-request runs
-execute only the trusted base revision of the workflow and synchronization
-script, never the pull-request checkout, and checkout does not persist Git
-credentials. If the token is expired, revoked, or cannot see Project 2:
+execute only the repository default-branch revision of the workflow and
+synchronization script, never the pull-request checkout or a non-default target
+branch, and checkout does not persist Git credentials. If the token is expired,
+revoked, or cannot see Project 2:
 
 1. create or rotate a token with repository issue/pull-request access and
    organization Project read/write access;

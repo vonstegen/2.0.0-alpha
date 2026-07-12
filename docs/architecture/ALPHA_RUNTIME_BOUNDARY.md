@@ -37,10 +37,14 @@ The extension may:
 - call bridge routes through `src/lib/bridge-client.js`;
 - request only the route capabilities needed for the active operation.
 
-The extension must not persist provider credentials, bridge capability tokens,
-wallet secrets, private keys, or privileged filesystem state as product data.
-Wallet signing, payments, credentials, login, public submission, and other
-irreversible value actions remain human-only.
+The extension must not persist provider credentials, scoped route-capability
+tokens, wallet secrets, private keys, or privileged filesystem state as product
+data. An operator-configured bridge target is the narrow exception: its bridge
+token and capability-bootstrap token are stored in the local Chrome extension
+profile so the selected target survives a browser restart. Clearing the bridge
+override removes that local record. Wallet signing, payments, credentials,
+login, public submission, and other irreversible value actions remain
+human-only.
 
 ## Bridge Boundary
 
@@ -85,6 +89,12 @@ Starting the bridge writes:
 The generated file contains the bridge URL and authentication material. It is
 ignored, machine-local, mode `0600` when supported, and must never be committed
 or packaged.
+
+The Settings bridge-target override stores its URL, bridge token, and
+capability-bootstrap token in `chrome.storage.local`. This is local browser
+profile state, not repository or user-data-root state. Raw scoped
+route-capability tokens are minted at runtime and are not written to extension
+storage.
 
 The default user-state root is `~/ResonantOS_User`, overridable for development
 with `RESONANTOS_BROWSER_FIRST_USER_ROOT`. Memory, diagnostics, delegation

@@ -23,6 +23,7 @@ const IMPLICIT_DOCUMENT_CONSUMERS = new Set([
   "browser-first/resonantos-side-panel-extension/src/side-panel.html",
 ]);
 const DOCUMENTATION_PATH = /\.(?:md|markdown|mdx|txt|html|pdf|docx)$/i;
+const DOCUMENTATION_ASSET_PATH = /^docs\/.*\.(?:gif|jpe?g|png|svg|webp|ya?ml|zip)$/i;
 
 const NORMATIVE_DOCUMENTS = new Set([
   "AGENTS.md",
@@ -67,6 +68,7 @@ const EXECUTABLE_FENCE_LANGUAGES = new Set([
   "ps1",
   "sh",
   "shell",
+  "shell-session",
   "zsh",
 ]);
 const ALLOWED_ADR_STATUSES = new Set(["Accepted", "Deferred", "Superseded", "Historical"]);
@@ -208,10 +210,11 @@ function htmlResourceTargets(value) {
   const allowedAttributes = new Map([
     ["a", new Set(["href"])],
     ["audio", new Set(["src"])],
-    ["img", new Set(["src"])],
+    ["img", new Set(["src", "srcset"])],
     ["link", new Set(["href"])],
+    ["object", new Set(["data"])],
     ["script", new Set(["src"])],
-    ["source", new Set(["src"])],
+    ["source", new Set(["src", "srcset"])],
     ["video", new Set(["poster", "src"])],
   ]);
   const elementExpression = /<([A-Za-z][\w:-]*)\b((?:"[^"]*"|'[^']*'|[^'">])*)>/g;
@@ -220,9 +223,30 @@ function htmlResourceTargets(value) {
   for (const element of markup.matchAll(elementExpression)) {
     const allowed = allowedAttributes.get(element[1].toLowerCase());
     if (!allowed) continue;
+    const attributesOffset = element.index + element[0].indexOf(element[2]);
     for (const attribute of element[2].matchAll(attributeExpression)) {
-      if (!allowed.has(attribute[1].toLowerCase())) continue;
-      targets.push(attribute[2] ?? attribute[3] ?? attribute[4]);
+      const attributeName = attribute[1].toLowerCase();
+      if (!allowed.has(attributeName)) continue;
+      const attributeValue = attribute[2] ?? attribute[3] ?? attribute[4];
+      const valueOffset = attributesOffset
+        + attribute.index
+        + attribute[0].indexOf(attributeValue);
+      if (attributeName !== "srcset") {
+        targets.push({ target: attributeValue, offset: valueOffset });
+        continue;
+      }
+
+      let candidateOffset = 0;
+      for (const candidate of attributeValue.split(",")) {
+        const match = candidate.match(/^(\s*)(\S+)/);
+        if (match && !/^data:/i.test(match[2])) {
+          targets.push({
+            target: match[2],
+            offset: valueOffset + candidateOffset + match[1].length,
+          });
+        }
+        candidateOffset += candidate.length + 1;
+      }
     }
   }
   return targets;
@@ -250,7 +274,14 @@ function parsedMarkdownLinks(markdown) {
       const target = definitions.get(node.identifier);
       if (target) links.push({ label: node.alt ?? "", target, line, index });
     } else if (node.type === "html") {
-      for (const target of htmlResourceTargets(node.value)) links.push({ label: "", target, line, index });
+      for (const resource of htmlResourceTargets(node.value)) {
+        links.push({
+          label: "",
+          target: resource.target,
+          line: line + lineNumber(node.value, resource.offset) - 1,
+          index: index + resource.offset,
+        });
+      }
     }
   });
   return links.sort((left, right) => left.index - right.index || left.target.localeCompare(right.target));
@@ -540,7 +571,10 @@ function runtimeClaimBlocks(markdown) {
   const blocks = [];
   let negativeListHeading = false;
   for (const node of markdownParser.parse(markdown).children) {
-    if (node.type === "code" && EXECUTABLE_FENCE_LANGUAGES.has(String(node.lang ?? "").toLowerCase())) {
+    if (node.type === "code" && (
+      node.lang == null
+      || EXECUTABLE_FENCE_LANGUAGES.has(String(node.lang).toLowerCase())
+    )) {
       const firstContentLine = (node.position?.start?.line ?? 1) + 1;
       for (const [offset, text] of node.value.split("\n").entries()) {
         if (!text.trim()) continue;
@@ -722,7 +756,7 @@ export function validateDocumentationReachability(context) {
   const resolvedContext = buildContext(context.root, context);
   const tracked = new Set(
     (context.trackedFiles ?? trackedFiles(resolvedContext.root, resolvedContext.files))
-      .filter((path) => DOCUMENTATION_PATH.test(path)),
+      .filter((path) => DOCUMENTATION_PATH.test(path) || DOCUMENTATION_ASSET_PATH.test(path)),
   );
   const documents = new Map(resolvedContext.documents.map((document) => [document.path, document]));
   const reached = new Set(

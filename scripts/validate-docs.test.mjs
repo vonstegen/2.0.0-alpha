@@ -301,11 +301,19 @@ test("validateRepositoryDocs reports missing Markdown and HTML resource assets",
       "",
       "![Missing diagram](assets/missing-diagram.png)",
       '<img src="assets/missing-preview.webp" alt="Missing preview">',
+      "<img",
+      '  srcset="assets/missing-small.png 1x, assets/missing-large.png 2x"',
+      '  src="assets/missing-multiline.png">',
+      '<object data="assets/missing-attachment.pdf"></object>',
     ].join("\n"));
 
     const output = messages(validateRepositoryDocs(root).findings);
     assert(output.some((message) => message.includes("assets/missing-diagram.png") && message.includes("does not exist")));
     assert(output.some((message) => message.includes("assets/missing-preview.webp") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("docs/README.md:6") && message.includes("assets/missing-small.png")));
+    assert(output.some((message) => message.includes("docs/README.md:6") && message.includes("assets/missing-large.png")));
+    assert(output.some((message) => message.includes("docs/README.md:7") && message.includes("assets/missing-multiline.png")));
+    assert(output.some((message) => message.includes("docs/README.md:8") && message.includes("assets/missing-attachment.pdf")));
   });
 });
 
@@ -495,6 +503,23 @@ test("validateCanonicalClaims rejects obsolete runtime commands in normative she
 
     const output = messages(validateCanonicalClaims({ root }));
     assert(output.some((message) => message.includes("INSTALL.md:5") && message.includes('obsolete runtime "cargo"')));
+
+    writeFixture(root, "INSTALL.md", [
+      "# Install",
+      "",
+      "```shell-session",
+      "cargo build",
+      "```",
+      "",
+      "```",
+      "cargo test",
+      "```",
+      "",
+      "[Contribute](CONTRIBUTING.md)",
+    ].join("\n"));
+    const additional = messages(validateCanonicalClaims({ root }));
+    assert(additional.some((message) => message.includes("INSTALL.md:4") && message.includes('obsolete runtime "cargo"')));
+    assert(additional.some((message) => message.includes("INSTALL.md:8") && message.includes('obsolete runtime "cargo"')));
   });
 });
 
@@ -551,8 +576,10 @@ test("canonical command reference covers every side-panel slash command", () => 
 test("validateRepositoryDocs reports tracked documentation unreachable from canonical or implicit roots", () => {
   withRepository((root) => {
     writeFixture(root, "docs/orphan.md", "# Orphan\n");
+    writeFixture(root, "docs/orphan.png", "orphan-image");
     const output = messages(validateRepositoryDocs(root).findings);
     assert(output.some((message) => message.includes("docs/orphan.md") && message.includes("not reachable")));
+    assert(output.some((message) => message.includes("docs/orphan.png") && message.includes("not reachable")));
   });
 });
 

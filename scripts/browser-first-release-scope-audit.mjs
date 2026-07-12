@@ -182,8 +182,14 @@ function resolveCommit(runGit, label, ref) {
 
 export function collectChangedPaths(options, runGit) {
   if (options.mode === "staged") {
-    return splitGitPaths(runGit(["diff", "--cached", "--name-only", "-z", "--"]))
-      .map((changedPath) => ({ path: changedPath, state: "staged" }));
+    return parseGitNameStatus(runGit([
+      "diff",
+      "--cached",
+      "--name-status",
+      "--no-renames",
+      "-z",
+      "--",
+    ]));
   }
 
   if (options.mode === "committed") {

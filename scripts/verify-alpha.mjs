@@ -22,6 +22,7 @@ export const ALPHA_COMMANDS = [
   { command: "npm", args: ["run", "test:security-pipeline"] },
   { command: "npm", args: ["run", "test:module-ownership"] },
   { command: "node", args: ["scripts/security-pipeline/run-check.mjs"] },
+  { command: "npm", args: ["run", "pre-release:scan"] },
   {
     command: "node",
     args: [

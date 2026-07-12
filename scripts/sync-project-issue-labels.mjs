@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
-import { assertNoManagedLabelConflicts } from "./project-sync-policy.mjs";
+import {
+  assertNoManagedLabelConflicts,
+  assertProjectConfiguration,
+} from "./project-sync-policy.mjs";
 
 const DEFAULT_REPO = "ResonantOS/2.0.0-alpha";
 const DEFAULT_PROJECT_OWNER = "ResonantOS";
@@ -84,6 +87,11 @@ try {
   throw error;
 }
 const requiredFields = getRequiredFields(project);
+assertProjectConfiguration(requiredFields, {
+  releaseScopes: [...scopeToLabel.keys()],
+  areas: [...areaToLabel.keys()],
+  statuses: [INBOX_STATUS],
+});
 const projectItems = await listProjectItems(projectOwner, projectNumber);
 const contentIdToProjectItem = new Map(
   projectItems

@@ -127,8 +127,9 @@ test("project sync executes pull-request events only from trusted base code", as
   assert.equal(job.if, undefined);
   assert.equal(
     checkout.with.ref,
-    "${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}",
+    "${{ github.event.repository.default_branch }}",
   );
+  assert.doesNotMatch(workflowText, /pull_request\.base\.(?:sha|ref)/);
   assert.equal(checkout.with["persist-credentials"], false);
   assert.equal(workflow.permissions.contents, "read");
   assert.equal(workflow.permissions.issues, undefined);
@@ -224,7 +225,9 @@ test("preserves worktree and staged path collection modes", () => {
   const calls = [];
   const runner = (args) => {
     calls.push(args);
-    if (args[1] === "--cached") return "scripts/staged.mjs\0";
+    if (args[1] === "--cached") {
+      return "M\0scripts/staged.mjs\0D\0docs/retired-slide.png\0";
+    }
     if (args[0] === "diff") return "scripts/modified.mjs\0";
     return "scripts/untracked.mjs\0";
   };
@@ -234,12 +237,13 @@ test("preserves worktree and staged path collection modes", () => {
     { path: "scripts/untracked.mjs", state: "untracked" },
   ]);
   assert.deepEqual(collectChangedPaths(parseArgs(["--staged"]), runner), [
-    { path: "scripts/staged.mjs", state: "staged" },
+    { path: "scripts/staged.mjs", state: "modified" },
+    { path: "docs/retired-slide.png", state: "deleted" },
   ]);
   assert.deepEqual(calls, [
     ["diff", "--name-only", "-z", "--"],
     ["ls-files", "--others", "--exclude-standard", "-z", "--"],
-    ["diff", "--cached", "--name-only", "-z", "--"],
+    ["diff", "--cached", "--name-status", "--no-renames", "-z", "--"],
   ]);
 });
 

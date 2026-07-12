@@ -6,7 +6,7 @@ import { findRoadmapProjectMismatches } from "./check-roadmap-project.mjs";
 const projectItems = [
   {
     content: { number: 179 },
-    "release scope": null,
+    "release Scope": null,
     labels: ["feat", "scope:community-test", "area:living-archive"],
   },
 ];
@@ -35,7 +35,7 @@ test("accepts roadmap scope aligned with a populated Project field", () => {
     "## Community Test",
     "- [#179: Export](https://github.com/ResonantOS/2.0.0-alpha/issues/179)",
   ].join("\n");
-  const items = [{ ...projectItems[0], "release scope": "Community Test" }];
+  const items = [{ ...projectItems[0], "release Scope": "Community Test" }];
 
   assert.deepEqual(findRoadmapProjectMismatches(roadmap, items), []);
 });
@@ -49,9 +49,29 @@ test("ignores closed Project items retained as explicit roadmap history", () => 
   ].join("\n");
   const items = [{
     content: { number: 238, state: "CLOSED" },
-    "release scope": null,
+    "release Scope": null,
     labels: [],
   }];
 
   assert.deepEqual(findRoadmapProjectMismatches(roadmap, items), []);
+});
+
+test("populated gh Project field overrides a contradictory managed label", () => {
+  const roadmap = [
+    "# Roadmap",
+    "",
+    "## Community Test",
+    "- [#179: Export](https://github.com/ResonantOS/2.0.0-alpha/issues/179)",
+  ].join("\n");
+  const items = [{
+    content: { number: 179 },
+    "release Scope": "Deferred / Waived",
+    labels: ["scope:community-test"],
+  }];
+
+  assert.deepEqual(findRoadmapProjectMismatches(roadmap, items), [{
+    issue: 179,
+    projectScope: "Deferred / Waived",
+    roadmapScope: "Community Test",
+  }]);
 });

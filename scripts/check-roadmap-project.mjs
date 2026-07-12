@@ -40,7 +40,10 @@ function roadmapScopes(markdown) {
 }
 
 function projectScope(item) {
-  const field = item?.["release scope"] ?? item?.releaseScope ?? item?.release_scope;
+  const field = item?.["release Scope"]
+    ?? item?.["release scope"]
+    ?? item?.releaseScope
+    ?? item?.release_scope;
   if (field) return field;
   const inferred = [...new Set((item?.labels ?? []).map((label) => LABEL_SCOPES.get(label)).filter(Boolean))];
   return inferred.length === 1 ? inferred[0] : null;

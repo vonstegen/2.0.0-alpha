@@ -50,7 +50,7 @@ const CREDENTIAL_RULES = [
   },
   {
     rule: "credential-github",
-    pattern: /(?<![A-Za-z0-9_])(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{50,})(?![A-Za-z0-9_])/g,
+    pattern: /(?<![A-Za-z0-9_])(?:ghs_[A-Za-z0-9][A-Za-z0-9._-]{20,}|gh[pour]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{50,})(?![A-Za-z0-9._-])/g,
   },
   {
     rule: "credential-groq",
@@ -171,6 +171,18 @@ function decodeText(content) {
   }
 }
 
+function decodeCredentialSurface(content) {
+  if (typeof content === "string") {
+    return content.replaceAll("\0", "\n");
+  }
+  if (!ArrayBuffer.isView(content)) {
+    return null;
+  }
+
+  const bytes = new Uint8Array(content.buffer, content.byteOffset, content.byteLength);
+  return new TextDecoder("latin1").decode(bytes).replaceAll("\0", "\n");
+}
+
 function isObviousCredentialPlaceholder(candidate) {
   const assignment = candidate.match(/[:=]\s*["']?([^\s"']+)/);
   const value = (assignment?.[1] ?? candidate)
@@ -187,11 +199,13 @@ function isObviousCredentialPlaceholder(candidate) {
 export function classifyContent(path, content, options = {}) {
   const normalizedPath = normalizePath(path);
   const text = decodeText(content);
-  if (text === null) {
+  const credentialSurface = text ?? decodeCredentialSurface(content);
+  if (text === null && credentialSurface === null) {
     return null;
   }
 
-  if (!isAllowlisted(normalizedPath, options.contentAllowlist)
+  if (text !== null
+      && !isAllowlisted(normalizedPath, options.contentAllowlist)
       && /\/Users\/dr\.tom\//.test(text)) {
     return violation(
       normalizedPath,
@@ -201,7 +215,7 @@ export function classifyContent(path, content, options = {}) {
   }
 
   for (const { rule, pattern } of CREDENTIAL_RULES) {
-    for (const match of text.matchAll(pattern)) {
+    for (const match of credentialSurface.matchAll(pattern)) {
       if (!isObviousCredentialPlaceholder(match[0])) {
         return violation(
           normalizedPath,

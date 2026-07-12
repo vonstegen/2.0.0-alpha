@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { assertNoManagedLabelConflicts } from "./project-sync-policy.mjs";
+import {
+  assertNoManagedLabelConflicts,
+  assertProjectConfiguration,
+} from "./project-sync-policy.mjs";
 
 const scopeLabels = new Set(["scope:alpha-mvp", "scope:community-test"]);
 const areaLabels = new Set(["area:bridge", "area:docs"]);
@@ -40,4 +43,35 @@ test("sync script completes global conflict preflight before its first write loo
   assert(preflight >= 0, "sync script must invoke the global conflict preflight");
   assert(firstWriteLoop >= 0, "sync script must retain the open-item synchronization loop");
   assert(preflight < firstWriteLoop, "conflict preflight must run before any synchronization writes");
+});
+
+test("rejects missing Project options before synchronization writes", () => {
+  const fields = {
+    releaseScope: { name: "Release Scope", options: [{ name: "Alpha MVP" }] },
+    area: { name: "Area", options: [{ name: "Bridge" }] },
+    status: { name: "Status", options: [{ name: "Backlog" }] },
+  };
+
+  assert.throws(
+    () => assertProjectConfiguration(fields, {
+      releaseScopes: ["Alpha MVP", "Community Test"],
+      areas: ["Bridge", "Extension"],
+      statuses: ["Inbox"],
+    }),
+    /Release Scope.*Community Test.*Area.*Extension.*Status.*Inbox/is,
+  );
+});
+
+test("accepts complete Project option configuration", () => {
+  const fields = {
+    releaseScope: { name: "Release Scope", options: [{ name: "Alpha MVP" }, { name: "Community Test" }] },
+    area: { name: "Area", options: [{ name: "Bridge" }, { name: "Extension" }] },
+    status: { name: "Status", options: [{ name: "Inbox" }] },
+  };
+
+  assert.doesNotThrow(() => assertProjectConfiguration(fields, {
+    releaseScopes: ["Alpha MVP", "Community Test"],
+    areas: ["Bridge", "Extension"],
+    statuses: ["Inbox"],
+  }));
 });
