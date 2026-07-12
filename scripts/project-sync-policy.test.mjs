@@ -147,6 +147,38 @@ test("failed writes recover an uncertain remote result before compensation", asy
   assert.deepEqual(state.capturedItem, { id: "project-item-1" });
 });
 
+test("pollForRemoteResult recovers a value after delayed visibility", async () => {
+  let reads = 0;
+  const delays = [];
+
+  const result = await projectSyncPolicy.pollForRemoteResult(
+    async () => {
+      reads += 1;
+      return reads === 4 ? { id: "project-item-1" } : null;
+    },
+    {
+      attempts: 4,
+      delayMs: 10,
+      sleep: async (milliseconds) => delays.push(milliseconds),
+    },
+  );
+
+  assert.deepEqual(result, { id: "project-item-1" });
+  assert.equal(reads, 4);
+  assert.deepEqual(delays, [10, 20, 30]);
+});
+
+test("uncertain Project add compensation performs final item recovery", async () => {
+  const source = await readFile(new URL("./sync-project-issue-labels.mjs", import.meta.url), "utf8");
+  const addOperation = source.slice(
+    source.indexOf("apply: async () => {\n        projectItem = await addIssueOrPullRequestToProject"),
+    source.indexOf("...fieldWrites"),
+  );
+
+  assert.match(addOperation, /compensate:\s*async[\s\S]*if \(!projectItem\)[\s\S]*recoverProjectItem/);
+  assert.match(addOperation, /removeIssueOrPullRequestFromProject/);
+});
+
 test("rejects missing Project options before synchronization writes", () => {
   const fields = {
     releaseScope: { name: "Release Scope", options: [{ name: "Alpha MVP" }] },

@@ -262,6 +262,25 @@ test("validateRepositoryDocs ignores markup strings inside raw-text HTML contain
   });
 });
 
+test("extractMarkdownLinks resumes after browser-tokenized raw-text end tags", () => {
+  for (const closingTag of [
+    "</script data-x>",
+    "</script/>",
+    "</style data-x>",
+    "</textarea data-x>",
+  ]) {
+    const openingTag = closingTag.includes("style")
+      ? "<style>"
+      : closingTag.includes("textarea")
+        ? "<textarea>"
+        : "<script>";
+    assert.deepEqual(
+      extractMarkdownLinks(`${openingTag}ignored${closingTag}<img src="visible.png">`),
+      [{ label: "", target: "visible.png" }],
+    );
+  }
+});
+
 test("validateRepositoryDocs suppresses markup inside unclosed raw-text containers through EOF", () => {
   withRepository((root) => {
     writeFixture(root, "docs/unclosed-script.md", "<script id=\"real-script-anchor\">\nconst markup = '<div id=\"script-anchor\"></div>';\n");
@@ -314,6 +333,11 @@ test("validateRepositoryDocs reports missing Markdown and HTML resource assets",
       '<input src="assets/missing-input.png" type="image">',
       '<svg><image href="assets/missing-svg-image.png"></image></svg>',
       '<svg><use href="assets/missing-symbol.svg#icon"></use></svg>',
+      '<svg><feImage href="assets/missing-filter.png"></feImage></svg>',
+      '<svg><mpath href="assets/missing-motion.svg#path"></mpath></svg>',
+      '<svg><script href="assets/missing-svg-script.js"></script></svg>',
+      '<svg><a xlink:href="assets/missing-svg-guide.md"></a></svg>',
+      '<link imagesrcset="assets/missing-preload-small.png 1x, assets/missing-preload-large.png 2x">',
     ].join("\n"));
 
     const output = messages(validateRepositoryDocs(root).findings);
@@ -332,6 +356,12 @@ test("validateRepositoryDocs reports missing Markdown and HTML resource assets",
     assert(output.some((message) => message.includes("assets/missing-input.png") && message.includes("does not exist")));
     assert(output.some((message) => message.includes("assets/missing-svg-image.png") && message.includes("does not exist")));
     assert(output.some((message) => message.includes("assets/missing-symbol.svg") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-filter.png") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-motion.svg") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-svg-script.js") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-svg-guide.md") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-preload-small.png") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-preload-large.png") && message.includes("does not exist")));
     assert(!output.some((message) => message.includes("%3Csvg%3E")));
   });
 });
@@ -681,6 +711,37 @@ test("validateCanonicalClaims handles nested templates and batch fence aliases",
 
     const output = messages(validateCanonicalClaims({ root }));
     for (const line of [4, 7, 9, 10]) {
+      assert(output.some((message) => message.includes(`INSTALL.md:${line}`) && message.includes('obsolete runtime "cargo"')));
+    }
+  });
+});
+
+test("validateCanonicalClaims handles remaining executable fence aliases", () => {
+  withRepository((root) => {
+    writeFixture(root, "INSTALL.md", [
+      "# Install",
+      "",
+      "```shellscript",
+      "cargo build",
+      "```",
+      "```console-session",
+      "cargo test",
+      "```",
+      "```terminal-session",
+      "cargo check",
+      "```",
+      "```windows",
+      "cargo fmt",
+      "```",
+      "```dosbatch",
+      "cargo build",
+      "```",
+      "",
+      "[Contribute](CONTRIBUTING.md)",
+    ].join("\n"));
+
+    const output = messages(validateCanonicalClaims({ root }));
+    for (const line of [4, 7, 10, 13, 16]) {
       assert(output.some((message) => message.includes(`INSTALL.md:${line}`) && message.includes('obsolete runtime "cargo"')));
     }
   });

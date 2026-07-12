@@ -3,6 +3,7 @@
 import {
   assertNoManagedLabelConflicts,
   assertProjectConfiguration,
+  pollForRemoteResult,
   runCompensatingWrites,
 } from "./project-sync-policy.mjs";
 
@@ -144,9 +145,13 @@ for (const item of openItems) {
         }
       },
       compensate: async () => {
-        if (projectItem?.id) {
-          await removeIssueOrPullRequestFromProject(project.id, projectItem.id, item.html_url);
+        if (!projectItem) {
+          projectItem = await recoverProjectItem(projectOwner, projectNumber, item.node_id, 8);
         }
+        if (!projectItem?.id) {
+          throw new Error(`Unable to identify the uncertain Project 2 item for compensation: ${item.html_url}.`);
+        }
+        await removeIssueOrPullRequestFromProject(project.id, projectItem.id, item.html_url);
       },
     },
     ...fieldWrites,
@@ -458,15 +463,11 @@ async function listProjectItems(owner, number) {
 }
 
 async function recoverProjectItem(owner, number, contentId, attempts = 3) {
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    const projectItem = (await listProjectItems(owner, number))
-      .find((item) => item.content?.id === contentId);
-    if (projectItem) return projectItem;
-    if (attempt < attempts) {
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, attempt * 250));
-    }
-  }
-  return null;
+  return pollForRemoteResult(
+    async () => (await listProjectItems(owner, number))
+      .find((item) => item.content?.id === contentId) ?? null,
+    { attempts },
+  );
 }
 
 async function listOpenIssuesAndPullRequests(owner, name) {

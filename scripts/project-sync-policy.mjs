@@ -3,6 +3,18 @@ function itemReference(url) {
   return match ? `#${match[1]}` : String(url ?? "unknown item");
 }
 
+export async function pollForRemoteResult(
+  read,
+  { attempts = 3, delayMs = 250, sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)) } = {},
+) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const result = await read();
+    if (result) return result;
+    if (attempt < attempts) await sleep(attempt * delayMs);
+  }
+  return null;
+}
+
 export async function runCompensatingWrites(operations) {
   const completed = [];
 

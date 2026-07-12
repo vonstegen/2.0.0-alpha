@@ -67,6 +67,8 @@ const EXECUTABLE_FENCE_LANGUAGES = new Set([
   "cmd",
   "cmd-session",
   "console",
+  "console-session",
+  "dosbatch",
   "fish",
   "fish-session",
   "powershell",
@@ -77,7 +79,10 @@ const EXECUTABLE_FENCE_LANGUAGES = new Set([
   "sh-session",
   "shell",
   "shell-session",
+  "shellscript",
   "terminal",
+  "terminal-session",
+  "windows",
   "zsh",
   "zsh-session",
 ]);
@@ -203,7 +208,7 @@ function htmlMarkupOnly(value) {
       return markup + mask(uncommented.slice(rawTextOpening.lastIndex));
     }
 
-    const closing = new RegExp(`</${tagName}\\s*>`, "gi");
+    const closing = new RegExp(`</${tagName}\\b(?:(?:"[^"]*"|'[^']*'|[^'">])*)>`, "gi");
     closing.lastIndex = rawTextOpening.lastIndex;
     const closingMatch = closing.exec(uncommented);
     if (!closingMatch) {
@@ -322,16 +327,18 @@ function htmlResourceTargets(value) {
   const targets = [];
   const markup = htmlMarkupOnly(value);
   const allowedAttributes = new Map([
-    ["a", new Set(["href"])],
+    ["a", new Set(["href", "xlink:href"])],
     ["audio", new Set(["src"])],
     ["embed", new Set(["src"])],
+    ["feimage", new Set(["href", "xlink:href"])],
     ["iframe", new Set(["src"])],
     ["image", new Set(["href", "xlink:href"])],
     ["img", new Set(["src", "srcset"])],
     ["input", new Set(["src"])],
-    ["link", new Set(["href"])],
+    ["link", new Set(["href", "imagesrcset"])],
+    ["mpath", new Set(["href", "xlink:href"])],
     ["object", new Set(["data"])],
-    ["script", new Set(["src"])],
+    ["script", new Set(["src", "href", "xlink:href"])],
     ["source", new Set(["src", "srcset"])],
     ["track", new Set(["src"])],
     ["use", new Set(["href", "xlink:href"])],
@@ -351,7 +358,7 @@ function htmlResourceTargets(value) {
       const attributeValue = attribute[valueGroup];
       const valueOffset = attributesOffset
         + attribute.indices[valueGroup][0];
-      if (attributeName !== "srcset") {
+      if (attributeName !== "srcset" && attributeName !== "imagesrcset") {
         targets.push({ target: attributeValue, offset: valueOffset });
         continue;
       }
