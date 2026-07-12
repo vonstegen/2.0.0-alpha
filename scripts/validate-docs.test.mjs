@@ -967,6 +967,52 @@ test("HTML projection handles leading-zero Chrome integer boundaries without pre
   );
 });
 
+const EXACT_FLOAT32_HALF_MIN = "7.00649232162408535461864791644958065640130970938257885878534141944895541342930300743319094181060791015625e-46";
+const EXACT_FLOAT32_MIN = "1.40129846432481707092372958328991613128026194187651577175706828388979108268586060148663818836212158203125e-45";
+const EXACT_FLOAT32_MAX = "340282346638528859811704183484516925440";
+const EXACT_FLOAT32_OVERFLOW_TIE = "340282356779733661637539395458142568448";
+
+const CHROME_146_DENSITY_MATRIX = [
+  { label: "zero", value: "0", accepted: true },
+  { label: "negative zero", value: "-0", accepted: true },
+  { label: "dot before exponent", value: "1.e2", accepted: true },
+  { label: "dot before signed exponent", value: "1.e+2", accepted: true },
+  { label: "terminal dot", value: "1.", accepted: false },
+  { label: "leading plus", value: "+1", accepted: false },
+  { label: "incomplete exponent", value: "1e+", accepted: false },
+  { label: "positive binary64 underflow", value: "1e-400", accepted: true },
+  { label: "negative binary64 underflow", value: "-1e-400", accepted: true },
+  { label: "negative near binary64 underflow", value: "-2e-324", accepted: true },
+  { label: "negative binary64 subnormal", value: "-3e-324", accepted: true },
+  { label: "negative float32 underflow", value: "-7e-46", accepted: true },
+  { label: "negative float32 minimum", value: "-8e-46", accepted: false },
+  { label: "negative below rounded half minimum", value: "-7.006492321624084999999999999e-46", accepted: true },
+  { label: "negative rounded half minimum", value: "-7.006492321624085e-46", accepted: false },
+  { label: "negative exact half minimum", value: `-${EXACT_FLOAT32_HALF_MIN}`, accepted: false },
+  { label: "positive exact half minimum", value: EXACT_FLOAT32_HALF_MIN, accepted: true },
+  { label: "positive exact minimum", value: EXACT_FLOAT32_MIN, accepted: true },
+  { label: "maximum finite float32", value: EXACT_FLOAT32_MAX, accepted: true },
+  { label: "positive float32 overflow tie", value: EXACT_FLOAT32_OVERFLOW_TIE, accepted: true },
+  { label: "positive float32 overflow", value: "3.5e38", accepted: true },
+  { label: "negative float32 overflow", value: "-3.5e38", accepted: false },
+  { label: "DBL_MAX", value: "1.7976931348623157e308", accepted: true },
+  { label: "DBL_MAX after Decimal truncation", value: "1.79769313486231570999999999999999999999e308", accepted: true },
+  { label: "above DBL_MAX after Decimal truncation", value: "1.79769313486231571e308", accepted: false },
+  { label: "above DBL_MAX", value: "1.7976931348623158e308", accepted: false },
+  { label: "Decimal overflow", value: "1e309", accepted: false },
+];
+
+for (const { label, value, accepted } of CHROME_146_DENSITY_MATRIX) {
+  test(`Chrome 146 density differential: ${label}`, () => {
+    const target = `assets/chrome-density-${label.replaceAll(" ", "-")}.png`;
+    assert.deepEqual(
+      srcsetTargets(`${target} ${value}x`),
+      accepted ? [target] : [],
+      value,
+    );
+  });
+}
+
 test("HTML projection enforces future-compatible height descriptor rules", () => {
   for (const [index, descriptors] of ["400w 200h", "200h 400w"].entries()) {
     const target = `assets/valid-height-${index}.png`;

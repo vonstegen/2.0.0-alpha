@@ -377,8 +377,90 @@ function removeTemplateContents(value) {
   return output;
 }
 
-const VALID_SRCSET_FLOAT = /^-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/;
+const VALID_SRCSET_FLOAT = /^-?(?:(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|[0-9]+\.[eE][+-]?[0-9]+)$/;
+const BLINK_DECIMAL_PRECISION = 18;
+const BLINK_DOUBLE_SERIALIZATION_DIGITS = 15;
+const BLINK_DECIMAL_MIN_EXPONENT = -1023n;
+const DOUBLE_MAX_ADJUSTED_EXPONENT = 308n;
+const DOUBLE_MAX_SIGNIFICAND = "17976931348623157";
 const MAX_CHROME_SRCSET_INTEGER = "2147483647";
+
+function parseBlinkDecimal(value) {
+  if (!VALID_SRCSET_FLOAT.test(value)) return null;
+
+  const negative = value.startsWith("-");
+  const unsigned = negative ? value.slice(1) : value;
+  const exponentMarker = unsigned.search(/[eE]/);
+  const mantissa = exponentMarker < 0 ? unsigned : unsigned.slice(0, exponentMarker);
+  const exponentText = exponentMarker < 0 ? "0" : unsigned.slice(exponentMarker + 1);
+  const explicitExponent = BigInt(exponentText);
+  const [integer, fraction = ""] = mantissa.split(".");
+
+  let coefficientText = "";
+  let integerStarted = false;
+  let extraIntegerDigits = 0n;
+  for (const digit of integer) {
+    if (!integerStarted && digit === "0") continue;
+    integerStarted = true;
+    if (coefficientText.length < BLINK_DECIMAL_PRECISION) coefficientText += digit;
+    else extraIntegerDigits += 1n;
+  }
+
+  let digitsAfterDot = 0n;
+  for (const digit of fraction) {
+    if (coefficientText.length >= BLINK_DECIMAL_PRECISION) break;
+    coefficientText += digit;
+    digitsAfterDot += 1n;
+  }
+
+  const coefficient = BigInt(coefficientText || "0");
+  if (coefficient === 0n) return { negative: false, coefficient: 0n, exponent: 0n };
+
+  const exponent = explicitExponent - digitsAfterDot + extraIntegerDigits;
+  if (exponent < BLINK_DECIMAL_MIN_EXPONENT) {
+    return { negative: false, coefficient: 0n, exponent: 0n };
+  }
+  return { negative, coefficient, exponent };
+}
+
+function isWithinDoubleMax(decimal) {
+  const digits = decimal.coefficient.toString();
+  const adjustedExponent = decimal.exponent + BigInt(digits.length - 1);
+  if (adjustedExponent !== DOUBLE_MAX_ADJUSTED_EXPONENT) {
+    return adjustedExponent < DOUBLE_MAX_ADJUSTED_EXPONENT;
+  }
+
+  const width = Math.max(digits.length, DOUBLE_MAX_SIGNIFICAND.length);
+  return digits.padEnd(width, "0") <= DOUBLE_MAX_SIGNIFICAND.padEnd(width, "0");
+}
+
+function blinkDecimalDoubleText(decimal) {
+  let { coefficient, exponent } = decimal;
+  if (exponent < 0n) {
+    const digits = coefficient.toString();
+    if (digits.length > BLINK_DOUBLE_SERIALIZATION_DIGITS) {
+      const droppedDigits = digits.length - BLINK_DOUBLE_SERIALIZATION_DIGITS;
+      coefficient = BigInt(digits.slice(0, BLINK_DOUBLE_SERIALIZATION_DIGITS));
+      if (digits.charCodeAt(BLINK_DOUBLE_SERIALIZATION_DIGITS) >= 0x35) coefficient += 1n;
+      exponent += BigInt(droppedDigits);
+    }
+    while (exponent < 0n && coefficient % 10n === 0n) {
+      coefficient /= 10n;
+      exponent += 1n;
+    }
+  }
+  return `${decimal.negative ? "-" : ""}${coefficient}e${exponent}`;
+}
+
+function isChromeCompatibleSrcsetDensity(value) {
+  const decimal = parseBlinkDecimal(value);
+  if (!decimal || !isWithinDoubleMax(decimal)) return false;
+  if (decimal.coefficient === 0n) return true;
+
+  const binary64 = Number(blinkDecimalDoubleText(decimal));
+  if (!Number.isFinite(binary64)) return false;
+  return !(Math.fround(binary64) < 0);
+}
 
 function isValidChromeSrcsetInteger(value) {
   const significant = value.replace(/^0+/, "");
@@ -405,10 +487,9 @@ function hasValidSrcsetDescriptors(descriptors) {
       if (width || density) error = true;
       if (!isValidChromeSrcsetInteger(number)) error = true;
       else width = true;
-    } else if (suffix === "x" && VALID_SRCSET_FLOAT.test(number)) {
+    } else if (suffix === "x") {
       if (width || density || futureCompatHeight) error = true;
-      const value = Number(number);
-      if (!Number.isFinite(value) || value < 0) error = true;
+      if (!isChromeCompatibleSrcsetDensity(number)) error = true;
       else density = true;
     } else if (suffix === "h" && /^[0-9]+$/.test(number)) {
       if (futureCompatHeight || density) error = true;
