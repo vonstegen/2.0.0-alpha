@@ -244,9 +244,17 @@ function decodeHtmlAttributeWithOffsets(value) {
     }
   });
   const appendLiteral = (start, end) => {
-    for (let index = start; index < end; index += 1) {
+    let index = start;
+    while (index < end) {
+      if (value[index] === "\r") {
+        text.push("\n");
+        offsets.push(index);
+        index += index + 1 < end && value[index + 1] === "\n" ? 2 : 1;
+        continue;
+      }
       text.push(value[index]);
       offsets.push(index);
+      index += 1;
     }
   };
 

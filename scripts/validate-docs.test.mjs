@@ -735,6 +735,35 @@ test("HTML projection preserves multiline &sol; srcset source offsets", () => {
   });
 });
 
+test("HTML projection preserves CRLF duplicate &sol; srcset source offsets", () => {
+  withRepository((root) => {
+    const markdown = [
+      '<img srcset="assets&sol;duplicate.png 1x,',
+      ' assets&sol;duplicate.png 2x">',
+    ].join("\r\n");
+    writeFixture(root, "docs/README.md", markdown);
+
+    assert.deepEqual(extractMarkdownLinks(markdown).map(({ target }) => target), [
+      "assets/duplicate.png",
+      "assets/duplicate.png",
+    ]);
+    const output = messages(validateRepositoryDocs(root).findings)
+      .filter((message) => message.includes("assets/duplicate.png"));
+    assert.deepEqual(output, [
+      'docs/README.md:1 local target "assets/duplicate.png" does not exist',
+      'docs/README.md:2 local target "assets/duplicate.png" does not exist',
+    ]);
+  });
+});
+
+test("HTML projection does not normalize numeric CR entity output", () => {
+  const markdown = '<img srcset="assets&sol;z-first.png 1x,&#13;assets&sol;a-second.png 2x">';
+  assert.deepEqual(extractMarkdownLinks(markdown).map(({ target }) => target), [
+    "assets/z-first.png",
+    "assets/a-second.png",
+  ]);
+});
+
 test("validateRepositoryDocs preserves HTML resource source lines after ignored markup", () => {
   withRepository((root) => {
     writeFixture(root, "docs/README.md", [
