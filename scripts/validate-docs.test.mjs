@@ -279,6 +279,13 @@ test("extractMarkdownLinks resumes after browser-tokenized raw-text end tags", (
       [{ label: "", target: "visible.png" }],
     );
   }
+
+  for (const tagName of ["script", "style", "textarea", "title"]) {
+    assert.deepEqual(
+      extractMarkdownLinks(`<${tagName}><!--</${tagName}>--><img src="visible-${tagName}.png">`),
+      [{ label: "", target: `visible-${tagName}.png` }],
+    );
+  }
 });
 
 test("validateRepositoryDocs suppresses markup inside unclosed raw-text containers through EOF", () => {

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
+import { parseFragment } from "parse5";
 import semver from "semver";
 import { parseDocument } from "yaml";
 
@@ -192,38 +193,6 @@ function markdownText(node) {
   return (node.children ?? []).map(markdownText).join("");
 }
 
-function htmlMarkupOnly(value) {
-  const mask = (text) => text.replace(/[^\r\n]/g, " ");
-  const uncommented = value.replace(/<!--[\s\S]*?-->/g, mask);
-  const rawTextOpening = /<(script|style|textarea|title|xmp|iframe|noembed|noframes|plaintext)\b(?:(?:"[^"]*"|'[^']*'|[^'">])*)>/gi;
-  let markup = "";
-  let cursor = 0;
-  let opening;
-
-  while ((opening = rawTextOpening.exec(uncommented))) {
-    markup += uncommented.slice(cursor, rawTextOpening.lastIndex);
-
-    const tagName = opening[1].toLowerCase();
-    if (tagName === "plaintext") {
-      return markup + mask(uncommented.slice(rawTextOpening.lastIndex));
-    }
-
-    const closing = new RegExp(`</${tagName}\\b(?:(?:"[^"]*"|'[^']*'|[^'">])*)>`, "gi");
-    closing.lastIndex = rawTextOpening.lastIndex;
-    const closingMatch = closing.exec(uncommented);
-    if (!closingMatch) {
-      return markup + mask(uncommented.slice(rawTextOpening.lastIndex));
-    }
-
-    markup += mask(uncommented.slice(rawTextOpening.lastIndex, closingMatch.index));
-    markup += closingMatch[0];
-    cursor = closing.lastIndex;
-    rawTextOpening.lastIndex = cursor;
-  }
-
-  return markup + uncommented.slice(cursor);
-}
-
 function decodeHtmlCharacterReferences(value) {
   const text = [];
   const offsets = [];
@@ -323,9 +292,16 @@ function srcsetResourceTargets(value, valueOffset) {
   return targets;
 }
 
+function forEachHtmlElement(value, callback) {
+  const visit = (node) => {
+    if (node.tagName) callback(node);
+    for (const child of node.childNodes ?? []) visit(child);
+  };
+  visit(parseFragment(value, { sourceCodeLocationInfo: true }));
+}
+
 function htmlResourceTargets(value) {
   const targets = [];
-  const markup = htmlMarkupOnly(value);
   const allowedAttributes = new Map([
     ["a", new Set(["href", "xlink:href"])],
     ["audio", new Set(["src"])],
@@ -344,31 +320,34 @@ function htmlResourceTargets(value) {
     ["use", new Set(["href", "xlink:href"])],
     ["video", new Set(["poster", "src"])],
   ]);
-  const elementExpression = /<([A-Za-z][\w:-]*)\b((?:"[^"]*"|'[^']*'|[^'">])*)>/g;
-  const attributeExpression = /\b([A-Za-z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gd;
 
-  for (const element of markup.matchAll(elementExpression)) {
-    const allowed = allowedAttributes.get(element[1].toLowerCase());
-    if (!allowed) continue;
-    const attributesOffset = element.index + element[0].indexOf(element[2]);
-    for (const attribute of element[2].matchAll(attributeExpression)) {
-      const attributeName = attribute[1].toLowerCase();
-      if (!allowed.has(attributeName)) continue;
-      const valueGroup = attribute[2] !== undefined ? 2 : attribute[3] !== undefined ? 3 : 4;
-      const attributeValue = attribute[valueGroup];
-      const valueOffset = attributesOffset
-        + attribute.indices[valueGroup][0];
-      if (attributeName !== "srcset" && attributeName !== "imagesrcset") {
-        targets.push({ target: attributeValue, offset: valueOffset });
-        continue;
+  forEachHtmlElement(value, (node) => {
+    const tagName = node.tagName?.toLowerCase();
+    const allowed = tagName ? allowedAttributes.get(tagName) : null;
+    if (allowed && node.sourceCodeLocation?.attrs) {
+      for (const attribute of node.attrs ?? []) {
+        const attributeName = `${attribute.prefix ? `${attribute.prefix}:` : ""}${attribute.name}`.toLowerCase();
+        if (!allowed.has(attributeName)) continue;
+        const location = node.sourceCodeLocation.attrs[attributeName];
+        if (!location) continue;
+        const rawAttribute = value.slice(location.startOffset, location.endOffset);
+        const match = rawAttribute.match(/^[A-Za-z][\w:-]*\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/d);
+        if (!match) continue;
+        const valueGroup = match[1] !== undefined ? 1 : match[2] !== undefined ? 2 : 3;
+        const rawValue = match[valueGroup];
+        const valueOffset = location.startOffset + match.indices[valueGroup][0];
+        const decoded = decodeHtmlCharacterReferences(rawValue);
+        if (attributeName !== "srcset" && attributeName !== "imagesrcset") {
+          targets.push({ target: decoded.text, offset: valueOffset });
+          continue;
+        }
+        targets.push(...srcsetResourceTargets(decoded.text, 0).map((target) => ({
+          target: target.target,
+          offset: valueOffset + (decoded.offsets[target.offset] ?? rawValue.length),
+        })));
       }
-      const decoded = decodeHtmlCharacterReferences(attributeValue);
-      targets.push(...srcsetResourceTargets(decoded.text, 0).map((target) => ({
-        target: target.target,
-        offset: valueOffset + (decoded.offsets[target.offset] ?? attributeValue.length),
-      })));
     }
-  }
+  });
   return targets;
 }
 
@@ -477,10 +456,11 @@ function markdownAnchors(markdown) {
       }
     }
     if (node.type === "html") {
-      const markup = htmlMarkupOnly(node.value);
-      for (const anchor of markup.matchAll(/<[A-Za-z][\w:-]*\b[^>]*\b(?:id|name)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi)) {
-        anchors.add(anchor[1] ?? anchor[2] ?? anchor[3]);
-      }
+      forEachHtmlElement(node.value, (element) => {
+        for (const attribute of element.attrs ?? []) {
+          if (attribute.name === "id" || attribute.name === "name") anchors.add(attribute.value);
+        }
+      });
     }
   });
   return anchors;
