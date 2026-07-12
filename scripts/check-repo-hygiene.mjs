@@ -50,7 +50,7 @@ const CREDENTIAL_RULES = [
   },
   {
     rule: "credential-github",
-    pattern: /(?<![A-Za-z0-9_])(?:ghs_[A-Za-z0-9][A-Za-z0-9._-]{20,}|gh[pour]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{50,})(?![A-Za-z0-9._-])/g,
+    pattern: /(?<![A-Za-z0-9_])(?:ghs_[A-Za-z0-9][A-Za-z0-9._-]{20,}|gh[pour]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{50,})(?![A-Za-z0-9._-])/g,
   },
   {
     rule: "credential-groq",
@@ -171,16 +171,27 @@ function decodeText(content) {
   }
 }
 
-function decodeCredentialSurface(content) {
+function decodeCredentialSurfaces(content, text) {
+  const surfaces = new Set();
+  if (text !== null) surfaces.add(text);
   if (typeof content === "string") {
-    return content.replaceAll("\0", "\n");
+    surfaces.add(content.replaceAll("\0", "\n"));
+    return [...surfaces];
   }
-  if (!ArrayBuffer.isView(content)) {
-    return null;
-  }
+  if (!ArrayBuffer.isView(content)) return [...surfaces];
 
   const bytes = new Uint8Array(content.buffer, content.byteOffset, content.byteLength);
-  return new TextDecoder("latin1").decode(bytes).replaceAll("\0", "\n");
+  surfaces.add(new TextDecoder("latin1").decode(bytes).replaceAll("\0", "\n"));
+  if (bytes.length % 2 === 0 && bytes.includes(0)) {
+    for (const encoding of ["utf-16le", "utf-16be"]) {
+      try {
+        surfaces.add(new TextDecoder(encoding, { fatal: true }).decode(bytes));
+      } catch {
+        // A malformed candidate is still covered by the byte-preserving surface.
+      }
+    }
+  }
+  return [...surfaces];
 }
 
 function isObviousCredentialPlaceholder(candidate) {
@@ -199,8 +210,8 @@ function isObviousCredentialPlaceholder(candidate) {
 export function classifyContent(path, content, options = {}) {
   const normalizedPath = normalizePath(path);
   const text = decodeText(content);
-  const credentialSurface = text ?? decodeCredentialSurface(content);
-  if (text === null && credentialSurface === null) {
+  const credentialSurfaces = decodeCredentialSurfaces(content, text);
+  if (text === null && credentialSurfaces.length === 0) {
     return null;
   }
 
@@ -215,13 +226,15 @@ export function classifyContent(path, content, options = {}) {
   }
 
   for (const { rule, pattern } of CREDENTIAL_RULES) {
-    for (const match of credentialSurface.matchAll(pattern)) {
-      if (!isObviousCredentialPlaceholder(match[0])) {
-        return violation(
-          normalizedPath,
-          rule,
-          "Remove the detected credential from the repository and rotate it if it was active.",
-        );
+    for (const surface of credentialSurfaces) {
+      for (const match of surface.matchAll(pattern)) {
+        if (!isObviousCredentialPlaceholder(match[0])) {
+          return violation(
+            normalizedPath,
+            rule,
+            "Remove the detected credential from the repository and rotate it if it was active.",
+          );
+        }
       }
     }
   }

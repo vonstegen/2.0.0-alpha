@@ -23,7 +23,6 @@ const IMPLICIT_DOCUMENT_CONSUMERS = new Set([
   "browser-first/resonantos-side-panel-extension/src/side-panel.html",
 ]);
 const DOCUMENTATION_PATH = /\.(?:md|markdown|mdx|txt|html|pdf|docx)$/i;
-const DOCUMENTATION_ASSET_PATH = /^docs\/.*\.(?:gif|jpe?g|png|svg|webp|ya?ml|zip)$/i;
 
 const NORMATIVE_DOCUMENTS = new Set([
   "AGENTS.md",
@@ -64,6 +63,7 @@ const EXECUTABLE_FENCE_LANGUAGES = new Set([
   "bash",
   "cmd",
   "console",
+  "fish",
   "powershell",
   "ps1",
   "sh",
@@ -178,24 +178,29 @@ function markdownText(node) {
 }
 
 function htmlMarkupOnly(value) {
-  const uncommented = value.replace(/<!--[\s\S]*?-->/g, "");
+  const mask = (text) => text.replace(/[^\r\n]/g, " ");
+  const uncommented = value.replace(/<!--[\s\S]*?-->/g, mask);
   const rawTextOpening = /<(script|style|textarea|title|xmp|iframe|noembed|noframes|plaintext)\b(?:(?:"[^"]*"|'[^']*'|[^'">])*)>/gi;
   let markup = "";
   let cursor = 0;
   let opening;
 
   while ((opening = rawTextOpening.exec(uncommented))) {
-    markup += uncommented.slice(cursor, opening.index);
-    markup += opening[0];
+    markup += uncommented.slice(cursor, rawTextOpening.lastIndex);
 
     const tagName = opening[1].toLowerCase();
-    if (tagName === "plaintext") return markup;
+    if (tagName === "plaintext") {
+      return markup + mask(uncommented.slice(rawTextOpening.lastIndex));
+    }
 
     const closing = new RegExp(`</${tagName}\\s*>`, "gi");
     closing.lastIndex = rawTextOpening.lastIndex;
     const closingMatch = closing.exec(uncommented);
-    if (!closingMatch) return markup;
+    if (!closingMatch) {
+      return markup + mask(uncommented.slice(rawTextOpening.lastIndex));
+    }
 
+    markup += mask(uncommented.slice(rawTextOpening.lastIndex, closingMatch.index));
     markup += closingMatch[0];
     cursor = closing.lastIndex;
     rawTextOpening.lastIndex = cursor;
@@ -204,17 +209,46 @@ function htmlMarkupOnly(value) {
   return markup + uncommented.slice(cursor);
 }
 
+function srcsetResourceTargets(value, valueOffset) {
+  const targets = [];
+  let cursor = 0;
+
+  while (cursor < value.length) {
+    while (cursor < value.length && /[\s,]/.test(value[cursor])) cursor += 1;
+    if (cursor >= value.length) break;
+
+    const start = cursor;
+    const isData = value.slice(cursor).toLowerCase().startsWith("data:");
+    while (
+      cursor < value.length
+      && !/\s/.test(value[cursor])
+      && (isData || value[cursor] !== ",")
+    ) {
+      cursor += 1;
+    }
+    const target = value.slice(start, cursor);
+    if (target && !isData) targets.push({ target, offset: valueOffset + start });
+
+    while (cursor < value.length && value[cursor] !== ",") cursor += 1;
+    if (cursor < value.length) cursor += 1;
+  }
+  return targets;
+}
+
 function htmlResourceTargets(value) {
   const targets = [];
   const markup = htmlMarkupOnly(value);
   const allowedAttributes = new Map([
     ["a", new Set(["href"])],
     ["audio", new Set(["src"])],
+    ["embed", new Set(["src"])],
+    ["iframe", new Set(["src"])],
     ["img", new Set(["src", "srcset"])],
     ["link", new Set(["href"])],
     ["object", new Set(["data"])],
     ["script", new Set(["src"])],
     ["source", new Set(["src", "srcset"])],
+    ["track", new Set(["src"])],
     ["video", new Set(["poster", "src"])],
   ]);
   const elementExpression = /<([A-Za-z][\w:-]*)\b((?:"[^"]*"|'[^']*'|[^'">])*)>/g;
@@ -235,18 +269,7 @@ function htmlResourceTargets(value) {
         targets.push({ target: attributeValue, offset: valueOffset });
         continue;
       }
-
-      let candidateOffset = 0;
-      for (const candidate of attributeValue.split(",")) {
-        const match = candidate.match(/^(\s*)(\S+)/);
-        if (match && !/^data:/i.test(match[2])) {
-          targets.push({
-            target: match[2],
-            offset: valueOffset + candidateOffset + match[1].length,
-          });
-        }
-        candidateOffset += candidate.length + 1;
-      }
+      targets.push(...srcsetResourceTargets(attributeValue, valueOffset));
     }
   }
   return targets;
@@ -567,19 +590,44 @@ function collectRuntimeClaimBlocks(node, blocks, structuralNegative = false) {
   }
 }
 
-function runtimeClaimBlocks(markdown) {
-  const blocks = [];
-  let negativeListHeading = false;
-  for (const node of markdownParser.parse(markdown).children) {
+function appendExecutableRuntimeBlocks(markdown, blocks) {
+  const tree = markdownParser.parse(markdown);
+  walkMarkdown(tree, (node) => {
     if (node.type === "code" && (
       node.lang == null
       || EXECUTABLE_FENCE_LANGUAGES.has(String(node.lang).toLowerCase())
     )) {
       const firstContentLine = (node.position?.start?.line ?? 1) + 1;
       for (const [offset, text] of node.value.split("\n").entries()) {
-        if (!text.trim()) continue;
-        blocks.push({ text, line: firstContentLine + offset, structuralNegative: false });
+        if (text.trim()) blocks.push({
+          text,
+          line: firstContentLine + offset,
+          structuralNegative: false,
+        });
       }
+      return;
+    }
+
+    if (node.type !== "html") return;
+    for (const match of node.value.matchAll(/<pre\b[^>]*>\s*<code\b[^>]*>([\s\S]*?)<\/code>\s*<\/pre>/gi)) {
+      const content = match[1].replace(/<[^>]+>/g, " ");
+      const contentOffset = match.index + match[0].indexOf(match[1]);
+      const firstLine = (node.position?.start?.line ?? 1)
+        + lineNumber(node.value, contentOffset)
+        - 1;
+      for (const [offset, text] of content.split("\n").entries()) {
+        if (text.trim()) blocks.push({ text, line: firstLine + offset, structuralNegative: false });
+      }
+    }
+  });
+}
+
+function runtimeClaimBlocks(markdown) {
+  const blocks = [];
+  appendExecutableRuntimeBlocks(markdown, blocks);
+  let negativeListHeading = false;
+  for (const node of markdownParser.parse(markdown).children) {
+    if (node.type === "code" || node.type === "html") {
       negativeListHeading = false;
       continue;
     }
@@ -756,7 +804,7 @@ export function validateDocumentationReachability(context) {
   const resolvedContext = buildContext(context.root, context);
   const tracked = new Set(
     (context.trackedFiles ?? trackedFiles(resolvedContext.root, resolvedContext.files))
-      .filter((path) => DOCUMENTATION_PATH.test(path) || DOCUMENTATION_ASSET_PATH.test(path)),
+      .filter((path) => DOCUMENTATION_PATH.test(path) || path.startsWith("docs/")),
   );
   const documents = new Map(resolvedContext.documents.map((document) => [document.path, document]));
   const reached = new Set(

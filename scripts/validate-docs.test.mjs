@@ -305,6 +305,10 @@ test("validateRepositoryDocs reports missing Markdown and HTML resource assets",
       '  srcset="assets/missing-small.png 1x, assets/missing-large.png 2x"',
       '  src="assets/missing-multiline.png">',
       '<object data="assets/missing-attachment.pdf"></object>',
+      '<iframe src="assets/missing-frame.html"></iframe>',
+      '<embed src="assets/missing-embed.svg">',
+      '<track src="assets/missing-captions.vtt">',
+      '<source srcset="data:image/svg+xml,%3Csvg%3E 1x, assets/missing-local.avif 2x">',
     ].join("\n"));
 
     const output = messages(validateRepositoryDocs(root).findings);
@@ -314,6 +318,51 @@ test("validateRepositoryDocs reports missing Markdown and HTML resource assets",
     assert(output.some((message) => message.includes("docs/README.md:6") && message.includes("assets/missing-large.png")));
     assert(output.some((message) => message.includes("docs/README.md:7") && message.includes("assets/missing-multiline.png")));
     assert(output.some((message) => message.includes("docs/README.md:8") && message.includes("assets/missing-attachment.pdf")));
+    assert(output.some((message) => message.includes("assets/missing-frame.html") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-embed.svg") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-captions.vtt") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-local.avif") && message.includes("does not exist")));
+    assert(!output.some((message) => message.includes("%3Csvg%3E")));
+  });
+});
+
+test("validateRepositoryDocs preserves HTML resource source lines after ignored markup", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/README.md", [
+      "# Docs",
+      "",
+      "<!-- <img src=\"ignored-comment.png\"> -->",
+      "<script>",
+      "const markup = '<img src=\"ignored-script.png\">';",
+      "</script>",
+      '<img src="assets/missing-after-ignored.png">',
+    ].join("\n"));
+
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(output.some((message) => message.includes("docs/README.md:7") && message.includes("missing-after-ignored.png")));
+    assert(!output.some((message) => message.includes("ignored-comment.png")));
+    assert(!output.some((message) => message.includes("ignored-script.png")));
+  });
+});
+
+test("validateRepositoryDocs preserves offsets within one multiline HTML block", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/README.md", [
+      "<div>",
+      "<!-- <img src=\"ignored-comment.png\"> -->",
+      "<script>const markup = '<img src=\"ignored-script.png\">';</script>",
+      "<section>",
+      '<img src="assets/missing-line-five.png">',
+      '<object data="assets/missing-line-six.pdf"></object>',
+      "</section>",
+      "</div>",
+    ].join("\n"));
+
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(output.some((message) => message.includes("docs/README.md:5") && message.includes("missing-line-five.png")));
+    assert(output.some((message) => message.includes("docs/README.md:6") && message.includes("missing-line-six.pdf")));
+    assert(!output.some((message) => message.includes("ignored-comment.png")));
+    assert(!output.some((message) => message.includes("ignored-script.png")));
   });
 });
 
@@ -520,6 +569,26 @@ test("validateCanonicalClaims rejects obsolete runtime commands in normative she
     const additional = messages(validateCanonicalClaims({ root }));
     assert(additional.some((message) => message.includes("INSTALL.md:4") && message.includes('obsolete runtime "cargo"')));
     assert(additional.some((message) => message.includes("INSTALL.md:8") && message.includes('obsolete runtime "cargo"')));
+
+    writeFixture(root, "INSTALL.md", [
+      "# Install",
+      "",
+      "> ```bash",
+      "> cargo build",
+      "> ```",
+      "",
+      "```fish",
+      "cargo test",
+      "```",
+      "",
+      "<pre><code>cargo check</code></pre>",
+      "",
+      "[Contribute](CONTRIBUTING.md)",
+    ].join("\n"));
+    const nested = messages(validateCanonicalClaims({ root }));
+    assert(nested.some((message) => message.includes("INSTALL.md:4") && message.includes('obsolete runtime "cargo"')));
+    assert(nested.some((message) => message.includes("INSTALL.md:8") && message.includes('obsolete runtime "cargo"')));
+    assert(nested.some((message) => message.includes("INSTALL.md:11") && message.includes('obsolete runtime "cargo"')));
   });
 });
 
@@ -577,9 +646,11 @@ test("validateRepositoryDocs reports tracked documentation unreachable from cano
   withRepository((root) => {
     writeFixture(root, "docs/orphan.md", "# Orphan\n");
     writeFixture(root, "docs/orphan.png", "orphan-image");
+    writeFixture(root, "docs/orphan.avif", "orphan-avif");
     const output = messages(validateRepositoryDocs(root).findings);
     assert(output.some((message) => message.includes("docs/orphan.md") && message.includes("not reachable")));
     assert(output.some((message) => message.includes("docs/orphan.png") && message.includes("not reachable")));
+    assert(output.some((message) => message.includes("docs/orphan.avif") && message.includes("not reachable")));
   });
 });
 

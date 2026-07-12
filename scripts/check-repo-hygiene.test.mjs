@@ -216,6 +216,25 @@ test("classifyContent scans ASCII credentials inside NUL-tainted buffers", () =>
   assert.equal(classifyContent("fixtures/tainted.bin", binary)?.rule, "credential-github");
 });
 
+test("classifyContent detects underscore-bearing GitHub tokens", () => {
+  const token = ["gho", "qR7tV9xB2dF4_hJ6kL8mN0pQ2sT4vW6yZ8aB0cD2eF4g"].join("_");
+
+  assert.equal(classifyContent("config/oauth-token.txt", token)?.rule, "credential-github");
+});
+
+test("classifyContent detects UTF-16 encoded GitHub tokens", () => {
+  const token = ["ghs", "qR7tV9xB2dF4hJ6kL8mN0pQ2sT4vW6yZ8aB0cD2eF4g"].join("_");
+
+  assert.equal(
+    classifyContent("fixtures/utf16le.bin", Buffer.from(token, "utf16le"))?.rule,
+    "credential-github",
+  );
+
+  const bigEndian = Buffer.from(token, "utf16le");
+  bigEndian.swap16();
+  assert.equal(classifyContent("fixtures/utf16be.bin", bigEndian)?.rule, "credential-github");
+});
+
 test("classifyContent safely skips binary buffers", () => {
   const binary = Buffer.from([0, 255, 254, ...Buffer.from("/Users/dr.tom/private")]);
   assert.doesNotThrow(() => classifyContent("fixtures/profile.db", binary));
