@@ -138,6 +138,14 @@ export function classifyPath(path, stat, options = {}) {
     );
   }
 
+  if (normalizedPath.startsWith("browser-first/certs/")) {
+    return violation(
+      normalizedPath,
+      "generated-certificate",
+      "Remove generated browser-first certificate material; runtime TLS stores it under ResonantOS_User/BridgeTLS/.",
+    );
+  }
+
   const maximumSize = options.maxFileSize ?? DEFAULT_MAX_FILE_SIZE;
   const sizeAllowlist = options.sizeAllowlist ?? options.largeFileAllowlist;
   if (stat?.isFile?.() && stat.size > maximumSize && !isAllowlisted(normalizedPath, sizeAllowlist)) {

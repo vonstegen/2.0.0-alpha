@@ -511,6 +511,23 @@ test("scanRepository still rejects tracked files under ignored paths", async () 
   });
 });
 
+test("scanRepository rejects a force-tracked browser-first generated certificate", async () => {
+  await withTempDirectory(async (root) => {
+    execFileSync("git", ["init", "--quiet", root]);
+    await writeFixture(root, ".gitignore", "browser-first/certs/\n");
+    await writeFixture(root, "browser-first/certs/resonantos-ca.crt", "generated certificate\n");
+    await writeFixture(root, "test/fixtures/reviewed-ca.crt", "reviewed certificate fixture\n");
+    execFileSync("git", ["-C", root, "add", "test/fixtures/reviewed-ca.crt"]);
+    execFileSync("git", ["-C", root, "add", "-f", "browser-first/certs/resonantos-ca.crt"]);
+
+    const violations = await scanRepository(root);
+
+    assert.equal(violations.length, 1);
+    assert.equal(violations[0].path, "browser-first/certs/resonantos-ca.crt");
+    assert.equal(violations[0].rule, "generated-certificate");
+  });
+});
+
 test("scanRepository does not allow tracked credentials to bypass content scanning", async () => {
   await withTempDirectory(async (root) => {
     execFileSync("git", ["init", "--quiet", root]);
