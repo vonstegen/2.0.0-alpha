@@ -176,18 +176,42 @@ function decodeCredentialSurfaces(content, text) {
   if (text !== null) surfaces.add(text);
   if (typeof content === "string") {
     surfaces.add(content.replaceAll("\0", "\n"));
+    surfaces.add(content.replaceAll("\0", ""));
     return [...surfaces];
   }
   if (!ArrayBuffer.isView(content)) return [...surfaces];
 
   const bytes = new Uint8Array(content.buffer, content.byteOffset, content.byteLength);
-  surfaces.add(new TextDecoder("latin1").decode(bytes).replaceAll("\0", "\n"));
-  if (bytes.length % 2 === 0 && bytes.includes(0)) {
-    for (const encoding of ["utf-16le", "utf-16be"]) {
-      try {
-        surfaces.add(new TextDecoder(encoding, { fatal: true }).decode(bytes));
-      } catch {
-        // A malformed candidate is still covered by the byte-preserving surface.
+  const bytePreserving = new TextDecoder("latin1").decode(bytes);
+  surfaces.add(bytePreserving.replaceAll("\0", "\n"));
+  surfaces.add(bytePreserving.replaceAll("\0", ""));
+  if (bytes.includes(0)) {
+    for (const offset of [0, 1]) {
+      const length = bytes.length - offset - ((bytes.length - offset) % 2);
+      if (length < 2) continue;
+      const candidate = bytes.subarray(offset, offset + length);
+      for (const encoding of ["utf-16le", "utf-16be"]) {
+        try {
+          surfaces.add(new TextDecoder(encoding, { fatal: true }).decode(candidate));
+        } catch {
+          // NUL-normalized byte surfaces and other alignments remain available.
+        }
+      }
+    }
+
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (const offset of [0, 1, 2, 3]) {
+      for (const littleEndian of [true, false]) {
+        let decoded = "";
+        for (let index = offset; index + 3 < bytes.length; index += 4) {
+          const codePoint = view.getUint32(index, littleEndian);
+          if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) {
+            decoded = "";
+            break;
+          }
+          decoded += String.fromCodePoint(codePoint);
+        }
+        if (decoded) surfaces.add(decoded);
       }
     }
   }

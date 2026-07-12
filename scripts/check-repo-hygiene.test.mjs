@@ -235,6 +235,30 @@ test("classifyContent detects UTF-16 encoded GitHub tokens", () => {
   assert.equal(classifyContent("fixtures/utf16be.bin", bigEndian)?.rule, "credential-github");
 });
 
+test("classifyContent detects offset, truncated, UTF-32, and NUL-split GitHub tokens", () => {
+  const githubToken = ["ghs", "qR7tV9xB2dF4hJ6kL8mN0pQ2sT4vW6yZ8aB0cD2eF4g"].join("_");
+  const utf16le = Buffer.from(githubToken, "utf16le");
+  const utf16be = Buffer.from(utf16le).swap16();
+  const utf32le = Buffer.concat([...githubToken].map((character) => Buffer.from([
+    character.charCodeAt(0), 0, 0, 0,
+  ])));
+  const utf32be = Buffer.concat([...githubToken].map((character) => Buffer.from([
+    0, 0, 0, character.charCodeAt(0),
+  ])));
+  const nulSplit = Buffer.from(githubToken.replace("qR7", "q\0R7"), "latin1");
+
+  for (const [path, content] of [
+    ["fixtures/utf16le-trailing.bin", Buffer.concat([utf16le, Buffer.from([255])])],
+    ["fixtures/utf16le-offset.bin", Buffer.concat([Buffer.from([255]), utf16le])],
+    ["fixtures/utf16be-offset.bin", Buffer.concat([Buffer.from([255]), utf16be])],
+    ["fixtures/utf32le.bin", utf32le],
+    ["fixtures/utf32be.bin", utf32be],
+    ["fixtures/nul-split.bin", nulSplit],
+  ]) {
+    assert.equal(classifyContent(path, content)?.rule, "credential-github", path);
+  }
+});
+
 test("classifyContent safely skips binary buffers", () => {
   const binary = Buffer.from([0, 255, 254, ...Buffer.from("/Users/dr.tom/private")]);
   assert.doesNotThrow(() => classifyContent("fixtures/profile.db", binary));

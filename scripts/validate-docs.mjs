@@ -61,6 +61,7 @@ const REQUIRED_DOCS_SCRIPTS = ["docs:check", "test:docs"];
 const OBSOLETE_RUNTIME = /\b(?:tauri|electron|cef|rust|cargo|src-tauri|native packaging)\b/gi;
 const EXECUTABLE_FENCE_LANGUAGES = new Set([
   "bash",
+  "bash-session",
   "cmd",
   "console",
   "fish",
@@ -219,16 +220,25 @@ function srcsetResourceTargets(value, valueOffset) {
 
     const start = cursor;
     const isData = value.slice(cursor).toLowerCase().startsWith("data:");
-    while (
-      cursor < value.length
-      && !/\s/.test(value[cursor])
-      && (isData || value[cursor] !== ",")
-    ) {
-      cursor += 1;
+    if (isData) {
+      const remainder = value.slice(cursor);
+      const whitespaceIndex = remainder.search(/\s/);
+      const candidateSeparator = remainder.search(/,\s+/);
+      const targetLength = candidateSeparator >= 0
+        && (whitespaceIndex < 0 || candidateSeparator < whitespaceIndex)
+        ? candidateSeparator
+        : whitespaceIndex;
+      cursor = targetLength < 0 ? value.length : cursor + targetLength;
+    } else {
+      while (cursor < value.length && !/[\s,]/.test(value[cursor])) cursor += 1;
     }
     const target = value.slice(start, cursor);
     if (target && !isData) targets.push({ target, offset: valueOffset + start });
 
+    if (isData && value[cursor] === ",") {
+      cursor += 1;
+      continue;
+    }
     while (cursor < value.length && value[cursor] !== ",") cursor += 1;
     if (cursor < value.length) cursor += 1;
   }
@@ -243,16 +253,19 @@ function htmlResourceTargets(value) {
     ["audio", new Set(["src"])],
     ["embed", new Set(["src"])],
     ["iframe", new Set(["src"])],
+    ["image", new Set(["href", "xlink:href"])],
     ["img", new Set(["src", "srcset"])],
+    ["input", new Set(["src"])],
     ["link", new Set(["href"])],
     ["object", new Set(["data"])],
     ["script", new Set(["src"])],
     ["source", new Set(["src", "srcset"])],
     ["track", new Set(["src"])],
+    ["use", new Set(["href", "xlink:href"])],
     ["video", new Set(["poster", "src"])],
   ]);
   const elementExpression = /<([A-Za-z][\w:-]*)\b((?:"[^"]*"|'[^']*'|[^'">])*)>/g;
-  const attributeExpression = /\b([A-Za-z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+  const attributeExpression = /\b([A-Za-z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gd;
 
   for (const element of markup.matchAll(elementExpression)) {
     const allowed = allowedAttributes.get(element[1].toLowerCase());
@@ -261,10 +274,10 @@ function htmlResourceTargets(value) {
     for (const attribute of element[2].matchAll(attributeExpression)) {
       const attributeName = attribute[1].toLowerCase();
       if (!allowed.has(attributeName)) continue;
-      const attributeValue = attribute[2] ?? attribute[3] ?? attribute[4];
+      const valueGroup = attribute[2] !== undefined ? 2 : attribute[3] !== undefined ? 3 : 4;
+      const attributeValue = attribute[valueGroup];
       const valueOffset = attributesOffset
-        + attribute.index
-        + attribute[0].indexOf(attributeValue);
+        + attribute.indices[valueGroup][0];
       if (attributeName !== "srcset") {
         targets.push({ target: attributeValue, offset: valueOffset });
         continue;
@@ -609,14 +622,31 @@ function appendExecutableRuntimeBlocks(markdown, blocks) {
     }
 
     if (node.type !== "html") return;
-    for (const match of node.value.matchAll(/<pre\b[^>]*>\s*<code\b[^>]*>([\s\S]*?)<\/code>\s*<\/pre>/gi)) {
-      const content = match[1].replace(/<[^>]+>/g, " ");
-      const contentOffset = match.index + match[0].indexOf(match[1]);
-      const firstLine = (node.position?.start?.line ?? 1)
-        + lineNumber(node.value, contentOffset)
-        - 1;
-      for (const [offset, text] of content.split("\n").entries()) {
-        if (text.trim()) blocks.push({ text, line: firstLine + offset, structuralNegative: false });
+    for (const pre of node.value.matchAll(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi)) {
+      for (const code of pre[1].matchAll(/<code\b[^>]*>([\s\S]*?)<\/code>/gi)) {
+        const rawContent = code[1];
+        const content = rawContent
+          .replace(/<!--[\s\S]*?-->/g, "")
+          .replace(/<br\s*\/?\s*>/gi, "\n")
+          .replace(/<[^>]+>/g, "")
+          .replace(/&(?:#(\d+)|#x([\da-f]+)|nbsp|Tab|NewLine|amp|lt|gt|quot|apos);/gi, (entity, decimal, hexadecimal) => {
+            if (decimal) return String.fromCodePoint(Number.parseInt(decimal, 10));
+            if (hexadecimal) return String.fromCodePoint(Number.parseInt(hexadecimal, 16));
+            const named = {
+              amp: "&", apos: "'", gt: ">", lt: "<", newline: "\n", nbsp: " ", quot: '"', tab: "\t",
+            };
+            return named[entity.slice(1, -1).toLowerCase()] ?? entity;
+          });
+        const contentOffset = pre.index
+          + pre[0].indexOf(pre[1])
+          + code.index
+          + code[0].indexOf(rawContent);
+        const firstLine = (node.position?.start?.line ?? 1)
+          + lineNumber(node.value, contentOffset)
+          - 1;
+        for (const [offset, text] of content.split("\n").entries()) {
+          if (text.trim()) blocks.push({ text, line: firstLine + offset, structuralNegative: false });
+        }
       }
     }
   });

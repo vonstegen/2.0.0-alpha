@@ -309,6 +309,10 @@ test("validateRepositoryDocs reports missing Markdown and HTML resource assets",
       '<embed src="assets/missing-embed.svg">',
       '<track src="assets/missing-captions.vtt">',
       '<source srcset="data:image/svg+xml,%3Csvg%3E 1x, assets/missing-local.avif 2x">',
+      '<source srcset="data:image/png;base64,AAAA, assets/missing-after-data.avif 2x">',
+      '<input src="assets/missing-input.png" type="image">',
+      '<svg><image href="assets/missing-svg-image.png"></image></svg>',
+      '<svg><use href="assets/missing-symbol.svg#icon"></use></svg>',
     ].join("\n"));
 
     const output = messages(validateRepositoryDocs(root).findings);
@@ -322,6 +326,10 @@ test("validateRepositoryDocs reports missing Markdown and HTML resource assets",
     assert(output.some((message) => message.includes("assets/missing-embed.svg") && message.includes("does not exist")));
     assert(output.some((message) => message.includes("assets/missing-captions.vtt") && message.includes("does not exist")));
     assert(output.some((message) => message.includes("assets/missing-local.avif") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-after-data.avif") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-input.png") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-svg-image.png") && message.includes("does not exist")));
+    assert(output.some((message) => message.includes("assets/missing-symbol.svg") && message.includes("does not exist")));
     assert(!output.some((message) => message.includes("%3Csvg%3E")));
   });
 });
@@ -363,6 +371,21 @@ test("validateRepositoryDocs preserves offsets within one multiline HTML block",
     assert(output.some((message) => message.includes("docs/README.md:6") && message.includes("missing-line-six.pdf")));
     assert(!output.some((message) => message.includes("ignored-comment.png")));
     assert(!output.some((message) => message.includes("ignored-script.png")));
+  });
+});
+
+test("validateRepositoryDocs reports the value line when an HTML target equals its attribute name", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/README.md", [
+      "<img",
+      '  src="src">',
+    ].join("\n"));
+
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(
+      output.some((message) => message.includes("docs/README.md:2") && message.includes('local target "src"')),
+      output.join("\n"),
+    );
   });
 });
 
@@ -589,6 +612,25 @@ test("validateCanonicalClaims rejects obsolete runtime commands in normative she
     assert(nested.some((message) => message.includes("INSTALL.md:4") && message.includes('obsolete runtime "cargo"')));
     assert(nested.some((message) => message.includes("INSTALL.md:8") && message.includes('obsolete runtime "cargo"')));
     assert(nested.some((message) => message.includes("INSTALL.md:11") && message.includes('obsolete runtime "cargo"')));
+
+    writeFixture(root, "INSTALL.md", [
+      "# Install",
+      "",
+      "```bash-session",
+      "cargo build",
+      "```",
+      "",
+      "<pre><samp><code>cargo check</code></samp></pre>",
+      "<pre><!-- review --><code>car<em>go</em> test</code></pre>",
+      "<pre><code>cargo&#32;fmt</code></pre>",
+      "",
+      "[Contribute](CONTRIBUTING.md)",
+    ].join("\n"));
+    const rendered = messages(validateCanonicalClaims({ root }));
+    assert(rendered.some((message) => message.includes("INSTALL.md:4") && message.includes('obsolete runtime "cargo"')));
+    assert(rendered.some((message) => message.includes("INSTALL.md:7") && message.includes('obsolete runtime "cargo"')));
+    assert(rendered.some((message) => message.includes("INSTALL.md:8") && message.includes('obsolete runtime "cargo"')));
+    assert(rendered.some((message) => message.includes("INSTALL.md:9") && message.includes('obsolete runtime "cargo"')));
   });
 });
 
