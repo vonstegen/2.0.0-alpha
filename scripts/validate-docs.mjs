@@ -292,10 +292,13 @@ function srcsetResourceTargets(value, valueOffset) {
   return targets;
 }
 
-function forEachHtmlElement(value, callback) {
+function forEachHtmlElement(value, callback, { includeTemplateContent = false } = {}) {
   const visit = (node) => {
     if (node.tagName) callback(node);
-    for (const child of node.content?.childNodes ?? node.childNodes ?? []) visit(child);
+    const children = includeTemplateContent && node.content
+      ? node.content.childNodes
+      : node.childNodes;
+    for (const child of children ?? []) visit(child);
   };
   visit(parseFragment(value, { sourceCodeLocationInfo: true }));
 }
@@ -346,7 +349,7 @@ function htmlResourceTargets(value) {
         })));
       }
     }
-  });
+  }, { includeTemplateContent: true });
   return targets;
 }
 

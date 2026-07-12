@@ -285,6 +285,33 @@ test("validateRepositoryDocs resolves id and name anchors on all HTML elements",
   });
 });
 
+test("validateRepositoryDocs rejects template-contained anchors as nonexistent", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/target.md", [
+      "<template>",
+      "  <div>",
+      "    <template>",
+      '      <section id="multiline"></section>',
+      "    </template>",
+      "  </div>",
+      "</template>",
+      '<section id="live-anchor"></section>',
+    ].join("\n"));
+    writeFixture(root, "docs/README.md", [
+      "# Documentation",
+      "",
+      "[Inert template anchor](target.md#multiline)",
+      "[Live anchor](target.md#live-anchor)",
+    ].join("\n"));
+
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(output.some((message) => message.includes(
+      'docs/README.md:3 heading anchor "multiline" does not exist in docs/target.md',
+    )));
+    assert(!output.some((message) => message.includes("live-anchor")));
+  });
+});
+
 test("validateRepositoryDocs ignores HTML comments when extracting links and anchors", () => {
   withRepository((root) => {
     assert.deepEqual(extractMarkdownLinks("<!-- <a href=\"docs/hidden.md\">Hidden</a> -->"), []);
