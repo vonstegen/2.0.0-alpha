@@ -3,6 +3,38 @@ function itemReference(url) {
   return match ? `#${match[1]}` : String(url ?? "unknown item");
 }
 
+export async function runCompensatingWrites(operations) {
+  const completed = [];
+
+  for (const operation of operations) {
+    try {
+      await operation.apply();
+      completed.push(operation);
+    } catch (writeError) {
+      const compensationErrors = [];
+
+      // A failed response may follow a committed remote write, so compensate it too.
+      for (const candidate of [operation, ...[...completed].reverse()]) {
+        try {
+          await candidate.compensate();
+        } catch (compensationError) {
+          compensationErrors.push(compensationError);
+        }
+      }
+
+      if (compensationErrors.length > 0) {
+        throw new AggregateError(
+          [writeError, ...compensationErrors],
+          `Project sync write failed and ${compensationErrors.length} compensation write(s) also failed.`,
+          { cause: writeError },
+        );
+      }
+
+      throw writeError;
+    }
+  }
+}
+
 export function assertProjectConfiguration(
   fields,
   { releaseScopes = [], areas = [], statuses = [] },
