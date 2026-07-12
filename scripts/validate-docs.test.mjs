@@ -662,6 +662,29 @@ test("validateCanonicalClaims rejects obsolete runtime commands in normative she
   });
 });
 
+test("validateCanonicalClaims handles nested templates and batch fence aliases", () => {
+  withRepository((root) => {
+    writeFixture(root, "INSTALL.md", [
+      "# Install",
+      "",
+      "```bat",
+      "cargo build",
+      "```",
+      "```batch",
+      "cargo test",
+      "```",
+      "<pre><code>car<template>outer<template>inner</template>tail</template>go check</code></pre>",
+      "",
+      "[Contribute](CONTRIBUTING.md)",
+    ].join("\n"));
+
+    const output = messages(validateCanonicalClaims({ root }));
+    for (const line of [4, 7, 9]) {
+      assert(output.some((message) => message.includes(`INSTALL.md:${line}`) && message.includes('obsolete runtime "cargo"')));
+    }
+  });
+});
+
 test("canonical product docs preserve implemented chat, project, and draft handoff workflows", () => {
   const guide = readFileSync(
     new URL("../docs/product/PRODUCT_GUIDE.md", import.meta.url),

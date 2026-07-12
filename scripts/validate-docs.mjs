@@ -62,6 +62,8 @@ const OBSOLETE_RUNTIME = /\b(?:tauri|electron|cef|rust|cargo|src-tauri|native pa
 const EXECUTABLE_FENCE_LANGUAGES = new Set([
   "bash",
   "bash-session",
+  "bat",
+  "batch",
   "cmd",
   "cmd-session",
   "console",
@@ -253,6 +255,32 @@ function decodeHtmlCharacterReferences(value) {
     offsets.push(index);
   }
   return { text: text.join(""), offsets };
+}
+
+function removeTemplateContents(value) {
+  const preserveLines = (text) => text.replace(/[^\r\n]/g, "");
+  const templateTag = /<template\b(?:(?:"[^"]*"|'[^']*'|[^'">])*)>|<\/template\s*>/gi;
+  let output = "";
+  let cursor = 0;
+  let depth = 0;
+
+  for (const tag of value.matchAll(templateTag)) {
+    output += depth > 0
+      ? preserveLines(value.slice(cursor, tag.index))
+      : value.slice(cursor, tag.index);
+
+    const closing = /^<\//.test(tag[0]);
+    if (closing && depth === 0) {
+      output += tag[0];
+    } else {
+      output += preserveLines(tag[0]);
+      depth += closing ? -1 : 1;
+    }
+    cursor = tag.index + tag[0].length;
+  }
+
+  output += depth > 0 ? preserveLines(value.slice(cursor)) : value.slice(cursor);
+  return output;
 }
 
 function srcsetResourceTargets(value, valueOffset) {
@@ -675,11 +703,10 @@ function appendExecutableRuntimeBlocks(markdown, blocks) {
       for (const code of pre[1].matchAll(/<code\b[^>]*>([\s\S]*?)<\/code>/gi)) {
         const rawContent = code[1];
         const renderedContent = rawContent
-          .replace(/<template\b[^>]*>[\s\S]*?<\/template\s*>/gi, (value) => value.replace(/[^\r\n]/g, ""))
           .replace(/<!--[\s\S]*?-->/g, (value) => value.replace(/[^\r\n]/g, ""))
-          .replace(/<br\s*\/?\s*>/gi, "\n")
-          .replace(/<[^>]+>/g, "");
-        const content = decodeHtmlCharacterReferences(renderedContent).text;
+          .replace(/<br\s*\/?\s*>/gi, "\n");
+        const visibleContent = removeTemplateContents(renderedContent).replace(/<[^>]+>/g, "");
+        const content = decodeHtmlCharacterReferences(visibleContent).text;
         const contentOffset = pre.index
           + pre[0].indexOf(pre[1])
           + code.index
