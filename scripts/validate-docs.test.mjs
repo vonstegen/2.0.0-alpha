@@ -674,12 +674,13 @@ test("validateCanonicalClaims handles nested templates and batch fence aliases",
       "cargo test",
       "```",
       "<pre><code>car<template>outer<template>inner</template>tail</template>go check</code></pre>",
+      "<pre><code>car<template>hidden</template data-x>go build</code></pre>",
       "",
       "[Contribute](CONTRIBUTING.md)",
     ].join("\n"));
 
     const output = messages(validateCanonicalClaims({ root }));
-    for (const line of [4, 7, 9]) {
+    for (const line of [4, 7, 9, 10]) {
       assert(output.some((message) => message.includes(`INSTALL.md:${line}`) && message.includes('obsolete runtime "cargo"')));
     }
   });

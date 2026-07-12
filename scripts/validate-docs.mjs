@@ -259,7 +259,7 @@ function decodeHtmlCharacterReferences(value) {
 
 function removeTemplateContents(value) {
   const preserveLines = (text) => text.replace(/[^\r\n]/g, "");
-  const templateTag = /<template\b(?:(?:"[^"]*"|'[^']*'|[^'">])*)>|<\/template\s*>/gi;
+  const templateTag = /<template\b(?:(?:"[^"]*"|'[^']*'|[^'">])*)>|<\/template\b(?:(?:"[^"]*"|'[^']*'|[^'">])*)>/gi;
   let output = "";
   let cursor = 0;
   let depth = 0;
