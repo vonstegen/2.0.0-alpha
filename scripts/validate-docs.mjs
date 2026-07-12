@@ -295,7 +295,7 @@ function srcsetResourceTargets(value, valueOffset) {
 function forEachHtmlElement(value, callback) {
   const visit = (node) => {
     if (node.tagName) callback(node);
-    for (const child of node.childNodes ?? []) visit(child);
+    for (const child of node.content?.childNodes ?? node.childNodes ?? []) visit(child);
   };
   visit(parseFragment(value, { sourceCodeLocationInfo: true }));
 }

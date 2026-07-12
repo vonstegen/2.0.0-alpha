@@ -196,6 +196,28 @@ test("extractMarkdownLinks finds isolated inline SVG image resources in source o
   );
 });
 
+test("extractMarkdownLinks finds ordinary template-contained image resources in source order", () => {
+  assert.deepEqual(
+    extractMarkdownLinks('<template><img src="hidden.png"></template><img src="visible.png">'),
+    [
+      { label: "", target: "hidden.png" },
+      { label: "", target: "visible.png" },
+    ],
+  );
+});
+
+test("extractMarkdownLinks finds template-contained SVG image resources in source order", () => {
+  assert.deepEqual(
+    extractMarkdownLinks(
+      '<template><svg><image href="template.svg"/></svg></template><img src="visible-after-svg.png">',
+    ),
+    [
+      { label: "", target: "template.svg" },
+      { label: "", target: "visible-after-svg.png" },
+    ],
+  );
+});
+
 test("extractMarkdownLinks ignores inline SVG lookalikes outside parsed HTML", () => {
   assert.deepEqual(
     extractMarkdownLinks([
