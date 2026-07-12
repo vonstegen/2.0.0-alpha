@@ -121,7 +121,17 @@ function toRelative(root, path) {
 }
 
 function lineNumber(markdown, offset) {
-  return markdown.slice(0, offset).split("\n").length;
+  const end = Math.min(Math.max(offset, 0), markdown.length);
+  let line = 1;
+  for (let index = 0; index < end; index += 1) {
+    if (markdown[index] === "\r") {
+      line += 1;
+      if (index + 1 < end && markdown[index + 1] === "\n") index += 1;
+    } else if (markdown[index] === "\n") {
+      line += 1;
+    }
+  }
+  return line;
 }
 
 function walkFiles(root, current = root, files = []) {
@@ -232,7 +242,30 @@ function decodeHtmlCharacterReferences(value) {
   return { text: text.join(""), offsets };
 }
 
-function decodeHtmlAttributeWithOffsets(value) {
+function preprocessHtmlInput(value) {
+  const text = [];
+  const offsets = [];
+  let index = 0;
+  while (index < value.length) {
+    if (value[index] === "\r") {
+      text.push("\n");
+      offsets.push(index);
+      index += index + 1 < value.length && value[index + 1] === "\n" ? 2 : 1;
+    } else if (value[index] === "\0") {
+      text.push("\uFFFD");
+      offsets.push(index);
+      index += 1;
+    } else {
+      text.push(value[index]);
+      offsets.push(index);
+      index += 1;
+    }
+  }
+  return { text: text.join(""), offsets };
+}
+
+export function decodeHtmlAttributeWithOffsets(value) {
+  const input = preprocessHtmlInput(value);
   const text = [];
   const offsets = [];
   let entityOffset = 0;
@@ -243,37 +276,79 @@ function decodeHtmlAttributeWithOffsets(value) {
       offsets.push(entityOffset);
     }
   });
-  const appendLiteral = (start, end) => {
-    let index = start;
-    while (index < end) {
-      if (value[index] === "\r") {
-        text.push("\n");
-        offsets.push(index);
-        index += index + 1 < end && value[index + 1] === "\n" ? 2 : 1;
-        continue;
-      }
-      text.push(value[index]);
-      offsets.push(index);
-      index += 1;
-    }
-  };
 
-  let lastIndex = 0;
-  let searchOffset = 0;
-  while ((searchOffset = value.indexOf("&", searchOffset)) >= 0) {
-    appendLiteral(lastIndex, searchOffset);
-    entityOffset = searchOffset;
-    decoder.startEntity(DecodingMode.Attribute);
-    const length = decoder.write(value, searchOffset + 1);
-    if (length < 0) {
-      lastIndex = searchOffset + decoder.end();
-      break;
+  let cursor = 0;
+  while (cursor < input.text.length) {
+    if (input.text[cursor] !== "&") {
+      text.push(input.text[cursor]);
+      offsets.push(input.offsets[cursor]);
+      cursor += 1;
+      continue;
     }
-    lastIndex = searchOffset + length;
-    searchOffset = length === 0 ? lastIndex + 1 : lastIndex;
+
+    entityOffset = input.offsets[cursor];
+    decoder.startEntity(DecodingMode.Attribute);
+    const length = decoder.write(input.text, cursor + 1);
+    const consumed = length < 0 ? decoder.end() : length;
+    if (consumed > 0) {
+      cursor += consumed;
+    } else {
+      text.push("&");
+      offsets.push(entityOffset);
+      cursor += 1;
+    }
   }
-  appendLiteral(lastIndex, value.length);
   return { text: text.join(""), offsets };
+}
+
+function isHtmlAsciiWhitespace(character) {
+  return character === "\t"
+    || character === "\n"
+    || character === "\f"
+    || character === "\r"
+    || character === " ";
+}
+
+export function htmlAttributeValueSpan(source, location) {
+  const attributeStart = location?.startOffset;
+  if (!Number.isInteger(attributeStart) || attributeStart < 0 || attributeStart > source.length) {
+    throw new Error("HTML attribute span invariant failed: invalid-start-offset");
+  }
+
+  let cursor = attributeStart;
+  while (
+    cursor < source.length
+    && !isHtmlAsciiWhitespace(source[cursor])
+    && source[cursor] !== "/"
+    && source[cursor] !== ">"
+    && source[cursor] !== "="
+  ) cursor += 1;
+  const nameEnd = cursor;
+
+  while (cursor < source.length && isHtmlAsciiWhitespace(source[cursor])) cursor += 1;
+  if (source[cursor] !== "=") return { start: nameEnd, end: nameEnd, hasValue: false };
+
+  cursor += 1;
+  while (cursor < source.length && isHtmlAsciiWhitespace(source[cursor])) cursor += 1;
+  if (cursor >= source.length || source[cursor] === ">") {
+    return { start: cursor, end: cursor, hasValue: true };
+  }
+
+  const quote = source[cursor] === '"' || source[cursor] === "'" ? source[cursor] : null;
+  if (quote) {
+    const start = cursor + 1;
+    cursor = start;
+    while (cursor < source.length && source[cursor] !== quote) cursor += 1;
+    return { start, end: cursor, hasValue: true };
+  }
+
+  const start = cursor;
+  while (
+    cursor < source.length
+    && !isHtmlAsciiWhitespace(source[cursor])
+    && source[cursor] !== ">"
+  ) cursor += 1;
+  return { start, end: cursor, hasValue: true };
 }
 
 function removeTemplateContents(value) {
@@ -302,37 +377,110 @@ function removeTemplateContents(value) {
   return output;
 }
 
-function srcsetResourceTargets(value, valueOffset) {
-  const targets = [];
+function srcsetCandidates(value) {
+  const candidates = [];
   let cursor = 0;
 
   while (cursor < value.length) {
-    while (cursor < value.length && /[\s,]/.test(value[cursor])) cursor += 1;
+    while (
+      cursor < value.length
+      && (isHtmlAsciiWhitespace(value[cursor]) || value[cursor] === ",")
+    ) cursor += 1;
     if (cursor >= value.length) break;
 
     const start = cursor;
-    const isData = value.slice(cursor).toLowerCase().startsWith("data:");
-    if (isData) {
-      const remainder = value.slice(cursor);
-      const whitespaceIndex = remainder.search(/\s/);
-      const candidateSeparator = remainder.search(/,\s+/);
-      const targetLength = candidateSeparator >= 0
-        && (whitespaceIndex < 0 || candidateSeparator < whitespaceIndex)
-        ? candidateSeparator
-        : whitespaceIndex;
-      cursor = targetLength < 0 ? value.length : cursor + targetLength;
-    } else {
-      while (cursor < value.length && !/[\s,]/.test(value[cursor])) cursor += 1;
-    }
-    const target = value.slice(start, cursor);
-    if (target && !isData) targets.push({ target, offset: valueOffset + start });
+    while (cursor < value.length && !isHtmlAsciiWhitespace(value[cursor])) cursor += 1;
+    let target = value.slice(start, cursor);
 
-    if (isData && value[cursor] === ",") {
-      cursor += 1;
+    if (target.endsWith(",")) {
+      while (target.endsWith(",")) target = target.slice(0, -1);
+      if (target) candidates.push({ target, offset: start, descriptors: [] });
       continue;
     }
-    while (cursor < value.length && value[cursor] !== ",") cursor += 1;
-    if (cursor < value.length) cursor += 1;
+
+    const descriptors = [];
+    let currentDescriptor = "";
+    let state = "descriptor";
+    let complete = false;
+    while (!complete) {
+      const character = cursor < value.length ? value[cursor] : null;
+      if (state === "descriptor") {
+        if (character === null) {
+          if (currentDescriptor) descriptors.push(currentDescriptor);
+          complete = true;
+        } else if (isHtmlAsciiWhitespace(character)) {
+          if (currentDescriptor) descriptors.push(currentDescriptor);
+          currentDescriptor = "";
+          state = "after-descriptor";
+          cursor += 1;
+        } else if (character === ",") {
+          if (currentDescriptor) descriptors.push(currentDescriptor);
+          cursor += 1;
+          complete = true;
+        } else {
+          currentDescriptor += character;
+          if (character === "(") state = "in-parens";
+          cursor += 1;
+        }
+      } else if (state === "in-parens") {
+        if (character === null) {
+          if (currentDescriptor) descriptors.push(currentDescriptor);
+          complete = true;
+        } else {
+          currentDescriptor += character;
+          if (character === ")") state = "descriptor";
+          cursor += 1;
+        }
+      } else if (character === null) {
+        complete = true;
+      } else if (isHtmlAsciiWhitespace(character)) {
+        cursor += 1;
+      } else {
+        state = "descriptor";
+      }
+    }
+
+    if (target) candidates.push({ target, offset: start, descriptors });
+  }
+  return candidates;
+}
+
+function srcsetInvariant(condition, code) {
+  if (!condition) throw new Error(`srcset provenance invariant failed: ${code}`);
+}
+
+function mappedSrcsetResourceTargets(parsedValue, rawValue, valueOffset) {
+  const decoded = decodeHtmlAttributeWithOffsets(rawValue);
+  srcsetInvariant(decoded.text === parsedValue, "decoded-value-parity");
+  srcsetInvariant(decoded.offsets.length === decoded.text.length, "map-length");
+
+  let previousOrigin = -1;
+  for (const origin of decoded.offsets) {
+    srcsetInvariant(Number.isInteger(origin), "non-integer-origin");
+    srcsetInvariant(origin >= 0 && origin < rawValue.length, "origin-out-of-range");
+    srcsetInvariant(origin >= previousOrigin, "origin-order");
+    previousOrigin = origin;
+  }
+
+  const targets = [];
+  let previousCandidateOffset = -1;
+  let previousCandidateOrigin = -1;
+  for (const candidate of srcsetCandidates(decoded.text)) {
+    srcsetInvariant(
+      Number.isInteger(candidate.offset)
+        && candidate.offset >= 0
+        && candidate.offset < decoded.text.length,
+      "candidate-decoded-origin",
+    );
+    srcsetInvariant(candidate.offset > previousCandidateOffset, "candidate-decoded-order");
+    srcsetInvariant(decoded.text.startsWith(candidate.target, candidate.offset), "candidate-target-parity");
+    const origin = decoded.offsets[candidate.offset];
+    srcsetInvariant(origin > previousCandidateOrigin, "candidate-raw-order");
+    previousCandidateOffset = candidate.offset;
+    previousCandidateOrigin = origin;
+    if (!candidate.target.toLowerCase().startsWith("data:")) {
+      targets.push({ target: candidate.target, offset: valueOffset + origin });
+    }
   }
   return targets;
 }
@@ -410,25 +558,16 @@ function htmlResourceTargets(markdown, html) {
         if (!allowed.has(attributeName)) continue;
         const location = node.sourceCodeLocation.attrs[attributeName];
         if (!location) continue;
-        const rawAttribute = markdown.slice(location.startOffset, location.endOffset);
-        const match = rawAttribute.match(/^[A-Za-z][\w:-]*\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/d);
-        if (!match) continue;
-        const valueGroup = match[1] !== undefined ? 1 : match[2] !== undefined ? 2 : 3;
-        const rawValue = match[valueGroup];
-        const valueOffset = location.startOffset + match.indices[valueGroup][0];
+        const span = htmlAttributeValueSpan(markdown, location);
+        if (!span.hasValue) continue;
+        const rawValue = markdown.slice(span.start, span.end);
+        const valueOffset = span.start;
         if (attributeName !== "srcset" && attributeName !== "imagesrcset") {
+          if (!rawValue && !attribute.value) continue;
           targets.push({ target: attribute.value, offset: valueOffset });
           continue;
         }
-        const decoded = decodeHtmlAttributeWithOffsets(rawValue);
-        const decodedOffsets = decoded.text === attribute.value ? decoded.offsets : null;
-        targets.push(...srcsetResourceTargets(attribute.value, 0).map((target) => ({
-          target: target.target,
-          offset: valueOffset + (
-            decodedOffsets?.[target.offset]
-            ?? Math.max(0, rawValue.indexOf(target.target))
-          ),
-        })));
+        targets.push(...mappedSrcsetResourceTargets(attribute.value, rawValue, valueOffset));
       }
     }
   }, { includeTemplateContent: true });

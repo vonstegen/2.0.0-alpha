@@ -6,14 +6,17 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import { parseFragment } from "parse5";
 
-import {
+import * as validateDocs from "./validate-docs.mjs";
+
+const {
   extractMarkdownLinks,
   extractNpmScripts,
   validateAdrIndex,
   validateCanonicalClaims,
   validateRepositoryDocs,
-} from "./validate-docs.mjs";
+} = validateDocs;
 
 const SCRIPT_PATH = fileURLToPath(new URL("./validate-docs.mjs", import.meta.url));
 
@@ -137,6 +140,39 @@ function withRepository(run) {
 
 function messages(findings) {
   return findings.map((finding) => `${finding.path}:${finding.line} ${finding.message}`);
+}
+
+function findHtmlElement(node, tagName) {
+  if (node?.tagName === tagName) return node;
+  for (const child of node?.childNodes ?? []) {
+    const match = findHtmlElement(child, tagName);
+    if (match) return match;
+  }
+  return node?.content ? findHtmlElement(node.content, tagName) : null;
+}
+
+function parse5SrcsetAttribute(rawValue) {
+  const html = parseFragment(`<img srcset="${rawValue}">`, { sourceCodeLocationInfo: true });
+  return findHtmlElement(html, "img").attrs.find((attribute) => attribute.name === "srcset");
+}
+
+function assertValidProvenance(rawValue, expectedValue) {
+  assert.equal(
+    typeof validateDocs.decodeHtmlAttributeWithOffsets,
+    "function",
+    "the total attribute provenance mapper must be exported for differential verification",
+  );
+  const mapped = validateDocs.decodeHtmlAttributeWithOffsets(rawValue);
+  assert.equal(mapped.text, expectedValue, `decoded parity for ${JSON.stringify(rawValue)}`);
+  assert.equal(mapped.offsets.length, mapped.text.length, `map length for ${JSON.stringify(rawValue)}`);
+  let previous = -1;
+  for (const origin of mapped.offsets) {
+    assert(Number.isInteger(origin), `integer origin for ${JSON.stringify(rawValue)}`);
+    assert(origin >= 0 && origin < rawValue.length, `in-range origin for ${JSON.stringify(rawValue)}`);
+    assert(origin >= previous, `nondecreasing origin for ${JSON.stringify(rawValue)}`);
+    previous = origin;
+  }
+  return mapped;
 }
 
 test("extractMarkdownLinks returns inline Markdown link targets", () => {
@@ -754,6 +790,192 @@ test("HTML projection preserves CRLF duplicate &sol; srcset source offsets", () 
       'docs/README.md:2 local target "assets/duplicate.png" does not exist',
     ]);
   });
+});
+
+test("HTML projection preserves lone CR duplicate &sol; srcset source offsets", () => {
+  withRepository((root) => {
+    const markdown = [
+      '<img srcset="assets&sol;duplicate.png 1x,',
+      ' assets&sol;duplicate.png 2x">',
+    ].join("\r");
+    writeFixture(root, "docs/README.md", markdown);
+
+    const output = messages(validateRepositoryDocs(root).findings)
+      .filter((message) => message.includes("assets/duplicate.png"));
+    assert.deepEqual(output, [
+      'docs/README.md:1 local target "assets/duplicate.png" does not exist',
+      'docs/README.md:2 local target "assets/duplicate.png" does not exist',
+    ]);
+  });
+});
+
+test("HTML projection preserves literal NUL duplicate &sol; srcset source offsets", () => {
+  withRepository((root) => {
+    const markdown = [
+      '<img srcset="assets\0&sol;duplicate.png 1x,',
+      ' assets\0&sol;duplicate.png 2x">',
+    ].join("\n");
+    writeFixture(root, "docs/README.md", markdown);
+
+    const target = "assets\uFFFD/duplicate.png";
+    assert.deepEqual(extractMarkdownLinks(markdown).map((link) => link.target), [target, target]);
+    const output = messages(validateRepositoryDocs(root).findings)
+      .filter((message) => message.includes(target));
+    assert.deepEqual(output, [
+      `docs/README.md:1 local target "${target}" does not exist`,
+      `docs/README.md:2 local target "${target}" does not exist`,
+    ]);
+  });
+});
+
+test("HTML projection uses ASCII whitespace for comma-bearing srcset URLs", () => {
+  const markdown = '<img srcset="assets/comma,name.png 1x,'
+    + '\u00A0assets/nbsp-name.png 2x, assets/vt\vname.png 3x">';
+  assert.deepEqual(extractMarkdownLinks(markdown).map((link) => link.target), [
+    "assets/comma,name.png",
+    "\u00A0assets/nbsp-name.png",
+    "assets/vt\vname.png",
+  ]);
+});
+
+test("HTML projection recovers malformed unquoted raw attribute values", () => {
+  assert.deepEqual(
+    extractMarkdownLinks("<div>\n<img srcset=`assets/malformed.png>\n</div>"),
+    [{ label: "", target: "`assets/malformed.png" }],
+  );
+});
+
+test("HTML projection preserves entity-produced URL commas and ignores data candidates", () => {
+  const markdown = '<img srcset="assets/entity&#44;comma.png 1x,'
+    + ' data:image/png;base64,AAAA 2x, assets/after-data.png 3x">';
+  assert.deepEqual(extractMarkdownLinks(markdown).map((link) => link.target), [
+    "assets/entity,comma.png",
+    "assets/after-data.png",
+  ]);
+});
+
+test("HTML projection follows srcset trailing-comma and descriptor states", () => {
+  const markdown = '<img srcset="assets/no-descriptor.png,'
+    + ' assets/descriptor.png future(foo,bar), assets/final.png 2x">';
+  assert.deepEqual(extractMarkdownLinks(markdown).map((link) => link.target), [
+    "assets/no-descriptor.png",
+    "assets/descriptor.png",
+    "assets/final.png",
+  ]);
+});
+
+test("attribute provenance maps literal preprocessing and entity output by UTF-16 unit", () => {
+  for (const { raw, text, offsets } of [
+    { raw: "\r\n", text: "\n", offsets: [0] },
+    { raw: "\r", text: "\n", offsets: [0] },
+    { raw: "\0", text: "\uFFFD", offsets: [0] },
+    { raw: "\u{1F680}", text: "\u{1F680}", offsets: [0, 1] },
+    { raw: "&sol;", text: "/", offsets: [0] },
+    { raw: "&#47;", text: "/", offsets: [0] },
+    { raw: "&#13;", text: "\r", offsets: [0] },
+    { raw: "&#10;", text: "\n", offsets: [0] },
+    { raw: "&#0;", text: "\uFFFD", offsets: [0] },
+    { raw: "&#x1F680;", text: "\u{1F680}", offsets: [0, 0] },
+  ]) {
+    assert.deepEqual(assertValidProvenance(raw, text), { text, offsets });
+  }
+
+  for (const raw of ["&NotEqualTilde;", "&acE;"]) {
+    const expected = parse5SrcsetAttribute(raw).value;
+    const mapped = assertValidProvenance(raw, expected);
+    assert.deepEqual(mapped.offsets, Array.from({ length: expected.length }, () => 0));
+  }
+});
+
+test("attribute provenance matches parse5 for a bounded corpus and seeded fuzz", () => {
+  const atoms = [
+    "",
+    "plain",
+    "\r",
+    "\r\n",
+    "\n",
+    "\0",
+    "\u00A0",
+    "\v",
+    "\u{1F680}",
+    "&amp;",
+    "&sol;",
+    "&AElig;",
+    "&NotEqualTilde;",
+    "&#47;",
+    "&#x2f;",
+    "&#13;",
+    "&#10;",
+    "&#0;",
+    "&#xD800;",
+    "&#x1F680;",
+    "&bogus;",
+    "&amp",
+    "&amp=",
+    "&#;",
+    "&#x;",
+    "&#99999999;",
+  ];
+  const corpus = new Set(atoms);
+  for (const left of atoms) {
+    for (const right of atoms) corpus.add(left + right);
+  }
+
+  let state = 0x5eed1234;
+  const next = () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return state >>> 0;
+  };
+  const fuzzTokens = [
+    "a", "Z", "0", "&", "#", ";", "=", "<", ">", ",", " ", "\t", "\n", "\r", "\0",
+    "\u00A0", "\v", "\u{1F680}", "&sol;", "&amp", "&#13;", "&#x1F680;", "&NotEqualTilde;",
+  ];
+  for (let caseIndex = 0; caseIndex < 256; caseIndex += 1) {
+    const length = next() % 24;
+    let value = "";
+    for (let tokenIndex = 0; tokenIndex < length; tokenIndex += 1) {
+      value += fuzzTokens[next() % fuzzTokens.length];
+    }
+    corpus.add(value);
+  }
+
+  for (const rawValue of corpus) {
+    assertValidProvenance(rawValue, parse5SrcsetAttribute(rawValue).value);
+  }
+});
+
+test("raw attribute spans follow parse5 recovery for quoted and unquoted values", () => {
+  assert.equal(
+    typeof validateDocs.htmlAttributeValueSpan,
+    "function",
+    "the tokenizer-compatible raw attribute scanner must be exported for differential verification",
+  );
+  for (const { source, raw } of [
+    { source: '<img srcset="double.png 1x">', raw: "double.png 1x" },
+    { source: "<img srcset='single.png 1x'>", raw: "single.png 1x" },
+    { source: "<img srcset=unquoted.png>", raw: "unquoted.png" },
+    { source: "<img srcset=`assets/a'b<c=d.png>", raw: "`assets/a'b<c=d.png" },
+    { source: "<img srcset=assets/a'b\"c.png>", raw: "assets/a'b\"c.png" },
+    { source: "<img srcset=\u00A0assets/vt\vname.png>", raw: "\u00A0assets/vt\vname.png" },
+    { source: "<img srcset=first.png\rother=value>", raw: "first.png" },
+    { source: '<img srcset="first.png" srcset="ignored.png">', raw: "first.png" },
+    { source: "<template><img srcset='template.png'></template>", raw: "template.png" },
+    { source: "<img srcset=>", raw: "" },
+  ]) {
+    const html = parseFragment(source, { sourceCodeLocationInfo: true });
+    const image = findHtmlElement(html, "img");
+    const attribute = image.attrs.find((candidate) => candidate.name === "srcset");
+    const location = image.sourceCodeLocation.attrs.srcset;
+    const span = validateDocs.htmlAttributeValueSpan(source, location);
+    assert.equal(source.slice(span.start, span.end), raw, source);
+    assertValidProvenance(raw, attribute.value);
+  }
+
+  assert.deepEqual(extractMarkdownLinks('<script><img srcset="raw-text.png 1x"></script>'), []);
+  assert.deepEqual(extractMarkdownLinks('<img srcset="quoted-eof.png'), []);
+  assert.deepEqual(extractMarkdownLinks("<img srcset=unquoted-eof.png"), []);
 });
 
 test("HTML projection does not normalize numeric CR entity output", () => {
