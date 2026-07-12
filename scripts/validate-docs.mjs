@@ -7,6 +7,7 @@ import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import { parseFragment } from "parse5";
+import { DecodingMode, EntityDecoder, htmlDecodeTree } from "entities/decode";
 import semver from "semver";
 import { parseDocument } from "yaml";
 
@@ -231,6 +232,42 @@ function decodeHtmlCharacterReferences(value) {
   return { text: text.join(""), offsets };
 }
 
+function decodeHtmlAttributeWithOffsets(value) {
+  const text = [];
+  const offsets = [];
+  let entityOffset = 0;
+  const decoder = new EntityDecoder(htmlDecodeTree, (codePoint) => {
+    const decoded = String.fromCodePoint(codePoint);
+    for (let index = 0; index < decoded.length; index += 1) {
+      text.push(decoded[index]);
+      offsets.push(entityOffset);
+    }
+  });
+  const appendLiteral = (start, end) => {
+    for (let index = start; index < end; index += 1) {
+      text.push(value[index]);
+      offsets.push(index);
+    }
+  };
+
+  let lastIndex = 0;
+  let searchOffset = 0;
+  while ((searchOffset = value.indexOf("&", searchOffset)) >= 0) {
+    appendLiteral(lastIndex, searchOffset);
+    entityOffset = searchOffset;
+    decoder.startEntity(DecodingMode.Attribute);
+    const length = decoder.write(value, searchOffset + 1);
+    if (length < 0) {
+      lastIndex = searchOffset + decoder.end();
+      break;
+    }
+    lastIndex = searchOffset + length;
+    searchOffset = length === 0 ? lastIndex + 1 : lastIndex;
+  }
+  appendLiteral(lastIndex, value.length);
+  return { text: text.join(""), offsets };
+}
+
 function removeTemplateContents(value) {
   const preserveLines = (text) => text.replace(/[^\r\n]/g, "");
   const templateTag = /<template(?=[\s/>])(?:(?:"[^"]*"|'[^']*'|[^'">])*)>|<\/template(?=[\s/>])(?:(?:"[^"]*"|'[^']*'|[^'">])*)>/gi;
@@ -375,7 +412,7 @@ function htmlResourceTargets(markdown, html) {
           targets.push({ target: attribute.value, offset: valueOffset });
           continue;
         }
-        const decoded = decodeHtmlCharacterReferences(rawValue);
+        const decoded = decodeHtmlAttributeWithOffsets(rawValue);
         const decodedOffsets = decoded.text === attribute.value ? decoded.offsets : null;
         targets.push(...srcsetResourceTargets(attribute.value, 0).map((target) => ({
           target: target.target,

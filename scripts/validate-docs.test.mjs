@@ -714,6 +714,27 @@ test("HTML projection preserves entity-heavy srcset source offsets", () => {
   });
 });
 
+test("HTML projection preserves multiline &sol; srcset source offsets", () => {
+  withRepository((root) => {
+    const markdown = [
+      '<img srcset="assets&sol;first.png 1x,',
+      ' assets&sol;second.png 2x">',
+    ].join("\n");
+    writeFixture(root, "docs/README.md", markdown);
+
+    assert.deepEqual(extractMarkdownLinks(markdown).map(({ target }) => target), [
+      "assets/first.png",
+      "assets/second.png",
+    ]);
+    const output = messages(validateRepositoryDocs(root).findings)
+      .filter((message) => message.includes("assets/"));
+    assert.deepEqual(output, [
+      'docs/README.md:1 local target "assets/first.png" does not exist',
+      'docs/README.md:2 local target "assets/second.png" does not exist',
+    ]);
+  });
+});
+
 test("validateRepositoryDocs preserves HTML resource source lines after ignored markup", () => {
   withRepository((root) => {
     writeFixture(root, "docs/README.md", [
