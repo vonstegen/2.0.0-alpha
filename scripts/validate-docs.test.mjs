@@ -887,7 +887,7 @@ test("HTML projection accepts valid WHATWG width and density formats", () => {
   const descriptors = [
     "1w",
     "0001w",
-    "999999999999999999999999999999w",
+    "2147483647w",
     "0x",
     "-0x",
     ".5x",
@@ -920,10 +920,51 @@ test("HTML projection rejects invalid WHATWG width and density formats", () => {
     "NaNx",
     "1e309x",
     "1X",
+    "2147483648w",
+    "999999999999999999999999999999w",
   ];
   for (const [index, descriptor] of descriptors.entries()) {
     assert.deepEqual(srcsetTargets(`assets/invalid-format-${index}.png ${descriptor}`), [], descriptor);
   }
+});
+
+test("HTML projection accepts Chrome's maximum width descriptor", () => {
+  assert.deepEqual(
+    srcsetTargets("assets/max-width.png 2147483647w"),
+    ["assets/max-width.png"],
+  );
+});
+
+test("HTML projection rejects a width descriptor above Chrome's maximum", () => {
+  assert.deepEqual(srcsetTargets("assets/overflow-width.png 2147483648w"), []);
+});
+
+test("HTML projection accepts Chrome's maximum future-compatible height descriptor", () => {
+  assert.deepEqual(
+    srcsetTargets("assets/max-height.png 1w 2147483647h"),
+    ["assets/max-height.png"],
+  );
+});
+
+test("HTML projection rejects a future-compatible height above Chrome's maximum", () => {
+  assert.deepEqual(srcsetTargets("assets/overflow-height.png 1w 2147483648h"), []);
+});
+
+test("HTML projection rejects arbitrarily large Chrome integer descriptors", () => {
+  assert.deepEqual(srcsetTargets("assets/huge-width.png 999999999999999999999999999999w"), []);
+  assert.deepEqual(srcsetTargets("assets/huge-height.png 1w 999999999999999999999999999999h"), []);
+});
+
+test("HTML projection handles leading-zero Chrome integer boundaries without precision loss", () => {
+  assert.deepEqual(
+    srcsetTargets(
+      "assets/padded-max-width.png 00000000002147483647w,"
+        + " assets/padded-overflow-width.png 00000000002147483648w,"
+        + " assets/padded-max-height.png 1w 00000000002147483647h,"
+        + " assets/padded-overflow-height.png 1w 00000000002147483648h",
+    ),
+    ["assets/padded-max-width.png", "assets/padded-max-height.png"],
+  );
 });
 
 test("HTML projection enforces future-compatible height descriptor rules", () => {

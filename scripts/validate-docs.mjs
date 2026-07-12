@@ -378,6 +378,19 @@ function removeTemplateContents(value) {
 }
 
 const VALID_SRCSET_FLOAT = /^-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/;
+const MAX_CHROME_SRCSET_INTEGER = "2147483647";
+
+function isValidChromeSrcsetInteger(value) {
+  const significant = value.replace(/^0+/, "");
+  return significant.length > 0
+    && (
+      significant.length < MAX_CHROME_SRCSET_INTEGER.length
+      || (
+        significant.length === MAX_CHROME_SRCSET_INTEGER.length
+        && significant <= MAX_CHROME_SRCSET_INTEGER
+      )
+    );
+}
 
 function hasValidSrcsetDescriptors(descriptors) {
   let width = false;
@@ -390,7 +403,7 @@ function hasValidSrcsetDescriptors(descriptors) {
     const suffix = descriptor.at(-1);
     if (suffix === "w" && /^[0-9]+$/.test(number)) {
       if (width || density) error = true;
-      if (/^0+$/.test(number)) error = true;
+      if (!isValidChromeSrcsetInteger(number)) error = true;
       else width = true;
     } else if (suffix === "x" && VALID_SRCSET_FLOAT.test(number)) {
       if (width || density || futureCompatHeight) error = true;
@@ -399,7 +412,7 @@ function hasValidSrcsetDescriptors(descriptors) {
       else density = true;
     } else if (suffix === "h" && /^[0-9]+$/.test(number)) {
       if (futureCompatHeight || density) error = true;
-      if (/^0+$/.test(number)) error = true;
+      if (!isValidChromeSrcsetInteger(number)) error = true;
       else futureCompatHeight = true;
     } else {
       error = true;
