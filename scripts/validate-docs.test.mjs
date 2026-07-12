@@ -235,6 +235,35 @@ test("extractMarkdownLinks ignores inline SVG lookalikes outside parsed HTML", (
   );
 });
 
+test("HTML projection finds template resources while gating code and comments through mdast", () => {
+  assert.deepEqual(
+    extractMarkdownLinks([
+      '<template>text *emphasis* <img src="template-gap.png"></template><img src="visible-gap.png">',
+      '`<img src="inline-code.png">`',
+      '<!-- <img src="comment.png"> -->',
+      "```html",
+      '<img src="fenced-code.png">',
+      "```",
+    ].join("\n\n")),
+    [
+      { label: "", target: "template-gap.png" },
+      { label: "", target: "visible-gap.png" },
+    ],
+  );
+});
+
+test("HTML projection preserves split raw-text context for resources", () => {
+  for (const tagName of ["script", "style", "textarea", "title"]) {
+    assert.deepEqual(
+      extractMarkdownLinks(
+        `before <${tagName}>text *emphasis* <img src="hidden-${tagName}.png"></${tagName}>`
+          + `<img src="visible-${tagName}.png">`,
+      ),
+      [{ label: "", target: `visible-${tagName}.png` }],
+    );
+  }
+});
+
 test("extractNpmScripts returns unique documented npm run names", () => {
   assert.deepEqual(
     extractNpmScripts(
@@ -285,7 +314,7 @@ test("validateRepositoryDocs resolves id and name anchors on all HTML elements",
   });
 });
 
-test("validateRepositoryDocs rejects template-contained anchors as nonexistent", () => {
+test("HTML projection keeps multiline nested template anchors inert", () => {
   withRepository((root) => {
     writeFixture(root, "docs/target.md", [
       "<template>",
@@ -309,6 +338,153 @@ test("validateRepositoryDocs rejects template-contained anchors as nonexistent",
       'docs/README.md:3 heading anchor "multiline" does not exist in docs/target.md',
     )));
     assert(!output.some((message) => message.includes("live-anchor")));
+  });
+});
+
+test("HTML projection keeps one-line template descendants inert and surrounding anchors live", () => {
+  withRepository((root) => {
+    writeFixture(
+      root,
+      "docs/target.md",
+      '<template id="template-own"><span id="hidden-inline" name="hidden-name"></span></template>'
+        + '<span id="live-inline"></span>',
+    );
+    writeFixture(root, "docs/README.md", [
+      "# Documentation",
+      "",
+      "[Template element](target.md#template-own)",
+      "[Hidden ID](target.md#hidden-inline)",
+      "[Hidden name](target.md#hidden-name)",
+      "[Live after template](target.md#live-inline)",
+    ].join("\n"));
+
+    const output = messages(validateRepositoryDocs(root).findings);
+    for (const anchor of ["hidden-inline", "hidden-name"]) {
+      assert(output.some((message) => message.includes(`heading anchor "${anchor}" does not exist`)));
+    }
+    for (const anchor of ["template-own", "live-inline"]) {
+      assert(!output.some((message) => message.includes(`heading anchor "${anchor}" does not exist`)));
+    }
+  });
+});
+
+test("HTML projection keeps template anchors inert across intervening mdast nodes", () => {
+  withRepository((root) => {
+    writeFixture(
+      root,
+      "docs/target.md",
+      '<template>text *emphasis* <span id="hidden-gap"></span></template><span id="live-gap"></span>',
+    );
+    writeFixture(root, "docs/README.md", [
+      "# Documentation",
+      "",
+      "[Hidden gap](target.md#hidden-gap)",
+      "[Live gap](target.md#live-gap)",
+    ].join("\n"));
+
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(output.some((message) => message.includes('heading anchor "hidden-gap" does not exist')));
+    assert(!output.some((message) => message.includes('heading anchor "live-gap" does not exist')));
+  });
+});
+
+test("HTML projection keeps one-line nested template anchors inert", () => {
+  withRepository((root) => {
+    writeFixture(
+      root,
+      "docs/target.md",
+      '<template><template><span id="hidden-nested"></span></template></template>'
+        + '<span id="live-nested"></span>',
+    );
+    writeFixture(root, "docs/README.md", [
+      "# Documentation",
+      "",
+      "[Hidden nested](target.md#hidden-nested)",
+      "[Live nested](target.md#live-nested)",
+    ].join("\n"));
+
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(output.some((message) => message.includes('heading anchor "hidden-nested" does not exist')));
+    assert(!output.some((message) => message.includes('heading anchor "live-nested" does not exist')));
+  });
+});
+
+test("HTML projection preserves split raw-text context for anchors", () => {
+  withRepository((root) => {
+    const tagNames = ["script", "style", "textarea", "title"];
+    writeFixture(root, "docs/target.md", tagNames.map((tagName) => (
+      `before <${tagName}>text *emphasis* <span id="hidden-${tagName}"></span></${tagName}>`
+        + `<span id="live-${tagName}"></span>`
+    )).join("\n"));
+    writeFixture(root, "docs/README.md", [
+      "# Documentation",
+      "",
+      ...tagNames.flatMap((tagName) => [
+        `[Hidden ${tagName}](target.md#hidden-${tagName})`,
+        `[Live ${tagName}](target.md#live-${tagName})`,
+      ]),
+    ].join("\n"));
+
+    const output = messages(validateRepositoryDocs(root).findings);
+    for (const tagName of tagNames) {
+      assert(output.some((message) => message.includes(`heading anchor "hidden-${tagName}" does not exist`)));
+      assert(!output.some((message) => message.includes(`heading anchor "live-${tagName}" does not exist`)));
+    }
+  });
+});
+
+test("HTML projection treats template-widget descendants as live anchors", () => {
+  withRepository((root) => {
+    writeFixture(
+      root,
+      "docs/target.md",
+      '<template-widget><span id="custom-live"></span></template-widget>',
+    );
+    writeFixture(root, "docs/README.md", "# Documentation\n\n[Custom](target.md#custom-live)\n");
+
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(!output.some((message) => message.includes("custom-live")));
+  });
+});
+
+test("HTML projection separates live and template-contained SVG behavior", () => {
+  withRepository((root) => {
+    const target = '<svg><g id="live-svg"></g></svg>'
+      + '<template><svg><g id="hidden-svg"></g><image href="template-svg.png"/></svg></template>';
+    writeFixture(root, "docs/target.md", target);
+    writeFixture(root, "docs/README.md", [
+      "# Documentation",
+      "",
+      "[Live SVG](target.md#live-svg)",
+      "[Hidden SVG](target.md#hidden-svg)",
+    ].join("\n"));
+
+    assert.deepEqual(extractMarkdownLinks(target), [{ label: "", target: "template-svg.png" }]);
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(!output.some((message) => message.includes('heading anchor "live-svg" does not exist')));
+    assert(output.some((message) => message.includes('heading anchor "hidden-svg" does not exist')));
+  });
+});
+
+test("HTML projection handles unclosed and stray template boundaries", () => {
+  withRepository((root) => {
+    const unclosed = '<template id="template-eof">text *emphasis* '
+      + '<span id="hidden-eof"></span><img src="template-eof.png">';
+    writeFixture(root, "docs/unclosed.md", unclosed);
+    writeFixture(root, "docs/stray.md", '</template>text *emphasis* <span id="live-stray"></span>');
+    writeFixture(root, "docs/README.md", [
+      "# Documentation",
+      "",
+      "[Template element](unclosed.md#template-eof)",
+      "[Hidden through EOF](unclosed.md#hidden-eof)",
+      "[Live after stray close](stray.md#live-stray)",
+    ].join("\n"));
+
+    assert.deepEqual(extractMarkdownLinks(unclosed), [{ label: "", target: "template-eof.png" }]);
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(!output.some((message) => message.includes('heading anchor "template-eof" does not exist')));
+    assert(output.some((message) => message.includes('heading anchor "hidden-eof" does not exist')));
+    assert(!output.some((message) => message.includes('heading anchor "live-stray" does not exist')));
   });
 });
 
@@ -477,6 +653,63 @@ test("validateRepositoryDocs preserves lines and source order for isolated inlin
       'docs/README.md:4 local target "assets/missing-svg-first.png" does not exist',
       'docs/README.md:4 local target "assets/missing-svg-second.png" does not exist',
       'docs/README.md:5 local target "assets/missing-after-svg.png" does not exist',
+    ]);
+  });
+});
+
+test("HTML projection preserves CRLF astral and multiline resource offsets", () => {
+  withRepository((root) => {
+    const markdown = [
+      "# Documentation",
+      "",
+      "\u{1F680} prefix <img",
+      '  src="assets/missing-astral.png">',
+      "<template><img",
+      '  src="assets/missing-template-offset.png"></template><img src="assets/missing-after-offset.png">',
+    ].join("\r\n");
+    writeFixture(root, "docs/README.md", markdown);
+
+    assert.deepEqual(extractMarkdownLinks(markdown).map(({ target }) => target), [
+      "assets/missing-astral.png",
+      "assets/missing-template-offset.png",
+      "assets/missing-after-offset.png",
+    ]);
+
+    const output = messages(validateRepositoryDocs(root).findings)
+      .filter((message) => message.includes("assets/missing-"));
+    assert.deepEqual(output, [
+      'docs/README.md:4 local target "assets/missing-astral.png" does not exist',
+      'docs/README.md:6 local target "assets/missing-after-offset.png" does not exist',
+      'docs/README.md:6 local target "assets/missing-template-offset.png" does not exist',
+    ]);
+  });
+});
+
+test("HTML projection preserves entity-heavy srcset source offsets", () => {
+  withRepository((root) => {
+    const markdown = [
+      "# Documentation",
+      "",
+      '<img srcset="assets&amp;z-first.png 1x,',
+      ' assets&amp;a-second.png 2x">',
+      '<img srcset="assets/duplicate.png 1x,',
+      ' assets/duplicate.png 2x">',
+    ].join("\n");
+    writeFixture(root, "docs/README.md", markdown);
+
+    assert.deepEqual(extractMarkdownLinks(markdown).map(({ target }) => target), [
+      "assets&z-first.png",
+      "assets&a-second.png",
+      "assets/duplicate.png",
+      "assets/duplicate.png",
+    ]);
+    const output = messages(validateRepositoryDocs(root).findings)
+      .filter((message) => message.includes("assets&") || message.includes("assets/duplicate.png"));
+    assert.deepEqual(output, [
+      'docs/README.md:3 local target "assets&z-first.png" does not exist',
+      'docs/README.md:4 local target "assets&a-second.png" does not exist',
+      'docs/README.md:5 local target "assets/duplicate.png" does not exist',
+      'docs/README.md:6 local target "assets/duplicate.png" does not exist',
     ]);
   });
 });

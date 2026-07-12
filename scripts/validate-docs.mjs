@@ -292,7 +292,39 @@ function srcsetResourceTargets(value, valueOffset) {
   return targets;
 }
 
-function forEachHtmlElement(value, callback, { includeTemplateContent = false } = {}) {
+function markdownHtmlProjection(markdown, tree) {
+  const ranges = [];
+  walkMarkdown(tree, (node) => {
+    const start = node.position?.start?.offset;
+    const end = node.position?.end?.offset;
+    if (node.type === "html" && Number.isInteger(start) && Number.isInteger(end)) {
+      ranges.push({ start, end });
+    }
+  });
+  ranges.sort((left, right) => left.start - right.start || left.end - right.end);
+
+  const mask = (value) => value.replace(/[^\t\n\f\r ]/g, "x");
+  const projection = [];
+  let cursor = 0;
+  for (const range of ranges) {
+    if (range.end <= cursor) continue;
+    const start = Math.max(cursor, range.start);
+    projection.push(mask(markdown.slice(cursor, start)));
+    projection.push(markdown.slice(start, range.end));
+    cursor = range.end;
+  }
+  projection.push(mask(markdown.slice(cursor)));
+  return projection.join("");
+}
+
+function parseMarkdownModel(markdown) {
+  const tree = markdownParser.parse(markdown);
+  const projection = markdownHtmlProjection(markdown, tree);
+  const html = parseFragment(projection, { sourceCodeLocationInfo: true });
+  return { tree, html };
+}
+
+function forEachHtmlElement(root, callback, { includeTemplateContent = false } = {}) {
   const visit = (node) => {
     if (node.tagName) callback(node);
     const children = includeTemplateContent && node.content
@@ -300,10 +332,10 @@ function forEachHtmlElement(value, callback, { includeTemplateContent = false } 
       : node.childNodes;
     for (const child of children ?? []) visit(child);
   };
-  visit(parseFragment(value, { sourceCodeLocationInfo: true }));
+  visit(root);
 }
 
-function htmlResourceTargets(value) {
+function htmlResourceTargets(markdown, html) {
   const targets = [];
   const allowedAttributes = new Map([
     ["a", new Set(["href", "xlink:href"])],
@@ -324,7 +356,7 @@ function htmlResourceTargets(value) {
     ["video", new Set(["poster", "src"])],
   ]);
 
-  forEachHtmlElement(value, (node) => {
+  forEachHtmlElement(html, (node) => {
     const tagName = node.tagName?.toLowerCase();
     const allowed = tagName ? allowedAttributes.get(tagName) : null;
     if (allowed && node.sourceCodeLocation?.attrs) {
@@ -333,7 +365,7 @@ function htmlResourceTargets(value) {
         if (!allowed.has(attributeName)) continue;
         const location = node.sourceCodeLocation.attrs[attributeName];
         if (!location) continue;
-        const rawAttribute = value.slice(location.startOffset, location.endOffset);
+        const rawAttribute = markdown.slice(location.startOffset, location.endOffset);
         const match = rawAttribute.match(/^[A-Za-z][\w:-]*\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/d);
         if (!match) continue;
         const valueGroup = match[1] !== undefined ? 1 : match[2] !== undefined ? 2 : 3;
@@ -343,9 +375,14 @@ function htmlResourceTargets(value) {
           targets.push({ target: attribute.value, offset: valueOffset });
           continue;
         }
+        const decoded = decodeHtmlCharacterReferences(rawValue);
+        const decodedOffsets = decoded.text === attribute.value ? decoded.offsets : null;
         targets.push(...srcsetResourceTargets(attribute.value, 0).map((target) => ({
           target: target.target,
-          offset: valueOffset + Math.max(0, rawValue.indexOf(target.target)),
+          offset: valueOffset + (
+            decodedOffsets?.[target.offset]
+            ?? Math.max(0, rawValue.indexOf(target.target))
+          ),
         })));
       }
     }
@@ -353,47 +390,8 @@ function htmlResourceTargets(value) {
   return targets;
 }
 
-function markdownHtmlResourceLinks(markdown, tree) {
-  const links = [];
-  walkMarkdown(tree, (parent) => {
-    let run = [];
-    const flush = () => {
-      if (run.length === 0) return;
-      const first = run[0];
-      const last = run.at(-1);
-      const index = first.position?.start?.offset ?? 0;
-      const end = last.position?.end?.offset ?? index + run.map((node) => node.value).join("").length;
-      const value = markdown.slice(index, end);
-      const line = first.position?.start?.line ?? lineNumber(markdown, index);
-      for (const resource of htmlResourceTargets(value)) {
-        links.push({
-          label: "",
-          target: resource.target,
-          line: line + lineNumber(value, resource.offset) - 1,
-          index: index + resource.offset,
-        });
-      }
-      run = [];
-    };
-
-    for (const child of parent.children ?? []) {
-      if (
-        child.type === "html"
-        && (run.length === 0 || run.at(-1).position?.end?.offset === child.position?.start?.offset)
-      ) {
-        run.push(child);
-        continue;
-      }
-      flush();
-      if (child.type === "html") run.push(child);
-    }
-    flush();
-  });
-  return links;
-}
-
 function parsedMarkdownLinks(markdown) {
-  const tree = markdownParser.parse(markdown);
+  const { tree, html } = parseMarkdownModel(markdown);
   const definitions = new Map();
   walkMarkdown(tree, (node) => {
     if (node.type === "definition" && !definitions.has(node.identifier)) definitions.set(node.identifier, node.url);
@@ -415,7 +413,14 @@ function parsedMarkdownLinks(markdown) {
       if (target) links.push({ label: node.alt ?? "", target, line, index });
     }
   });
-  links.push(...markdownHtmlResourceLinks(markdown, tree));
+  for (const resource of htmlResourceTargets(markdown, html)) {
+    links.push({
+      label: "",
+      target: resource.target,
+      line: lineNumber(markdown, resource.offset),
+      index: resource.offset,
+    });
+  }
   return links.sort((left, right) => left.index - right.index || left.target.localeCompare(right.target));
 }
 
@@ -478,7 +483,7 @@ function slugifyHeading(heading) {
 function markdownAnchors(markdown) {
   const anchors = new Set();
   const counts = new Map();
-  const tree = markdownParser.parse(markdown);
+  const { tree, html } = parseMarkdownModel(markdown);
   walkMarkdown(tree, (node) => {
     if (node.type === "heading") {
       const base = slugifyHeading(markdownText(node));
@@ -488,12 +493,10 @@ function markdownAnchors(markdown) {
         anchors.add(count === 0 ? base : `${base}-${count}`);
       }
     }
-    if (node.type === "html") {
-      forEachHtmlElement(node.value, (element) => {
-        for (const attribute of element.attrs ?? []) {
-          if (attribute.name === "id" || attribute.name === "name") anchors.add(attribute.value);
-        }
-      });
+  });
+  forEachHtmlElement(html, (element) => {
+    for (const attribute of element.attrs ?? []) {
+      if (attribute.name === "id" || attribute.name === "name") anchors.add(attribute.value);
     }
   });
   return anchors;
