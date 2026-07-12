@@ -350,6 +350,45 @@ function htmlResourceTargets(value) {
   return targets;
 }
 
+function markdownHtmlResourceLinks(markdown, tree) {
+  const links = [];
+  walkMarkdown(tree, (parent) => {
+    let run = [];
+    const flush = () => {
+      if (run.length === 0) return;
+      const first = run[0];
+      const last = run.at(-1);
+      const index = first.position?.start?.offset ?? 0;
+      const end = last.position?.end?.offset ?? index + run.map((node) => node.value).join("").length;
+      const value = markdown.slice(index, end);
+      const line = first.position?.start?.line ?? lineNumber(markdown, index);
+      for (const resource of htmlResourceTargets(value)) {
+        links.push({
+          label: "",
+          target: resource.target,
+          line: line + lineNumber(value, resource.offset) - 1,
+          index: index + resource.offset,
+        });
+      }
+      run = [];
+    };
+
+    for (const child of parent.children ?? []) {
+      if (
+        child.type === "html"
+        && (run.length === 0 || run.at(-1).position?.end?.offset === child.position?.start?.offset)
+      ) {
+        run.push(child);
+        continue;
+      }
+      flush();
+      if (child.type === "html") run.push(child);
+    }
+    flush();
+  });
+  return links;
+}
+
 function parsedMarkdownLinks(markdown) {
   const tree = markdownParser.parse(markdown);
   const definitions = new Map();
@@ -371,17 +410,9 @@ function parsedMarkdownLinks(markdown) {
     } else if (node.type === "imageReference") {
       const target = definitions.get(node.identifier);
       if (target) links.push({ label: node.alt ?? "", target, line, index });
-    } else if (node.type === "html") {
-      for (const resource of htmlResourceTargets(node.value)) {
-        links.push({
-          label: "",
-          target: resource.target,
-          line: line + lineNumber(node.value, resource.offset) - 1,
-          index: index + resource.offset,
-        });
-      }
     }
   });
+  links.push(...markdownHtmlResourceLinks(markdown, tree));
   return links.sort((left, right) => left.index - right.index || left.target.localeCompare(right.target));
 }
 

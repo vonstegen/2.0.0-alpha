@@ -177,6 +177,42 @@ test("extractMarkdownLinks uses the first CommonMark definition", () => {
   );
 });
 
+test("extractMarkdownLinks finds isolated inline SVG image resources in source order", () => {
+  assert.deepEqual(
+    extractMarkdownLinks([
+      "[Before](before.md)",
+      '<svg><image href="missing-href.png"></image></svg>',
+      '<svg><image xlink:href="missing-xlink.png"></image></svg>',
+      '<svg><image href="missing-self-closing.png"/></svg>',
+      "[After](after.md)",
+    ].join("\n")),
+    [
+      { label: "Before", target: "before.md" },
+      { label: "", target: "missing-href.png" },
+      { label: "", target: "missing-xlink.png" },
+      { label: "", target: "missing-self-closing.png" },
+      { label: "After", target: "after.md" },
+    ],
+  );
+});
+
+test("extractMarkdownLinks ignores inline SVG lookalikes outside parsed HTML", () => {
+  assert.deepEqual(
+    extractMarkdownLinks([
+      'image href="ordinary-prose.png" is ordinary prose.',
+      '`<svg><image href="inline-code.png"/></svg>`',
+      '<!-- <svg><image href="comment.png"/></svg> -->',
+      '<script>const sample = \'<svg><image href="script.png"/></svg>\';</script>',
+      '<style>.sample::after { content: \'<svg><image href="style.png"/></svg>\'; }</style>',
+      '<textarea><svg><image href="textarea.png"/></svg></textarea>',
+      "```html",
+      '<svg><image href="fence.png"/></svg>',
+      "```",
+    ].join("\n\n")),
+    [],
+  );
+});
+
 test("extractNpmScripts returns unique documented npm run names", () => {
   assert.deepEqual(
     extractNpmScripts(
@@ -372,6 +408,27 @@ test("validateRepositoryDocs reports missing Markdown and HTML resource assets",
     assert(output.some((message) => message.includes("assets/missing-preload-large.png") && message.includes("does not exist")));
     assert(output.some((message) => message.includes("assets/missing-entity.png") && message.includes("does not exist")));
     assert(!output.some((message) => message.includes("%3Csvg%3E")));
+  });
+});
+
+test("validateRepositoryDocs preserves lines and source order for isolated inline SVG resources", () => {
+  withRepository((root) => {
+    writeFixture(root, "docs/README.md", [
+      "# Documentation",
+      "",
+      '<img src="assets/missing-before-svg.png">',
+      '<svg><image href="assets/missing-svg-first.png"/><image xlink:href="assets/missing-svg-second.png"></image></svg>',
+      '<img src="assets/missing-after-svg.png">',
+    ].join("\n"));
+
+    const output = messages(validateRepositoryDocs(root).findings)
+      .filter((message) => message.includes("assets/missing-"));
+    assert.deepEqual(output, [
+      'docs/README.md:3 local target "assets/missing-before-svg.png" does not exist',
+      'docs/README.md:4 local target "assets/missing-svg-first.png" does not exist',
+      'docs/README.md:4 local target "assets/missing-svg-second.png" does not exist',
+      'docs/README.md:5 local target "assets/missing-after-svg.png" does not exist',
+    ]);
   });
 });
 
