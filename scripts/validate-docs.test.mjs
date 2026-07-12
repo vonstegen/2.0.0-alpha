@@ -175,6 +175,10 @@ function assertValidProvenance(rawValue, expectedValue) {
   return mapped;
 }
 
+function srcsetTargets(value) {
+  return extractMarkdownLinks(`<img srcset="${value}">`).map((link) => link.target);
+}
+
 test("extractMarkdownLinks returns inline Markdown link targets", () => {
   assert.deepEqual(
     extractMarkdownLinks("[Guide](docs/README.md#start) and [Install](INSTALL.md \"title\")"),
@@ -859,9 +863,150 @@ test("HTML projection follows srcset trailing-comma and descriptor states", () =
     + ' assets/descriptor.png future(foo,bar), assets/final.png 2x">';
   assert.deepEqual(extractMarkdownLinks(markdown).map((link) => link.target), [
     "assets/no-descriptor.png",
-    "assets/descriptor.png",
     "assets/final.png",
   ]);
+});
+
+test("HTML projection rejects an unknown srcset descriptor", () => {
+  assert.deepEqual(srcsetTargets("assets/unknown.png bogus"), []);
+});
+
+test("HTML projection rejects a zero-width srcset descriptor", () => {
+  assert.deepEqual(srcsetTargets("assets/zero-width.png 0w"), []);
+});
+
+test("HTML projection rejects conflicting srcset density descriptors", () => {
+  assert.deepEqual(srcsetTargets("assets/conflicting.png 1x 2x"), []);
+});
+
+test("HTML projection accepts a valid 1x srcset descriptor", () => {
+  assert.deepEqual(srcsetTargets("assets/valid-density.png 1x"), ["assets/valid-density.png"]);
+});
+
+test("HTML projection accepts valid WHATWG width and density formats", () => {
+  const descriptors = [
+    "1w",
+    "0001w",
+    "999999999999999999999999999999w",
+    "0x",
+    "-0x",
+    ".5x",
+    "1.5x",
+    "2x",
+    "1e2x",
+    "1E+2x",
+    "5e-324x",
+    "1e-400x",
+  ];
+  for (const [index, descriptor] of descriptors.entries()) {
+    const target = `assets/valid-format-${index}.png`;
+    assert.deepEqual(srcsetTargets(`${target} ${descriptor}`), [target], descriptor);
+  }
+});
+
+test("HTML projection rejects invalid WHATWG width and density formats", () => {
+  const descriptors = [
+    "0w",
+    "-1w",
+    "+1w",
+    "1.0w",
+    "1W",
+    "-1x",
+    "+1x",
+    "1.x",
+    ".x",
+    "1e+x",
+    "Infinityx",
+    "NaNx",
+    "1e309x",
+    "1X",
+  ];
+  for (const [index, descriptor] of descriptors.entries()) {
+    assert.deepEqual(srcsetTargets(`assets/invalid-format-${index}.png ${descriptor}`), [], descriptor);
+  }
+});
+
+test("HTML projection enforces future-compatible height descriptor rules", () => {
+  for (const [index, descriptors] of ["400w 200h", "200h 400w"].entries()) {
+    const target = `assets/valid-height-${index}.png`;
+    assert.deepEqual(srcsetTargets(`${target} ${descriptors}`), [target], descriptors);
+  }
+
+  for (const [index, descriptors] of [
+    "200h",
+    "0h 400w",
+    "400w 200h 300h",
+    "400w 200h 1x",
+    "1x 200h 400w",
+  ].entries()) {
+    assert.deepEqual(srcsetTargets(`assets/invalid-height-${index}.png ${descriptors}`), [], descriptors);
+  }
+});
+
+test("HTML projection rejects duplicate and conflicting srcset descriptor classes", () => {
+  for (const [index, descriptors] of [
+    "1w 2w",
+    "1x 1x",
+    "1x 2x",
+    "1w 2x",
+    "2x 1w",
+  ].entries()) {
+    assert.deepEqual(srcsetTargets(`assets/duplicate-${index}.png ${descriptors}`), [], descriptors);
+  }
+});
+
+test("HTML projection tokenizes descriptors with ASCII whitespace only", () => {
+  const value = "assets/space.png 1x,"
+    + "assets/tab.png\t1x,"
+    + "assets/lf.png\n1x,"
+    + "assets/form-feed.png\f1x,"
+    + "assets/cr.png\r1x";
+  assert.deepEqual(srcsetTargets(value), [
+    "assets/space.png",
+    "assets/tab.png",
+    "assets/lf.png",
+    "assets/form-feed.png",
+    "assets/cr.png",
+  ]);
+  assert.deepEqual(
+    srcsetTargets("assets/nbsp.png 1x\u00A02x, assets/valid-after-nbsp.png 1x"),
+    ["assets/valid-after-nbsp.png"],
+  );
+  assert.deepEqual(
+    srcsetTargets("assets/vt.png 1x\v2x, assets/valid-after-vt.png 1x"),
+    ["assets/valid-after-vt.png"],
+  );
+});
+
+test("HTML projection filters parenthesized descriptors without splitting later candidates", () => {
+  assert.deepEqual(
+    srcsetTargets("assets/unknown.png future(foo,bar), assets/valid-after-parens.png 1x"),
+    ["assets/valid-after-parens.png"],
+  );
+  assert.deepEqual(
+    srcsetTargets("assets/unclosed.png future(foo,bar"),
+    [],
+  );
+  assert.deepEqual(
+    srcsetTargets("assets/trailing-comma.png,"),
+    ["assets/trailing-comma.png"],
+  );
+});
+
+test("HTML projection preserves accepted candidate provenance after descriptor filtering", () => {
+  withRepository((root) => {
+    const markdown = [
+      '<img srcset="assets&sol;duplicate.png bogus,',
+      ' assets&sol;duplicate.png 1x">',
+    ].join("\r\n");
+    writeFixture(root, "docs/README.md", markdown);
+
+    const output = messages(validateRepositoryDocs(root).findings)
+      .filter((message) => message.includes("assets/duplicate.png"));
+    assert.deepEqual(output, [
+      'docs/README.md:2 local target "assets/duplicate.png" does not exist',
+    ]);
+  });
 });
 
 test("attribute provenance maps literal preprocessing and entity output by UTF-16 unit", () => {
