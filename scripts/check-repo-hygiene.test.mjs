@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { symlinkSync, unlinkSync } from "node:fs";
-import { appendFile, mkdtemp, mkdir, open as openFile, rm, symlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, mkdir, open as openFile, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { parse } from "yaml";
 
 import {
   classifyContent,
@@ -15,6 +16,7 @@ import {
 
 const TEN_MIB = 10 * 1024 * 1024;
 const SCRIPT_PATH = fileURLToPath(new URL("./check-repo-hygiene.mjs", import.meta.url));
+const ALPHA_BUILD_WORKFLOW_PATH = new URL("../.github/workflows/alpha-build.yml", import.meta.url);
 const fileStat = (size = 0) => ({ isFile: () => true, size });
 const token = (prefix, body) => `${prefix}${body}`;
 
@@ -105,6 +107,9 @@ test("classifyPath rejects browser profile databases and recognized profile root
     "wrap/Google/Chrome SxS/Default/README.md",
     "wrap/Microsoft/Edge SxS/Default/README.md",
     "wrap/Microsoft/Edge SxS/Last Version",
+    "chrome-user-data/Research Persona/Preferences",
+    "Library/Application Support/Google/Chrome/Wallet Main/Extension State/CURRENT",
+    "profiles/wallet-main/Local Storage/leveldb/CURRENT",
   ]) {
     assert.equal(classifyPath(path, fileStat())?.rule, "browser-profile", path);
   }
@@ -122,6 +127,8 @@ test("classifyPath rejects browser profile databases and recognized profile root
   assert.equal(classifyPath("src/Default/utils/index.js", fileStat()), null);
   assert.equal(classifyPath("examples/Profile 1/README.md", fileStat()), null);
   assert.equal(classifyPath("examples/Profile 1/guides/README.md", fileStat()), null);
+  assert.equal(classifyPath("profiles/wallet-main/README.md", fileStat()), null);
+  assert.equal(classifyPath("src/profiles/wallet-main/Preferences", fileStat()), null);
 });
 
 test("classifyPath rejects symbolic links", () => {
@@ -493,14 +500,45 @@ test("scanRepository rejects a candidate swapped to a symlink before content ope
   });
 });
 
-test("scanRepository excludes ignored untracked files in a Git repository", async () => {
+test("scanRepository rejects ignored known-sensitive paths in a Git repository", async () => {
   await withTempDirectory(async (root) => {
     execFileSync("git", ["init", "--quiet", root]);
-    await writeFixture(root, ".gitignore", "output/\n");
-    await writeFixture(root, "src/index.js");
+    await writeFixture(root, ".gitignore", "output/\nbrowser-first/certs/\n");
     await writeFixture(root, "output/local-report.json");
+    await writeFixture(root, "browser-first/certs/resonantos-ca.crt");
 
-    assert.deepEqual(await scanRepository(root), []);
+    const violations = await scanRepository(root);
+    assert.deepEqual(
+      violations.map(({ path, rule }) => ({ path, rule })),
+      [
+        { path: "browser-first/certs/resonantos-ca.crt", rule: "generated-certificate" },
+        { path: "output/local-report.json", rule: "forbidden-path" },
+      ],
+    );
+  });
+});
+
+test("scanRepository prunes ignored dependency, build, and cache trees", async () => {
+  await withTempDirectory(async (root) => {
+    execFileSync("git", ["init", "--quiet", root]);
+    await writeFixture(root, ".gitignore", "node_modules/\ndist/\nbuild/\n.cache/\n");
+    await writeFixture(root, "node_modules/example/output/private.json");
+    await writeFixture(root, "node_modules/example/output/tracked.json");
+    await writeFixture(root, "dist/runs/private.json");
+    await writeFixture(root, "build/ResonantOS_User/private.json");
+    await writeFixture(root, ".cache/browser-first/certs/private.pem");
+    execFileSync("git", [
+      "-C",
+      root,
+      "add",
+      "-f",
+      "node_modules/example/output/tracked.json",
+    ]);
+
+    const violations = await scanRepository(root);
+    assert.equal(violations.length, 1);
+    assert.equal(violations[0].path, "node_modules/example/output/tracked.json");
+    assert.equal(violations[0].rule, "forbidden-path");
   });
 });
 
@@ -582,6 +620,31 @@ test("scanRepository rejects a force-tracked browser-first generated certificate
     assert.equal(violations.length, 1);
     assert.equal(violations[0].path, "browser-first/certs/resonantos-ca.crt");
     assert.equal(violations[0].rule, "generated-certificate");
+  });
+});
+
+test("scanRepository rejects force-tracked payloads under custom browser profile directories", async () => {
+  await withTempDirectory(async (root) => {
+    execFileSync("git", ["init", "--quiet", root]);
+    await writeFixture(root, ".gitignore", "chrome-user-data/\nprofiles/\nLibrary/\n");
+    const profilePayloads = [
+      "Library/Application Support/Google/Chrome/Wallet Main/Extension State/CURRENT",
+      "chrome-user-data/Research Persona/Preferences",
+      "profiles/wallet-main/Local Storage/leveldb/CURRENT",
+    ];
+
+    for (const path of profilePayloads) {
+      await writeFixture(root, path);
+      execFileSync("git", ["-C", root, "add", "-f", "--", path]);
+    }
+
+    const violations = await scanRepository(root);
+    assert.deepEqual(
+      violations.map(({ path, rule }) => ({ path, rule })),
+      profilePayloads
+        .toSorted()
+        .map((path) => ({ path, rule: "browser-profile" })),
+    );
   });
 });
 
@@ -711,4 +774,14 @@ test("CLI quotes and escapes control characters in diagnostic paths", {
     assert.equal(result.stderr.includes("\u001b"), false);
     assert.equal(result.stderr.includes(JSON.stringify(filename)), true);
   });
+});
+
+test("alpha-build declares explicit least-privilege token permissions", async () => {
+  const workflow = parse(await readFile(ALPHA_BUILD_WORKFLOW_PATH, "utf8"));
+
+  assert.deepEqual(
+    workflow.permissions,
+    { contents: "read" },
+    "alpha-build must set workflow-level contents: read permissions",
+  );
 });

@@ -40,6 +40,21 @@ test("module ownership architecture doc covers every module and boundary", () =>
 
   assert.match(doc, /browser-first\/host\//, "active browser-first host boundary must be documented");
   assert.match(doc, /src-tauri\/src\/.*not present/i, "the current src-tauri/src absence must be explicit");
+  assert.match(
+    doc,
+    /`browser-first\/host\/addon-delegation-host-service\.mjs`, `addon-delegation-service\.mjs`, `hermes-runtime\.mjs`, and `opencode-runtime\.mjs`/,
+    "addon delegation ownership must include both runtime resolvers",
+  );
+  assert.match(
+    doc,
+    /`browser-first\/host\/browser-diagnostics-host-service\.mjs` and `browser-diagnostics-service\.mjs`/,
+    "browser diagnostics ownership must include its process-launch implementation",
+  );
+  assert.match(
+    doc,
+    /\| `browser-first\/host\/bridge-tls\.mjs` \|/,
+    "bridge TLS ownership must be explicit",
+  );
 });
 
 test("contributor checklist points module changes at the ownership map", () => {
@@ -51,4 +66,3 @@ test("contributor checklist points module changes at the ownership map", () => {
     "CONTRIBUTING.md must link PR authors to the module ownership checklist",
   );
 });
-

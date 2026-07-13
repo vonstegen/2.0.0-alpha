@@ -68,6 +68,24 @@ frontend and browser suites, Living Archive suites, health and engineer checks,
 the security pipeline, and the browser-first scope audit. CI then packages the
 extension, runs `npm run pre-release:scan`, and uploads the artifact.
 
+`verify:alpha` runs the security registry in certification mode. Every enabled
+check must return `pass`; `skipped`, `warn`, and `fail` results reject the
+candidate. Active runtime-hardening checks score production-derived spawn
+records tied to their source sites, so a present surface without scored runtime
+evidence cannot certify cleanly. The default non-certification security command
+retains its policy-based observe behavior for local investigation.
+
+Hermes and OpenCode runtime discovery ignores ambient `PATH` and accepts an
+override only when it names a canonical executable under a fixed supported
+install root. On Windows, OpenCode must be a directly executable `.exe`; command
+shims are unsupported. This alpha also fixes host folder-picker and diagnostic
+open/reveal tools to `C:\Windows`. The folder picker accepts only canonical
+`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, executes it with
+the command shell disabled, and rejects `.cmd` or `.bat` shims. Windows
+installations whose system root is on another drive are not supported by these
+host operations and will fail to find the required system executable rather
+than trust `SystemRoot` or `WINDIR`.
+
 Use `npm run browser-first:audit-scope:staged` on the intentionally staged
 candidate paths. A strict scope audit is meaningful only when the index contains
 the complete candidate and unrelated work is absent.

@@ -42,7 +42,23 @@ request decision. The command executes:
 - documentation, reachability, repository-hygiene, and build checks;
 - application, browser-first, browser-host, Living Archive, health, and
   engineer-runner suites; and
-- the security pipeline plus committed release-scope audit.
+- strict security certification, where every enabled check must pass and
+  skipped, warning, or failing results reject the candidate, plus the committed
+  release-scope audit.
+
+The active runtime-hardening checks use production-derived spawn records with
+source anchors. A runtime surface that has no records, or a record that cannot
+be scored, cannot be reported as a clean certification result.
+
+Runtime discovery is fixed-root and canonical: ambient `PATH`, arbitrary
+Hermes profile roots, and arbitrary OpenCode command paths are not executable
+sources. Windows OpenCode requires a direct `.exe`. The alpha host currently
+supports only the canonical
+`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe` for folder
+picking, invoked directly with the command shell disabled; `.cmd` and `.bat`
+shims are unsupported. Explorer open/reveal actions are likewise fixed to
+`C:\Windows`. Non-`C:` Windows system roots are an explicit compatibility
+limitation and are not inferred from ambient `SystemRoot` or `WINDIR`.
 
 This cleanup removed obsolete tracked documents. Every retained documentation
 asset is linked from the canonical documentation graph or is an explicit

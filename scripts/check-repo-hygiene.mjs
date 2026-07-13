@@ -20,6 +20,29 @@ const FORBIDDEN_DIRECTORY_NAMES = new Set([
   ".venv",
   "venv",
 ]);
+const FILESYSTEM_PRUNED_DIRECTORY_NAMES = new Set([
+  ".cache",
+  ".git",
+  ".next",
+  ".nuxt",
+  ".parcel-cache",
+  ".pnpm-store",
+  ".turbo",
+  ".vite",
+  ".yarn",
+  "bower_components",
+  "build",
+  "cache",
+  "caches",
+  "coverage",
+  "dist",
+  "node_modules",
+  "out",
+  "target",
+  "temp",
+  "tmp",
+  "vendor",
+]);
 const BROWSER_PROFILE_DATABASES = new Set([
   "account web data",
   "affiliation database",
@@ -155,7 +178,8 @@ function isSplitBrowserProfileRoot(normalizedSegments, rootIndex) {
 
 function isBrowserProfileRootAt(normalizedSegments, rootIndex) {
   return isBrowserProfileRootName(normalizedSegments[rootIndex])
-    || isSplitBrowserProfileRoot(normalizedSegments, rootIndex);
+    || isSplitBrowserProfileRoot(normalizedSegments, rootIndex)
+    || (rootIndex === 0 && normalizedSegments[rootIndex] === "profiles");
 }
 
 function isSingleDocumentationLeaf(normalizedSegments, profileIndex) {
@@ -172,6 +196,12 @@ function hasRootlessProfileEvidence(normalizedSegments, profileIndex) {
     .some((segment) => BROWSER_PROFILE_PAYLOAD_NAMES.has(segment));
 }
 
+function hasBrowserProfilePayload(normalizedSegments, rootIndex) {
+  return normalizedSegments
+    .slice(rootIndex + 1)
+    .some((segment) => BROWSER_PROFILE_PAYLOAD_NAMES.has(segment));
+}
+
 function isBrowserProfilePath(segments) {
   const normalizedSegments = segments.map((segment) => segment.toLowerCase());
   for (let rootIndex = 0; rootIndex < segments.length - 1; rootIndex += 1) {
@@ -181,6 +211,10 @@ function isBrowserProfilePath(segments) {
 
     const directChild = normalizedSegments[rootIndex + 1];
     if (directChild === "first run" || directChild === "last version") {
+      return true;
+    }
+
+    if (hasBrowserProfilePayload(normalizedSegments, rootIndex)) {
       return true;
     }
 
@@ -442,28 +476,39 @@ async function listGitCandidates(root) {
   return { paths, violations };
 }
 
-async function listFilesystemCandidates(root) {
+async function listFilesystemCandidates(root, options = {}) {
   const candidates = [];
+  const sensitiveOnly = options.sensitiveOnly ?? false;
 
   async function visit(directory) {
     const entries = await readdir(directory, { withFileTypes: true });
     entries.sort((left, right) => left.name.localeCompare(right.name));
 
     for (const entry of entries) {
-      if (entry.name === ".git") {
-        continue;
-      }
       const absolutePath = join(directory, entry.name);
       if (entry.isDirectory()) {
+        if (FILESYSTEM_PRUNED_DIRECTORY_NAMES.has(entry.name.toLowerCase())) {
+          continue;
+        }
         await visit(absolutePath);
       } else {
-        candidates.push(normalizePath(relative(root, absolutePath)));
+        const candidatePath = normalizePath(relative(root, absolutePath));
+        if (!sensitiveOnly || classifyPath(candidatePath, null)) {
+          candidates.push(candidatePath);
+        }
       }
     }
   }
 
   await visit(root);
   return { paths: candidates, violations: [] };
+}
+
+function mergeInventories(...inventories) {
+  return {
+    paths: [...new Set(inventories.flatMap((inventory) => inventory.paths))].sort(),
+    violations: inventories.flatMap((inventory) => inventory.violations),
+  };
 }
 
 function contentScanLimit(options) {
@@ -592,9 +637,15 @@ async function inspectContentNoFollow(repositoryRealPath, absolutePath, path, ex
 export async function scanRepository(root, options = {}) {
   const absoluteRoot = resolve(root);
   const repositoryRealPath = await realpath(absoluteRoot);
-  const inventory = await (await isGitRepository(absoluteRoot)
-    ? listGitCandidates(absoluteRoot)
-    : listFilesystemCandidates(absoluteRoot));
+  let inventory;
+  if (await isGitRepository(absoluteRoot)) {
+    inventory = mergeInventories(
+      await listGitCandidates(absoluteRoot),
+      await listFilesystemCandidates(absoluteRoot, { sensitiveOnly: true }),
+    );
+  } else {
+    inventory = await listFilesystemCandidates(absoluteRoot);
+  }
   const violations = [...inventory.violations];
 
   for (const path of inventory.paths) {

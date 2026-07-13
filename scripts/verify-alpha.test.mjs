@@ -27,7 +27,10 @@ test("defines the alpha commands in their required order", () => {
     { command: "npm", args: ["run", "test:engineer-runner"] },
     { command: "npm", args: ["run", "test:security-pipeline"] },
     { command: "npm", args: ["run", "test:module-ownership"] },
-    { command: "node", args: ["scripts/security-pipeline/run-check.mjs"] },
+    {
+      command: "node",
+      args: ["scripts/security-pipeline/run-check.mjs", "--certify"],
+    },
     { command: "npm", args: ["run", "pre-release:scan"] },
     {
       command: "node",
@@ -185,6 +188,29 @@ test("propagates a strict committed-range audit failure", async () => {
           "--committed",
           "--strict",
         ],
+      });
+      return { exitCode: 1, signal: null };
+    },
+  });
+
+  assert.deepEqual(result, { exitCode: 1, signal: null });
+  assert.equal(processRef.exitCode, 1);
+});
+
+test("propagates a strict security certification failure", async () => {
+  const processRef = { exitCode: undefined, pid: 1234 };
+  const securityCommand = ALPHA_COMMANDS.find(({ args }) =>
+    args.includes("scripts/security-pipeline/run-check.mjs")
+  );
+
+  const result = await main({
+    commands: [securityCommand],
+    processRef,
+    report: () => {},
+    runner: async (command) => {
+      assert.deepEqual(command, {
+        command: "node",
+        args: ["scripts/security-pipeline/run-check.mjs", "--certify"],
       });
       return { exitCode: 1, signal: null };
     },

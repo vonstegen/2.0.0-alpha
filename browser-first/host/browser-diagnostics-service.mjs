@@ -3,6 +3,77 @@ import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import {
+  firstExistingExecutable,
+  resolveWindowsSystemRoot,
+} from "./browser-first-host-utils.mjs";
+
+const linuxOpenSearchPath = ["/usr/bin", "/bin", "/usr/local/bin"].join(path.delimiter);
+
+function diagnosticLaunchEnvironment(platform, environment, windowsSystemRoot) {
+  const keys = platform === "win32"
+    ? ["USERPROFILE", "TEMP", "TMP"]
+    : platform === "darwin"
+      ? ["HOME", "LANG", "LC_ALL", "TMPDIR"]
+      : [
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "TMPDIR",
+        "DISPLAY",
+        "WAYLAND_DISPLAY",
+        "XAUTHORITY",
+        "DBUS_SESSION_BUS_ADDRESS",
+        "XDG_RUNTIME_DIR",
+      ];
+  const scopedEnvironment = Object.fromEntries(
+    keys.map((key) => [key, environment[key]]).filter(([, value]) => value !== undefined),
+  );
+  return platform === "win32"
+    ? { SystemRoot: windowsSystemRoot, WINDIR: windowsSystemRoot, ...scopedEnvironment }
+    : platform === "darwin"
+      ? scopedEnvironment
+      : { ...scopedEnvironment, PATH: linuxOpenSearchPath };
+}
+
+export function launchDiagnosticDownload({
+  action,
+  environment = process.env,
+  filePath,
+  platform = process.platform,
+  resolveExecutable = firstExistingExecutable,
+  spawnImpl = spawn,
+}) {
+  let command;
+  let args;
+  const windowsSystemRoot = platform === "win32"
+    ? resolveWindowsSystemRoot(environment)
+    : null;
+  if (platform === "darwin") {
+    command = "/usr/bin/open";
+    args = action === "reveal" ? ["-R", filePath] : [filePath];
+  } else if (platform === "win32") {
+    command = path.win32.join(windowsSystemRoot, "explorer.exe");
+    if (action === "reveal") {
+      args = ["/select,", filePath];
+    } else {
+      args = [filePath];
+    }
+  } else {
+    command = resolveExecutable("xdg-open", { searchPath: linuxOpenSearchPath });
+    if (!command) {
+      throw new Error("xdg-open was not found in a trusted system installation path.");
+    }
+    args = [action === "reveal" ? path.dirname(filePath) : filePath];
+  }
+
+  const child = spawnImpl(command, args, {
+    detached: true,
+    stdio: "ignore",
+    env: diagnosticLaunchEnvironment(platform, environment, windowsSystemRoot),
+  });
+  child.unref();
+}
 
 export function createBrowserDiagnosticsService({
   repoRoot,
@@ -85,32 +156,12 @@ export function createBrowserDiagnosticsService({
     return candidate;
   }
 
-  function launchDetached(command, args) {
-    const child = spawn(command, args, {
-      detached: true,
-      stdio: "ignore",
-    });
-    child.unref();
-  }
-
   async function openOrRevealDownload(filePath, action) {
     const fileStat = await stat(filePath).catch(() => null);
     if (!fileStat?.isFile?.()) {
       throw new Error("Download file was not found.");
     }
-    if (process.platform === "darwin") {
-      launchDetached("open", action === "reveal" ? ["-R", filePath] : [filePath]);
-      return;
-    }
-    if (process.platform === "win32") {
-      if (action === "reveal") {
-        launchDetached("explorer.exe", ["/select,", filePath]);
-      } else {
-        launchDetached("cmd.exe", ["/c", "start", "", filePath]);
-      }
-      return;
-    }
-    launchDetached("xdg-open", [action === "reveal" ? path.dirname(filePath) : filePath]);
+    launchDiagnosticDownload({ action, filePath });
   }
 
   async function readPackageVersion() {
