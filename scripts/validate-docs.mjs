@@ -9,7 +9,7 @@ import remarkGfm from "remark-gfm";
 import { parseFragment } from "parse5";
 import { DecodingMode, EntityDecoder, htmlDecodeTree } from "entities/decode";
 import semver from "semver";
-import { parseDocument } from "yaml";
+import { isAlias, isMap, isSeq, parseDocument } from "yaml";
 
 const CANONICAL_ENTRYPOINTS = [
   "AGENTS.md",
@@ -1555,40 +1555,90 @@ export function validateAdrIndex(context) {
   return findings;
 }
 
-function yamlMapValue(node, key) {
-  return node?.items?.find((pair) => pair.key?.value === key)?.value;
-}
-
 function yamlString(node) {
   return node?.value === undefined || node?.value === null ? "" : String(node.value);
+}
+
+function resolveYamlNode(document, node, seen = new Set()) {
+  if (!isAlias(node)) return node;
+  if (seen.has(node)) {
+    throw new Error("cyclic YAML alias");
+  }
+  const nextSeen = new Set(seen);
+  nextSeen.add(node);
+  return resolveYamlNode(document, node.resolve(document), nextSeen);
+}
+
+function isYamlMergePair(pair) {
+  const key = yamlString(pair.key);
+  return key === "<<" || key === "Symbol(<<)";
+}
+
+function yamlMapValueResolved(document, node, key, seen = new Set()) {
+  const map = resolveYamlNode(document, node, seen);
+  if (!isMap(map)) return undefined;
+  const direct = map.items.find((pair) => yamlString(pair.key) === key);
+  if (direct) {
+    return resolveYamlNode(document, direct.value, seen);
+  }
+  if (seen.has(map)) {
+    throw new Error("cyclic YAML merge");
+  }
+  const nextSeen = new Set(seen);
+  nextSeen.add(map);
+
+  for (const pair of map.items.filter(isYamlMergePair)) {
+    const merged = resolveYamlNode(document, pair.value, nextSeen);
+    const sources = isSeq(merged) ? merged.items : [merged];
+    for (const source of sources) {
+      const value = yamlMapValueResolved(document, source, key, nextSeen);
+      if (value !== undefined) return value;
+    }
+  }
+  return undefined;
+}
+
+function yamlMapEntriesResolved(document, node, seen = new Set()) {
+  const map = resolveYamlNode(document, node, seen);
+  if (!isMap(map)) return [];
+  if (seen.has(map)) {
+    throw new Error("cyclic YAML merge");
+  }
+  const nextSeen = new Set(seen);
+  nextSeen.add(map);
+
+  const entries = [];
+  const keys = new Set();
+  for (const pair of map.items.filter((item) => !isYamlMergePair(item))) {
+    const key = yamlString(pair.key);
+    keys.add(key);
+    entries.push(pair);
+  }
+
+  for (const pair of map.items.filter(isYamlMergePair)) {
+    const merged = resolveYamlNode(document, pair.value, nextSeen);
+    const sources = isSeq(merged) ? merged.items : [merged];
+    for (const source of sources) {
+      for (const inherited of yamlMapEntriesResolved(document, source, nextSeen)) {
+        const key = yamlString(inherited.key);
+        if (keys.has(key)) continue;
+        keys.add(key);
+        entries.push(inherited);
+      }
+    }
+  }
+  return entries;
 }
 
 function yamlLine(content, node) {
   return typeof node?.range?.[0] === "number" ? lineNumber(content, node.range[0]) : 1;
 }
 
-function yamlMatrixValues(job) {
-  const matrix = yamlMapValue(yamlMapValue(job, "strategy"), "matrix");
-  const values = new Map();
-  for (const pair of matrix?.items ?? []) {
-    const key = yamlString(pair.key);
-    const entries = pair.value?.items ?? [pair.value];
-    values.set(key, entries.map(yamlString).filter(Boolean));
-  }
-  return values;
-}
-
-function resolveWorkflowVersion(value, matrixValues) {
-  const matrixReference = value.match(/^\${{\s*matrix\.([A-Za-z0-9_-]+)\s*}}$/);
-  if (!matrixReference) return [value];
-  return matrixValues.get(matrixReference[1]) ?? [value];
-}
-
 function workflowNodeVersions(context, findings) {
   const versions = [];
   for (const path of context.files.filter((file) => /^\.github\/workflows\/.*\.ya?ml$/i.test(file))) {
     const content = readFileSync(resolve(context.root, path), "utf8");
-    const document = parseDocument(content);
+    const document = parseDocument(content, { merge: true });
     if (document.errors.length > 0) {
       const error = document.errors[0];
       const line = error.linePos?.[0]?.line ?? 1;
@@ -1596,33 +1646,72 @@ function workflowNodeVersions(context, findings) {
       continue;
     }
 
-    const jobs = yamlMapValue(document.contents, "jobs");
-    for (const job of jobs?.items ?? []) {
-      const matrixValues = yamlMatrixValues(job.value);
-      const steps = yamlMapValue(job.value, "steps");
-      for (const step of steps?.items ?? []) {
-        if (!/^actions\/setup-node@/i.test(yamlString(yamlMapValue(step, "uses")))) continue;
-        const withValues = yamlMapValue(step, "with");
-        const nodeVersion = yamlMapValue(withValues, "node-version");
-        if (nodeVersion) {
-          for (const value of resolveWorkflowVersion(yamlString(nodeVersion), matrixValues)) {
-            versions.push({ path, line: yamlLine(content, nodeVersion), value });
-          }
+    try {
+      const jobs = yamlMapValueResolved(document, document.contents, "jobs");
+      if (jobs !== undefined && !isMap(jobs)) {
+        findings.push(createFinding(path, yamlLine(content, jobs), "workflow jobs must be a mapping"));
+        continue;
+      }
+      for (const jobPair of yamlMapEntriesResolved(document, jobs)) {
+        const job = resolveYamlNode(document, jobPair.value);
+        if (!isMap(job)) {
+          findings.push(createFinding(path, yamlLine(content, jobPair.value), "workflow job must be a mapping"));
+          continue;
         }
-
-        const nodeVersionFile = yamlMapValue(withValues, "node-version-file");
-        if (nodeVersionFile) {
-          const versionFilePath = yamlString(nodeVersionFile);
-          const safePath = safeRequiredPath(context.root, versionFilePath, findings);
-          if (safePath) {
-            versions.push({
+        const steps = yamlMapValueResolved(document, job, "steps");
+        if (steps === undefined) continue;
+        if (!isSeq(steps)) {
+          findings.push(createFinding(path, yamlLine(content, steps), "workflow job steps must be a sequence"));
+          continue;
+        }
+        for (const rawStep of steps.items) {
+          const step = resolveYamlNode(document, rawStep);
+          if (!isMap(step)) {
+            findings.push(createFinding(path, yamlLine(content, rawStep), "workflow step must be a mapping"));
+            continue;
+          }
+          const uses = yamlMapValueResolved(document, step, "uses");
+          if (!/^actions\/setup-node@/i.test(yamlString(uses))) continue;
+          const withValues = yamlMapValueResolved(document, step, "with");
+          const nodeVersion = yamlMapValueResolved(document, withValues, "node-version");
+          if (nodeVersion !== undefined) {
+            findings.push(createFinding(
               path,
-              line: yamlLine(content, nodeVersionFile),
-              value: readFileSync(safePath, "utf8").trim(),
-            });
+              yamlLine(content, nodeVersion),
+              "actions/setup-node must use node-version-file: .nvmrc instead of node-version",
+            ));
+          }
+
+          const nodeVersionFile = yamlMapValueResolved(document, withValues, "node-version-file");
+          if (nodeVersionFile === undefined) {
+            findings.push(createFinding(
+              path,
+              yamlLine(content, rawStep),
+              "actions/setup-node must use node-version-file: .nvmrc",
+            ));
+          } else {
+            const versionFilePath = yamlString(nodeVersionFile);
+            if (versionFilePath !== ".nvmrc") {
+              findings.push(createFinding(
+                path,
+                yamlLine(content, nodeVersionFile),
+                `actions/setup-node node-version-file must be .nvmrc, got ${versionFilePath}`,
+              ));
+            } else {
+              const safePath = safeRequiredPath(context.root, versionFilePath, findings);
+              if (safePath) {
+                versions.push({
+                  path,
+                  line: yamlLine(content, nodeVersionFile),
+                  value: readFileSync(safePath, "utf8").trim(),
+                });
+              }
+            }
           }
         }
       }
+    } catch {
+      findings.push(createFinding(path, 1, "workflow aliases or merge keys could not be resolved safely"));
     }
   }
   return versions;

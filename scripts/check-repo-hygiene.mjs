@@ -21,11 +21,41 @@ const FORBIDDEN_DIRECTORY_NAMES = new Set([
   "venv",
 ]);
 const BROWSER_PROFILE_DATABASES = new Set([
-  "Cookies",
-  "Login Data",
-  "History",
-  "Web Data",
-  "Local State",
+  "account web data",
+  "affiliation database",
+  "cookies",
+  "history",
+  "local state",
+  "login data",
+  "network persistent state",
+  "trust tokens",
+  "web data",
+]);
+const BROWSER_PROFILE_PAYLOAD_NAMES = new Set([
+  ...BROWSER_PROFILE_DATABASES,
+  "bookmarks",
+  "code cache",
+  "extension state",
+  "favicons",
+  "gpu cache",
+  "indexeddb",
+  "local storage",
+  "preferences",
+  "secure preferences",
+  "service worker",
+  "session storage",
+]);
+const BROWSER_PROFILE_ROOT_NAMES = new Set([
+  "brave-browser",
+  "chrome",
+  "chrome-profile",
+  "chrome-profiles",
+  "chrome-user-data",
+  "chromium",
+  "google-chrome",
+  "microsoft edge",
+  "user data",
+  "user-data",
 ]);
 const CREDENTIAL_RULES = [
   {
@@ -101,6 +131,90 @@ function violation(path, rule, message) {
   return { path: normalizePath(path), rule, message };
 }
 
+function isBrowserProfileRootName(segment) {
+  const normalized = segment.toLowerCase();
+  return BROWSER_PROFILE_ROOT_NAMES.has(normalized)
+    || /^chrome(?: (?:beta|canary|dev|sxs))?$/.test(normalized)
+    || /^google-chrome(?:-(?:beta|dev|unstable))?$/.test(normalized)
+    || /^brave-browser(?:-(?:beta|nightly))?$/.test(normalized)
+    || /^microsoft(?:-| )edge(?:-| )(?:beta|canary|dev|sxs)$/.test(normalized)
+    || /^microsoft-edge$/.test(normalized);
+}
+
+function isBrowserProfileDirectoryName(segment) {
+  return /^(?:Default|Profile \d+|System Profile|Guest Profile)$/i.test(segment);
+}
+
+function isSplitBrowserProfileRoot(normalizedSegments, rootIndex) {
+  const vendor = normalizedSegments[rootIndex - 1];
+  const root = normalizedSegments[rootIndex];
+  return (vendor === "google" && /^chrome(?: (?:beta|canary|dev|sxs))?$/.test(root))
+    || (vendor === "bravesoftware" && /^brave-browser(?:-(?:beta|nightly))?$/.test(root))
+    || (vendor === "microsoft" && /^edge(?:(?:-| )(?:beta|canary|dev|sxs))?$/.test(root));
+}
+
+function isBrowserProfileRootAt(normalizedSegments, rootIndex) {
+  return isBrowserProfileRootName(normalizedSegments[rootIndex])
+    || isSplitBrowserProfileRoot(normalizedSegments, rootIndex);
+}
+
+function isSingleDocumentationLeaf(normalizedSegments, profileIndex) {
+  return normalizedSegments[0] === "docs" && profileIndex === normalizedSegments.length - 2;
+}
+
+function descendantSegmentCount(segments, index) {
+  return segments.length - index - 1;
+}
+
+function hasRootlessProfileEvidence(normalizedSegments, profileIndex) {
+  return normalizedSegments
+    .slice(profileIndex + 1)
+    .some((segment) => BROWSER_PROFILE_PAYLOAD_NAMES.has(segment));
+}
+
+function isBrowserProfilePath(segments) {
+  const normalizedSegments = segments.map((segment) => segment.toLowerCase());
+  for (let rootIndex = 0; rootIndex < segments.length - 1; rootIndex += 1) {
+    if (!isBrowserProfileRootAt(normalizedSegments, rootIndex)) {
+      continue;
+    }
+
+    const directChild = normalizedSegments[rootIndex + 1];
+    if (directChild === "first run" || directChild === "last version") {
+      return true;
+    }
+
+    const profileIndex = segments.findIndex(
+      (segment, index) => index > rootIndex && isBrowserProfileDirectoryName(segment),
+    );
+    if (
+      profileIndex >= 0
+      && descendantSegmentCount(segments, profileIndex) > 0
+      && !isSingleDocumentationLeaf(normalizedSegments, profileIndex)
+    ) {
+      return true;
+    }
+  }
+
+  return segments.some((segment, index) => {
+    if (!isBrowserProfileDirectoryName(segment)) {
+      return false;
+    }
+
+    const descendantCount = descendantSegmentCount(segments, index);
+    if (descendantCount === 0) {
+      return false;
+    }
+
+    if (index === 0 || normalizedSegments[0] === "profiles") {
+      return true;
+    }
+
+    return !isSingleDocumentationLeaf(normalizedSegments, index)
+      && hasRootlessProfileEvidence(normalizedSegments, index);
+  });
+}
+
 export function classifyPath(path, stat, options = {}) {
   const normalizedPath = normalizePath(path);
   const segments = normalizedPath.split("/").filter(Boolean);
@@ -130,7 +244,10 @@ export function classifyPath(path, stat, options = {}) {
     );
   }
 
-  if (BROWSER_PROFILE_DATABASES.has(basename(normalizedPath))) {
+  if (
+    isBrowserProfilePath(segments)
+    || BROWSER_PROFILE_DATABASES.has(basename(normalizedPath).toLowerCase())
+  ) {
     return violation(
       normalizedPath,
       "browser-profile",

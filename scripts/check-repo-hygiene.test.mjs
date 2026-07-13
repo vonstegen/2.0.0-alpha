@@ -59,12 +59,69 @@ test("classifyPath rejects generated, local-state, archive, and environment path
   }
 });
 
-test("classifyPath rejects browser profile databases by exact basename", () => {
-  for (const name of ["Cookies", "Login Data", "History", "Web Data", "Local State"]) {
-    assert.equal(classifyPath(`profiles/Default/${name}`, fileStat())?.rule, "browser-profile");
+test("classifyPath rejects browser profile databases and recognized profile roots", () => {
+  for (const name of ["Cookies", "cookies", "LOGIN DATA", "History", "Web Data", "Local State"]) {
+    assert.equal(classifyPath(`fixtures/${name}`, fileStat())?.rule, "browser-profile");
+  }
+
+  for (const path of [
+    "profiles/Default/Account Web Data",
+    "profiles/Default/Affiliation Database",
+    "profiles/Default/Preferences",
+    "chrome-user-data/Profile 2/Extension State/CURRENT",
+    "Library/Application Support/Google/Chrome/Default/Preferences",
+    ".config/google-chrome/Profile 2/Secure Preferences",
+    "AppData/Local/BraveSoftware/Brave-Browser/User Data/Guest Profile/History",
+    "User Data/System Profile/Preferences",
+    "Default/Preferences",
+    "profiles/wallet-main/Default/Preferences",
+    "Library/Application Support/Google/Chrome/Default/Bookmarks",
+    ".config/chromium/Profile 2/Session Storage/CURRENT",
+    "BraveSoftware/Brave-Browser/Default/Code Cache/js/index",
+    "Library/Application Support/Google/Chrome Canary/Default/Preferences",
+    "Library/Application Support/Google/Chrome Beta/Guest Profile/Preferences",
+    ".config/google-chrome-beta/Profile 1/Secure Preferences",
+    "Default/Bookmarks",
+    "Profile 1/Bookmarks",
+    "Default/Session Storage/CURRENT",
+    "Guest Profile/Favicons",
+    ".config/microsoft-edge/Default/Preferences",
+    ".config/microsoft-edge-beta/Profile 1/Preferences",
+    ".config/microsoft-edge-dev/Guest Profile/Preferences",
+    "chrome-user-data/First Run",
+    "User Data/Last Version",
+    "chrome-user-data/Default/Local Storage/leveldb/CURRENT",
+    "Default/Local Storage/leveldb/CURRENT",
+    "profiles/wallet-main/Profile 4/IndexedDB/example.indexeddb.leveldb/CURRENT",
+    "Library/Application Support/Google/Chrome/Default/Service Worker/CacheStorage/index",
+    "fixtures/Chromium/Default/Preferences",
+    "fixtures/Google/Chrome Beta/Default/Preferences",
+    "fixtures/Library/Application Support/Google/Chrome/Default/Preferences",
+    "fixtures/AppData/Local/Microsoft/Edge/User Data/Default/Preferences",
+    "fixtures/Default/Local Storage/leveldb/CURRENT",
+    "fixtures/Profile 2/IndexedDB/example.indexeddb.leveldb/CURRENT",
+    "Microsoft/Edge/Default/Preferences",
+    "docs/Google/Chrome/Default/Local Storage/leveldb/CURRENT",
+    "wrap/Google/Chrome SxS/Default/README.md",
+    "wrap/Microsoft/Edge SxS/Default/README.md",
+    "wrap/Microsoft/Edge SxS/Last Version",
+  ]) {
+    assert.equal(classifyPath(path, fileStat())?.rule, "browser-profile", path);
   }
 
   assert.equal(classifyPath("docs/History.md", fileStat()), null);
+  assert.equal(classifyPath("docs/profiles/default-behavior.md", fileStat()), null);
+  assert.equal(classifyPath("docs/profiles/Default/README.md", fileStat()), null);
+  assert.equal(classifyPath("docs/Default/Preferences", fileStat()), null);
+  assert.equal(classifyPath("config/Preferences", fileStat()), null);
+  assert.equal(classifyPath("docs/Chromium/README.md", fileStat()), null);
+  assert.equal(classifyPath("docs/Google/Chrome/Default/README.md", fileStat()), null);
+  assert.equal(classifyPath("docs/Microsoft Edge/README.md", fileStat()), null);
+  assert.equal(classifyPath("docs/User Data/README.md", fileStat()), null);
+  assert.equal(classifyPath("src/Default/index.js", fileStat()), null);
+  assert.equal(classifyPath("src/Default/utils/index.js", fileStat()), null);
+  assert.equal(classifyPath("examples/Profile 1/README.md", fileStat()), null);
+  assert.equal(classifyPath("examples/Profile 1/guides/README.md", fileStat()), null);
 });
 
 test("classifyPath rejects symbolic links", () => {

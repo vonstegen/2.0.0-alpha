@@ -73,7 +73,7 @@ function makeRepository() {
     "    steps:",
     "      - uses: actions/setup-node@v4",
     "        with:",
-    "          node-version: 22",
+    "          node-version-file: .nvmrc",
     "      - run: npm ci --prefix addons/resonant-browser-host",
   ].join("\n"));
 
@@ -2097,7 +2097,7 @@ test("validateRepositoryDocs requires Node declarations to agree and satisfy dep
     const output = messages(validateRepositoryDocs(root).findings);
     assert(output.some((message) => message.includes(".nvmrc") && message.includes("package.json engines.node")));
     assert(output.some((message) => message.includes("jsdom") && message.includes("engine")));
-    assert(output.some((message) => message.includes("checks.yml") && message.includes("does not agree")));
+    assert(output.some((message) => message.includes("checks.yml") && message.includes("node-version-file") && message.includes(".nvmrc")));
   });
 });
 
@@ -2171,7 +2171,7 @@ test("validateRepositoryDocs uses semver for hyphen ranges and caret zero ranges
       lockfileVersion: 3,
       packages: { "": { engines: { node: ">=0.0.4" } } },
     }, null, 2));
-    writeFixture(root, ".github/workflows/checks.yml", "jobs:\n  checks:\n    steps:\n      - uses: actions/setup-node@v4\n        with:\n          node-version: 0\n");
+    writeFixture(root, ".github/workflows/checks.yml", "jobs:\n  checks:\n    steps:\n      - uses: actions/setup-node@v4\n        with:\n          node-version-file: .nvmrc\n");
 
     const output = messages(validateRepositoryDocs(root).findings);
     assert(!output.some((message) => message.includes("hyphen-range")));
@@ -2179,20 +2179,14 @@ test("validateRepositoryDocs uses semver for hyphen ranges and caret zero ranges
   });
 });
 
-test("validateRepositoryDocs parses YAML workflow matrices, version files, and real line numbers", () => {
+test("validateRepositoryDocs parses YAML version files and reports real workflow line numbers", () => {
   withRepository((root) => {
     writeFixture(root, ".github/workflows/checks.yml", [
       "jobs:",
       "  checks:",
-      "    strategy:",
-      "      matrix:",
-      "        node: [22.13.0]",
-      "    steps:",
-      "      - run: \"echo 'node-version: 20'\"",
-      "      - uses: actions/setup-node@v4",
-      "        with:",
-      "          node-version: ${{ matrix.node }}",
-      "      - uses: actions/setup-node@v4",
+    "    steps:",
+    "      - run: \"echo 'node-version: 20'\"",
+    "      - uses: actions/setup-node@v4",
       "        with:",
       "          node-version-file: .nvmrc",
     ].join("\n"));
@@ -2207,21 +2201,159 @@ test("validateRepositoryDocs parses YAML workflow matrices, version files, and r
       "          node-version: 20",
     ].join("\n"));
     const output = messages(validateRepositoryDocs(root).findings);
-    assert(output.some((message) => message.includes("checks.yml:6") && message.includes("does not agree")));
+    assert(output.some((message) => message.includes("checks.yml:6") && message.includes("node-version-file") && message.includes(".nvmrc")));
   });
 });
 
-test("validateRepositoryDocs accepts compatible setup-node patch selectors", () => {
+test("validateRepositoryDocs rejects broad setup-node selectors in favor of .nvmrc", () => {
+  withRepository((root) => {
+    for (const selector of ["22", "22.13.x"]) {
+      writeFixture(root, ".github/workflows/checks.yml", [
+        "jobs:",
+        "  checks:",
+        "    steps:",
+        "      - uses: actions/setup-node@v4",
+        "        with:",
+        `          node-version: ${selector}`,
+      ].join("\n"));
+      assert(messages(validateRepositoryDocs(root).findings).some((message) => message.includes("checks.yml") && message.includes("node-version-file") && message.includes(".nvmrc")), selector);
+    }
+  });
+});
+
+test("validateRepositoryDocs rejects unpinned and aliased setup-node steps", () => {
   withRepository((root) => {
     writeFixture(root, ".github/workflows/checks.yml", [
+      "node-step: &node-step",
+      "  uses: actions/setup-node@v4",
+      "  with:",
+      "    node-version: 22",
+      "node-with: &node-with",
+      "  node-version: 22",
       "jobs:",
       "  checks:",
       "    steps:",
       "      - uses: actions/setup-node@v4",
       "        with:",
-      "          node-version: 22.13.x",
+      "          node-version-file: .nvmrc",
+      "      - uses: actions/setup-node@v4",
+      "      - *node-step",
+      "      - uses: actions/setup-node@v4",
+      "        with: *node-with",
+      "      - <<: *node-step",
     ].join("\n"));
-    assert(!messages(validateRepositoryDocs(root).findings).some((message) => message.includes("checks.yml") && message.includes("does not agree")));
+
+    const output = messages(validateRepositoryDocs(root).findings);
+    const workflowFindings = output.filter((message) => message.includes("checks.yml"));
+    assert(workflowFindings.some((message) => message.includes("node-version-file") && message.includes(".nvmrc")));
+  });
+});
+
+test("validateRepositoryDocs rejects aliased step sequences and job merges", () => {
+  withRepository((root) => {
+    const workflows = [
+      [
+        "node-steps: &node-steps",
+        "  - uses: actions/setup-node@v4",
+        "    with:",
+        "      node-version: 20",
+        "jobs:",
+        "  checks:",
+        "    steps: *node-steps",
+      ],
+      [
+        "node-job: &node-job",
+        "  steps:",
+        "    - uses: actions/setup-node@v4",
+        "      with:",
+        "        node-version: 20",
+        "jobs:",
+        "  checks:",
+        "    <<: *node-job",
+      ],
+    ];
+
+    for (const [index, workflow] of workflows.entries()) {
+      writeFixture(root, ".github/workflows/checks.yml", workflow.join("\n"));
+      const output = messages(validateRepositoryDocs(root).findings);
+      assert(output.some((message) => message.includes("checks.yml") && message.includes("node-version-file") && message.includes(".nvmrc")), `variant ${index + 1}`);
+    }
+  });
+});
+
+test("validateRepositoryDocs expands merged jobs maps before checking setup-node", () => {
+  withRepository((root) => {
+    writeFixture(root, ".github/workflows/checks.yml", [
+      "shared-jobs: &shared-jobs",
+      "  unpinned:",
+      "    steps:",
+      "      - uses: actions/setup-node@v4",
+      "        with:",
+      "          node-version: 20",
+      "jobs:",
+      "  <<: *shared-jobs",
+      "  pinned:",
+      "    steps:",
+      "      - uses: actions/setup-node@v4",
+      "        with:",
+      "          node-version-file: .nvmrc",
+    ].join("\n"));
+
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(output.some((message) => message.includes("checks.yml") && message.includes("node-version-file") && message.includes(".nvmrc")));
+  });
+});
+
+test("validateRepositoryDocs allows unrelated workflow aliases when setup-node stays pinned", () => {
+  withRepository((root) => {
+    const workflow = [
+      "shared-env: &shared-env",
+      "  FOO: bar",
+      "jobs:",
+      "  checks:",
+      "    steps:",
+      "      - uses: actions/setup-node@v4",
+      "        with:",
+      "          node-version-file: .nvmrc",
+    ];
+    for (let index = 0; index < 101; index += 1) {
+      workflow.push(`      - run: echo ${index}`, "        env: *shared-env");
+    }
+    writeFixture(root, ".github/workflows/checks.yml", workflow.join("\n"));
+
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(!output.some((message) => message.includes("checks.yml")));
+  });
+});
+
+test("validateRepositoryDocs rejects malformed workflow step containers", () => {
+  withRepository((root) => {
+    writeFixture(root, ".github/workflows/checks.yml", [
+      "jobs:",
+      "  checks:",
+      "    steps:",
+      "      uses: actions/setup-node@v4",
+      "      with:",
+      "        node-version: 22",
+    ].join("\n"));
+
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(output.some((message) => message.includes("checks.yml") && message.includes("steps") && message.includes("sequence")));
+  });
+});
+
+test("validateRepositoryDocs fails safely on cyclic workflow merges", () => {
+  withRepository((root) => {
+    writeFixture(root, ".github/workflows/checks.yml", [
+      "loop: &loop",
+      "  <<: *loop",
+      "jobs:",
+      "  checks:",
+      "    <<: *loop",
+    ].join("\n"));
+
+    const output = messages(validateRepositoryDocs(root).findings);
+    assert(output.some((message) => message.includes("checks.yml") && message.includes("could not be resolved safely")));
   });
 });
 
