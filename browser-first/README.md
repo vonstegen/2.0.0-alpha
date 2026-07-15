@@ -43,6 +43,10 @@ in extension source, generated config, Chrome storage, fixtures, or diagnostics.
 npm run test:browser-first
 ```
 
+The [HRR-033 deterministic certification gate](test/hrr033-certification/README.md)
+documents the focused context and Resonator evidence workflow used for deeper
+browser-first regression certification.
+
 Bridge or shared-package changes may also require:
 
 ```bash
