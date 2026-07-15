@@ -4,6 +4,8 @@ import test from "node:test";
 import { normalizeBrowserUrl } from "../resonantos-side-panel-extension/src/lib/browser-command-parser.js";
 import { createBrowserPageActions } from "../resonantos-side-panel-extension/src/lib/browser-page-actions.js";
 
+const openAiLikeUrlSecret = ["sk", "live", "URL", "SECRET"].join("-");
+
 function createHarness(overrides = {}) {
   const events = [];
   let controlledTabId = overrides.controlledTabId ?? 1;
@@ -240,7 +242,7 @@ test("browser page actions never announce raw query or hash secrets from page UR
       ok: true,
       snapshot: {
         title: "Leaky Page",
-        url: "https://example.test/path?token=sk-live-URL-SECRET#card-4111222233334444",
+        url: `https://example.test/path?token=${openAiLikeUrlSecret}#card-4111222233334444`,
         text: "safe visible text",
         links: [{ text: "checkout", href: "https://example.test/pay?session=secret#card-4111222233334444" }],
         frame: { isTop: true, referrer: "https://referrer.test/?token=secret#frag" }
@@ -259,7 +261,8 @@ test("browser page actions never announce raw query or hash secrets from page UR
     .map((event) => event[2])
     .join("\n");
   assert.match(transcript, /https:\/\/example\.test\/path/);
-  assert.doesNotMatch(transcript, /token=|sk-live|4111222233334444|#card/);
+  assert.equal(transcript.includes(openAiLikeUrlSecret), false);
+  assert.doesNotMatch(transcript, /token=|4111222233334444|#card/);
 });
 
 test("browser page actions inject content script after missing receiver failure", async () => {

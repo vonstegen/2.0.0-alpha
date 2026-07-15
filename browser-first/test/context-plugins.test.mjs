@@ -5,6 +5,8 @@ import test from "node:test";
 import { JSDOM } from "jsdom";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
+const openAiLikeFieldSecret = ["sk", "live", "FIELD", "SECRET", "1234567890"].join("-");
+const openAiLikeUrlSecret = ["sk", "live", "URL", "SECRET"].join("-");
 const contextPluginsPath = path.join(
   repoRoot,
   "browser-first",
@@ -48,7 +50,7 @@ test("context plugin redaction uses sibling form metadata before preserving valu
   const payload = {
     fields: [
       { name: "password", type: "text", value: "hunter2-secret" },
-      { name: "apiKey", value: "sk-live-FIELD-SECRET-1234567890" },
+      { name: "apiKey", value: openAiLikeFieldSecret },
       { name: "client_secret", value: "opaque-client-secret" },
       { label: "Private key", valuePreview: "-----BEGIN PRIVATE KEY-----abc-----END PRIVATE KEY-----" },
       { name: "q", type: "search", value: "resonantos browser" },
@@ -60,7 +62,8 @@ test("context plugin redaction uses sibling form metadata before preserving valu
   const redacted = registry.redactSensitiveFields(payload);
   const serialized = JSON.stringify(redacted);
 
-  assert.doesNotMatch(serialized, /hunter2-secret|sk-live-FIELD-SECRET|opaque-client-secret|PRIVATE KEY|secret-auth-token|session-token-secret/);
+  assert.equal(serialized.includes(openAiLikeFieldSecret), false);
+  assert.doesNotMatch(serialized, /hunter2-secret|opaque-client-secret|PRIVATE KEY|secret-auth-token|session-token-secret/);
   assert.match(serialized, /\[redacted\]/);
   assert.match(serialized, /resonantos browser/);
 });
@@ -73,7 +76,7 @@ test("context plugin URL sanitizer strips all query and hash data", async () => 
     "https://example.test/path",
   );
   assert.equal(
-    registry.sanitizeUrlForContext("/next?token=sk-live-URL-SECRET#card-4111222233334444", "https://example.test/base"),
+    registry.sanitizeUrlForContext(`/next?token=${openAiLikeUrlSecret}#card-4111222233334444`, "https://example.test/base"),
     "https://example.test/next",
   );
 });

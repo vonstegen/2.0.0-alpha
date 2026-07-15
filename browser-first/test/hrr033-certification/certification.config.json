@@ -1,7 +1,7 @@
 {
   "runId": "HRR-033-V61-CONTEXT-RESONATOR-DETERMINISTIC-CERTIFICATION-20260705",
-  "evidenceRoot": "/Users/dr.tom/2.0.0-alpha/output/runtime-evidence/context-resonator-remediation-20260704",
-  "artifactsRoot": "/Users/dr.tom/2.0.0-alpha/output/runtime-evidence/context-resonator-remediation-20260704/certification",
+  "evidenceRoot": "output/runtime-evidence/context-resonator-remediation-20260704",
+  "artifactsRoot": "output/runtime-evidence/context-resonator-remediation-20260704/certification",
   "targetJsFiles": [
     "browser-first/resonantos-side-panel-extension/src/content.js",
     "browser-first/resonantos-side-panel-extension/src/background.js",

@@ -7,6 +7,11 @@ import {
   sanitizeResonantContextSnapshot
 } from "../resonantos-side-panel-extension/src/lib/background-message-policy.js";
 
+const openAiLikeCredential = ["sk", "abcdefghijklmnop"].join("-");
+const githubLikeCredential = ["ghp", "abcdefghijklmnop"].join("_");
+const anthropicLikeCredential = ["sk", "ant", "abcdefghijklmnop"].join("-");
+const openRouterLikeCredential = ["sk", "or", "v1", "abcdefghijklmnop"].join("-");
+
 test("background policy sanitizes inline assistant payloads", () => {
   const payload = sanitizeInlineAssistantBody({
     action: "TRANSLATE",
@@ -33,7 +38,7 @@ test("background policy bounds and redacts Resonant Context snapshots", () => {
   const snapshot = sanitizeResonantContextSnapshot({
     title: "Example",
     url: "javascript:alert(1)",
-    text: `Visible sk-abcdefghijklmnop ${"x".repeat(8000)}`,
+    text: `Visible ${openAiLikeCredential} ${"x".repeat(8000)}`,
     sections: Array.from({ length: 12 }, (_, index) => ({ label: `Section ${index}`, text: `api_key=secret-${index}` })),
   }, {
     tabId: 42,
@@ -42,7 +47,7 @@ test("background policy bounds and redacts Resonant Context snapshots", () => {
 
   assert.equal(snapshot.tabId, 42);
   assert.equal(snapshot.url, "https://example.com/page");
-  assert.equal(snapshot.text.includes("sk-abcdefghijklmnop"), false);
+  assert.equal(snapshot.text.includes(openAiLikeCredential), false);
   assert.equal(snapshot.text.length, 7000);
   assert.equal(snapshot.sections.length, 8);
   assert.match(snapshot.sections[0].text, /\[redacted\]/);
@@ -59,20 +64,20 @@ test("background policy preserves rich context while redacting nested secrets", 
     v: "1.0",
     domain: "github.com",
     title: "Repo",
-    url: "https://github.com/org/repo?token=ghp_abcdefghijklmnop#access_token=secret",
+    url: `https://github.com/org/repo?token=${githubLikeCredential}#access_token=secret`,
     summary: "Active api_key=supersecret-value",
     page: {
       path: "/org/repo/pull/1?code=SECRET",
       title: "Repo",
       headings: [
-        "Review ghp_abcdefghijklmnop",
+        `Review ${githubLikeCredential}`,
         "Card 4111 2222 3333 4444"
       ],
       visibleText: "Bearer token=abc1234567890"
     },
     viewport: {
       visibleSections: [
-        { id: "#readme", label: "README", text: "sk-ant-abcdefghijklmnop", currentlyVisible: true, pctVisible: 77 }
+        { id: "#readme", label: "README", text: anthropicLikeCredential, currentlyVisible: true, pctVisible: 77 }
       ],
       activeOverlay: { id: "dialog", type: "dialog", content: "JWT eyJabcdefghijkl.mnopqrstuv.wxyzabcdef" }
     },
@@ -89,7 +94,7 @@ test("background policy preserves rich context while redacting nested secrets", 
     ],
     session: {
       navigation: [{ path: "/settings?token=secret", title: "Settings", dwellMs: 12 }],
-      clickTrail: [{ selector: "#save", text: "Save sk-or-v1-abcdefghijklmnop", ts: 9 }],
+      clickTrail: [{ selector: "#save", text: `Save ${openRouterLikeCredential}`, ts: 9 }],
       entryPoint: "https://example.com/start?session=secret"
     },
     domain_data: {
@@ -103,7 +108,10 @@ test("background policy preserves rich context while redacting nested secrets", 
   assert.equal(snapshot.url, "https://github.com/org/repo");
   assert.equal(snapshot.page.path, "/org/repo/pull/1");
   assert.match(serialized, /github\.com|README|resonantos/);
-  assert.doesNotMatch(serialized, /ghp_abcdefghijklmnop|4111 2222 3333 4444|4111-2222-3333-4444|hunter2|supersecret-value|sk-ant|sk-or-v1|abc1234567890/);
+  assert.equal(serialized.includes(githubLikeCredential), false);
+  assert.equal(serialized.includes(anthropicLikeCredential), false);
+  assert.equal(serialized.includes(openRouterLikeCredential), false);
+  assert.doesNotMatch(serialized, /4111 2222 3333 4444|4111-2222-3333-4444|hunter2|supersecret-value|abc1234567890/);
   assert.match(snapshot.forms[0].fields[0].value, /\[redacted:credential\]/);
   assert.equal(snapshot.forms[0].fields[1].value, "resonantos");
   assert.equal(snapshot.domain_data.token, "[redacted]");

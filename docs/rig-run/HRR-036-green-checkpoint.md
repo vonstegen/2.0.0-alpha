@@ -7,9 +7,9 @@ browser-first Resonant Context and Resonator alpha work.
 
 ## Evidence
 
-- Rig run: `/Users/dr.tom/.openclaw/workspace/z-rig-orchestrator/runs/HRR-036-V61-CONTEXT-RESONATOR-HARDENED-CERTIFICATION-20260705`
-- Product certification root: `/Users/dr.tom/2.0.0-alpha/output/runtime-evidence/context-resonator-remediation-20260704/certification/HRR-033-V61-CONTEXT-RESONATOR-DETERMINISTIC-CERTIFICATION-20260705`
-- Backup checkpoint: `/Volumes/My Passport for Mac/Analog6-Backups/repo-backups/checkpoints/20260705-HRR036-green-checkpoint`
+- Rig run: `<rig-root>/runs/HRR-036-V61-CONTEXT-RESONATOR-HARDENED-CERTIFICATION-20260705`
+- Product certification root: `<repo>/output/runtime-evidence/context-resonator-remediation-20260704/certification/HRR-033-V61-CONTEXT-RESONATOR-DETERMINISTIC-CERTIFICATION-20260705`
+- Backup checkpoint: `<backup-volume>/Analog6-Backups/repo-backups/checkpoints/20260705-HRR036-green-checkpoint`
 
 ## Certification Result
 

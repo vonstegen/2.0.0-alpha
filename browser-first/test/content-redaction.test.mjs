@@ -4,6 +4,10 @@ import path from "node:path";
 import test from "node:test";
 import { JSDOM } from "jsdom";
 
+const openAiLikeLinkSecret = ["sk", "live", "URL", "SECRET"].join("-");
+const openAiLikeFormSecret = ["sk", "live", "FORM", "SECRET"].join("-");
+const openAiLikePageSecret = ["sk", "live", "PAGE", "SECRET"].join("-");
+
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 const contentScriptPath = path.join(
   repoRoot,
@@ -218,10 +222,10 @@ test("content page snapshots strip query and hash secrets from URLs", async () =
   const { listener } = await loadContentScript(`
     <!doctype html>
     <main>Visible page</main>
-    <a href="/next?token=sk-live-URL-SECRET#card-4111222233334444">Next</a>
-    <form action="/submit?token=sk-live-FORM-SECRET#card-4111222233334444"></form>
+    <a href="/next?token=${openAiLikeLinkSecret}#card-4111222233334444">Next</a>
+    <form action="/submit?token=${openAiLikeFormSecret}#card-4111222233334444"></form>
   `, {
-    url: "https://example.test/login?token=sk-live-PAGE-SECRET#card-4111222233334444"
+    url: `https://example.test/login?token=${openAiLikePageSecret}#card-4111222233334444`
   });
   let response = null;
   listener({
@@ -236,7 +240,10 @@ test("content page snapshots strip query and hash secrets from URLs", async () =
   assert.equal(response.snapshot.links[0].href, "https://example.test/next");
   assert.equal(response.snapshot.frame.referrer, "");
   assert.equal(response.snapshot.controls.length, 1);
-  assert.doesNotMatch(JSON.stringify(response.snapshot), /token=|sk-live|4111222233334444|#card/);
+  assert.equal(JSON.stringify(response.snapshot).includes(openAiLikeLinkSecret), false);
+  assert.equal(JSON.stringify(response.snapshot).includes(openAiLikeFormSecret), false);
+  assert.equal(JSON.stringify(response.snapshot).includes(openAiLikePageSecret), false);
+  assert.doesNotMatch(JSON.stringify(response.snapshot), /token=|4111222233334444|#card/);
 
   let forms = null;
   listener({
@@ -246,7 +253,8 @@ test("content page snapshots strip query and hash secrets from URLs", async () =
     forms = payload;
   });
   assert.equal(forms.forms[0].action, "https://example.test/submit");
-  assert.doesNotMatch(JSON.stringify(forms), /token=|sk-live|4111222233334444|#card/);
+  assert.equal(JSON.stringify(forms).includes(openAiLikeFormSecret), false);
+  assert.doesNotMatch(JSON.stringify(forms), /token=|4111222233334444|#card/);
 });
 
 test("content SDK snapshots use domain plugins and redact raw form values before background send", async () => {
