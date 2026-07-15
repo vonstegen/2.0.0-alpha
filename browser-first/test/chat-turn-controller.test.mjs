@@ -18,6 +18,56 @@ test("chat turn controller builds compact page and runtime context", () => {
   ]), "Composer attachments:\n- a.md: alpha\n- b.pdf: metadata only");
 });
 
+test("chat turn controller formats sanitized rich Resonant Context snapshots", () => {
+  const context = pageContextForSnapshot({
+    title: "Repo",
+    url: "https://github.com/org/repo",
+    domain: "github.com",
+    summary: "Reviewing pull request",
+    text: "Visible project text",
+    page: {
+      headings: ["Implementation plan", "Token ghp_abcdefghijklmnop"]
+    },
+    viewport: {
+      visibleSections: [
+        { label: "Code Diff", text: "Changed file", currentlyVisible: true },
+      ],
+      activeOverlay: { content: "Dialog sk-ant-abcdefghijklmnop" }
+    },
+    forms: [
+      {
+        name: "Comment Box",
+        fields: [
+          { name: "comment", fieldKind: "document-edit", value: "[redacted:document-edit]" },
+          { name: "q", fieldKind: "search-query", value: "resonantos" }
+        ]
+      }
+    ],
+    session: {
+      clickTrail: [{ text: "Review changes" }]
+    }
+  });
+
+  assert.match(context, /Domain plugin: github\.com/);
+  assert.match(context, /Summary:\nReviewing pull request/);
+  assert.match(context, /Headings:\n- Implementation plan/);
+  assert.match(context, /Visible sections:\n- Code Diff visible: Changed file/);
+  assert.match(context, /Forms:\n- Comment Box:/);
+  assert.match(context, /Recent clicks:\n- Review changes/);
+  assert.doesNotMatch(context, /ghp_abcdefghijklmnop|sk-ant-abcdefghijklmnop/);
+});
+
+test("chat turn controller strips query and hash secrets from page context URLs", () => {
+  const context = pageContextForSnapshot({
+    title: "Secret URL",
+    url: "https://example.com/account?token=sk-live-URL-SECRET#card-4111222233334444",
+    text: "Visible text"
+  });
+
+  assert.match(context, /URL: https:\/\/example\.com\/account/);
+  assert.doesNotMatch(context, /token=|sk-live|4111222233334444|#card/);
+});
+
 test("chat turn controller filters provider messages to recent user/assistant turns", () => {
   const messages = [
     { role: "system", content: "skip" },

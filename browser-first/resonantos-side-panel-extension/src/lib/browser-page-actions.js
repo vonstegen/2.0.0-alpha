@@ -1,4 +1,5 @@
 import { isReadableSubframeTab, rankedReadableBrowserTabs } from "./readable-tab-ranking.js";
+import { parseQuotedText } from "./browser-command-parser.js";
 import {
   daoAffordances,
   daoControlLines,
@@ -6,6 +7,90 @@ import {
   walletDaoAuditMarkdown
 } from "./wallet-dao-audit-markdown.js";
 import { normalizeWalletProviderState, walletStateMarkdown } from "./wallet-state.js";
+
+const readOnlyAllowedContentActions = new Set([
+  "control_overlay",
+  "detect_forms",
+  "get_selection",
+  "read_page",
+  "resonator"
+]);
+
+function safeBrowserUrlForDisplay(value) {
+  try {
+    const url = new URL(String(value || ""));
+    if (!["http:", "https:"].includes(url.protocol)) return "";
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.href;
+  } catch {
+    return String(value ?? "").split(/[?#]/)[0].slice(0, 300);
+  }
+}
+
+function sanitizeBrowserSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") return snapshot;
+  const safe = { ...snapshot };
+  safe.url = safeBrowserUrlForDisplay(safe.url);
+  if (safe.frame && typeof safe.frame === "object") {
+    safe.frame = { ...safe.frame, referrer: safeBrowserUrlForDisplay(safe.frame.referrer) };
+  }
+  if (Array.isArray(safe.iframes)) {
+    safe.iframes = safe.iframes.map((frame) => ({ ...frame, src: safeBrowserUrlForDisplay(frame?.src) }));
+  }
+  if (Array.isArray(safe.links)) {
+    safe.links = safe.links.map((link) => ({ ...link, href: safeBrowserUrlForDisplay(link?.href) }));
+  }
+  if (Array.isArray(safe.forms)) {
+    safe.forms = safe.forms.map((form) => ({ ...form, action: safeBrowserUrlForDisplay(form?.action) }));
+  }
+  if (Array.isArray(safe.controls)) {
+    safe.controls = safe.controls.map((control) => ({
+      ...control,
+      form: control?.form ? { ...control.form, action: safeBrowserUrlForDisplay(control.form.action) } : control?.form
+    }));
+  }
+  if (Array.isArray(safe.fields)) {
+    safe.fields = safe.fields.map((field) => ({
+      ...field,
+      form: field?.form ? { ...field.form, action: safeBrowserUrlForDisplay(field.form.action) } : field?.form
+    }));
+  }
+  if (Array.isArray(safe.frames)) {
+    safe.frames = safe.frames.map((frame) => ({ ...frame, url: safeBrowserUrlForDisplay(frame?.url) }));
+  }
+  return safe;
+}
+
+function parseResonatorTarget(body) {
+  const raw = String(body ?? "").trim();
+  const quoted = parseQuotedText(raw);
+  if (quoted) {
+    return { text: quoted };
+  }
+  if (!raw) return null;
+  const [first, ...rest] = raw.split(/\s+/);
+  const selectorLike = /^(#|\.|\[|[a-z][\w-]*(?:[#.[>~:]|$))/i.test(first);
+  if (selectorLike) {
+    return { selector: first, label: rest.join(" ").trim() };
+  }
+  return { text: raw };
+}
+
+function parseResonatorCommandPayload(action, body) {
+  if (action === "clear") return {};
+  if (action === "step") {
+    const steps = String(body ?? "")
+      .split(";")
+      .map((part) => parseResonatorTarget(part))
+      .filter(Boolean)
+      .map((step, index) => ({ ...step, label: step.label || step.text || `Step ${index + 1}` }));
+    return steps.length ? { steps } : null;
+  }
+  return parseResonatorTarget(body);
+}
 
 export function createBrowserPageActions(deps) {
   const {
@@ -122,7 +207,7 @@ export function createBrowserPageActions(deps) {
   function mergeFrameSnapshots(responses) {
     const snapshots = responses
       .filter((response) => response?.ok && response.snapshot)
-      .map((response) => response.snapshot);
+      .map((response) => sanitizeBrowserSnapshot(response.snapshot));
     if (!snapshots.length) {
       return null;
     }
@@ -193,7 +278,7 @@ export function createBrowserPageActions(deps) {
     if (siteMode === "blocked") {
       return { ok: false, error: `Assistant is blocked on ${siteKeyForUrl(tab.url)}.` };
     }
-    if (siteMode === "read-only" && payload.type !== "read_page" && payload.type !== "get_selection" && payload.type !== "detect_forms" && payload.type !== "control_overlay") {
+    if (siteMode === "read-only" && !readOnlyAllowedContentActions.has(payload.type)) {
       return { ok: false, error: `Assistant actions are read-only on ${siteKeyForUrl(tab.url)}.` };
     }
     const message = {
@@ -210,11 +295,13 @@ export function createBrowserPageActions(deps) {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         files: [
+          "src/lib/resonant-context.js",
+          "src/lib/context-plugins.js",
+          "src/lib/resonator.js",
           "src/lib/control-overlay.js",
           "src/lib/content-field-safety.js",
           "src/lib/content-inline-actions.js",
           "src/lib/content-control-refs.js",
-          "src/lib/resonant-context.js",
           "src/content.js"
         ]
       }).catch(() => undefined);
@@ -266,6 +353,39 @@ export function createBrowserPageActions(deps) {
     label: label || (active ? "Augmentor is operating this page" : ""),
     phase
   });
+
+  async function runResonatorCommand(action, body = "") {
+    const normalizedAction = String(action ?? "").toLowerCase();
+    const allowedActions = new Set(["arrow", "clear", "highlight", "spotlight", "step"]);
+    if (!allowedActions.has(normalizedAction)) {
+      await addMessage("system", `Unknown Resonator command: ${normalizedAction || "empty"}.`);
+      return { ok: false, error: "Unknown Resonator command." };
+    }
+    const payload = parseResonatorCommandPayload(normalizedAction, body);
+    if (payload === null) {
+      await addMessage("system", `Resonator ${normalizedAction} needs a selector or quoted visible text target.`);
+      setStatus("Resonator target needed");
+      setActivity("failed", "Resonator target needed", normalizedAction);
+      return { ok: false, error: "Resonator target required." };
+    }
+    setActivity("browser-control", `Showing Resonator ${normalizedAction}`, String(body || normalizedAction).slice(0, 160));
+    setStatus("Guiding page");
+    const response = await sendContentAction({
+      type: "resonator",
+      action: normalizedAction,
+      payload
+    });
+    if (response?.ok) {
+      await addMessage("system", `Resonator ${normalizedAction} displayed on the active page.`);
+      setStatus("Ready");
+      setActivity("completed", `Resonator ${normalizedAction} displayed`, normalizedAction);
+      return response;
+    }
+    await addMessage("system", `Resonator ${normalizedAction} failed: ${response?.error ?? "unknown error"}`);
+    setStatus("Resonator failed");
+    setActivity("failed", `Resonator ${normalizedAction} failed`, response?.error ?? "unknown error");
+    return response;
+  }
 
   async function typeIntoActivePage({ text, field = "", ref = "", submit, userApproved = false }) {
     setActivity("tool-running", "Typing into page", text);
@@ -350,7 +470,7 @@ export function createBrowserPageActions(deps) {
   async function refreshTabContext() {
     setStatus("Reading");
     const tab = await activeTab();
-    const label = tab?.title || tab?.url || "No page context";
+    const label = tab?.title || safeBrowserUrlForDisplay(tab?.url) || "No page context";
     deps.setReadButtonTitle(`Attach/read current page: ${label}`);
     await renderSitePermissionPanel(tab);
     await hydrateCachedTabSnapshot(tab);
@@ -367,12 +487,15 @@ export function createBrowserPageActions(deps) {
       return null;
     }
 
-    setActivity("reading", "Reading browser page", tab.title || tab.url);
+    setActivity("reading", "Reading browser page", tab.title || safeBrowserUrlForDisplay(tab.url));
     setStatus("Reading page");
-    const response = await sendContentAction({
+    const rawResponse = await sendContentAction({
       channel: "resonantos.browser_first.content",
       type: "read_page"
     });
+    const response = rawResponse?.ok
+      ? { ...rawResponse, snapshot: sanitizeBrowserSnapshot(rawResponse.snapshot) }
+      : rawResponse;
 
     setLastSnapshot(response?.snapshot ?? null);
     setContextMeter(response?.snapshot ?? null);
@@ -908,6 +1031,7 @@ export function createBrowserPageActions(deps) {
     prepareDaoWorkflowGuidance,
     readActivePage,
     refreshTabContext,
+    runResonatorCommand,
     scrollActivePage,
     searchBrowser,
     sendContentAction,
