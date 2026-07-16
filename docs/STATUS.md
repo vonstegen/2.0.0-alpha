@@ -62,8 +62,8 @@ limitation and are not inferred from ambient `SystemRoot` or `WINDIR`.
 
 This cleanup removed obsolete tracked documents. Every retained documentation
 asset is linked from the canonical documentation graph or is an explicit
-runtime/GitHub consumer. The disposition ledger records run evidence; it is not
-repository authority and does not override the current repository, GitHub
+runtime/GitHub consumer. Out-of-tree Hot Rod Rig (HRR) run evidence records are not
+repository authority and do not override the current repository, GitHub
 issues, or Project 2.
 
 ## Open Alpha Gates

@@ -33,6 +33,24 @@ Approval commands act only on the currently displayed bounded preflight. They
 do not authorize wallet connection, signing, credential entry, payment,
 purchase, transfer, public submission, or another human-only action.
 
+## Resonator Visual Guidance
+
+| Command | Purpose |
+| --- | --- |
+| `/highlight <target>` | Highlight a target on the active page with a transient visual guide. |
+| `/arrow <target>` | Draw an arrow guide to a target on the active page. |
+| `/spotlight <target>` | Dim the page and spotlight one target for guided focus. |
+| `/step <target-1>; <target-2>; ...` | Place numbered step badges for semicolon-separated targets. |
+| `/clear` | Remove active Resonator visual guides from the page. |
+
+`<target>` resolves as either quoted visible text or a CSS selector token.
+When a selector is used, trailing text is treated as an optional overlay label
+for commands that render labels.
+
+These commands are visual-guidance overlays only. They inject transient DOM
+overlay elements on the active page and do not bypass site permissions,
+approval boundaries, or human-only action limits.
+
 ## Memory And Evidence
 
 | Command | Purpose |
