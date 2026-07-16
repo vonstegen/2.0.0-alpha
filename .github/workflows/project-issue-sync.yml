@@ -3,7 +3,7 @@ name: project-issue-sync
 on:
   issues:
     types: [opened, reopened, edited, labeled, unlabeled, closed]
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, ready_for_review, converted_to_draft, closed, labeled, unlabeled]
   schedule:
     - cron: "0 */6 * * *"
@@ -15,10 +15,12 @@ on:
         type: boolean
         default: false
 
+concurrency:
+  group: project-issue-sync
+  cancel-in-progress: false
+
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
 
 jobs:
   sync:
@@ -26,12 +28,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
 
       - name: Check Project token
         id: project-token
@@ -39,11 +44,27 @@ jobs:
           HAS_PROJECT_SYNC_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN != '' }}
         run: |
           if [ "$HAS_PROJECT_SYNC_TOKEN" != "true" ]; then
-            echo "::warning::PROJECT_SYNC_TOKEN is not configured. The default repo token may not be able to read or update org-level Project 2."
+            echo "::warning::PROJECT_SYNC_TOKEN is not configured. Organization Project 2 synchronization cannot run."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Require Project token
+        if: steps.project-token.outputs.configured != 'true'
+        run: |
+          echo "::error::PROJECT_SYNC_TOKEN is required for repository-owned Project 2 synchronization."
+          exit 1
+
+      - name: Capture Project 2 scope snapshot
+        if: steps.project-token.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}
+        run: gh project item-list 2 --owner ResonantOS --format json --limit 500 > "$RUNNER_TEMP/project-2.json"
+
+      - name: Verify roadmap scope against Project 2
+        if: steps.project-token.outputs.configured == 'true'
+        run: npm run project:check-roadmap -- --project-json "$RUNNER_TEMP/project-2.json"
 
       - name: Sync project and labels
         if: steps.project-token.outputs.configured == 'true'

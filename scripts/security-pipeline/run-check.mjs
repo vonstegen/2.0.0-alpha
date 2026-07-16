@@ -12,7 +12,8 @@ function parseArgs(argv) {
     config: ".github/security-pipeline/checks.yml",
     list: false,
     check: null,
-    family: null
+    family: null,
+    certify: false
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -25,6 +26,8 @@ function parseArgs(argv) {
       args.check = argv[++index];
     } else if (arg === "--family") {
       args.family = argv[++index];
+    } else if (arg === "--certify") {
+      args.certify = true;
     } else if (arg === "--help" || arg === "-h") {
       args.help = true;
     } else {
@@ -43,6 +46,7 @@ Options:
   --list            List enabled checks
   --check <id>      Run a single check
   --family <name>   Run checks in a family
+  --certify         Require every enabled check to pass
   --help            Show this help
 `);
 }
@@ -74,6 +78,16 @@ function validateRegistry(registry, configPath) {
   if (!Array.isArray(registry.checks)) {
     throw new Error(`${configPath} must declare checks as an array`);
   }
+  if (registry.recordSets !== undefined &&
+      (!registry.recordSets || typeof registry.recordSets !== "object" || Array.isArray(registry.recordSets))) {
+    throw new Error(`${configPath} recordSets must be an object`);
+  }
+
+  for (const [recordSetId, records] of Object.entries(registry.recordSets ?? {})) {
+    if (!Array.isArray(records)) {
+      throw new Error(`Record set ${recordSetId} must be an array`);
+    }
+  }
 
   const ids = new Set();
   for (const check of registry.checks) {
@@ -91,6 +105,14 @@ function validateRegistry(registry, configPath) {
     }
     if (!VALID_POLICIES.has(check.policy)) {
       throw new Error(`Check ${check.id} uses invalid policy ${check.policy}`);
+    }
+    if (check.recordSets !== undefined && !Array.isArray(check.recordSets)) {
+      throw new Error(`Check ${check.id} recordSets must be an array`);
+    }
+    for (const recordSetId of check.recordSets ?? []) {
+      if (!Array.isArray(registry.recordSets?.[recordSetId])) {
+        throw new Error(`Check ${check.id} references unknown record set ${recordSetId}`);
+      }
     }
   }
 }
@@ -145,7 +167,16 @@ async function runCheck(check, registry, configPath) {
     });
   }
 
-  const result = await adapter.run({ check, registry, configPath, repoRoot: process.cwd() });
+  const records = [
+    ...(Array.isArray(check.records) ? check.records : []),
+    ...(check.recordSets ?? []).flatMap((recordSetId) => registry.recordSets[recordSetId]),
+  ];
+  const result = await adapter.run({
+    check: { ...check, records },
+    registry,
+    configPath,
+    repoRoot: process.cwd()
+  });
   return normalizeResult(check, result);
 }
 
@@ -171,7 +202,10 @@ function normalizeResult(check, result) {
   };
 }
 
-function shouldFail(result) {
+function shouldFail(result, certify) {
+  if (certify) {
+    return ["skipped", "warn", "fail"].includes(result.status);
+  }
   return result.policy === "block" && result.status === "fail";
 }
 
@@ -201,7 +235,7 @@ async function main() {
     printResult(result);
   }
 
-  if (results.some(shouldFail)) {
+  if (results.some((result) => shouldFail(result, args.certify))) {
     process.exitCode = 1;
   }
 }

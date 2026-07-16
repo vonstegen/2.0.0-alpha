@@ -36,6 +36,7 @@ function createHarness() {
     runJobsCommand: handler("jobs"),
     runMemorySearchCommand: handler("memory"),
     runNaturalDelegationCommand: handler("natural-delegate"),
+    runResonatorCommand: handler("resonator"),
     reportBrowserJob: handler("report"),
     runSitePermissionCommand: handler("site"),
     runStatusCommand: handler("status"),
@@ -62,6 +63,7 @@ test("side panel command router dispatches slash commands", async () => {
   await harness.router.respondToCommand("/status");
   await harness.router.respondToCommand("/browser open resonantos.com");
   await harness.router.respondToCommand("/control find a booking");
+  await harness.router.respondToCommand("/highlight #target");
   await harness.router.respondToCommand("/email Follow up | body: Draft the email");
   await harness.router.respondToCommand("/calendar Planning | body: Draft the event");
   await harness.router.respondToCommand("/save selection");
@@ -86,6 +88,8 @@ test("side panel command router dispatches slash commands", async () => {
     ["browser", "open resonantos.com"],
     ["bind", "/control find a booking"],
     ["control", "find a booking"],
+    ["bind", "/highlight #target"],
+    ["resonator", "highlight", "#target"],
     ["bind", "/email Follow up | body: Draft the email"],
     ["draft", "email", "Follow up | body: Draft the email"],
     ["bind", "/calendar Planning | body: Draft the event"],
@@ -136,6 +140,24 @@ test("side panel command router dispatches browser state slash commands", async 
     "bind", "approve-control",
     "bind", "allow-control-once",
     "bind", "deny-control"
+  ]);
+});
+
+test("side panel command router dispatches Resonator guide slash commands", async () => {
+  const harness = createHarness();
+
+  await harness.router.respondToCommand("/highlight #hero");
+  await harness.router.respondToCommand('/arrow ".primary" Continue here');
+  await harness.router.respondToCommand("/spotlight #checkout Review this");
+  await harness.router.respondToCommand("/step #one First; #two Second");
+  await harness.router.respondToCommand("/clear");
+
+  assert.deepEqual(harness.calls.filter((call) => call[0] !== "bind"), [
+    ["resonator", "highlight", "#hero"],
+    ["resonator", "arrow", "\".primary\" Continue here"],
+    ["resonator", "spotlight", "#checkout Review this"],
+    ["resonator", "step", "#one First; #two Second"],
+    ["resonator", "clear", ""]
   ]);
 });
 

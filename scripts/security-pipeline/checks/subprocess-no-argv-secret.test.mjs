@@ -9,10 +9,12 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "..", "..", "..");
 const SURFACE = ["browser-first/host"];
 
+const exampleSecret = ["sk", "ant", "api03", "EXAMPLEEXAMPLE"].join("-");
+
 const SECRET_RECORD = {
   site: "fixture:argv-secret",
   program: "hermes",
-  args: ["chat", "-q", "Summarize the doc", "-H", "Authorization: Bearer sk-ant-api03-EXAMPLEEXAMPLE"],
+  args: ["chat", "-q", "Summarize the doc", "-H", `Authorization: Bearer ${exampleSecret}`],
 };
 
 const CLEAN_RECORD = {

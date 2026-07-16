@@ -33,6 +33,21 @@ const providerEnvKeyDefaults = Object.freeze({
   zhipuai: ["ZHIPUAI_API_KEY", "ZAI_API_KEY", "GLM_API_KEY"],
 });
 
+export const OPENCODE_EXPLICIT_PROVIDER_ENV_KEYS = Object.freeze([
+  "ANTHROPIC_BASE_URL",
+  "DEEPSEEK_BASE_URL",
+  "GEMINI_BASE_URL",
+  "GOOGLE_GENERATIVE_AI_BASE_URL",
+  "GOOGLE_API_BASE_URL",
+  "GLM_BASE_URL",
+  "MINIMAX_BASE_URL",
+  "OPENAI_BASE_URL",
+  "OPENROUTER_BASE_URL",
+  "XAI_BASE_URL",
+  "ZAI_BASE_URL",
+  "ZHIPUAI_BASE_URL",
+]);
+
 const providerSecretIdDefaults = Object.freeze({
   anthropic: ["shared-anthropic", "anthropic"],
   "anthropic-api": ["shared-anthropic", "anthropic"],
@@ -153,10 +168,12 @@ export function createAddonDelegationService(dependencies) {
     firstExistingExecutable,
     hermesCommand,
     hermesHome,
+    hermesPythonRuntime,
     listFilesRecursive,
     memoryRoot,
     opencodeCommand,
     opencodeRuntimeDiagnostics,
+    platform = process.platform,
     redactPathForDiagnostics,
     readProviderSecrets = async () => ({}),
     repoRoot,
@@ -176,10 +193,10 @@ export function createAddonDelegationService(dependencies) {
       installed: Boolean(command),
       command,
       commandRedacted: command ? redactPathForDiagnostics(command) : "",
-      installHint: "Install OpenCode with `curl -fsSL https://opencode.ai/install | bash` or `npm install -g opencode-ai`. If it is already installed outside PATH, set `OPENCODE_COMMAND=/absolute/path/to/opencode` and restart ResonantOS.",
+      installHint: "Install OpenCode with `curl -fsSL https://opencode.ai/install | bash` or `npm install -g opencode-ai`. To select a binary at a supported fixed install root, set `OPENCODE_COMMAND=/usr/local/bin/opencode` and restart ResonantOS.",
       installCommand: "curl -fsSL https://opencode.ai/install | bash",
       alternativeInstallCommands: ["npm install -g opencode-ai", "brew install anomalyco/tap/opencode"],
-      configureCommand: "OPENCODE_COMMAND=/absolute/path/to/opencode",
+      configureCommand: "OPENCODE_COMMAND=/usr/local/bin/opencode",
       searchedCommands: ["opencode", "opencode-ai"],
       searchedPaths: [],
       searchedPathCount: 0,
@@ -205,7 +222,7 @@ export function createAddonDelegationService(dependencies) {
   }
 
   function isAllowedOpenCodeProviderEnvKey(key) {
-    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && !/^RESONANTOS_/i.test(key);
+    return OPENCODE_EXPLICIT_PROVIDER_ENV_KEYS.includes(key);
   }
 
   function openCodeProviderEnvKeys(model) {
@@ -808,33 +825,6 @@ export function createAddonDelegationService(dependencies) {
     };
   }
 
-  function hermesPythonRuntimeFromBin(binDir) {
-    const venvRoot = path.dirname(binDir);
-    const agentRoot = path.dirname(venvRoot);
-    const pythonPath = (process.platform === "win32" ? ["python.exe", "python.cmd", "python"] : ["python"])
-      .map((candidate) => path.join(binDir, candidate))
-      .find((candidate) => existsSync(candidate));
-    const runAgentPath = path.join(agentRoot, "run_agent.py");
-    if (pythonPath && existsSync(runAgentPath)) {
-      return { agentRoot, pythonPath };
-    }
-    return null;
-  }
-
-  function hermesPythonRuntime(command, profileHome) {
-    const home = hermesHome(profileHome);
-    const binDirs = [
-      path.dirname(path.resolve(String(command ?? ""))),
-      path.join(home, "hermes-agent", "venv", "bin"),
-      path.join(home, "venv", "bin"),
-    ];
-    for (const binDir of [...new Set(binDirs)]) {
-      const runtime = hermesPythonRuntimeFromBin(binDir);
-      if (runtime) return runtime;
-    }
-    return null;
-  }
-
   function hermesPythonAdapterScript() {
     return String.raw`import contextlib
 import json
@@ -942,8 +932,8 @@ except BaseException as exc:
 
   async function runHermesCliDelegation(command, packet, payload = {}) {
     const profileHome = hermesHome(payload.profileHome);
-    const runtime = hermesPythonRuntime(command, profileHome);
-    if (!runtime) {
+    const runtime = hermesPythonRuntime(command);
+    if (!runtime?.installed) {
       throw new Error(
         "Hermes local execution requires an installed Hermes venv with run_agent.py. " +
         "The detected hermes command does not expose a prompt-safe local runtime."
@@ -1378,11 +1368,18 @@ except BaseException as exc:
   async function execOpenCodeCli(command, args, options = {}) {
     const timeout = Math.min(900_000, Math.max(30_000, Number(options.timeout ?? 300_000)));
     return new Promise((resolve, reject) => {
-      const needsWindowsCommandShell = process.platform === "win32" && /\.(?:cmd|bat)$/i.test(String(command));
-      const child = spawn(command, args, {
+      if (/\.(?:cmd|bat)$/i.test(String(command))) {
+        reject(new Error("OpenCode command shims (.cmd/.bat) are not supported; configure a pinned direct executable."));
+        return;
+      }
+      if (platform === "win32" && !/\.exe$/i.test(String(command))) {
+        reject(new Error("OpenCode on Windows requires a pinned direct .exe executable."));
+        return;
+      }
+      const child = spawnProcess(command, args, {
         cwd: options.cwd,
         env: options.env,
-        shell: needsWindowsCommandShell,
+        shell: false,
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
       });
@@ -1860,9 +1857,10 @@ except BaseException as exc:
       if (payload.includeTui !== false) {
         args.push("--tui");
       }
-      const child = spawn(command, args, {
+      const child = spawnProcess(command, args, {
         detached: true,
         env: scopedHermesEnv({ provider, model, profileHome, secrets }),
+        shell: false,
         stdio: "ignore",
       });
       child.unref();
@@ -1884,8 +1882,9 @@ except BaseException as exc:
       throw new Error("Hermes CLI was not found. Install or configure Hermes before stopping the dashboard.");
     }
     await new Promise((resolve) => {
-      const child = spawn(command, ["dashboard", "--stop"], {
+      const child = spawnProcess(command, ["dashboard", "--stop"], {
         env: scopedHermesEnv({ provider, model, profileHome, secrets }),
+        shell: false,
         stdio: "ignore",
       });
       child.once("exit", resolve);

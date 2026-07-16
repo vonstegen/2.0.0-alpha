@@ -18,6 +18,61 @@ test("chat turn controller builds compact page and runtime context", () => {
   ]), "Composer attachments:\n- a.md: alpha\n- b.pdf: metadata only");
 });
 
+test("chat turn controller formats sanitized rich Resonant Context snapshots", () => {
+  const ghp = ["ghp", "abcdefghijklmnop"].join("_");
+  const skAnt = ["sk", "ant", "abcdefghijklmnop"].join("-");
+  const context = pageContextForSnapshot({
+    title: "Repo",
+    url: "https://github.com/org/repo",
+    domain: "github.com",
+    summary: "Reviewing pull request",
+    text: "Visible project text",
+    page: {
+      headings: ["Implementation plan", `Token ${ghp}`]
+    },
+    viewport: {
+      visibleSections: [
+        { label: "Code Diff", text: "Changed file", currentlyVisible: true },
+      ],
+      activeOverlay: { content: `Dialog ${skAnt}` }
+    },
+    forms: [
+      {
+        name: "Comment Box",
+        fields: [
+          { name: "comment", fieldKind: "document-edit", value: "[redacted:document-edit]" },
+          { name: "q", fieldKind: "search-query", value: "resonantos" }
+        ]
+      }
+    ],
+    session: {
+      clickTrail: [{ text: "Review changes" }]
+    }
+  });
+
+  assert.match(context, /Domain plugin: github\.com/);
+  assert.match(context, /Summary:\nReviewing pull request/);
+  assert.match(context, /Headings:\n- Implementation plan/);
+  assert.match(context, /Visible sections:\n- Code Diff visible: Changed file/);
+  assert.match(context, /Forms:\n- Comment Box:/);
+  assert.match(context, /Recent clicks:\n- Review changes/);
+  assert.ok(!context.includes(ghp) && !context.includes(skAnt), "page-context secrets should be redacted");
+});
+
+test("chat turn controller strips query and hash secrets from page context URLs", () => {
+  const skLive = ["sk", "live", "URL", "SECRET"].join("-");
+  const skLivePrefix = ["sk", "live"].join("-");
+  const card = ["4111", "2222", "3333", "4444"].join("");
+  const context = pageContextForSnapshot({
+    title: "Secret URL",
+    url: `https://example.com/account?token=${skLive}#card-${card}`,
+    text: "Visible text"
+  });
+
+  assert.match(context, /URL: https:\/\/example\.com\/account/);
+  assert.ok(!context.includes(skLivePrefix) && !context.includes(card) && !/token=|#card/.test(context), "URL query/hash secrets should be stripped");
+});
+
 test("chat turn controller filters provider messages to recent user/assistant turns", () => {
   const messages = [
     { role: "system", content: "skip" },

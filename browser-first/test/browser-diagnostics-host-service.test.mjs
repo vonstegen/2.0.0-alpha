@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createBrowserDiagnosticsHostService } from "../host/browser-diagnostics-host-service.mjs";
+import { launchDiagnosticDownload } from "../host/browser-diagnostics-service.mjs";
 
 function createService(overrides = {}) {
   return createBrowserDiagnosticsHostService({
@@ -24,6 +25,122 @@ function createService(overrides = {}) {
     ...overrides,
   });
 }
+
+function captureDiagnosticLaunch({ action, environment, filePath, platform, resolveExecutable }) {
+  const calls = [];
+  let unrefCount = 0;
+  launchDiagnosticDownload({
+    action,
+    environment,
+    filePath,
+    platform,
+    resolveExecutable,
+    spawnImpl(command, args, options) {
+      calls.push({ command, args, options });
+      return { unref: () => { unrefCount += 1; } };
+    },
+  });
+  return { calls, unrefCount };
+}
+
+test("browser diagnostics pins macOS open and scopes its environment", () => {
+  const environment = {
+    HOME: "/Users/test",
+    LANG: "en_US.UTF-8",
+    LC_ALL: "en_US.UTF-8",
+    TMPDIR: "/tmp/test",
+    SECRET_SENTINEL: "do-not-inherit",
+  };
+  const filePath = "/Users/test/Downloads/report.pdf";
+  const opened = captureDiagnosticLaunch({ action: "open", environment, filePath, platform: "darwin" });
+  const revealed = captureDiagnosticLaunch({ action: "reveal", environment, filePath, platform: "darwin" });
+
+  assert.deepEqual(opened.calls, [{
+    command: "/usr/bin/open",
+    args: [filePath],
+    options: {
+      detached: true,
+      stdio: "ignore",
+      env: { HOME: "/Users/test", LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8", TMPDIR: "/tmp/test" },
+    },
+  }]);
+  assert.deepEqual(revealed.calls[0].args, ["-R", filePath]);
+  assert.equal(opened.unrefCount, 1);
+  assert.equal(revealed.unrefCount, 1);
+});
+
+test("browser diagnostics pins Windows open and reveal commands", () => {
+  const environment = {
+    SystemRoot: "D:\\Windows",
+    WINDIR: "D:\\Windows",
+    COMSPEC: "D:\\Attacker\\cmd.exe",
+    USERPROFILE: "C:\\Users\\test",
+    TEMP: "C:\\Temp",
+    TMP: "C:\\Temp",
+    SECRET_SENTINEL: "do-not-inherit",
+  };
+  const filePath = "C:\\Users\\test\\Downloads\\report & budget|draft^100%.pdf";
+  const opened = captureDiagnosticLaunch({ action: "open", environment, filePath, platform: "win32" });
+  const revealed = captureDiagnosticLaunch({ action: "reveal", environment, filePath, platform: "win32" });
+  const expectedEnvironment = {
+    SystemRoot: "C:\\Windows",
+    WINDIR: "C:\\Windows",
+    USERPROFILE: "C:\\Users\\test",
+    TEMP: "C:\\Temp",
+    TMP: "C:\\Temp",
+  };
+
+  assert.deepEqual(opened.calls, [{
+    command: "C:\\Windows\\explorer.exe",
+    args: [filePath],
+    options: { detached: true, stdio: "ignore", env: expectedEnvironment },
+  }]);
+  assert.deepEqual(revealed.calls, [{
+    command: "C:\\Windows\\explorer.exe",
+    args: ["/select,", filePath],
+    options: { detached: true, stdio: "ignore", env: expectedEnvironment },
+  }]);
+});
+
+test("browser diagnostics resolves Linux xdg-open only from fixed roots", () => {
+  const lookups = [];
+  const environment = {
+    HOME: "/home/test",
+    LANG: "en_US.UTF-8",
+    DISPLAY: ":0",
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus",
+    PATH: "/tmp/attacker-bin",
+    SECRET_SENTINEL: "do-not-inherit",
+  };
+  const filePath = "/home/test/Downloads/report.pdf";
+  const resolveExecutable = (command, options) => {
+    lookups.push({ command, options });
+    return "/usr/bin/xdg-open";
+  };
+  const opened = captureDiagnosticLaunch({ action: "open", environment, filePath, platform: "linux", resolveExecutable });
+  const revealed = captureDiagnosticLaunch({ action: "reveal", environment, filePath, platform: "linux", resolveExecutable });
+
+  assert.deepEqual(lookups, [
+    { command: "xdg-open", options: { searchPath: ["/usr/bin", "/bin", "/usr/local/bin"].join(path.delimiter) } },
+    { command: "xdg-open", options: { searchPath: ["/usr/bin", "/bin", "/usr/local/bin"].join(path.delimiter) } },
+  ]);
+  assert.deepEqual(opened.calls, [{
+    command: "/usr/bin/xdg-open",
+    args: [filePath],
+    options: {
+      detached: true,
+      stdio: "ignore",
+      env: {
+        HOME: "/home/test",
+        PATH: ["/usr/bin", "/bin", "/usr/local/bin"].join(path.delimiter),
+        LANG: "en_US.UTF-8",
+        DISPLAY: ":0",
+        DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus",
+      },
+    },
+  }]);
+  assert.deepEqual(revealed.calls[0].args, [path.dirname(filePath)]);
+});
 
 test("browser diagnostics host service owns status, diagnostics, and download routes", () => {
   const service = createService();

@@ -174,6 +174,7 @@ export async function runBrowserFirstSelfTest(context) {
     readMemorySourceRepairHistory,
     resonantExtensionOrigin,
     safeFileSlug,
+    setAddonRuntimeSelfTestHomeDir,
   } = context;
 
   const capabilityTokenForRoute = (routePath, method = "POST", explicitToken) => {
@@ -453,7 +454,8 @@ export async function runBrowserFirstSelfTest(context) {
     let server = null;
     let exitCode = 1;
     try {
-      const fakeHermes = path.join(tempRoot, "bin", process.platform === "win32" ? "hermes.cmd" : "hermes");
+      setAddonRuntimeSelfTestHomeDir(tempRoot);
+      const fakeHermes = path.join(tempRoot, ".hermes", "bin", process.platform === "win32" ? "hermes.exe" : "hermes");
       await mkdir(path.dirname(fakeHermes), { recursive: true });
       await writeFile(fakeHermes, process.platform === "win32" ? "@echo off\r\necho fake hermes\r\n" : "#!/bin/sh\necho fake hermes\n");
       await chmod(fakeHermes, 0o755).catch(() => undefined);
@@ -549,7 +551,8 @@ export async function runBrowserFirstSelfTest(context) {
     process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT = path.join(tempRoot, "ResonantOS_User");
     let exitCode = 1;
     try {
-      const fakeHermes = path.join(tempRoot, "bin", process.platform === "win32" ? "hermes.cmd" : "hermes");
+      setAddonRuntimeSelfTestHomeDir(tempRoot);
+      const fakeHermes = path.join(tempRoot, ".hermes", "bin", process.platform === "win32" ? "hermes.exe" : "hermes");
       await mkdir(path.dirname(fakeHermes), { recursive: true });
       await writeFile(fakeHermes, process.platform === "win32" ? "@echo off\r\necho fake hermes\r\n" : "#!/bin/sh\necho fake hermes\n");
       await chmod(fakeHermes, 0o755).catch(() => undefined);
@@ -633,6 +636,7 @@ export async function runBrowserFirstSelfTest(context) {
     let server = null;
     let exitCode = 1;
     try {
+      setAddonRuntimeSelfTestHomeDir(tempRoot);
       const fakeOutput = [
         "## Final Summary",
         "Hermes CLI adapter completed the requested production execution test.",
@@ -650,7 +654,7 @@ export async function runBrowserFirstSelfTest(context) {
         "## Verification",
         "- Local Hermes CLI process was invoked through the host boundary.",
       ].join("\n");
-      const fakeHermes = await writeFakeHermesPythonRuntime(tempRoot, fakeOutput);
+      const fakeHermes = await writeFakeHermesPythonRuntime(path.join(tempRoot, ".hermes"), fakeOutput);
       process.env.HERMES_COMMAND = fakeHermes;
       delete process.env.OPENAI_API_KEY;
       process.env.RESONANTOS_PROVIDER_SECRETS_JSON = JSON.stringify({ "shared-openai": "must-not-reach-hermes" });
@@ -755,6 +759,7 @@ export async function runBrowserFirstSelfTest(context) {
     process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT = path.join(tempRoot, "ResonantOS_User");
     let exitCode = 1;
     try {
+      setAddonRuntimeSelfTestHomeDir(tempRoot);
       const fakeOutput = [
         "## Final Summary",
         "Hermes CLI adapter completed the requested production execution test.",
@@ -772,7 +777,7 @@ export async function runBrowserFirstSelfTest(context) {
         "## Verification",
         "- Local Hermes CLI process was invoked through the host boundary.",
       ].join("\n");
-      const fakeHermes = await writeFakeHermesPythonRuntime(tempRoot, fakeOutput);
+      const fakeHermes = await writeFakeHermesPythonRuntime(path.join(tempRoot, ".hermes"), fakeOutput);
       process.env.HERMES_COMMAND = fakeHermes;
       delete process.env.OPENAI_API_KEY;
       delete process.env.RESONANTOS_PROVIDER_SECRETS_JSON;
@@ -882,7 +887,8 @@ export async function runBrowserFirstSelfTest(context) {
     let server = null;
     let exitCode = 1;
     try {
-      const fakeOpenCode = path.join(tempRoot, "bin", process.platform === "win32" ? "opencode.cmd" : "opencode");
+      setAddonRuntimeSelfTestHomeDir(tempRoot);
+      const fakeOpenCode = path.join(tempRoot, ".opencode", "bin", process.platform === "win32" ? "opencode.exe" : "opencode");
       await mkdir(path.dirname(fakeOpenCode), { recursive: true });
       await writeFile(fakeOpenCode, process.platform === "win32" ? "@echo off\r\necho fake opencode\r\n" : "#!/bin/sh\necho fake opencode\n");
       await chmod(fakeOpenCode, 0o755).catch(() => undefined);
@@ -976,7 +982,8 @@ export async function runBrowserFirstSelfTest(context) {
     process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT = path.join(tempRoot, "ResonantOS_User");
     let exitCode = 1;
     try {
-      const fakeOpenCode = path.join(tempRoot, "bin", process.platform === "win32" ? "opencode.cmd" : "opencode");
+      setAddonRuntimeSelfTestHomeDir(tempRoot);
+      const fakeOpenCode = path.join(tempRoot, ".opencode", "bin", process.platform === "win32" ? "opencode.exe" : "opencode");
       await mkdir(path.dirname(fakeOpenCode), { recursive: true });
       await writeFile(fakeOpenCode, process.platform === "win32" ? "@echo off\r\necho fake opencode\r\n" : "#!/bin/sh\necho fake opencode\n");
       await chmod(fakeOpenCode, 0o755).catch(() => undefined);
@@ -1058,7 +1065,8 @@ export async function runBrowserFirstSelfTest(context) {
     let server = null;
     let exitCode = 1;
     try {
-      const fakeOpenCode = path.join(tempRoot, "bin", process.platform === "win32" ? "opencode.cmd" : "opencode");
+      setAddonRuntimeSelfTestHomeDir(tempRoot);
+      const fakeOpenCode = path.join(tempRoot, ".opencode", "bin", process.platform === "win32" ? "opencode.exe" : "opencode");
       const fakeOutput = [
         "## Final Summary",
         "OpenCode CLI adapter completed the requested production execution test.",
@@ -1196,7 +1204,8 @@ export async function runBrowserFirstSelfTest(context) {
     process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT = path.join(tempRoot, "ResonantOS_User");
     let exitCode = 1;
     try {
-      const fakeOpenCode = path.join(tempRoot, "bin", process.platform === "win32" ? "opencode.cmd" : "opencode");
+      setAddonRuntimeSelfTestHomeDir(tempRoot);
+      const fakeOpenCode = path.join(tempRoot, ".opencode", "bin", process.platform === "win32" ? "opencode.exe" : "opencode");
       const fakeOutput = [
         "## Final Summary",
         "OpenCode CLI adapter completed the requested production execution test.",
@@ -1317,10 +1326,15 @@ export async function runBrowserFirstSelfTest(context) {
     let server = null;
     let exitCode = 1;
     try {
-      const binRoot = path.join(tempRoot, "bin");
-      const fakeHermes = path.join(binRoot, process.platform === "win32" ? "hermes.cmd" : "hermes");
-      const fakeOpenCode = path.join(binRoot, process.platform === "win32" ? "opencode.cmd" : "opencode");
-      await mkdir(binRoot, { recursive: true });
+      setAddonRuntimeSelfTestHomeDir(tempRoot);
+      const hermesBinRoot = path.join(tempRoot, ".hermes", "bin");
+      const openCodeBinRoot = path.join(tempRoot, ".opencode", "bin");
+      const fakeHermes = path.join(hermesBinRoot, process.platform === "win32" ? "hermes.exe" : "hermes");
+      const fakeOpenCode = path.join(openCodeBinRoot, process.platform === "win32" ? "opencode.exe" : "opencode");
+      await Promise.all([
+        mkdir(hermesBinRoot, { recursive: true }),
+        mkdir(openCodeBinRoot, { recursive: true }),
+      ]);
       await writeFile(fakeHermes, process.platform === "win32" ? "@echo off\r\necho fake hermes\r\n" : "#!/bin/sh\necho fake hermes\n");
       await writeFile(fakeOpenCode, process.platform === "win32" ? "@echo off\r\necho fake opencode\r\n" : "#!/bin/sh\necho fake opencode\n");
       await chmod(fakeHermes, 0o755).catch(() => undefined);
@@ -1431,10 +1445,15 @@ export async function runBrowserFirstSelfTest(context) {
     process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT = path.join(tempRoot, "ResonantOS_User");
     let exitCode = 1;
     try {
-      const binRoot = path.join(tempRoot, "bin");
-      const fakeHermes = path.join(binRoot, process.platform === "win32" ? "hermes.cmd" : "hermes");
-      const fakeOpenCode = path.join(binRoot, process.platform === "win32" ? "opencode.cmd" : "opencode");
-      await mkdir(binRoot, { recursive: true });
+      setAddonRuntimeSelfTestHomeDir(tempRoot);
+      const hermesBinRoot = path.join(tempRoot, ".hermes", "bin");
+      const openCodeBinRoot = path.join(tempRoot, ".opencode", "bin");
+      const fakeHermes = path.join(hermesBinRoot, process.platform === "win32" ? "hermes.exe" : "hermes");
+      const fakeOpenCode = path.join(openCodeBinRoot, process.platform === "win32" ? "opencode.exe" : "opencode");
+      await Promise.all([
+        mkdir(hermesBinRoot, { recursive: true }),
+        mkdir(openCodeBinRoot, { recursive: true }),
+      ]);
       await writeFile(fakeHermes, process.platform === "win32" ? "@echo off\r\necho fake hermes\r\n" : "#!/bin/sh\necho fake hermes\n");
       await writeFile(fakeOpenCode, process.platform === "win32" ? "@echo off\r\necho fake opencode\r\n" : "#!/bin/sh\necho fake opencode\n");
       await chmod(fakeHermes, 0o755).catch(() => undefined);

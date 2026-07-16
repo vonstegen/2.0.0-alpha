@@ -1,5 +1,12 @@
 #!/usr/bin/env node
 
+import {
+  assertNoManagedLabelConflicts,
+  assertProjectConfiguration,
+  pollForRemoteResult,
+  runCompensatingWrites,
+} from "./project-sync-policy.mjs";
+
 const DEFAULT_REPO = "ResonantOS/2.0.0-alpha";
 const DEFAULT_PROJECT_OWNER = "ResonantOS";
 const DEFAULT_PROJECT_NUMBER = 2;
@@ -82,6 +89,11 @@ try {
   throw error;
 }
 const requiredFields = getRequiredFields(project);
+assertProjectConfiguration(requiredFields, {
+  releaseScopes: [...scopeToLabel.keys()],
+  areas: [...areaToLabel.keys()],
+  statuses: [INBOX_STATUS],
+});
 const projectItems = await listProjectItems(projectOwner, projectNumber);
 const contentIdToProjectItem = new Map(
   projectItems
@@ -90,15 +102,75 @@ const contentIdToProjectItem = new Map(
 );
 
 const openItems = await listOpenIssuesAndPullRequests(repoOwner, repoName);
+const syncCandidates = openItems.map((item) => {
+  const projectItem = contentIdToProjectItem.get(item.node_id);
+  const fields = projectItem ? readSingleSelectFieldValues(projectItem) : new Map();
+  return {
+    url: item.html_url,
+    labels: item.labels.map((label) => label.name),
+    releaseScope: fields.get(SCOPE_FIELD) ?? "",
+    area: fields.get(AREA_FIELD) ?? "",
+  };
+});
+assertNoManagedLabelConflicts(syncCandidates, {
+  scopeLabels: managedScopeLabels,
+  areaLabels: managedAreaLabels,
+});
+
 for (const item of openItems) {
   if (contentIdToProjectItem.has(item.node_id)) {
     continue;
   }
 
-  const projectItem = await addIssueOrPullRequestToProject(project.id, item.node_id, item.html_url);
+  let projectItem;
   const labels = new Set(item.labels.map((label) => label.name));
-  await hydrateFieldsFromLabels(project.id, projectItem.id, requiredFields, labels, item.html_url);
-  await setInboxStatus(project.id, projectItem.id, requiredFields.status, item.html_url);
+  const getProjectItemId = () => projectItem.id;
+  const fieldWrites = createFieldHydrationWrites(
+    project.id,
+    getProjectItemId,
+    requiredFields,
+    labels,
+    item.html_url,
+  );
+
+  await runCompensatingWrites([
+    {
+      apply: async () => {
+        projectItem = await addIssueOrPullRequestToProject(project.id, item.node_id, item.html_url);
+      },
+      recover: async () => {
+        projectItem = await recoverProjectItem(projectOwner, projectNumber, item.node_id);
+        if (!projectItem) {
+          throw new Error(`Unable to determine whether Project 2 contains ${item.html_url} after an uncertain add response.`);
+        }
+      },
+      compensate: async () => {
+        if (!projectItem) {
+          projectItem = await recoverProjectItem(projectOwner, projectNumber, item.node_id, 8);
+        }
+        if (!projectItem?.id) {
+          throw new Error(
+            `PROJECT_SYNC_UNCERTAIN_STATE content=${item.node_id} url=${item.html_url}: `
+            + "the add response was lost and the item is not yet observable; rerun synchronization before claiming completion.",
+          );
+        }
+        await removeIssueOrPullRequestFromProject(project.id, projectItem.id, item.html_url);
+      },
+    },
+    ...fieldWrites,
+    createSingleSelectFieldWrite(
+      project.id,
+      getProjectItemId,
+      requiredFields.status,
+      INBOX_STATUS,
+      item.html_url,
+    ),
+  ]);
+
+  if (fieldWrites.length > 0 && !String(projectItem.id).startsWith("dry-run-")) {
+    summary.fieldsUpdatedFromLabels += 1;
+  }
+
   contentIdToProjectItem.set(item.node_id, {
     id: projectItem.id,
     content: {
@@ -116,6 +188,24 @@ for (const item of openItems) {
 }
 
 const refreshedItems = await listProjectItems(projectOwner, projectNumber);
+assertNoManagedLabelConflicts(
+  refreshedItems
+    .filter((item) => isTargetContent(item.content) && item.content.state !== "CLOSED" && item.content.state !== "MERGED")
+    .map((item) => {
+      const fields = readSingleSelectFieldValues(item);
+      return {
+        url: item.content.url,
+        labels: item.content.labels.nodes.map((label) => label.name),
+        releaseScope: fields.get(SCOPE_FIELD) ?? "",
+        area: fields.get(AREA_FIELD) ?? "",
+      };
+    }),
+  {
+    scopeLabels: managedScopeLabels,
+    areaLabels: managedAreaLabels,
+  },
+);
+
 for (const item of refreshedItems) {
   if (!isTargetContent(item.content) || item.content.state === "CLOSED" || item.content.state === "MERGED") {
     continue;
@@ -209,23 +299,24 @@ function isProjectAccessError(error) {
 }
 
 async function githubRequest(path, options = {}) {
+  const { allowedStatuses = [], ...requestOptions } = options;
   const response = await fetch(`https://api.github.com${path}`, {
-    ...options,
+    ...requestOptions,
     headers: {
       Accept: "application/vnd.github+json",
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       "X-GitHub-Api-Version": "2022-11-28",
-      ...options.headers,
+      ...requestOptions.headers,
     },
   });
 
-  if (!response.ok) {
+  if (!response.ok && !allowedStatuses.includes(response.status)) {
     const body = await response.text();
-    throw new Error(`${options.method ?? "GET"} ${path} failed with ${response.status}: ${body}`);
+    throw new Error(`${requestOptions.method ?? "GET"} ${path} failed with ${response.status}: ${body}`);
   }
 
-  if (response.status === 204) {
+  if (response.status === 204 || allowedStatuses.includes(response.status)) {
     return null;
   }
 
@@ -374,6 +465,14 @@ async function listProjectItems(owner, number) {
   return items;
 }
 
+async function recoverProjectItem(owner, number, contentId, attempts = 3) {
+  return pollForRemoteResult(
+    async () => (await listProjectItems(owner, number))
+      .find((item) => item.content?.id === contentId) ?? null,
+    { attempts },
+  );
+}
+
 async function listOpenIssuesAndPullRequests(owner, name) {
   const items = [];
   let page = 1;
@@ -431,7 +530,31 @@ async function addIssueOrPullRequestToProject(projectId, contentId, url) {
     { projectId, contentId },
   );
 
-  return data.addProjectV2ItemById.item;
+  const projectItem = data?.addProjectV2ItemById?.item;
+  if (!projectItem?.id) {
+    throw new Error(`Project 2 add returned no item ID for ${url}.`);
+  }
+  return projectItem;
+}
+
+async function removeIssueOrPullRequestFromProject(projectId, itemId, url) {
+  if (String(itemId).startsWith("dry-run-")) {
+    return;
+  }
+
+  logAction(`compensate remove from Project 2: ${url}`);
+  if (dryRun) {
+    return;
+  }
+
+  await githubGraphql(
+    `mutation DeleteProjectItem($projectId: ID!, $itemId: ID!) {
+      deleteProjectV2Item(input: { projectId: $projectId, itemId: $itemId }) {
+        deletedItemId
+      }
+    }`,
+    { projectId, itemId },
+  );
 }
 
 async function hydrateFieldsFromLabels(projectId, itemId, fields, labels, url, currentFieldValues = new Map()) {
@@ -439,36 +562,72 @@ async function hydrateFieldsFromLabels(projectId, itemId, fields, labels, url, c
     return { changed: false };
   }
 
-  let changed = false;
+  const writes = createFieldHydrationWrites(
+    projectId,
+    itemId,
+    fields,
+    labels,
+    url,
+    currentFieldValues,
+  );
+  await runCompensatingWrites(writes);
+
+  if (writes.length > 0) {
+    summary.fieldsUpdatedFromLabels += 1;
+  }
+
+  return { changed: writes.length > 0 };
+}
+
+function createFieldHydrationWrites(
+  projectId,
+  itemId,
+  fields,
+  labels,
+  url,
+  currentFieldValues = new Map(),
+) {
+  const writes = [];
   const scopeLabel = [...labels].find((label) => labelToScope.has(label));
   const areaLabel = [...labels].find((label) => labelToArea.has(label));
 
   if (scopeLabel && !currentFieldValues.has(SCOPE_FIELD)) {
-    await setSingleSelectField(projectId, itemId, fields.releaseScope, labelToScope.get(scopeLabel), url);
-    changed = true;
+    writes.push(createSingleSelectFieldWrite(
+      projectId,
+      itemId,
+      fields.releaseScope,
+      labelToScope.get(scopeLabel),
+      url,
+    ));
   }
 
   if (areaLabel && !currentFieldValues.has(AREA_FIELD)) {
-    await setSingleSelectField(projectId, itemId, fields.area, labelToArea.get(areaLabel), url);
-    changed = true;
+    writes.push(createSingleSelectFieldWrite(
+      projectId,
+      itemId,
+      fields.area,
+      labelToArea.get(areaLabel),
+      url,
+    ));
   }
 
-  if (changed) {
-    summary.fieldsUpdatedFromLabels += 1;
-  }
-
-  return { changed };
+  return writes;
 }
 
-async function setInboxStatus(projectId, itemId, statusField, url) {
+function createSingleSelectFieldWrite(projectId, itemId, field, optionName, url) {
+  const getItemId = typeof itemId === "function" ? itemId : () => itemId;
+
+  return {
+    apply: () => setSingleSelectField(projectId, getItemId(), field, optionName, url),
+    compensate: () => clearSingleSelectField(projectId, getItemId(), field, url),
+  };
+}
+
+async function setSingleSelectField(projectId, itemId, field, optionName, url) {
   if (String(itemId).startsWith("dry-run-")) {
     return;
   }
 
-  await setSingleSelectField(projectId, itemId, statusField, INBOX_STATUS, url);
-}
-
-async function setSingleSelectField(projectId, itemId, field, optionName, url) {
   const option = field.options.find((candidate) => candidate.name === optionName);
   if (!option) {
     throw new Error(`Project field "${field.name}" is missing option "${optionName}".`);
@@ -496,6 +655,32 @@ async function setSingleSelectField(projectId, itemId, field, optionName, url) {
   );
 }
 
+async function clearSingleSelectField(projectId, itemId, field, url) {
+  if (String(itemId).startsWith("dry-run-")) {
+    return;
+  }
+
+  logAction(`compensate clear ${field.name}: ${url}`);
+  if (dryRun) {
+    return;
+  }
+
+  await githubGraphql(
+    `mutation ClearProjectField($projectId: ID!, $itemId: ID!, $fieldId: ID!) {
+      clearProjectV2ItemFieldValue(input: {
+        projectId: $projectId,
+        itemId: $itemId,
+        fieldId: $fieldId
+      }) {
+        projectV2Item {
+          id
+        }
+      }
+    }`,
+    { projectId, itemId, fieldId: field.id },
+  );
+}
+
 async function reconcileManagedLabels(owner, name, number, currentLabels, desiredLabels, url) {
   const desired = new Set(desiredLabels);
   const toRemove = [
@@ -503,27 +688,59 @@ async function reconcileManagedLabels(owner, name, number, currentLabels, desire
     ...[...managedAreaLabels].filter((label) => currentLabels.has(label) && !desired.has(label)),
   ];
   const toAdd = [...desired].filter((label) => !currentLabels.has(label));
+  const writes = [];
 
   for (const label of toRemove) {
-    summary.labelsRemoved += 1;
-    logAction(`remove label ${label}: ${url}`);
-    if (!dryRun) {
-      await githubRequest(`/repos/${owner}/${name}/issues/${number}/labels/${encodeURIComponent(label)}`, {
-        method: "DELETE",
-      });
-    }
+    writes.push({
+      apply: async () => {
+        summary.labelsRemoved += 1;
+        logAction(`remove label ${label}: ${url}`);
+        await removeIssueLabel(owner, name, number, label);
+      },
+      compensate: async () => {
+        logAction(`compensate restore label ${label}: ${url}`);
+        await addIssueLabel(owner, name, number, label);
+      },
+    });
   }
 
-  if (toAdd.length) {
-    summary.labelsAdded += toAdd.length;
-    logAction(`add labels ${toAdd.join(", ")}: ${url}`);
-    if (!dryRun) {
-      await githubRequest(`/repos/${owner}/${name}/issues/${number}/labels`, {
-        method: "POST",
-        body: JSON.stringify({ labels: toAdd }),
-      });
-    }
+  for (const label of toAdd) {
+    writes.push({
+      apply: async () => {
+        summary.labelsAdded += 1;
+        logAction(`add label ${label}: ${url}`);
+        await addIssueLabel(owner, name, number, label);
+      },
+      compensate: async () => {
+        logAction(`compensate remove label ${label}: ${url}`);
+        await removeIssueLabel(owner, name, number, label, { allowMissing: true });
+      },
+    });
   }
+
+  await runCompensatingWrites(writes);
+}
+
+async function addIssueLabel(owner, name, number, label) {
+  if (dryRun) {
+    return;
+  }
+
+  await githubRequest(`/repos/${owner}/${name}/issues/${number}/labels`, {
+    method: "POST",
+    body: JSON.stringify({ labels: [label] }),
+  });
+}
+
+async function removeIssueLabel(owner, name, number, label, { allowMissing = false } = {}) {
+  if (dryRun) {
+    return;
+  }
+
+  await githubRequest(`/repos/${owner}/${name}/issues/${number}/labels/${encodeURIComponent(label)}`, {
+    method: "DELETE",
+    allowedStatuses: allowMissing ? [404] : [],
+  });
 }
 
 function logAction(message) {

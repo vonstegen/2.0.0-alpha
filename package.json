@@ -21,13 +21,20 @@
     "engineer:prompt": "node scripts/engineer-runner.mjs prompt",
     "engineer:verify": "node scripts/engineer-runner.mjs verify",
     "test:engineer-runner": "node --test scripts/engineer-runner.test.mjs",
+    "test:security-pipeline": "node --test scripts/security-pipeline/checks/*.test.mjs scripts/security-pipeline/disclosure-baseline.test.mjs",
+    "test:module-ownership": "node --test scripts/module-ownership-doc.test.mjs",
     "discipline:validate": "node scripts/validate-discipline-catalog.mjs",
+    "repo:hygiene": "node scripts/check-repo-hygiene.mjs --content-allowlist scripts/check-repo-hygiene.mjs --content-allowlist scripts/check-repo-hygiene.test.mjs --content-allowlist scripts/validate-docs.test.mjs",
+    "docs:check": "node scripts/validate-docs.mjs",
+    "test:docs": "node --test --test-concurrency=1 scripts/validate-docs.test.mjs scripts/check-repo-hygiene.test.mjs scripts/browser-first-release-scope-audit.test.mjs scripts/project-sync-policy.test.mjs scripts/roadmap-project-consistency.test.mjs scripts/verify-alpha.test.mjs",
+    "project:check-roadmap": "node scripts/check-roadmap-project.mjs",
+    "verify:alpha": "node scripts/verify-alpha.mjs",
     "pre-release:scan": "bash scripts/pre-release-scan.sh",
     "browser-first:audit-scope": "node scripts/browser-first-release-scope-audit.mjs",
     "browser-first:audit-scope:staged": "node scripts/browser-first-release-scope-audit.mjs --staged --strict"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.13.0"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",
@@ -47,10 +54,16 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "entities": "^8.0.0",
     "jsdom": "^29.0.2",
+    "parse5": "^8.0.1",
     "playwright": "^1.59.1",
+    "remark-parse": "^11.0.0",
+    "semver": "^7.8.5",
     "typescript": "^5.0.0",
+    "unified": "^11.0.5",
     "vite": "^6.4.2",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "yaml": "^2.9.0"
   }
 }

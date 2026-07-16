@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import http from "node:http";
 import https from "node:https";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -60,6 +61,47 @@ test("ensureBridgeTls: generates CA + leaf with auto-discovered SANs", async () 
   // At least one of the LAN/Tailscale addresses should be there
   const hasNetwork = sans.some(s => /^(192\.168|100\.112|10\.)/.test(s));
   assert.ok(hasNetwork, `at least one network IP in SANs (got ${JSON.stringify(sans)})`);
+});
+
+test("bridge TLS pins OpenSSL and passes only a scoped environment", async () => {
+  const bridgeTls = await import("../host/bridge-tls.mjs");
+  assert.equal(typeof bridgeTls.runOpenSsl, "function");
+  const calls = [];
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+
+  const pending = bridgeTls.runOpenSsl(["version"], {
+    environment: {
+      HOME: "/home/test",
+      LANG: "C.UTF-8",
+      LC_ALL: "C.UTF-8",
+      TMPDIR: "/tmp/test",
+      SECRET_SENTINEL: "do-not-inherit",
+    },
+    exists: (candidate) => candidate === "/usr/bin/openssl",
+    platform: "linux",
+    spawnImpl: (...args) => {
+      calls.push(args);
+      queueMicrotask(() => child.emit("close", 0));
+      return child;
+    },
+  });
+
+  assert.deepEqual(await pending, { stdout: "", stderr: "" });
+  assert.deepEqual(calls, [[
+    "/usr/bin/openssl",
+    ["version"],
+    {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        HOME: "/home/test",
+        LANG: "C.UTF-8",
+        LC_ALL: "C.UTF-8",
+        TMPDIR: "/tmp/test",
+      },
+    },
+  ]]);
 });
 
 test("ensureBridgeTls: idempotent on second call (no regen)", async () => {

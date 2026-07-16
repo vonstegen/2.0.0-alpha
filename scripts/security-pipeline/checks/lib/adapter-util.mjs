@@ -7,7 +7,8 @@
 //   pass        -> pass
 //   flag        -> warn
 //   block       -> fail
-//   throw / no surface -> skipped
+//   throw              -> skipped evidence, warn aggregate
+//   no surface         -> skipped
 //
 // Dependency-free. No runtime import from .craft/.
 
@@ -78,6 +79,7 @@ export function runCore({ check, repoRoot, core, label }) {
   const rank = { pass: 0, warn: 1, fail: 2 };
   let blocked = 0;
   let flagged = 0;
+  let unscored = 0;
 
   for (const record of records) {
     let out;
@@ -85,6 +87,7 @@ export function runCore({ check, repoRoot, core, label }) {
       out = core(record);
     } catch (error) {
       // A throwing core => skipped contribution for that record, recorded as evidence.
+      unscored += 1;
       evidence.push({
         site: record?.site ?? "<unknown-site>",
         status: "skipped",
@@ -105,11 +108,15 @@ export function runCore({ check, repoRoot, core, label }) {
     });
   }
 
+  if (unscored > 0 && rank[worst] < rank.warn) worst = "warn";
+
+  const unscoredSummary =
+    unscored > 0 ? ` and ${unscored} unscored descriptor(s)` : "";
   const summary =
     worst === "fail"
-      ? `${label}: ${blocked} blocking finding(s) across ${records.length} descriptor(s).`
+      ? `${label}: ${blocked} blocking finding(s)${unscoredSummary} across ${records.length} descriptor(s).`
       : worst === "warn"
-        ? `${label}: ${flagged} warning(s) across ${records.length} descriptor(s).`
+        ? `${label}: ${flagged} warning(s)${unscoredSummary} across ${records.length} descriptor(s).`
         : `${label}: ${records.length} descriptor(s) clean.`;
 
   return { status: worst, summary, evidence };

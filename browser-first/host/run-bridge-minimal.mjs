@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -38,7 +38,12 @@ import { createExtensionPrefsHostService } from "./extension-prefs-host-service.
 import { createMemoryHostService } from "./memory-host-service.mjs";
 import { createMemorySourceIntakeHostService } from "./memory-source-intake-host-service.mjs";
 import { createMemorySourceSettingsService } from "./memory-source-settings-service.mjs";
-import { opencodeCommand, opencodeRuntimeDiagnostics } from "./opencode-runtime.mjs";
+import { opencodeRuntimeDiagnostics } from "./opencode-runtime.mjs";
+import {
+  hermesCommand,
+  hermesHome,
+  hermesPythonRuntimeDiagnostics,
+} from "./hermes-runtime.mjs";
 import { createProviderHostService } from "./provider-host-service.mjs";
 import {
   memorySourceMoveHistoryPath as sourceMoveHistoryPath,
@@ -89,26 +94,6 @@ function browserFirstRoot() {
   return path.join(userRoot(), "BrowserFirst");
 }
 
-function hermesHome(profileHome) {
-  const value = String(profileHome ?? process.env.HERMES_HOME ?? "~/.hermes").trim();
-  if (value === "~") return os.homedir();
-  if (value.startsWith("~/")) return path.join(os.homedir(), value.slice(2));
-  return path.resolve(value);
-}
-
-function hermesCommand(profileHome) {
-  if (process.env.HERMES_COMMAND && existsSync(process.env.HERMES_COMMAND)) {
-    return process.env.HERMES_COMMAND;
-  }
-  const home = hermesHome(profileHome);
-  const candidates = [
-    path.join(home, "hermes-agent", "venv", "bin", "hermes"),
-    path.join(home, "venv", "bin", "hermes"),
-    path.join(home, "bin", "hermes"),
-  ];
-  return candidates.find((candidate) => existsSync(candidate)) ?? firstExistingExecutable("hermes");
-}
-
 function extractJsonObject(value) {
   const text = String(value ?? "").trim();
   if (!text) {
@@ -132,6 +117,20 @@ function extractJsonObject(value) {
 
 const bridgePublicUrlHolder = { value: undefined };
 const getBridgePublicUrlValue = () => bridgePublicUrlHolder.value;
+let addonRuntimeSelfTestHomeDir = null;
+const addonRuntimeResolverOptions = () => addonRuntimeSelfTestHomeDir
+  ? { homeDir: addonRuntimeSelfTestHomeDir }
+  : {};
+const resolveHermesCommand = () => hermesCommand(addonRuntimeResolverOptions());
+const resolveHermesPythonRuntime = (command) =>
+  hermesPythonRuntimeDiagnostics(command, addonRuntimeResolverOptions());
+const resolveOpenCodeRuntimeDiagnostics = () => opencodeRuntimeDiagnostics(addonRuntimeResolverOptions());
+const resolveOpenCodeCommand = () => resolveOpenCodeRuntimeDiagnostics().command;
+const setAddonRuntimeSelfTestHomeDir = (homeDir) => {
+  addonRuntimeSelfTestHomeDir = homeDir
+    ? realpathSync.native(path.resolve(homeDir))
+    : null;
+};
 
 const {
   executeProviderStatus,
@@ -155,12 +154,13 @@ const addonDelegationService = createAddonDelegationService({
   execFileStdout,
   expandUserPath,
   firstExistingExecutable,
-  hermesCommand,
+  hermesCommand: resolveHermesCommand,
   hermesHome,
+  hermesPythonRuntime: resolveHermesPythonRuntime,
   listFilesRecursive,
   memoryRoot,
-  opencodeCommand,
-  opencodeRuntimeDiagnostics,
+  opencodeCommand: resolveOpenCodeCommand,
+  opencodeRuntimeDiagnostics: resolveOpenCodeRuntimeDiagnostics,
   redactPathForDiagnostics,
   readProviderSecrets,
   repoRoot,
@@ -445,6 +445,7 @@ const selfTestHandled = await runBrowserFirstSelfTest({
   readMemorySourceRepairHistory,
   resonantExtensionOrigin,
   safeFileSlug,
+  setAddonRuntimeSelfTestHomeDir,
 });
 
 if (selfTestHandled) {

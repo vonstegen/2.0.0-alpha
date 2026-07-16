@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import { createAddonDelegationService } from "../host/addon-delegation-service.mjs";
+import {
+  hermesPythonRuntimeDiagnostics,
+  hermesRuntimeDiagnostics,
+} from "../host/hermes-runtime.mjs";
 
 function safeFileSlug(value) {
   return String(value ?? "item")
@@ -29,7 +33,8 @@ function createService(root, overrides = {}) {
     expandUserPath: (value) => path.resolve(root, String(value ?? "")),
     firstExistingExecutable: () => null,
     hermesCommand: overrides.hermesCommand ?? (() => null),
-    hermesHome: () => path.join(root, "HermesHome"),
+    hermesHome: overrides.hermesHome ?? (() => path.join(root, "HermesHome")),
+    hermesPythonRuntime: overrides.hermesPythonRuntime ?? (() => null),
     listFilesRecursive: async () => [],
     memoryRoot: () => path.join(root, "Memory"),
     opencodeCommand: overrides.opencodeCommand ?? (() => null),
@@ -38,6 +43,7 @@ function createService(root, overrides = {}) {
     readProviderSecrets: overrides.readProviderSecrets ?? (async () => ({})),
     repoRoot: root,
     safeFileSlug,
+    platform: overrides.platform,
     spawnProcess: overrides.spawnProcess,
     socketOpen: async () => false,
     uniqueRuntimeId: (prefix) => `${prefix}-test-${++id}`,
@@ -127,6 +133,67 @@ test("Hermes status prefers session MiniMax credentials for alpha provider routi
   });
 });
 
+test("Hermes delegation ignores an attacker-controlled profileHome Python before spawn", async () => {
+  await withEnv({
+    RESONANTOS_HERMES_EXECUTION: "enabled",
+    MINIMAX_API_KEY: undefined,
+    OPENAI_API_KEY: undefined,
+  }, async () => {
+    await withTempService(async (_service, root) => {
+      const canonicalRoot = await realpath(root);
+      const trustedCommand = path.join(canonicalRoot, ".hermes", "hermes-agent", "venv", "bin", "hermes");
+      const attackerHome = path.join(canonicalRoot, "attacker-profile");
+      const attackerBin = path.join(attackerHome, "hermes-agent", "venv", "bin");
+      await mkdir(path.dirname(trustedCommand), { recursive: true });
+      await mkdir(attackerBin, { recursive: true });
+      await writeFile(trustedCommand, "");
+      await writeFile(path.join(attackerBin, "python"), "");
+      await writeFile(path.join(attackerHome, "hermes-agent", "run_agent.py"), "");
+      await chmod(trustedCommand, 0o755);
+      await chmod(path.join(attackerBin, "python"), 0o755);
+      const resolverOptions = {
+        env: { HERMES_COMMAND: trustedCommand },
+        homeDir: canonicalRoot,
+        platform: process.platform,
+      };
+      const trustedRuntime = hermesRuntimeDiagnostics(resolverOptions);
+      assert.equal(trustedRuntime.command, trustedCommand);
+
+      let spawnCount = 0;
+      const service = createService(root, {
+        hermesCommand: () => trustedRuntime.command,
+        hermesHome: (profileHome) => profileHome
+          ? path.resolve(profileHome)
+          : path.join(root, "HermesHome"),
+        hermesPythonRuntime: (command) => hermesPythonRuntimeDiagnostics(command, resolverOptions),
+        readProviderSecrets: async () => ({ "shared-minimax": "session-minimax-credential" }),
+        spawnProcess: () => {
+          spawnCount += 1;
+          const child = new EventEmitter();
+          child.stdout = new EventEmitter();
+          child.stderr = new EventEmitter();
+          child.kill = () => undefined;
+          queueMicrotask(() => child.emit("error", new Error("attacker runtime spawned")));
+          return child;
+        },
+      });
+      const created = await service.executeDelegationRecord({
+        target: "hermes",
+        mission: "Do not execute an attacker profile runtime.",
+      });
+
+      const started = await service.executeHermesDelegationStart({
+        path: created.path,
+        profileHome: attackerHome,
+      });
+
+      assert.equal(spawnCount, 0);
+      assert.equal(started.status, "failed");
+      assert.match(started.failureReason, /prompt-safe local runtime/i);
+    });
+  });
+});
+
 test("Hermes MiniMax execution uses OpenAI-compatible custom runtime endpoint", async () => {
   await withEnv({
     RESONANTOS_HERMES_EXECUTION: "enabled",
@@ -147,6 +214,11 @@ test("Hermes MiniMax execution uses OpenAI-compatible custom runtime endpoint", 
       let captured = null;
       const service = createService(root, {
         hermesCommand: () => hermesCommand,
+        hermesPythonRuntime: () => ({
+          installed: true,
+          agentRoot: path.join(root, "HermesHome", "hermes-agent"),
+          pythonPath: path.join(hermesBin, "python"),
+        }),
         readProviderSecrets: async () => ({ "shared-minimax": "session-minimax-credential" }),
         spawnProcess: (_command, args, options) => {
           captured = { args, options };
@@ -218,6 +290,11 @@ test("Hermes delegation fails closed when runtime returns unresolved tool-call m
 
       const service = createService(root, {
         hermesCommand: () => hermesCommand,
+        hermesPythonRuntime: () => ({
+          installed: true,
+          agentRoot: path.join(root, "HermesHome", "hermes-agent"),
+          pythonPath: path.join(hermesBin, "python"),
+        }),
         readProviderSecrets: async () => ({ "shared-minimax": "session-minimax-credential" }),
         spawnProcess: (_command, args) => {
           const child = new EventEmitter();
@@ -332,6 +409,169 @@ test("OpenCode delegation blocks before CLI execution when selected provider cre
       const taskPacket = await readFile(path.join(root, created.path), "utf8");
       assert.match(taskPacket, /^- status:\s*blocked$/mi);
       assert.match(taskPacket, /^- model:\s*openai\/gpt-5\.4-mini$/mi);
+    });
+  });
+});
+
+test("OpenCode rejects Windows command shims before request-controlled argv can spawn", async () => {
+  await withEnv({
+    OPENAI_API_KEY: "synthetic-openai-key",
+    RESONANTOS_OPENCODE_EXECUTION: "enabled",
+  }, async () => {
+    await withTempService(async (_service, root) => {
+      let spawnCount = 0;
+      const service = createService(root, {
+        platform: "win32",
+        opencodeRuntimeDiagnostics: () => ({
+          installed: true,
+          command: "C:\\Trusted & Tools\\opencode.cmd",
+          commandRedacted: "C:\\Trusted & Tools\\opencode.cmd",
+        }),
+        spawnProcess: () => {
+          spawnCount += 1;
+          throw new Error("command shim must not spawn");
+        },
+      });
+      const created = await service.executeDelegationRecord({
+        target: "opencode",
+        mission: "Exercise Windows command shim rejection.",
+      });
+
+      const started = await service.executeOpenCodeDelegationStart({
+        path: created.path,
+        model: "openai/gpt-5.4-mini&|^%",
+      });
+
+      assert.equal(spawnCount, 0);
+      assert.equal(started.status, "failed");
+      assert.match(started.failureReason, /direct executable|\.cmd|command shim/i);
+    });
+  });
+});
+
+test("OpenCode Windows direct executables keep metacharacters literal with shell disabled", async () => {
+  await withEnv({
+    OPENAI_API_KEY: "synthetic-openai-key",
+    RESONANTOS_OPENCODE_EXECUTION: "enabled",
+  }, async () => {
+    await withTempService(async (_service, root) => {
+      const workspacePath = path.join(root, "workspace &|^%");
+      await mkdir(workspacePath, { recursive: true });
+      let captured = null;
+      const service = createService(root, {
+        platform: "win32",
+        opencodeRuntimeDiagnostics: () => ({
+          installed: true,
+          command: "C:\\Program Files\\OpenCode\\opencode.exe",
+          commandRedacted: "C:\\Program Files\\OpenCode\\opencode.exe",
+        }),
+        spawnProcess: (command, args, options) => {
+          captured = { command, args, options };
+          const child = new EventEmitter();
+          child.stdout = new EventEmitter();
+          child.stderr = new EventEmitter();
+          child.kill = () => undefined;
+          queueMicrotask(() => child.emit("error", new Error("capture complete")));
+          return child;
+        },
+      });
+      const created = await service.executeDelegationRecord({
+        target: "opencode",
+        mission: "Exercise literal Windows argv handling.",
+      });
+
+      await service.executeOpenCodeDelegationStart({
+        path: created.path,
+        model: "openai/gpt-5.4-mini&|^%",
+        workspacePath,
+      });
+
+      assert.equal(captured.command, "C:\\Program Files\\OpenCode\\opencode.exe");
+      assert.equal(captured.options.shell, false);
+      assert.ok(captured.args.includes("openai/gpt-5.4-mini&|^%"));
+      assert.ok(captured.args.includes(workspacePath));
+    });
+  });
+});
+
+test("OpenCode provider matrix scopes explicit provider environment keys", async () => {
+  const explicitProviderKeys = [
+    "ANTHROPIC_BASE_URL",
+    "DEEPSEEK_BASE_URL",
+    "GEMINI_BASE_URL",
+    "GOOGLE_GENERATIVE_AI_BASE_URL",
+    "GOOGLE_API_BASE_URL",
+    "GLM_BASE_URL",
+    "MINIMAX_BASE_URL",
+    "OPENAI_BASE_URL",
+    "OPENROUTER_BASE_URL",
+    "XAI_BASE_URL",
+    "ZAI_BASE_URL",
+    "ZHIPUAI_BASE_URL",
+  ];
+  const providerCases = [
+    ["anthropic/claude-sonnet-4", ["ANTHROPIC_API_KEY"]],
+    ["deepseek/deepseek-chat", ["DEEPSEEK_API_KEY"]],
+    ["gemini/gemini-2.5-pro", ["GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_API_KEY"]],
+    ["google/gemini-2.5-pro", ["GOOGLE_GENERATIVE_AI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"]],
+    ["glm/glm-4.5", ["GLM_API_KEY", "ZAI_API_KEY", "ZHIPUAI_API_KEY"]],
+    ["minimax/MiniMax-M3", ["MINIMAX_API_KEY"]],
+    ["openai/gpt-5.4-mini", ["OPENAI_API_KEY"]],
+    ["openrouter/openai/gpt-5.4-mini", ["OPENROUTER_API_KEY"]],
+    ["xai/grok-4", ["XAI_API_KEY"]],
+    ["zai/glm-4.5", ["ZAI_API_KEY", "GLM_API_KEY", "ZHIPUAI_API_KEY"]],
+    ["zhipuai/glm-4.5", ["ZHIPUAI_API_KEY", "ZAI_API_KEY", "GLM_API_KEY"]],
+  ];
+  const providerApiKeys = [...new Set(providerCases.flatMap(([, keys]) => keys))];
+  const environment = Object.fromEntries([
+    ...providerApiKeys.map((key) => [key, `synthetic-${key.toLowerCase()}`]),
+    ...explicitProviderKeys.map((key) => [key, `https://${key.toLowerCase().replaceAll("_", "-")}.example/v1`]),
+    ["AWS_SECRET_ACCESS_KEY", "must-not-reach-opencode"],
+    ["RESONANTOS_OPENCODE_EXECUTION", "enabled"],
+    ["RESONANTOS_OPENCODE_PROVIDER_ENV", [...explicitProviderKeys, "AWS_SECRET_ACCESS_KEY", "RESONANTOS_PROVIDER_SECRETS_JSON"].join(",")],
+    ["RESONANTOS_PROVIDER_SECRETS_JSON", "must-not-reach-opencode"],
+  ]);
+
+  await withEnv(environment, async () => {
+    await withTempService(async (_service, root) => {
+      const calls = [];
+      const service = createService(root, {
+        opencodeRuntimeDiagnostics: () => ({
+          installed: true,
+          command: "/usr/local/bin/opencode",
+          commandRedacted: "/usr/local/bin/opencode",
+        }),
+        spawnProcess: (command, args, options) => {
+          calls.push({ command, args, options });
+          const child = new EventEmitter();
+          child.stdout = new EventEmitter();
+          child.stderr = new EventEmitter();
+          child.kill = () => undefined;
+          queueMicrotask(() => child.emit("error", new Error("provider matrix capture complete")));
+          return child;
+        },
+      });
+
+      for (const [model] of providerCases) {
+        const created = await service.executeDelegationRecord({
+          target: "opencode",
+          mission: `Capture scoped environment for ${model}.`,
+        });
+        await service.executeOpenCodeDelegationStart({ path: created.path, model });
+      }
+
+      assert.equal(calls.length, providerCases.length);
+      for (const [index, [model, expectedApiKeys]] of providerCases.entries()) {
+        const call = calls[index];
+        const envKeys = Object.keys(call.options.env);
+        assert.equal(call.command, "/usr/local/bin/opencode");
+        assert.equal(call.options.shell, false);
+        assert.ok(call.args.includes(model));
+        assert.ok(expectedApiKeys.every((key) => envKeys.includes(key)));
+        assert.ok(explicitProviderKeys.every((key) => envKeys.includes(key)));
+        assert.ok(!envKeys.includes("AWS_SECRET_ACCESS_KEY"));
+        assert.ok(!envKeys.includes("RESONANTOS_PROVIDER_SECRETS_JSON"));
+      }
     });
   });
 });

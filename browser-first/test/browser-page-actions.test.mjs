@@ -4,6 +4,8 @@ import test from "node:test";
 import { normalizeBrowserUrl } from "../resonantos-side-panel-extension/src/lib/browser-command-parser.js";
 import { createBrowserPageActions } from "../resonantos-side-panel-extension/src/lib/browser-page-actions.js";
 
+const openAiLikeUrlSecret = ["sk", "live", "URL", "SECRET"].join("-");
+
 function createHarness(overrides = {}) {
   const events = [];
   let controlledTabId = overrides.controlledTabId ?? 1;
@@ -234,6 +236,35 @@ test("browser page actions rejects cached tab context without tab identity or UR
   assert.ok(harness.events.some((event) => event[0] === "context" && event[1] === null));
 });
 
+test("browser page actions never announce raw query or hash secrets from page URLs", async () => {
+  const harness = createHarness({
+    sendMessage: () => ({
+      ok: true,
+      snapshot: {
+        title: "Leaky Page",
+        url: `https://example.test/path?token=${openAiLikeUrlSecret}#card-4111222233334444`,
+        text: "safe visible text",
+        links: [{ text: "checkout", href: "https://example.test/pay?session=secret#card-4111222233334444" }],
+        frame: { isTop: true, referrer: "https://referrer.test/?token=secret#frag" }
+      }
+    })
+  });
+
+  const result = await harness.actions.readActivePage();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.snapshot.url, "https://example.test/path");
+  assert.equal(result.snapshot.links[0].href, "https://example.test/pay");
+  assert.equal(result.snapshot.frame.referrer, "https://referrer.test/");
+  const transcript = harness.events
+    .filter((event) => event[0] === "message")
+    .map((event) => event[2])
+    .join("\n");
+  assert.match(transcript, /https:\/\/example\.test\/path/);
+  assert.equal(transcript.includes(openAiLikeUrlSecret), false);
+  assert.doesNotMatch(transcript, /token=|4111222233334444|#card/);
+});
+
 test("browser page actions inject content script after missing receiver failure", async () => {
   const harness = createHarness({
     sendMessage: (call) => call === 1
@@ -246,6 +277,25 @@ test("browser page actions inject content script after missing receiver failure"
   assert.equal(result.ok, true);
   assert.ok(harness.events.some((event) => event[0] === "inject"));
   assert.ok(harness.events.some((event) => event[0] === "message" && /Clicked "Continue"/.test(event[2])));
+});
+
+test("browser page actions route Resonator commands to the active page", async () => {
+  let sent = null;
+  const harness = createHarness({
+    permission: "read-only",
+    sendMessage: (_call, message) => {
+      sent = message;
+      return { ok: true, action: message.action, result: { ok: true } };
+    }
+  });
+
+  const result = await harness.actions.runResonatorCommand("highlight", "#target");
+
+  assert.equal(result.ok, true);
+  assert.equal(sent.type, "resonator");
+  assert.equal(sent.action, "highlight");
+  assert.deepEqual(sent.payload, { selector: "#target", label: "" });
+  assert.ok(harness.events.some((event) => event[0] === "message" && /Resonator highlight displayed/.test(event[2])));
 });
 
 test("browser page actions respect read-only site permission for mutations", async () => {

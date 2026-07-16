@@ -16,6 +16,7 @@
 // re-installing the CA on their clients.
 
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -51,9 +52,9 @@ function discoverBridgeSans() {
   return Array.from(new Set(sans));
 }
 
-async function run(cmd, args, opts = {}) {
+async function run(cmd, args, opts = {}, spawnImpl = spawn) {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"], ...opts });
+    const child = spawnImpl(cmd, args, { stdio: ["ignore", "pipe", "pipe"], ...opts });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d.toString("utf8")));
@@ -66,6 +67,47 @@ async function run(cmd, args, opts = {}) {
   });
 }
 
+export function resolveOpenSslPath({ platform = process.platform, exists = existsSync } = {}) {
+  const candidates = platform === "win32"
+    ? [
+      "C:\\Program Files\\OpenSSL-Win64\\bin\\openssl.exe",
+      "C:\\Program Files\\Git\\usr\\bin\\openssl.exe",
+    ]
+    : platform === "darwin"
+      ? ["/opt/homebrew/bin/openssl", "/usr/local/bin/openssl", "/usr/bin/openssl"]
+      : ["/usr/bin/openssl", "/bin/openssl", "/usr/local/bin/openssl"];
+  const command = candidates.find((candidate) => exists(candidate));
+  if (!command) {
+    throw new Error("OpenSSL was not found in a trusted system installation path.");
+  }
+  return command;
+}
+
+function openSslEnvironment(environment) {
+  return Object.fromEntries(
+    ["HOME", "LANG", "LC_ALL", "TMPDIR"]
+      .map((key) => [key, environment[key]])
+      .filter(([, value]) => value !== undefined),
+  );
+}
+
+export function runOpenSsl(
+  args,
+  {
+    environment = process.env,
+    exists = existsSync,
+    platform = process.platform,
+    spawnImpl = spawn,
+  } = {},
+) {
+  return run(
+    resolveOpenSslPath({ platform, exists }),
+    args,
+    { env: openSslEnvironment(environment) },
+    spawnImpl,
+  );
+}
+
 async function fileExistsAndNonEmpty(p) {
   try {
     const s = await stat(p);
@@ -76,12 +118,16 @@ async function fileExistsAndNonEmpty(p) {
 }
 
 // Generate a self-signed CA (root). Returns nothing; writes ca.crt and ca.key.
-export async function generateCa({ dir, validityDays = DEFAULT_CA_VALIDITY_DAYS } = {}) {
+export async function generateCa({
+  dir,
+  validityDays = DEFAULT_CA_VALIDITY_DAYS,
+  runOpenSslImpl = runOpenSsl,
+} = {}) {
   const outDir = dir ?? DEFAULT_BRIDGE_TLS_DIR;
   await mkdir(outDir, { recursive: true });
   const caKey = path.join(outDir, "ca.key");
   const caCrt = path.join(outDir, "ca.crt");
-  await run("openssl", [
+  await runOpenSslImpl([
     "req", "-x509", "-new", "-nodes",
     "-newkey", "ed25519",
     "-keyout", caKey,
@@ -101,6 +147,7 @@ export async function generateLeaf({
   caCrtPath,
   sans,
   validityDays = DEFAULT_LEAF_VALIDITY_DAYS,
+  runOpenSslImpl = runOpenSsl,
 } = {}) {
   const outDir = dir ?? DEFAULT_BRIDGE_TLS_DIR;
   await mkdir(outDir, { recursive: true });
@@ -110,7 +157,7 @@ export async function generateLeaf({
   const extFile = path.join(outDir, "bridge.ext");
 
   // 1) Generate leaf key + CSR
-  await run("openssl", [
+  await runOpenSslImpl([
     "req", "-new", "-nodes",
     "-newkey", "ed25519",
     "-keyout", bridgeKey,
@@ -134,7 +181,7 @@ export async function generateLeaf({
   // 3) Sign the CSR with the CA. Use an explicit serial number so we don't
   // leave a ca.srl file lying around.
   const serial = Math.floor(Math.random() * 0xffffffff).toString();
-  await run("openssl", [
+  await runOpenSslImpl([
     "x509", "-req",
     "-in", bridgeCsr,
     "-CA", caCrtPath,
@@ -245,11 +292,11 @@ export async function ensureBridgeTls({ dir, regen = false, regenScope = "leaf" 
 // ["localhost", "127.0.0.1", "192.168.1.100", ...]. Parses both the
 // modern "DNS:foo, IP:1.2.3.4" form and OpenSSL's verbose
 // "DNS:foo, IP Address:1.2.3.4" form.
-export async function getCertSans(certPem) {
+export async function getCertSans(certPem, { runOpenSslImpl = runOpenSsl } = {}) {
   const tmp = path.join(os.tmpdir(), `resonantos-cert-${process.pid}-${Date.now()}.pem`);
   await writeFile(tmp, certPem, { mode: 0o600 });
   try {
-    const { stdout } = await run("openssl", ["x509", "-in", tmp, "-noout", "-ext", "subjectAltName"]);
+    const { stdout } = await runOpenSslImpl(["x509", "-in", tmp, "-noout", "-ext", "subjectAltName"]);
     // OpenSSL prints:
     //   "X509v3 Subject Alternative Name: \n    DNS:localhost, IP Address:127.0.0.1, ..."
     // or for empty SANs:
