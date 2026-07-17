@@ -76,7 +76,7 @@ suffix are open. Safety-boundary rows are **never** casual good-first-issues.
 ### Voice
 | Capability | Canonical issue(s) | Status | Tests / proof | Safety boundary |
 |---|---|---|---|---|
-| Voice mode — transcript to composer | #235 · #249 · epic #216 · #99 | ⏸ deferred · 🔒 | transcript→composer flow; reviewed-transcript preflight | permission-light; reviewed before action |
+| Voice mode — transcript to composer | #235 · #249 · epic #216 | ⏸ deferred · 🔒 | transcript→composer flow; reviewed-transcript preflight | permission-light; reviewed before action |
 
 ### Multi-model backend & provider routing
 | Capability | Canonical issue(s) | Status | Tests / proof | Safety boundary |
