@@ -1122,6 +1122,12 @@ export function createProviderBridgeService({
   async function executeBridgeChat(payload) {
     const routeDecision = await providerRouteForWorkload(payload.workload || "augmentor-chat", payload.model);
     if (!routeDecision.route) {
+      if (routeDecision.source === "manual" && routeDecision.requestedModel) {
+        // Manual selection is preserved: report that the chosen model is
+        // unavailable (disabled by the allowed-model policy or not in the catalog)
+        // instead of silently swapping to another model.
+        throw new Error(`The selected model "${routeDecision.requestedModel}" is unavailable — it is disabled by the allowed-model policy or not in the catalog. Pick another model, or enable it in Settings > Providers.`);
+      }
       const label = routeDecision.strategy?.label ?? "Augmentor Chat";
       throw new Error(`${label} has no available provider route. Add a provider credential, configure a local runtime, or change the routing strategy in Settings > Routing.`);
     }
@@ -1134,16 +1140,32 @@ export function createProviderBridgeService({
     const strategyChain = routeDecision.source === "strategy"
       ? [routeDecision.strategy?.primary, ...(routeDecision.strategy?.fallbackChain ?? [])].filter((entry) => entry?.configured)
       : [];
-    const routeAttempts = routeDecision.source === "strategy" && strategyChain.length
-      ? strategyChain.map((entry) => providerRouteForModel(entry.model, { catalog, profiles }))
-      : [routeDecision.route];
-    const uniqueRouteAttempts = routeAttempts.filter((route, index, routes) =>
-      route && routes.findIndex((candidate) => candidate.providerId === route.providerId && candidate.wireModel === route.wireModel) === index
-    );
+    // Each attempt carries the strategy model it came from, so a fallback is
+    // detected by comparing the model that ANSWERED against the strategy's
+    // declared primary — not by whether an earlier attempt errored. The primary
+    // is filtered out of the chain above when it is unconfigured/disabled, so a
+    // failure count would miss that (the most common) silent-swap case (#231).
+    const attempts = routeDecision.source === "strategy" && strategyChain.length
+      ? strategyChain.map((entry) => ({ model: entry.model, route: providerRouteForModel(entry.model, { catalog, profiles }) }))
+      : [{ model: routeDecision.requestedModel ?? null, route: routeDecision.route }];
+    const seenRoutes = new Set();
+    const uniqueAttempts = attempts.filter(({ route }) => {
+      if (!route) return false;
+      const key = `${route.providerId}:${route.wireModel}`;
+      if (seenRoutes.has(key)) return false;
+      seenRoutes.add(key);
+      return true;
+    });
     const failures = [];
-    for (const route of uniqueRouteAttempts) {
+    for (const { model: attemptModel, route } of uniqueAttempts) {
       const apiKey = route.providerId === "desktop-local" ? "local-runtime" : secrets[route.providerId];
       if (!apiKey) {
+        if (routeDecision.source !== "strategy") {
+          // A manually selected, catalog-valid model whose provider has no
+          // credential: name it and point to recovery, instead of the generic
+          // exhausted-route error.
+          throw new Error(`The selected model "${routeDecision.requestedModel ?? route.wireModel}" has no active provider credential. Add it in Settings > Providers, or pick another model.`);
+        }
         failures.push(`${route.label} credential missing`);
         continue;
       }
@@ -1193,16 +1215,28 @@ export function createProviderBridgeService({
         }
         continue;
       }
+      // A fallback occurred when the strategy model that ANSWERED is not the
+      // strategy's declared primary — whether the primary was unconfigured,
+      // policy-disabled, or failed at request time. Name the preferred model
+      // rather than silently swapping.
+      const primaryModel = routeDecision.strategy?.primaryModel;
+      const usedFallback = routeDecision.source === "strategy" && Boolean(primaryModel) && attemptModel !== primaryModel;
+      const requestedModel = routeDecision.source === "manual" ? (routeDecision.requestedModel ?? null) : null;
       return {
         reply,
         providerId: route.providerId,
         model: routeDecision.source === "strategy" ? route.wireModel : (payload.model || route.wireModel),
+        requestedModel,
         routeSource: routeDecision.source,
         routeStrategyId: routeDecision.strategy?.id ?? "",
+        routeFallback: usedFallback,
+        routeNotice: usedFallback
+          ? `Preferred model ${primaryModel} unavailable — answered with ${route.label} (${route.wireModel}). Check provider health in Settings > Providers or the routing strategy in Settings > Routing.`
+          : "",
         usage: responsePayload?.usage ?? null,
       };
     }
-    throw new Error(`No provider route returned a reply. Attempts: ${failures.join(" | ")}`);
+    throw new Error(`No provider route returned a reply — check provider health in Settings > Providers or the routing strategy in Settings > Routing. Attempts: ${failures.join(" | ")}`);
   }
 
   async function executeInlineAssistant(payload) {

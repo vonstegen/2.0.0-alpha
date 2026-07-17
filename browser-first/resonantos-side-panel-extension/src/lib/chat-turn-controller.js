@@ -149,6 +149,12 @@ export function createChatTurnController({
       setStatus("Writing");
       setActivity("writing", "Writing response", result.model || getModel());
       await addMessage("assistant", result.reply, { usage: result.usage ?? { providerId: result.providerId, model: result.model } });
+      // Make a route fallback visible: the preferred model was unavailable and a
+      // different one answered. Surfaced as a system notice with recovery guidance
+      // rather than silently swapping the user's route.
+      if (result.routeFallback && result.routeNotice) {
+        await addMessage("system", result.routeNotice);
+      }
       await clearAttachments();
       setStatus("Ready");
     } catch (error) {
