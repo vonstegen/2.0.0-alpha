@@ -130,6 +130,10 @@ export function createProviderBridgeService({
     sessionProviderSecrets.set(providerId, credential);
   }
 
+  function forgetProviderSecret(providerId) {
+    sessionProviderSecrets.delete(providerId);
+  }
+
   function credentialStoreStatus(secrets) {
     return {
       configured: Object.keys(secrets).length > 0,
@@ -538,15 +542,17 @@ export function createProviderBridgeService({
   }
 
   async function resolvedRoutingStrategies() {
-    const [secrets, overrides, preferences] = await Promise.all([
+    const [secrets, overrides, preferences, catalog] = await Promise.all([
       readProviderSecrets(),
       readRoutingOverrides().catch(() => ({})),
       readProviderModelPreferences().catch(() => ({})),
+      allModelCatalog(),
     ]);
     return resolveRoutingStrategies({
       secrets,
       overrides,
       preferences,
+      catalog,
       localRuntimeUrl: process.env.RESONANTOS_LOCAL_RUNTIME_URL,
     });
   }
@@ -783,7 +789,7 @@ export function createProviderBridgeService({
   async function executeProviderRoutingStrategies() {
     return {
       updatedAt: new Date().toISOString(),
-      models: modelCatalog,
+      models: await allModelCatalog(),
       strategies: await resolvedRoutingStrategies(),
     };
   }
@@ -794,12 +800,13 @@ export function createProviderBridgeService({
     if (!base) {
       throw new Error("Unknown routing strategy.");
     }
+    const catalog = await allModelCatalog();
     const next = normalizeRoutingStrategy(base, {
       primaryModel: String(payload.primaryModel ?? "").trim(),
       fallbackModels: payload.fallbackModels,
       costPosture: payload.costPosture,
       hardStop: Boolean(payload.hardStop),
-    });
+    }, catalog);
     const current = await readRoutingOverrides().catch(() => ({}));
     const filePath = providerRoutingPath();
     await mkdir(path.dirname(filePath), { recursive: true });
@@ -861,6 +868,54 @@ export function createProviderBridgeService({
     };
   }
 
+  async function executeProviderAccountRemove(payload) {
+    const providerId = String(payload.providerId ?? payload.id ?? "").trim();
+    if (!providerId) {
+      throw new Error("A provider id is required to remove an account.");
+    }
+    if (providerProfiles.some((builtIn) => builtIn.id === providerId)) {
+      throw new Error("Built-in provider profiles cannot be removed.");
+    }
+    const existingCustom = await readProviderAccounts().catch(() => []);
+    if (!existingCustom.some((account) => account.id === providerId)) {
+      throw new Error("Unknown provider account.");
+    }
+    // Models this provider contributed — so we can drop any routing override that
+    // pinned one of them as a strategy primary. Without this, a stale primary
+    // could silently resurrect if a provider with the same id were re-added.
+    const removedModels = new Set(
+      (await allModelCatalog()).filter((entry) => entry.providerId === providerId).map((entry) => entry.model),
+    );
+    const nextCustom = existingCustom.filter((account) => account.id !== providerId);
+    await writeProviderAccounts(nextCustom);
+    forgetProviderSecret(providerId);
+
+    const overrides = await readRoutingOverrides().catch(() => ({}));
+    const cleanedOverrides = Object.fromEntries(
+      Object.entries(overrides)
+        .filter(([, override]) => !removedModels.has(override?.primaryModel))
+        .map(([id, override]) => [
+          id,
+          Array.isArray(override?.fallbackModels)
+            ? { ...override, fallbackModels: override.fallbackModels.filter((entry) => !removedModels.has(entry)) }
+            : override,
+        ]),
+    );
+    if (JSON.stringify(cleanedOverrides) !== JSON.stringify(overrides)) {
+      const filePath = providerRoutingPath();
+      await mkdir(path.dirname(filePath), { recursive: true });
+      await writeFile(filePath, `${JSON.stringify(cleanedOverrides, null, 2)}\n`, { mode: 0o600 });
+      await chmod(filePath, 0o600).catch(() => undefined);
+    }
+
+    return {
+      removed: providerId,
+      removedAt: new Date().toISOString(),
+      providers: await allProviderProfiles(),
+      strategies: await resolvedRoutingStrategies(),
+    };
+  }
+
   function sanitizeAssistantContent(providerType, content) {
     if (providerType !== "minimax") {
       return String(content ?? "").trim();
@@ -876,17 +931,20 @@ export function createProviderBridgeService({
     return ["none", "low", "medium", "high", "xhigh"].includes(normalized) ? normalized : fallback;
   }
 
-  function providerRouteForModel(model) {
+  function providerRouteForModel(model, extra = {}) {
     return providerFabricRouteForModel(model, {
       localRuntimeUrl: process.env.RESONANTOS_LOCAL_RUNTIME_URL,
+      ...extra,
     });
   }
 
   async function providerRouteForWorkload(workloadId, requestedModel = "") {
-    const [secrets, preferences, strategies] = await Promise.all([
+    const [secrets, preferences, strategies, catalog, profiles] = await Promise.all([
       readProviderSecrets(),
       readProviderModelPreferences().catch(() => ({})),
       resolvedRoutingStrategies(),
+      allModelCatalog(),
+      allProviderProfiles(),
     ]);
     return providerFabricRouteForWorkload({
       workloadId,
@@ -894,13 +952,15 @@ export function createProviderBridgeService({
       secrets,
       preferences,
       strategies,
+      catalog,
+      profiles,
       localRuntimeUrl: process.env.RESONANTOS_LOCAL_RUNTIME_URL,
     });
   }
 
-  function providerRouteForArchiveVerifier(secrets, requestedModel = "") {
+  function providerRouteForArchiveVerifier(secrets, requestedModel = "", { catalog, profiles } = {}) {
     if (requestedModel) {
-      const requestedRoute = providerRouteForModel(requestedModel);
+      const requestedRoute = providerRouteForModel(requestedModel, { catalog, profiles });
       return secrets[requestedRoute.providerId] ? requestedRoute : null;
     }
     const openAiRoute = providerRouteForModel("gpt-5.5");
@@ -930,8 +990,12 @@ export function createProviderBridgeService({
   }
 
   async function runArchiveSemanticVerifier({ artifactPath, requestPath, sourceContent, proposedPage, proposedContent, requestedModel }) {
-    const secrets = await readProviderSecrets();
-    const route = providerRouteForArchiveVerifier(secrets, requestedModel);
+    const [secrets, catalog, profiles] = await Promise.all([
+      readProviderSecrets(),
+      allModelCatalog(),
+      allProviderProfiles(),
+    ]);
+    const route = providerRouteForArchiveVerifier(secrets, requestedModel, { catalog, profiles });
     if (!route) {
       return {
         semanticStatus: "unavailable",
@@ -1026,8 +1090,12 @@ export function createProviderBridgeService({
     requestedModel,
     deterministicContent,
   }) {
-    const secrets = await readProviderSecrets();
-    const route = providerRouteForArchiveVerifier(secrets, requestedModel);
+    const [secrets, catalog, profiles] = await Promise.all([
+      readProviderSecrets(),
+      allModelCatalog(),
+      allProviderProfiles(),
+    ]);
+    const route = providerRouteForArchiveVerifier(secrets, requestedModel, { catalog, profiles });
     return runArchiveIngestWriterWithRoute({
       sourceContent,
       sourcePath,
@@ -1057,13 +1125,17 @@ export function createProviderBridgeService({
       const label = routeDecision.strategy?.label ?? "Augmentor Chat";
       throw new Error(`${label} has no available provider route. Add a provider credential, configure a local runtime, or change the routing strategy in Settings > Routing.`);
     }
-    const secrets = await readProviderSecrets();
+    const [secrets, catalog, profiles] = await Promise.all([
+      readProviderSecrets(),
+      allModelCatalog(),
+      allProviderProfiles(),
+    ]);
     const requestMessages = buildAugmentorChatRequestMessages(payload);
     const strategyChain = routeDecision.source === "strategy"
       ? [routeDecision.strategy?.primary, ...(routeDecision.strategy?.fallbackChain ?? [])].filter((entry) => entry?.configured)
       : [];
     const routeAttempts = routeDecision.source === "strategy" && strategyChain.length
-      ? strategyChain.map((entry) => providerRouteForModel(entry.model))
+      ? strategyChain.map((entry) => providerRouteForModel(entry.model, { catalog, profiles }))
       : [routeDecision.route];
     const uniqueRouteAttempts = routeAttempts.filter((route, index, routes) =>
       route && routes.findIndex((candidate) => candidate.providerId === route.providerId && candidate.wireModel === route.wireModel) === index
@@ -1149,8 +1221,12 @@ export function createProviderBridgeService({
         usage: null,
       };
     }
-    const route = providerRouteForModel(payload.model);
-    const secrets = await readProviderSecrets();
+    const [secrets, catalog, profiles] = await Promise.all([
+      readProviderSecrets(),
+      allModelCatalog(),
+      allProviderProfiles(),
+    ]);
+    const route = providerRouteForModel(payload.model, { catalog, profiles });
     const apiKey = secrets[route.providerId];
     if (!apiKey) {
       return {
@@ -1252,6 +1328,7 @@ export function createProviderBridgeService({
     executeBridgeChat,
     executeInlineAssistant,
     executeProviderAccountSave,
+    executeProviderAccountRemove,
     executeProviderConnectivityTest,
     executeProviderCredentialSave,
     executeProviderDiagnosticsHistory,

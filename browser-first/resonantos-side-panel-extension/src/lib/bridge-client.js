@@ -28,6 +28,7 @@ const BRIDGE_ROUTE_CAPABILITIES = Object.freeze({
   "GET /providers/routing-strategies": "provider-diagnostics-read",
   "POST /providers/credentials": "provider-credential-write",
   "POST /providers/accounts": "provider-credential-write",
+  "POST /providers/accounts/remove": "provider-credential-write",
   "POST /providers/routing-strategies": "provider-routing-write",
   "POST /providers/model-preferences": "provider-routing-write",
   "POST /augmentor/chat": "provider-model-invoke",

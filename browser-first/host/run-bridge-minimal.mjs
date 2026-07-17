@@ -138,6 +138,8 @@ const {
   openAiReasoningEffort,
   providerBridgeRoutes,
   providerRouteForModel,
+  allModelCatalog,
+  allProviderProfiles,
   readProviderSecrets,
   runArchiveIngestWriter,
   runArchiveSemanticVerifier,
@@ -324,6 +326,8 @@ const { agentControlRoutes } = createAgentControlHostService({
   extractJsonObject,
   openAiReasoningEffort,
   providerRouteForModel,
+  allModelCatalog,
+  allProviderProfiles,
   readProviderSecrets,
   sanitizeAssistantContent,
 });
