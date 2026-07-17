@@ -74,3 +74,12 @@ Use the root [installation guide](../../INSTALL.md) for end-to-end setup and
 [CONTRIBUTING.md](../../CONTRIBUTING.md) for pull requests into `dev`. Current
 delivery state and Project 2 rules live in [Status](../../docs/STATUS.md) and
 [Project Governance](../../docs/PROJECT_GOVERNANCE.md).
+
+## First-time bridge deployment
+
+Deploying the bridge on a host and pointing a remote Chrome at it crosses
+several independent failure modes (proxy `/auth` mirror, Caddy TLS ALPN,
+capability-token map coverage, WebSocket upgrades). Follow the
+[bridge first-time-setup runbook](../../docs/browser-first-bridge-setup-runbook.md),
+and use the checked-in [`caddy-bridge-h1.json`](caddy-bridge-h1.json) to pin
+Caddy's TLS ALPN to `http/1.1` (required for the dashboard WebSockets).
