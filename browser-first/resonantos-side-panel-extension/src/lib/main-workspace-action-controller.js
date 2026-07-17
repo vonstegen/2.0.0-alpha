@@ -143,6 +143,11 @@ export function createMainWorkspaceActionController({
       await addMessage("assistant", assistantTextFromResponse(response) || "No response was returned.", {
         usage: response?.usage ?? null
       });
+      // Make a route fallback visible on the main-workspace surface too, matching
+      // the side panel: a preferred model was unavailable and another answered.
+      if (response?.routeFallback && response?.routeNotice) {
+        await addMessage("system", response.routeNotice);
+      }
       updateConnectionLine("Ready");
     } catch (error) {
       if (error?.name === "AbortError") {
