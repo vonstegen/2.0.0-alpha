@@ -72,6 +72,19 @@ body:
     validations:
       required: true
 
+  - type: textarea
+    id: handoff
+    attributes:
+      label: Contributor handoff (code entry-point)
+      description: |
+        So a contributor can start without chat-history archaeology. If you know the codebase, name the module a contributor would begin from and a focused test; a triager can fill this in later otherwise. Note that `npm run test:browser-first` runs the FULL suite and ignores path arguments — target a file with `node --test <path>` instead. Mark whether the work is in the browser-first Alpha runtime or deferred/native.
+      placeholder: |
+        - Entry-point: browser-first/resonantos-side-panel-extension/src/lib/<module>.js
+        - Focused test: node --test browser-first/test/<file>.test.mjs
+        - Runtime: browser-first Alpha (per AGENTS.md) | deferred | native-future
+    validations:
+      required: false
+
   - type: dropdown
     id: sensitive_actions
     attributes:
