@@ -1122,6 +1122,11 @@ export function createProviderBridgeService({
   async function executeBridgeChat(payload) {
     const routeDecision = await providerRouteForWorkload(payload.workload || "augmentor-chat", payload.model);
     if (!routeDecision.route) {
+      if (routeDecision.source === "manual" && routeDecision.requestedModel) {
+        // Manual selection is preserved: rather than silently swapping to another
+        // model, report that the chosen one is unavailable and how to enable it.
+        throw new Error(`The selected model "${routeDecision.requestedModel}" is currently unavailable (its allowed-model policy is off, or its provider has no credential). Pick another model, or enable it in Settings > Providers.`);
+      }
       const label = routeDecision.strategy?.label ?? "Augmentor Chat";
       throw new Error(`${label} has no available provider route. Add a provider credential, configure a local runtime, or change the routing strategy in Settings > Routing.`);
     }
@@ -1193,16 +1198,26 @@ export function createProviderBridgeService({
         }
         continue;
       }
+      // A fallback was used when this is a strategy route and one or more earlier
+      // attempts in the chain failed before this one answered. Surface it so the
+      // user sees which model actually answered and why, rather than a silent swap.
+      const usedFallback = routeDecision.source === "strategy" && failures.length > 0;
+      const requestedModel = String(payload.model ?? "").trim() || null;
       return {
         reply,
         providerId: route.providerId,
         model: routeDecision.source === "strategy" ? route.wireModel : (payload.model || route.wireModel),
+        requestedModel,
         routeSource: routeDecision.source,
         routeStrategyId: routeDecision.strategy?.id ?? "",
+        routeFallback: usedFallback,
+        routeNotice: usedFallback
+          ? `Preferred route unavailable — answered with ${route.label} (${route.wireModel}). Check provider health in Settings > Providers or the routing strategy in Settings > Routing.`
+          : "",
         usage: responsePayload?.usage ?? null,
       };
     }
-    throw new Error(`No provider route returned a reply. Attempts: ${failures.join(" | ")}`);
+    throw new Error(`No provider route returned a reply — check provider health in Settings > Providers or the routing strategy in Settings > Routing. Attempts: ${failures.join(" | ")}`);
   }
 
   async function executeInlineAssistant(payload) {
