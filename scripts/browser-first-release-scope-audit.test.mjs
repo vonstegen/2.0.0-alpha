@@ -120,7 +120,8 @@ test("project sync executes pull-request events only from trusted base code", as
   const workflow = parse(workflowText);
   const job = workflow.jobs.sync;
   const checkout = job.steps.find((step) => step.name === "Checkout");
-  const requireToken = job.steps.find((step) => step.name === "Require Project token");
+  const captureSnapshot = job.steps.find((step) => step.name === "Capture Project 2 scope snapshot");
+  const syncStep = job.steps.find((step) => step.name === "Sync project and labels");
 
   assert.equal(workflow.on.pull_request, undefined);
   assert.ok(workflow.on.pull_request_target);
@@ -134,8 +135,11 @@ test("project sync executes pull-request events only from trusted base code", as
   assert.equal(workflow.permissions.contents, "read");
   assert.equal(workflow.permissions.issues, undefined);
   assert.equal(workflow.permissions["pull-requests"], undefined);
-  assert.equal(requireToken.if, "steps.project-token.outputs.configured != 'true'");
-  assert.match(requireToken.run, /exit 1/);
+  // Token gating: the actual Project sync steps run only when the token is
+  // configured. A missing token skips them gracefully rather than failing the
+  // workflow on every unrelated PR/commit (#260).
+  assert.equal(captureSnapshot.if, "steps.project-token.outputs.configured == 'true'");
+  assert.equal(syncStep.if, "steps.project-token.outputs.configured == 'true'");
 });
 
 test("committed mode preserves added and deleted branch paths in a clean worktree", async () => {
