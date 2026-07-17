@@ -30,6 +30,7 @@ import {
 } from "./browser-first-host-utils.mjs";
 import { runBrowserFirstSelfTest } from "./browser-first-self-test-service.mjs";
 import { createAgentControlHostService } from "./agent-control-host-service.mjs";
+import { buildBridgeCapabilityTokens } from "./bridge-capability-tokens.mjs";
 import { createAddonDelegationHostService } from "./addon-delegation-host-service.mjs";
 import { createAddonDelegationService } from "./addon-delegation-service.mjs";
 import { createArchiveReviewHostService } from "./archive-review-host-service.mjs";
@@ -347,77 +348,7 @@ const bridgeToken = args.get("bridge-token") ?? process.env.RESONANTOS_BROWSER_F
 const capabilityBootstrapToken = args.get("capability-bootstrap-token") ??
   process.env.RESONANTOS_BROWSER_FIRST_CAPABILITY_BOOTSTRAP_TOKEN ??
   createBridgeToken();
-const bridgeCapabilityTokens = {
-  "provider-credential-write": args.get("provider-credential-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_PROVIDER_CREDENTIAL_TOKEN ??
-    createBridgeToken(),
-  "provider-routing-write": args.get("provider-routing-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_PROVIDER_ROUTING_TOKEN ??
-    createBridgeToken(),
-  "provider-diagnostics-read": args.get("provider-diagnostics-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_PROVIDER_DIAGNOSTICS_TOKEN ??
-    createBridgeToken(),
-  "provider-model-invoke": args.get("provider-model-invoke-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_PROVIDER_MODEL_INVOKE_TOKEN ??
-    createBridgeToken(),
-  "agent-control-plan": args.get("agent-control-plan-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_AGENT_CONTROL_PLAN_TOKEN ??
-    createBridgeToken(),
-  "memory-settings-write": args.get("memory-settings-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_MEMORY_SETTINGS_TOKEN ??
-    createBridgeToken(),
-  "memory-source-browse": args.get("memory-source-browse-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_MEMORY_SOURCE_BROWSE_TOKEN ??
-    createBridgeToken(),
-  "memory-source-scan": args.get("memory-source-scan-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_MEMORY_SOURCE_SCAN_TOKEN ??
-    createBridgeToken(),
-  "memory-source-manage": args.get("memory-source-manage-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_MEMORY_SOURCE_MANAGE_TOKEN ??
-    createBridgeToken(),
-  "memory-source-move": args.get("memory-source-move-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_MEMORY_SOURCE_MOVE_TOKEN ??
-    createBridgeToken(),
-  "memory-source-review": args.get("memory-source-review-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_MEMORY_SOURCE_REVIEW_TOKEN ??
-    createBridgeToken(),
-  "memory-source-intake": args.get("memory-source-intake-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_MEMORY_SOURCE_INTAKE_TOKEN ??
-    createBridgeToken(),
-  "memory-source-file-intake": args.get("memory-source-file-intake-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_MEMORY_SOURCE_FILE_INTAKE_TOKEN ??
-    createBridgeToken(),
-  "archive-read": args.get("archive-read-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_ARCHIVE_READ_TOKEN ??
-    createBridgeToken(),
-  "archive-write": args.get("archive-write-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_ARCHIVE_WRITE_TOKEN ??
-    createBridgeToken(),
-  "diagnostics-report-export": args.get("diagnostics-report-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_DIAGNOSTICS_REPORT_TOKEN ??
-    createBridgeToken(),
-  "browser-download-action": args.get("browser-download-action-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_BROWSER_DOWNLOAD_ACTION_TOKEN ??
-    createBridgeToken(),
-  "addon-execution-settings-write": args.get("addon-execution-settings-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_ADDON_EXECUTION_SETTINGS_TOKEN ??
-    createBridgeToken(),
-  "addon-runtime-read": args.get("addon-runtime-read-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_ADDON_RUNTIME_READ_TOKEN ??
-    createBridgeToken(),
-  "addon-runtime-control": args.get("addon-runtime-control-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_ADDON_RUNTIME_CONTROL_TOKEN ??
-    createBridgeToken(),
-  "addon-record-read": args.get("addon-record-read-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_ADDON_RECORD_READ_TOKEN ??
-    createBridgeToken(),
-  "addon-record-write": args.get("addon-record-write-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_ADDON_RECORD_WRITE_TOKEN ??
-    createBridgeToken(),
-  "extension-prefs-write": args.get("extension-prefs-write-token") ??
-    process.env.RESONANTOS_BROWSER_FIRST_EXTENSION_PREFS_WRITE_TOKEN ??
-    createBridgeToken(),
-};
+const bridgeCapabilityTokens = buildBridgeCapabilityTokens({ args, mint: createBridgeToken });
 
 async function invokeBridgeRouteForSelfTest({ method = "POST", routePath, body = {}, capabilityToken = "" } = {}) {
   const route = bridgeRoutes.find((entry) => entry.method === method && entry.path === routePath);

@@ -90,7 +90,17 @@ function rebindAndHydrate({ refreshGenerated = false } = {}) {
       bridgeRequest = createBridgeClient(cfg);
       rawFetch = createRawBridgeFetch(cfg);
       return initCapabilityTokens(cfg)
-        .catch(() => undefined)
+        .catch((error) => {
+          // Surface capability-token bootstrap failures so operators get a
+          // DevTools breadcrumb. A 500 here — commonly the bridge launcher's
+          // mint map missing a requested capability (#200) — otherwise leaves
+          // every capability-scoped route silently 403ing with no clue why.
+          console.error(
+            "[resonantos] capability-token bootstrap failed; capability-scoped bridge routes will be rejected until this is resolved.",
+            error,
+          );
+          return undefined;
+        })
         .then(() => ({ cfg, bridgeRequest, rawFetch }));
     })
     .then(({ cfg, bridgeRequest: req, rawFetch: raw }) => {
