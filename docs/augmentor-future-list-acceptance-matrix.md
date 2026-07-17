@@ -31,6 +31,7 @@ suffix are open. Safety-boundary rows are **never** casual good-first-issues.
 | Capability | Canonical issue(s) | Status | Tests / proof | Safety boundary |
 |---|---|---|---|---|
 | Side panel + Alt+A / Alt+S shortcuts | #241 · #46 (C) | 🔧 needs hardening | shortcut-contract + conflict handling — **live-browser proof** (#241) | — |
+| Augmentor mode selector + permission-state | #230 | 🔧 needs hardening | mode-select + permission-surface tests; live-browser proof | surfaces current permissions; no silent capability escalation |
 
 ### Web understanding
 | Capability | Canonical issue(s) | Status | Tests / proof | Safety boundary |
@@ -57,6 +58,7 @@ suffix are open. Safety-boundary rows are **never** casual good-first-issues.
 | Capability | Canonical issue(s) | Status | Tests / proof | Safety boundary |
 |---|---|---|---|---|
 | Autonomous navigation / Agent Control | #118 · #225 · epic #211 | 🔧 needs hardening · 🔒 | click/type/scroll certification fixtures; live-browser proof | governed; human-only public-submit / field-typing boundaries |
+| Agent Control stop/cancel & recovery UX | #226 · epic #211 | 🔧 needs hardening · 🔒 | stop/cancel kill-path + recovery-state tests; live-browser proof | user can always halt an in-flight action; no orphaned run state |
 | Form reading & autofill guard | #31 (C) · #8 (C) | ✅ supported | autofill-guard tests | never auto-submits; approval-gated |
 | Multi-step workflows | #237 · #14 (C) · #12 (C) | ✅ supported | — | — |
 | Shopping decision packet / checkout handoff | #243 · #16 (C) | ⏸ deferred · 🔒 | packet assembly + human-confirm gate | **human-only** checkout; draft/packet only |
@@ -74,7 +76,7 @@ suffix are open. Safety-boundary rows are **never** casual good-first-issues.
 ### Voice
 | Capability | Canonical issue(s) | Status | Tests / proof | Safety boundary |
 |---|---|---|---|---|
-| Voice mode — transcript to composer | #235 · #249 · epic #216 · #99 | ⏸ deferred · 🔒 | transcript→composer flow; reviewed-transcript preflight | permission-light; reviewed before action |
+| Voice mode — transcript to composer | #235 · #249 · epic #216 | ⏸ deferred · 🔒 | transcript→composer flow; reviewed-transcript preflight | permission-light; reviewed before action |
 
 ### Multi-model backend & provider routing
 | Capability | Canonical issue(s) | Status | Tests / proof | Safety boundary |
@@ -104,6 +106,8 @@ suffix are open. Safety-boundary rows are **never** casual good-first-issues.
 ## Milestone epics
 
 - `beta.1` — Augmentor browser-layer acceptance: **#210**
+- `beta.1` — onboarding & tester-ready setup: **#213**
+- `beta.1` — add-on delegation lifecycle & capability cleanup: **#215**
 - `beta.1` — Living Archive & context continuity: **#212**
 - `beta.1` — provider routing, reasoning trace, artifacts: **#214**
 - `beta.1` — governed Agent Control & safety proofs: **#211**
