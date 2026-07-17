@@ -16,6 +16,11 @@ scope, area, and delivery state belong in
 - [Product Guide](product/PRODUCT_GUIDE.md) explains stable user workflows.
 - [Capability Matrix](reference/CAPABILITY_MATRIX.md) maps implemented,
   experimental, and deferred capabilities to tests and issues.
+- [Augmentor Future List acceptance matrix](augmentor-future-list-acceptance-matrix.md)
+  maps every Augmentor feature family to its canonical issue, status, required
+  tests/proof, and safety boundary.
+- [Augmentor tester runbook & proof checklist](augmentor-tester-runbook.md) walks a
+  community tester from install to a proof checklist, with the human-only boundaries.
 - [Side-Panel Command Reference](reference/COMMANDS.md) lists the supported
   Augmentor slash commands and their safety boundaries.
 - [Status](STATUS.md) records the latest verified snapshot.
