@@ -80,6 +80,12 @@ export function createProviderHostService({ redactDiagnosticText, extractJsonObj
       },
       {
         method: "POST",
+        path: "/providers/accounts/remove",
+        requiredCapability: "provider-credential-write",
+        handler: service.executeProviderAccountRemove,
+      },
+      {
+        method: "POST",
         path: "/providers/routing-strategies",
         requiredCapability: "provider-routing-write",
         handler: service.executeProviderRoutingStrategySave,

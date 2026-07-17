@@ -372,6 +372,36 @@ function providerCard({ provider, bridgeRequest, getBridgeRequest, statusNode, r
   save.type = "submit";
   save.textContent = provider.configured ? "Update" : "Save";
   form.append(input, save);
+  if (provider.source === "user") {
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "settings-provider-remove";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Remove ${provider.label} provider`);
+    remove.addEventListener("click", async () => {
+      const confirmRemoval = typeof window !== "undefined" && typeof window.confirm === "function"
+        ? window.confirm(`Remove the ${provider.label} provider? Routing strategies that use its models will revert to defaults.`)
+        : true;
+      if (!confirmRemoval) {
+        return;
+      }
+      remove.disabled = true;
+      setStatus(statusNode, `Removing ${provider.label}...`);
+      try {
+        await bridge()("/providers/accounts/remove", {
+          method: "POST",
+          capability: "provider-credential-write",
+          body: { providerId: provider.id }
+        });
+        setStatus(statusNode, `${provider.label} removed.`, "success");
+        await reload();
+      } catch (error) {
+        setStatus(statusNode, `Remove failed: ${safeErrorMessage(error)}`, "error");
+        remove.disabled = false;
+      }
+    });
+    form.append(remove);
+  }
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const credential = input.value.trim();

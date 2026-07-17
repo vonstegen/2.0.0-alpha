@@ -167,8 +167,8 @@ export function modelCatalogEntriesForProvider(profile) {
     .filter(Boolean);
 }
 
-export function allowedModelsForProvider(providerId, preferences = {}) {
-  const declaredModels = modelCatalog
+export function allowedModelsForProvider(providerId, preferences = {}, catalog = modelCatalog) {
+  const declaredModels = catalog
     .filter((entry) => entry.providerId === providerId)
     .map((entry) => entry.model);
   const configured = Array.isArray(preferences.allowedModels?.[providerId])
@@ -177,40 +177,41 @@ export function allowedModelsForProvider(providerId, preferences = {}) {
   return new Set(configured.length ? configured : declaredModels);
 }
 
-export function isModelAllowed(model, preferences = {}) {
-  const catalogEntry = modelById(model);
+export function isModelAllowed(model, preferences = {}, catalog = modelCatalog) {
+  const catalogEntry = catalog.find((entry) => entry.model === model) ?? null;
   if (!catalogEntry) {
     return false;
   }
-  return allowedModelsForProvider(catalogEntry.providerId, preferences).has(model);
+  return allowedModelsForProvider(catalogEntry.providerId, preferences, catalog).has(model);
 }
 
-export function normalizeFallbackModels(value) {
-  const allowed = new Set(modelCatalog.map((entry) => entry.model));
+export function normalizeFallbackModels(value, catalog = modelCatalog) {
+  const allowed = new Set(catalog.map((entry) => entry.model));
   return [...new Set((Array.isArray(value) ? value : String(value ?? "").split(","))
     .map((model) => String(model ?? "").trim())
     .filter((model) => allowed.has(model)))]
     .slice(0, 6);
 }
 
-export function normalizeRoutingStrategy(base, override = {}) {
-  const primaryModel = modelById(override.primaryModel) ? override.primaryModel : base.primaryModel;
+export function normalizeRoutingStrategy(base, override = {}, catalog = modelCatalog) {
+  const known = new Set(catalog.map((entry) => entry.model));
+  const primaryModel = known.has(override.primaryModel) ? override.primaryModel : base.primaryModel;
   return {
     ...base,
     primaryModel,
-    fallbackModels: normalizeFallbackModels(override.fallbackModels ?? base.fallbackModels)
+    fallbackModels: normalizeFallbackModels(override.fallbackModels ?? base.fallbackModels, catalog)
       .filter((model) => model !== primaryModel),
     costPosture: String(override.costPosture ?? base.costPosture).trim().slice(0, 80) || base.costPosture,
     hardStop: typeof override.hardStop === "boolean" ? override.hardStop : base.hardStop,
   };
 }
 
-export function modelRuntimeState(model, { secrets = {}, preferences = {}, localRuntimeUrl = "" } = {}) {
-  const catalogEntry = modelById(model);
+export function modelRuntimeState(model, { secrets = {}, preferences = {}, localRuntimeUrl = "", catalog = modelCatalog } = {}) {
+  const catalogEntry = catalog.find((entry) => entry.model === model) ?? null;
   if (!catalogEntry) {
     return null;
   }
-  const allowed = isModelAllowed(model, preferences);
+  const allowed = isModelAllowed(model, preferences, catalog);
   const configured = catalogEntry.providerId === "desktop-local"
     ? Boolean(localRuntimeUrl)
     : Boolean(secrets[catalogEntry.providerId]);
@@ -227,11 +228,12 @@ export function resolveRoutingStrategies({
   overrides = {},
   preferences = {},
   localRuntimeUrl = "",
+  catalog = modelCatalog,
 } = {}) {
   return defaultRoutingStrategies.map((base) => {
-    const strategy = normalizeRoutingStrategy(base, overrides[base.id]);
+    const strategy = normalizeRoutingStrategy(base, overrides[base.id], catalog);
     const chain = [strategy.primaryModel, ...strategy.fallbackModels]
-      .map((model) => modelRuntimeState(model, { secrets, preferences, localRuntimeUrl }))
+      .map((model) => modelRuntimeState(model, { secrets, preferences, localRuntimeUrl, catalog }))
       .filter(Boolean);
     return {
       ...strategy,
@@ -242,9 +244,26 @@ export function resolveRoutingStrategies({
   });
 }
 
-export function providerRouteForModel(model, { localRuntimeUrl = "" } = {}) {
+export function providerRouteForModel(model, { localRuntimeUrl = "", catalog = modelCatalog, profiles = providerProfiles } = {}) {
   if (model === "__auto__" || model === "auto") {
     return null;
+  }
+  // A model contributed by a custom (non-built-in) provider account routes to
+  // that provider's own endpoint. Checked before the built-in prefix rules so a
+  // custom model whose name resembles a built-in (e.g. "gpt-*") is not hijacked
+  // to a shared endpoint. Built-in providers fall through to the rules below.
+  const dynamicEntry = catalog.find((candidate) => candidate.model === model);
+  if (dynamicEntry && !providerProfiles.some((builtIn) => builtIn.id === dynamicEntry.providerId)) {
+    const profile = profiles.find((candidate) => candidate.id === dynamicEntry.providerId);
+    if (profile?.apiBaseUrl) {
+      return {
+        providerId: dynamicEntry.providerId,
+        providerType: dynamicEntry.providerType ?? profile.providerType ?? "openai-compatible",
+        apiBaseUrl: profile.apiBaseUrl,
+        wireModel: dynamicEntry.wireModel ?? model,
+        label: profile.label ?? dynamicEntry.providerLabel ?? "Provider",
+      };
+    }
   }
   if (model?.startsWith("batiai/")) {
     return {
@@ -325,10 +344,12 @@ export function providerRouteForWorkload({
   preferences = {},
   strategies = [],
   localRuntimeUrl = "",
+  catalog = modelCatalog,
+  profiles = providerProfiles,
 } = {}) {
   const explicitModel = String(requestedModel ?? "").trim();
   if (explicitModel && !["__auto__", "auto", "strategy"].includes(explicitModel)) {
-    if (!isModelAllowed(explicitModel, preferences)) {
+    if (!isModelAllowed(explicitModel, preferences, catalog)) {
       return {
         route: null,
         source: "manual",
@@ -337,7 +358,7 @@ export function providerRouteForWorkload({
         reason: "model-disabled",
       };
     }
-    const explicitRoute = providerRouteForModel(explicitModel, { localRuntimeUrl });
+    const explicitRoute = providerRouteForModel(explicitModel, { localRuntimeUrl, catalog, profiles });
     return {
       route: explicitRoute,
       source: "manual",
@@ -359,7 +380,7 @@ export function providerRouteForWorkload({
     };
   }
   return {
-    route: providerRouteForModel(available.model, { localRuntimeUrl }),
+    route: providerRouteForModel(available.model, { localRuntimeUrl, catalog, profiles }),
     source: "strategy",
     strategy,
     requestedModel: explicitModel || "__auto__",
