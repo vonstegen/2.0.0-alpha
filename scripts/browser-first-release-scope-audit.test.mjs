@@ -135,11 +135,12 @@ test("project sync executes pull-request events only from trusted base code", as
   assert.equal(workflow.permissions.contents, "read");
   assert.equal(workflow.permissions.issues, undefined);
   assert.equal(workflow.permissions["pull-requests"], undefined);
-  // Token gating: the actual Project sync steps run only when the token is
-  // configured. A missing token skips them gracefully rather than failing the
-  // workflow on every unrelated PR/commit (#260).
+  // Token gating: the snapshot step runs only when the token is configured, and
+  // the sync steps run only when the snapshot succeeded (snapshot-ok) — so the
+  // sync is transitively gated on a working token. A missing/underscoped token
+  // warns and skips rather than failing the workflow on every trigger (#260).
   assert.equal(captureSnapshot.if, "steps.project-token.outputs.configured == 'true'");
-  assert.equal(syncStep.if, "steps.project-token.outputs.configured == 'true'");
+  assert.equal(syncStep.if, "steps.snapshot.outputs.snapshot-ok == 'true'");
 });
 
 test("committed mode preserves added and deleted branch paths in a clean worktree", async () => {
