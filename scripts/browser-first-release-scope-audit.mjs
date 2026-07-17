@@ -35,6 +35,7 @@ const includeDocs = new Set([
   "docs/reference/COMMANDS.md",
   "docs/release/ALPHA_DISTRIBUTION.md",
   "docs/architecture/addon-skills/living-archive/SOURCE_TO_WIKI_INTAKE.md",
+  "docs/browser-first-bridge-setup-runbook.md",
 ]);
 
 function readOptionValue(argv, index, name) {
