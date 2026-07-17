@@ -44,17 +44,16 @@ jobs:
           HAS_PROJECT_SYNC_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN != '' }}
         run: |
           if [ "$HAS_PROJECT_SYNC_TOKEN" != "true" ]; then
-            echo "::warning::PROJECT_SYNC_TOKEN is not configured. Organization Project 2 synchronization cannot run."
+            # Project 2 synchronization is optional infrastructure: when the
+            # PROJECT_SYNC_TOKEN secret is not configured, warn and skip the sync
+            # steps rather than failing the job. A hard failure here surfaced a
+            # red check on every PR/commit even though nothing in the change was
+            # wrong. Configure the org secret to enable the sync.
+            echo "::warning::PROJECT_SYNC_TOKEN is not configured. Skipping Project 2 synchronization."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Require Project token
-        if: steps.project-token.outputs.configured != 'true'
-        run: |
-          echo "::error::PROJECT_SYNC_TOKEN is required for repository-owned Project 2 synchronization."
-          exit 1
 
       - name: Capture Project 2 scope snapshot
         if: steps.project-token.outputs.configured == 'true'
