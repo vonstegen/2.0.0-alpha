@@ -111,8 +111,9 @@ function dashboardProxyPathPrefix() {
 // request path against each entry's `bridge` prefix (longest match wins),
 // strips it, and prefixes the upstream prefix to get the final upstream
 // path. See createDashboardProxyHandler for the full set of rules.
-const DASHBOARD_PROXY_MIRROR_PATHS = Object.freeze([
+export const DASHBOARD_PROXY_MIRROR_PATHS = Object.freeze([
   Object.freeze({ bridge: "/hermes-dashboard", upstream: "" }),
+  Object.freeze({ bridge: "/auth", upstream: "/auth" }),
   Object.freeze({ bridge: "/api", upstream: "/api" }),
   Object.freeze({ bridge: "/assets", upstream: "/assets" }),
   Object.freeze({ bridge: "/fonts-terminal", upstream: "/fonts-terminal" }),
@@ -1013,7 +1014,7 @@ function isAuthorizedCapabilityBootstrapRequest(request, capabilityBootstrapToke
   return constantTimeEqual(request.headers[bridgeCapabilityBootstrapHeader], capabilityBootstrapToken);
 }
 
-function scopedCapabilityTokenPayload(requestedCapabilities, bridgeCapabilityTokens) {
+export function scopedCapabilityTokenPayload(requestedCapabilities, bridgeCapabilityTokens) {
   const requested = Array.isArray(requestedCapabilities)
     ? requestedCapabilities
     : String(requestedCapabilities ?? "")
