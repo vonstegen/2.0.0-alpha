@@ -56,17 +56,29 @@ jobs:
           fi
 
       - name: Capture Project 2 scope snapshot
+        id: snapshot
         if: steps.project-token.outputs.configured == 'true'
         env:
           GH_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}
-        run: gh project item-list 2 --owner ResonantOS --format json --limit 500 > "$RUNNER_TEMP/project-2.json"
+        run: |
+          # Best-effort: an auth/scope problem — e.g. PROJECT_SYNC_TOKEN missing
+          # the 'project' + 'read:org' scope, which surfaces as "unknown owner
+          # type" — must warn and skip the sync, not fail the job and email the
+          # maintainer on every push/schedule/issue trigger. A *working* token
+          # still runs the roadmap/sync checks below, which may legitimately fail.
+          if gh project item-list 2 --owner ResonantOS --format json --limit 500 > "$RUNNER_TEMP/project-2.json" 2>"$RUNNER_TEMP/project-2.err"; then
+            echo "snapshot-ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Project 2 sync skipped — could not read the org project: $(tr '\n' ' ' < "$RUNNER_TEMP/project-2.err"). PROJECT_SYNC_TOKEN likely needs 'project' + 'read:org' scope for the ResonantOS org."
+            echo "snapshot-ok=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Verify roadmap scope against Project 2
-        if: steps.project-token.outputs.configured == 'true'
+        if: steps.snapshot.outputs.snapshot-ok == 'true'
         run: npm run project:check-roadmap -- --project-json "$RUNNER_TEMP/project-2.json"
 
       - name: Sync project and labels
-        if: steps.project-token.outputs.configured == 'true'
+        if: steps.snapshot.outputs.snapshot-ok == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.PROJECT_SYNC_TOKEN }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
