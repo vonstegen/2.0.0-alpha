@@ -301,7 +301,7 @@ test("content Resonator commands call the visual guide layer", async () => {
   assert.equal(dom.window.document.querySelector("#target")?.getAttribute("data-resonator"), "highlight");
 });
 
-test("content commands are ignored outside the top frame", async () => {
+test("visual-only content commands are ignored outside the top frame", async () => {
   const { listener, window: frameWindow } = await loadContentScript(`
     <!doctype html>
     <main><button id="target">Continue</button></main>
@@ -320,6 +320,41 @@ test("content commands are ignored outside the top frame", async () => {
   assert.equal(handled, false);
   assert.equal(response, null);
   assert.equal(frameWindow.document.querySelector("#target")?.getAttribute("data-resonator"), null);
+});
+
+test("page reads and governed actions are available inside child frames", async () => {
+  const { listener, window: frameWindow } = await loadContentScript(`
+    <!doctype html>
+    <main><h2>Booking calendar frame</h2><button id="target">Tuesday 10:00</button></main>
+  `, { asChildFrame: true });
+
+  let readResponse = null;
+  const readHandled = listener({
+    channel: "resonantos.browser_first.content",
+    type: "read_page",
+  }, {}, (payload) => {
+    readResponse = payload;
+  });
+  assert.equal(readHandled, true);
+  assert.equal(readResponse?.ok, true);
+  assert.equal(readResponse.snapshot.frame.isTop, false);
+  assert.match(readResponse.snapshot.text, /Booking calendar frame/);
+
+  let clicked = false;
+  frameWindow.document.querySelector("#target").addEventListener("click", () => {
+    clicked = true;
+  });
+  let clickResponse = null;
+  const clickHandled = listener({
+    channel: "resonantos.browser_first.content",
+    type: "click_text",
+    text: "Tuesday 10:00",
+  }, {}, (payload) => {
+    clickResponse = payload;
+  });
+  assert.equal(clickHandled, true);
+  assert.equal(clickResponse?.ok, true);
+  assert.equal(clicked, true);
 });
 
 test("content click actions reject repeated text unless a control ref is supplied", async () => {

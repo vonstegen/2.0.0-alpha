@@ -50,6 +50,18 @@ The active runtime-hardening checks use production-derived spawn records with
 source anchors. A runtime surface that has no records, or a record that cannot
 be scored, cannot be reported as a clean certification result.
 
+Agent Control also has a dedicated real-browser certification lane in
+`.github/workflows/agent-control-live.yml`. It runs the deterministic
+`agent-control` profile in stable Chrome under Xvfb for relevant pull requests,
+nightly, and on manual dispatch. Every run uploads a redacted JSON/Markdown
+scenario matrix plus panel/page screenshots for 14 days. Missing Chrome,
+loopback denial, launch failure, or missing evidence is non-passing in CI; local
+sandbox denials remain explicit non-certified skips. Until
+[#240](https://github.com/ResonantOS/2.0.0-alpha/issues/240) supplies the
+non-bypassable public-submit handoff, that scenario is reported as a gate rather
+than a false pass. Manual dispatch can set `public_submit_contract=required` to
+make the pre-#240 approval path fail certification.
+
 Runtime discovery is fixed-root and canonical: ambient `PATH`, arbitrary
 Hermes profile roots, and arbitrary OpenCode command paths are not executable
 sources. Windows OpenCode requires a direct `.exe`. The alpha host currently
