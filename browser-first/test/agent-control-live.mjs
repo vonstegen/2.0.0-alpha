@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { deflateSync } from "node:zlib";
+import { chromium } from "playwright";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 const resonantExtensionId = "cdpdmmalhmokbfcfgogoepnjplaakgnl";
@@ -544,13 +545,13 @@ const server = http.createServer((request, response) => {
 await new Promise((resolve) => server.listen(fixturePort, "127.0.0.1", resolve));
 
 const profile = path.join(os.tmpdir(), `resonantos-agent-live-${Date.now()}`);
+const extensionPath = path.join(repoRoot, "browser-first", "resonantos-side-panel-extension");
+
+// Local bridge the extension talks to (run-browser-first.mjs is a compatibility
+// shim that boots the minimal bridge on --bridge-port).
 const host = spawn("node", [
-  "browser-first/host/run-browser-first.mjs",
-  `--url=http://127.0.0.1:${fixturePort}/`,
-  `--profile=${profile}`,
-  `--remote-debugging-port=${debugPort}`,
+  "browser-first/host/run-bridge-minimal.mjs",
   `--bridge-port=${bridgePort}`,
-  "--auto-open-side-panel=false",
 ], {
   cwd: repoRoot,
   stdio: ["ignore", "pipe", "pipe"],
@@ -560,15 +561,34 @@ let hostLogs = "";
 host.stdout.on("data", (chunk) => { hostLogs += chunk.toString(); });
 host.stderr.on("data", (chunk) => { hostLogs += chunk.toString(); });
 
+// #267: launch stock Chromium (Playwright is used launch-only) with the unpacked
+// extension and a CDP debug port. Headed is required — unpacked MV3 extensions do
+// not load in classic headless; CI wraps this in xvfb-run. The raw-CDP harness
+// below drives it over the HTTP debug endpoint on debugPort, so the assertion body
+// is unchanged. The chrome-for-testing binary ships with the playwright dep.
+const browserContext = await chromium.launchPersistentContext(profile, {
+  headless: false,
+  args: [
+    `--disable-extensions-except=${extensionPath}`,
+    `--load-extension=${extensionPath}`,
+    `--remote-debugging-port=${debugPort}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+  ],
+});
+await (browserContext.pages()[0] ?? await browserContext.newPage())
+  .goto(`http://127.0.0.1:${fixturePort}/`).catch(() => {});
+
 async function shutdownHost() {
   host.stdout.destroy();
   host.stderr.destroy();
+  await browserContext.close().catch(() => {});
   if (!host.killed) host.kill("SIGTERM");
   await Promise.race([
     new Promise((resolve) => host.once("exit", resolve)),
     new Promise((resolve) => setTimeout(resolve, 1500)),
   ]);
-  spawnSync("pkill", ["-9", "-f", "run-browser-first.mjs"], { stdio: "ignore" });
+  spawnSync("pkill", ["-9", "-f", "run-bridge-minimal.mjs"], { stdio: "ignore" });
 }
 
 try {
