@@ -61,9 +61,16 @@ const PAGE = `<!doctype html>
     <input name="q" aria-label="Query" placeholder="Query">
     <button type="submit">Go</button>
   </form>
+  <form id="commitform">
+    <input name="ordersearch" aria-label="Order search" placeholder="Order search">
+    <button type="submit">Place order</button>
+  </form>
   <button id="publishit">Publish now</button>
   <button id="safe">Safe Details</button>
   <button id="sign" type="submit">Sign transaction</button>
+  <div id="divpublish" onclick="window.__divClicked = true">Publish article</div>
+  <a id="navlink" href="#orders">Order History</a>
+  <a id="linkbtn" role="button" onclick="window.__linkClicked = true">Reserve seat</a>
   <div id="status">idle</div>`;
 
 test("#240: approved click of a public submit button is denied and does not submit", async () => {
@@ -113,8 +120,39 @@ test("#240: a hard-boundary control (Sign) is denied by the hard check, ahead of
   assert.equal(win.__submitted, false);
 });
 
+test("#240: typing+submit is denied when the form holds a public-commit button (no sensitive field)", async () => {
+  const { win, send } = await loadContentScript(PAGE);
+  win.eval(`document.querySelector("#commitform").addEventListener("submit", (e) => { e.preventDefault(); window.__orderSubmitted = true; });`);
+  const res = send({ type: "type_text", field: "Order search", text: "widget", submit: true, userApproved: true });
+  assert.equal(res.ok, false, "a form with a 'Place order' button must not be auto-submitted via a search field");
+  assert.equal(res.deniedToAutomation, true);
+  assert.notEqual(win.__orderSubmitted, true);
+});
+
+test("#240: an onclick commit control (div) is denied", async () => {
+  const { win, send } = await loadContentScript(PAGE);
+  const res = send({ type: "click_text", text: "Publish article", userApproved: true });
+  assert.equal(res.ok, false);
+  assert.equal(res.deniedToAutomation, true, "a scripted <div onclick>Publish must be human-only");
+  assert.notEqual(win.__divClicked, true);
+});
+
+test("#240: an <a role=button onclick> commit is denied", async () => {
+  const { win, send } = await loadContentScript(PAGE);
+  const res = send({ type: "click_text", text: "Reserve seat", userApproved: true });
+  assert.equal(res.ok, false);
+  assert.equal(res.deniedToAutomation, true);
+  assert.notEqual(win.__linkClicked, true);
+});
+
+test("#240 non-breaking: a plain navigation link with a commit-word is still clickable", async () => {
+  const { send } = await loadContentScript(PAGE);
+  const res = send({ type: "click_text", text: "Order History" });
+  assert.equal(res.ok, true, "a plain <a href> nav link (no button semantics) must not be blocked by #240");
+});
+
 test("#240: the runner boundary classifier agrees with the widened commit verbs", () => {
-  for (const verb of ["submit", "publish", "post", "send", "reserve", "order", "apply", "confirm"]) {
+  for (const verb of ["submit", "publish", "post", "send", "reserve", "order", "apply", "confirm", "connect", "subscribe", "vote"]) {
     assert.equal(approvalBoundaryForStep({ type: "click", text: `${verb} it` }), "public-submit", `${verb} → public-submit`);
   }
   // hard verbs still win over public-submit

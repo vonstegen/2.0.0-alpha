@@ -430,11 +430,20 @@ const isSubmitLikeElement = (element) => {
   const type = String(element.getAttribute("type") || "").toLowerCase();
   const role = String(element.getAttribute("role") || "").toLowerCase();
   const tag = element.tagName ? element.tagName.toLowerCase() : "";
-  const text = visibleText(element).toLowerCase();
-  return type === "submit" ||
-    (element instanceof HTMLButtonElement && (!type || type === "submit") && Boolean(element.closest("form"))) ||
-    // formless / type="button" / link / role=button commits are still human-only
-    ((tag === "button" || tag === "a" || role === "button" || role === "link") && PUBLIC_COMMIT_VERBS.test(text));
+  const label = `${visibleText(element)} ${element.getAttribute("value") || ""}`.toLowerCase();
+  // Native form-submit controls are always human-only.
+  if (type === "submit" || type === "image") return true;
+  if (element instanceof HTMLButtonElement && (!type || type === "submit") && Boolean(element.closest("form"))) return true;
+  // A control that BEHAVES like a button (incl. input[type=button] and scripted
+  // <a onclick>/<div onclick>) AND carries a public-commit verb is human-only.
+  // Plain navigation links (<a href> without button semantics) stay clickable so
+  // safe reads like "Order History" or "How to apply" are not blocked.
+  const behavesLikeButton =
+    tag === "button" ||
+    role === "button" ||
+    (tag === "input" && ["button", "reset"].includes(type)) ||
+    (typeof element.hasAttribute === "function" && element.hasAttribute("onclick"));
+  return behavesLikeButton && PUBLIC_COMMIT_VERBS.test(label);
 };
 
 const isHardRestrictedElement = (element, fallbackText = "") => {
@@ -695,8 +704,15 @@ const formIsSafeToAutoSubmit = (form) => {
   const fields = form.querySelectorAll("input, textarea, select");
   for (const candidate of fields) {
     const candidateType = String(candidate.getAttribute("type") || "").toLowerCase();
-    if (["hidden", "submit", "button", "reset", "search"].includes(candidateType)) continue;
+    if (["hidden", "submit", "button", "image", "reset", "search"].includes(candidateType)) continue;
     if (classifyEditableField(candidate).kind !== "search-query") return false;
+  }
+  // A public-commit control anywhere in the form (e.g. "Place order", "Publish")
+  // makes the whole form human-only, even if every data field is a search box.
+  // A plain search submit ("Go"/"Search") carries no commit verb, so it stays safe.
+  for (const control of form.querySelectorAll("button, input[type=submit], input[type=image], input[type=button], [role=button]")) {
+    const controlLabel = `${visibleText(control)} ${control.getAttribute("value") || ""}`.toLowerCase();
+    if (PUBLIC_COMMIT_VERBS.test(controlLabel)) return false;
   }
   return true;
 };
