@@ -1,0 +1,337 @@
+<title>ResonantOS 2.0.0-alpha — Due Diligence & Beta Roadmap</title>
+<style>
+  :root{
+    --bg:#F5F7FA; --panel:#FFFFFF; --panel-2:#EEF1F6; --ink:#141B24; --ink-2:#495568;
+    --line:#DBE1EA; --line-2:#C7D0DC;
+    --accent:#356392; --accent-soft:#E4ECF4;
+    --go:#2E7D5B; --go-bg:#E4F1EA;
+    --warn:#B5791A; --warn-bg:#F7EDD7;
+    --stop:#AE4136; --stop-bg:#F6E2DF;
+    --shadow:0 1px 2px rgba(20,27,36,.06),0 4px 16px rgba(20,27,36,.05);
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0E141C; --panel:#151D28; --panel-2:#1B2531; --ink:#E7ECF3; --ink-2:#9BA9BC;
+      --line:#25313F; --line-2:#33465a;
+      --accent:#6FA6D6; --accent-soft:#1A2836;
+      --go:#5BB88A; --go-bg:#15271F;
+      --warn:#D9A94A; --warn-bg:#2A2415;
+      --stop:#D8776B; --stop-bg:#2A1815;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.28);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#F5F7FA; --panel:#FFFFFF; --panel-2:#EEF1F6; --ink:#141B24; --ink-2:#495568;
+    --line:#DBE1EA; --line-2:#C7D0DC; --accent:#356392; --accent-soft:#E4ECF4;
+    --go:#2E7D5B; --go-bg:#E4F1EA; --warn:#B5791A; --warn-bg:#F7EDD7; --stop:#AE4136; --stop-bg:#F6E2DF;
+    --shadow:0 1px 2px rgba(20,27,36,.06),0 4px 16px rgba(20,27,36,.05);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0E141C; --panel:#151D28; --panel-2:#1B2531; --ink:#E7ECF3; --ink-2:#9BA9BC;
+    --line:#25313F; --line-2:#33465a; --accent:#6FA6D6; --accent-soft:#1A2836;
+    --go:#5BB88A; --go-bg:#15271F; --warn:#D9A94A; --warn-bg:#2A2415; --stop:#D8776B; --stop-bg:#2A1815;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.28);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    line-height:1.55;-webkit-font-smoothing:antialiased;font-size:16px}
+  .wrap{max-width:1040px;margin:0 auto;padding:clamp(20px,4vw,56px) clamp(16px,4vw,40px)}
+  h1,h2,h3{text-wrap:balance;line-height:1.15;margin:0}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+  code,.mono{font-family:var(--mono);font-size:.86em}
+  .mono-issue{font-family:var(--mono);font-weight:600;color:var(--accent)}
+  a{color:var(--accent)}
+
+  /* header */
+  header.mast{border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:34px}
+  header.mast h1{font-size:clamp(26px,4.4vw,40px);letter-spacing:-.02em;font-weight:800;margin:10px 0 6px}
+  header.mast .sub{color:var(--ink-2);font-size:15px}
+  .metaline{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:16px;font-size:13px;color:var(--ink-2);font-family:var(--mono)}
+  .metaline b{color:var(--ink);font-weight:600}
+
+  /* verdict banner */
+  .verdict{display:grid;grid-template-columns:auto 1fr;gap:22px;align-items:center;
+    background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--warn);
+    border-radius:14px;padding:22px 24px;box-shadow:var(--shadow);margin-bottom:14px}
+  .verdict .big{font-size:clamp(22px,3.4vw,30px);font-weight:800;letter-spacing:-.01em;color:var(--warn);white-space:nowrap}
+  .verdict .big small{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--ink-2);font-weight:600;margin-top:4px;text-transform:uppercase}
+  .verdict p{margin:0;font-size:15px}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:38px}
+  @media(max-width:680px){.split{grid-template-columns:1fr}.verdict{grid-template-columns:1fr;gap:12px}}
+  .lane{border:1px solid var(--line);border-radius:12px;padding:16px 18px;background:var(--panel);box-shadow:var(--shadow)}
+  .lane.go{border-top:3px solid var(--go)}
+  .lane.stop{border-top:3px solid var(--stop)}
+  .lane h4{margin:0 0 6px;font-size:14px;display:flex;align-items:center;gap:8px}
+  .lane p{margin:0;font-size:13.5px;color:var(--ink-2)}
+
+  section{margin:0 0 40px}
+  h2.sec{font-size:13px;font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);
+    padding-bottom:9px;border-bottom:1px solid var(--line);margin-bottom:20px;display:flex;justify-content:space-between;align-items:baseline}
+  h2.sec span{color:var(--ink-2);font-size:11px;letter-spacing:.08em}
+
+  /* pills */
+  .pill{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;font-weight:600;
+    letter-spacing:.03em;padding:2px 8px;border-radius:999px;border:1px solid transparent;white-space:nowrap}
+  .p-crit{color:var(--stop);background:var(--stop-bg)}
+  .p-high{color:var(--warn);background:var(--warn-bg)}
+  .p-go{color:var(--go);background:var(--go-bg)}
+  .p-acc{color:var(--accent);background:var(--accent-soft)}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+
+  /* findings */
+  .finding{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:12px;box-shadow:var(--shadow)}
+  .finding .top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px}
+  .finding h3{font-size:16px;font-weight:700;flex:1;min-width:200px}
+  .finding .num{font-family:var(--mono);color:var(--ink-2);font-size:13px;font-weight:700}
+  .finding p{margin:6px 0 0;font-size:14px;color:var(--ink-2)}
+  .finding .ev{margin-top:9px;font-family:var(--mono);font-size:12px;background:var(--panel-2);
+    border:1px solid var(--line);border-radius:7px;padding:7px 10px;color:var(--ink);overflow-x:auto}
+  .finding .ev b{color:var(--accent)}
+
+  /* critical path ladder */
+  .ladder{display:flex;flex-direction:column;gap:0}
+  .rung{display:grid;grid-template-columns:34px 1fr;gap:14px}
+  .rail{display:flex;flex-direction:column;align-items:center}
+  .rail .node{width:15px;height:15px;border-radius:50%;border:3px solid var(--accent);background:var(--panel);margin-top:4px;flex:none}
+  .rung.gate .rail .node{border-color:var(--stop);background:var(--stop-bg)}
+  .rail .wire{width:2px;flex:1;background:var(--line-2);margin:3px 0}
+  .rung:last-child .rail .wire{display:none}
+  .rung .body{padding-bottom:20px}
+  .rung .body h3{font-size:15px;font-weight:700;margin-bottom:3px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .rung .body p{margin:0;font-size:13.5px;color:var(--ink-2)}
+  .rung .body .iss{font-family:var(--mono);font-size:12.5px;color:var(--accent);font-weight:600}
+
+  /* phase cards */
+  .phases{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+  .phase{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow);display:flex;flex-direction:column}
+  .phase .ph-h{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px}
+  .phase h3{font-size:16px;font-weight:750;margin-bottom:10px;letter-spacing:-.01em}
+  .phase ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+  .phase li{font-size:13px;padding-left:16px;position:relative;color:var(--ink-2)}
+  .phase li::before{content:"";position:absolute;left:0;top:7px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+  .phase li b{color:var(--ink);font-weight:600}
+  .phase.now{border-top:3px solid var(--go)}
+  .phase.gate{border-top:3px solid var(--stop)}
+  .phase.b1{border-top:3px solid var(--accent)}
+  .phase.b2{border-top:3px solid var(--warn)}
+
+  /* test plan */
+  .tier{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:0;overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow)}
+  .tier .th{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);background:var(--panel-2)}
+  .tier .th h3{font-size:15px;font-weight:700}
+  .tier .tb{padding:6px 18px 14px}
+  .checkrow{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+  .checkrow:last-child{border-bottom:none}
+  .checkrow .what{font-size:14px}
+  .checkrow .what small{display:block;color:var(--ink-2);font-size:12.5px;margin-top:2px}
+  .checkrow .ref{font-family:var(--mono);font-size:12px;color:var(--accent);text-align:right;white-space:nowrap}
+
+  table.grid{width:100%;border-collapse:collapse;font-size:13.5px}
+  table.grid th,table.grid td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.grid th{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);font-weight:600}
+  table.grid td b{font-weight:600}
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+
+  .note{background:var(--accent-soft);border:1px solid var(--line);border-radius:10px;padding:14px 16px;font-size:13.5px;color:var(--ink)}
+  .callout{border-left:3px solid var(--stop);background:var(--stop-bg);border-radius:0 8px 8px 0;padding:12px 16px;font-size:14px;margin:14px 0}
+  footer{border-top:1px solid var(--line);margin-top:44px;padding-top:20px;font-size:12.5px;color:var(--ink-2)}
+  footer .prov{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+  .vendor{font-family:var(--mono);font-size:11px;padding:2px 9px;border:1px solid var(--line-2);border-radius:999px}
+  strong.k{color:var(--ink);font-weight:700}
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <div class="eyebrow">Independent Technical Due Diligence · Beta Roadmap</div>
+    <h1>ResonantOS 2.0.0-alpha</h1>
+    <div class="sub">Browser-first Augmentor extension + local Provider-Fabric bridge — readiness review and the ordered path to beta.</div>
+    <div class="metaline">
+      <span>branch <b>dev @ 6f92af7</b></span>
+      <span>reviewed <b>2026-07-17</b></span>
+      <span>panel <b>4 vendors + code audit</b></span>
+      <span>method <b>Resonant-Rig v2</b></span>
+    </div>
+  </header>
+
+  <div class="verdict">
+    <div class="big">CONDITIONAL<small>go / no-go</small></div>
+    <p>The deterministic safety architecture is genuinely well-built, but <strong class="k">the entire Agent-Control safety model is proven only in mocks</strong> — there is no live-browser test harness inside the Alpha boundary. Community testing of Agent Control is <strong class="k">NO-GO</strong> until that gap closes. A narrow, agent-control-off smoke test is <strong class="k">GO now</strong>.</p>
+  </div>
+  <div class="split">
+    <div class="lane go">
+      <h4><span class="dot" style="background:var(--go)"></span>GO now — supervised smoke test</h4>
+      <p>Install → bridge → provider → chat, plus the shipped read-only Augmentor features (page Q&A, highlight-to-ask, summaries, provider add/route/fallback). <b>Agent Control explicitly OFF.</b></p>
+    </div>
+    <div class="lane stop">
+      <h4><span class="dot" style="background:var(--stop)"></span>NO-GO — Agent Control testing</h4>
+      <p>Autonomous click/type/scroll, form automation, and public-submit stay maintainer-only until the #211 safety proofs are captured <b>live in Chrome</b> and the approve-once submit path is removed.</p>
+    </div>
+  </div>
+
+  <section>
+    <h2 class="sec">Findings <span>severity-ranked · cross-vendor + code-verified</span></h2>
+
+    <div class="finding">
+      <div class="top"><span class="num">F1</span><h3>Live-browser safety certification isn’t wired</h3><span class="pill p-crit">critical</span><span class="pill p-go">issue filed · #267</span></div>
+      <p>All <b>118</b> <code>*.test.mjs</code> are deterministic Node mocks. A real CDP harness <b>does exist</b> — <code>agent-control-live.mjs</code> (57 assertions over a password/submit/wallet fixture) — but a follow-up review of the harness itself found its Chrome <b>launcher is orphaned</b> (<code>run-browser-first.mjs</code> became a bridge-only shim in <code>74199ab</code>, so it hangs on the debug port) <b>and</b> it’s excluded from CI by the <code>*.test.mjs</code> glob. So the #211 boundaries still have <b>zero production evidence</b> — but the fix is smaller than “build a harness.”</p>
+      <div class="ev">Filed as <b>#267</b> (P0, sub-issue of #211): restore an Alpha-legal launch (<b>playwright@^1.59.1</b> is already a root dep — launch-only + <code>--load-extension</code>, keep the raw-CDP assertions), CI-gate it, emit proof artifacts.</div>
+    </div>
+
+    <div class="finding">
+      <div class="top"><span class="num">F2</span><h3>Public-submit is bypassable via “Approve once”</h3><span class="pill p-crit">critical</span><span class="pill p-acc">code-verified</span></div>
+      <p>An in-panel approval sets <code>userApproved:true</code>, which makes the extension <b>programmatically click the Submit button</b> — the agent acts, not the human. This is exactly the behavior <span class="mono-issue">#240</span> exists to eliminate, so #240 must be scoped as a <b>code change</b> (a true human-on-page handoff), not merely “capture a proof” of today’s behavior.</p>
+      <div class="ev"><b>agent-control-runner.js:611 / :847</b> set <code>userApproved:true</code> → <b>content.js:456</b> <code>isSubmitLikeElement && !userApproved</code> skips the guard → click proceeds.<br>Hard boundaries (wallet/payment/credential, <b>content.js:447</b>) are correctly non-bypassable.</div>
+    </div>
+
+    <div class="finding">
+      <div class="top"><span class="num">F3</span><h3>beta.1 is epic-heavy and leaf-thin; epics link stale/deferred work</h3><span class="pill p-high">high</span><span class="pill p-acc">3/3 vendors</span></div>
+      <p>Six open epics (<span class="mono-issue">#210–#215</span>) with a thin set of real leaves. Epic bodies still point at old or deferred numbers (<span class="mono-issue">#215</span>’s children are mostly <code>scope:deferred</code>; #210/#212/#214 link #113/#103/#97/#178) while the actual work is <span class="mono-issue">#218–#241 / #252</span>. As drawn, #215 cannot complete under its own scope math.</p>
+    </div>
+
+    <div class="finding">
+      <div class="top"><span class="num">F4</span><h3>Connectors have no OAuth / vault scaffold</h3><span class="pill p-high">high</span><span class="pill p-acc">3/3 vendors</span></div>
+      <p>beta.2 promises Gmail/Calendar connectors, but there is <b>no <code>chrome.identity</code> / <code>launchWebAuthFlow</code></b> and no encrypted token vault in the extension. Today’s <code>addon-draft-connectors.mjs</code> is a URL-compose shim. These are “architecture not started,” not “deferred and ready.”</p>
+      <div class="ev">Prerequisite chain: ADR-022 vault (<b>#111</b>) + OAuth token custody + consent/kill-switch (<b>#246</b>) — <b>before</b> #234 / #247 / #248 become real.</div>
+    </div>
+
+    <div class="finding">
+      <div class="top"><span class="num">F5</span><h3>Documentation drift vs. actual state</h3><span class="pill p-high">high</span><span class="pill p-acc">2/3 vendors</span></div>
+      <p><code>docs/STATUS.md:17</code> still lists the <b>#209 release gate as “Open”</b> although #209 is closed; <code>CAPABILITY_MATRIX.md</code> marks Agent-Control “certification open” and Provider-Fabric “acceptance open” despite #233 closed. Status races ahead in the feature matrix and lags behind in STATUS — both erode trust for a public audience.</p>
+    </div>
+
+    <div class="finding">
+      <div class="top"><span class="num">F6</span><h3>Bridge reliability &amp; stop-signal propagation</h3><span class="pill p-high">medium</span><span class="pill p-acc">1/3 vendors</span></div>
+      <p>The bridge is a single loopback process with no supervision or crash-recovery, and the MV3 service worker is ephemeral. <b>Stop/cancel is in-memory only</b> and does not propagate an <code>AbortController</code> to an in-flight provider request — a Stop mid-stream leaves the bridge still working. Fold this into <span class="mono-issue">#226</span>.</p>
+    </div>
+
+    <div class="note" style="margin-top:6px"><strong class="k">Credit where due —</strong> the three-layer safety model (content-script DOM enforcement → extension-runner preflight/approval → host-side plan sanitization) is correctly layered, and Provider Fabric routing / fallback / bridge-auth are well-tested deterministically. The problem is <em>verification method</em>, not architecture.</div>
+  </section>
+
+  <section>
+    <h2 class="sec">Critical path to beta.1 <span>the real dependency chain, not the epic list</span></h2>
+    <div class="ladder">
+      <div class="rung">
+        <div class="rail"><span class="node"></span><span class="wire"></span></div>
+        <div class="body"><h3>0 · Wire the live-browser harness <span class="pill p-crit">unblocks everything</span></h3>
+          <p>Restore the orphaned launcher on the existing CDP harness and gate it in CI. Nothing below can be truthfully certified without it. <span class="iss">#267 — filed, P0</span></p></div>
+      </div>
+      <div class="rung gate">
+        <div class="rail"><span class="node"></span><span class="wire"></span></div>
+        <div class="body"><h3>1 · Fix + prove the safety spine <span class="pill p-crit">the gate</span></h3>
+          <p><b>#240</b> remove approve-once auto-submit (code change) → <b>#224</b> field-typing hard-block → <b>#223</b> click/type/scroll fixtures → <b>#226</b> stop/cancel + abort propagation. Each with a captured live artifact, then close <b>#211</b>. <span class="iss">#240 · #224 · #223 · #226 → #211</span></p></div>
+      </div>
+      <div class="rung">
+        <div class="rail"><span class="node"></span><span class="wire"></span></div>
+        <div class="body"><h3>2 · Minimum acceptance surface</h3>
+          <p>Live proofs for shortcuts and core page/chat paths; finish the Settings mode/permission UX (<b>#230</b> — needs a design owner) that onboarding depends on. <span class="iss">#210 · #241 · #218 · #220 · #230 · #213</span></p></div>
+      </div>
+      <div class="rung">
+        <div class="rail"><span class="node"></span><span class="wire"></span></div>
+        <div class="body"><h3>3 · Community-test gate opens</h3>
+          <p>Testers run the runbook §4 human-only refusal checks on real Chrome. This is the graduation moment — not step 1.</p></div>
+      </div>
+      <div class="rung">
+        <div class="rail"><span class="node"></span></div>
+        <div class="body"><h3>4 · Parallel, non-gating</h3>
+          <p>Living-Archive continuity proof, provider trace &amp; artifacts, add-on epic replan — proceed alongside community testing; they gate “beta.1 done,” not the gate opening. <span class="iss">#212 · #214 (#225 #232) · #215 (replan)</span></p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">Your human testing &amp; verification plan <span>what you personally validate, in order</span></h2>
+    <div class="tier">
+      <div class="th"><span class="pill p-go">DO NOW</span><h3>Tier 1 — Supervised smoke (Agent Control OFF)</h3></div>
+      <div class="tb">
+        <div class="checkrow"><div class="what">Bridge reachable + dashboard iframe renders end-to-end<small>follow the bridge setup runbook: bind, Caddy ALPN pin, capability-token audit</small></div><div class="ref">runbook §1–2<br>#199 #203</div></div>
+        <div class="checkrow"><div class="what">Add a provider → it appears in routing → chat replies from it → kill it → visible fallback names the fallback<small>the shipped Provider Fabric loop</small></div><div class="ref">#207 #231 #233</div></div>
+        <div class="checkrow"><div class="what">Page understanding / Q&A, highlight-to-ask, one-click summary on a real page<small>read-only Augmentor surface</small></div><div class="ref">#218 #9 #221</div></div>
+        <div class="checkrow"><div class="what">Provider/model dropdown legibility on Windows Chrome<small>regression check</small></div><div class="ref">#206</div></div>
+      </div>
+    </div>
+    <div class="tier">
+      <div class="th"><span class="pill p-crit">AFTER STEP 1</span><h3>Tier 2 — Safety-boundary verification (the gate)</h3></div>
+      <div class="tb">
+        <div class="checkrow"><div class="what">Ask the agent to submit a public web form → must require <b>you</b> to click on the page (never auto-submits)<small>only meaningful once #240 is fixed + a live harness exists</small></div><div class="ref">#240 · runbook §4</div></div>
+        <div class="checkrow"><div class="what">Ask it to type into a password / payment field → blocked, human-only<small>hard boundary, non-bypassable</small></div><div class="ref">#224</div></div>
+        <div class="checkrow"><div class="what">Wallet connect / sign / checkout → refused; credential autofill → approval-gated</div><div class="ref">#12 #31</div></div>
+        <div class="checkrow"><div class="what">Hit Stop mid-action → no dangling job authority, in-flight request actually aborts</div><div class="ref">#226</div></div>
+      </div>
+    </div>
+    <div class="callout"><strong class="k">Rule for Tier 2:</strong> if any of these executes without an explicit human action, that is a boundary regression — stop and file a security issue, don’t log it as a feature bug.</div>
+  </section>
+
+  <section>
+    <h2 class="sec">Development roadmap <span>ordered by what unblocks what</span></h2>
+    <div class="phases">
+      <div class="phase now">
+        <div class="ph-h">Phase 0 · now</div><h3>Unblock verification</h3>
+        <ul>
+          <li><b>#267</b> restore + CI-gate the existing live harness</li>
+          <li><b>Reconcile docs</b>: STATUS.md #209 gate, CAPABILITY_MATRIX statuses</li>
+          <li><b>Epic hygiene</b>: re-link #210–#215 to real leaves; replan #215</li>
+        </ul>
+      </div>
+      <div class="phase gate">
+        <div class="ph-h">Phase 1 · the gate</div><h3>Safety spine</h3>
+        <ul>
+          <li><b>#240</b> remove approve-once auto-submit → page handoff</li>
+          <li><b>#224 · #223</b> field-typing + action fixtures, live proof</li>
+          <li><b>#226</b> stop/cancel + AbortController propagation</li>
+          <li><b>Close #211</b> only with live artifacts attached</li>
+        </ul>
+      </div>
+      <div class="phase b1">
+        <div class="ph-h">Phase 2 · beta.1</div><h3>Acceptance surface</h3>
+        <ul>
+          <li><b>#230</b> mode/permission UX (assign design owner)</li>
+          <li><b>#241 #218 #220 #221 #252</b> live acceptance proofs</li>
+          <li><b>#213</b> onboarding + tester-ready setup</li>
+          <li><b>#212 #214</b> continuity + artifacts (parallel)</li>
+        </ul>
+      </div>
+      <div class="phase b2">
+        <div class="ph-h">Phase 3 · beta.2 + full list</div><h3>Connectors &amp; delegation</h3>
+        <ul>
+          <li><b>Foundation first</b>: vault #111 + OAuth + consent/kill-switch #246</li>
+          <li><b>Then</b> connectors #234/#247/#248, voice #235/#249</li>
+          <li><b>Then</b> personalization #236, proactive #254, media #242</li>
+          <li>All currently correctly <code>scope:deferred</code></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">Full Augmentor list — where each family sits <span>after this session’s sync</span></h2>
+    <div class="tbl-wrap">
+    <table class="grid">
+      <thead><tr><th>Family</th><th>Canonical</th><th>State</th><th>Gate to “done”</th></tr></thead>
+      <tbody>
+        <tr><td><b>Provider Fabric routing / fallback</b></td><td class="mono">#207 #231 #233</td><td><span class="pill p-go">shipped</span></td><td>live-provider round-trip cert</td></tr>
+        <tr><td><b>Page Q&A · highlight · summaries</b></td><td class="mono">#218 #9 #221</td><td><span class="pill p-go">works</span></td><td>fixture coverage (#218/#221)</td></tr>
+        <tr><td><b>Agent Control (nav/click/type)</b></td><td class="mono">#211 #223 #224 #240 #226</td><td><span class="pill p-crit">gate</span></td><td>fix #240 + live proof + harness</td></tr>
+        <tr><td><b>Cross-tab · @tab · counterpoints</b></td><td class="mono">#220 #252 #219</td><td><span class="pill p-high">build</span></td><td>beta.1 leaves, need live proof</td></tr>
+        <tr><td><b>Session memory / continuity</b></td><td class="mono">#222 #228 (#212)</td><td><span class="pill p-high">harden</span></td><td>restart-safe continuity proof</td></tr>
+        <tr><td><b>Reasoning trace · artifacts</b></td><td class="mono">#225 #232 (#214)</td><td><span class="pill p-high">future</span></td><td>contract + trace proof</td></tr>
+        <tr><td><b>Connectors · voice · shopping · booking</b></td><td class="mono">#234 #247 #248 #235 #243 #244</td><td><span class="pill p-high">deferred</span></td><td>vault + OAuth scaffold first</td></tr>
+        <tr><td><b>Personalization · proactive · media</b></td><td class="mono">#236 #254 #242</td><td><span class="pill p-high">deferred</span></td><td>beta.2, opt-in + consent</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <footer>
+    <div><strong class="k">Method.</strong> Resonant-Rig v2 — deterministic gates first, then a diverse cross-vendor panel; every disagreement adjudicated against code evidence, not by vote. The one split (does a public-submit bypass exist?) was resolved by reading <code>agent-control-runner.js</code> + <code>content.js</code> directly.</div>
+    <div class="prov">
+      <span class="vendor">grok-4.5 · xAI</span>
+      <span class="vendor">gemini-3.1-pro · Google</span>
+      <span class="vendor">deepseek-v4-pro · DeepSeek</span>
+      <span class="vendor">gpt-5.6 · OpenAI (timed out)</span>
+      <span class="vendor">code audit · Opus 4.8</span>
+    </div>
+    <div style="margin-top:8px">This session also brought the board into full sync (23 priorities reconciled to labels), closed the coverage + executability gaps (18 issues backfilled, #99 retired), and merged PR #265 / #266. This review is the independent check on what remains.</div>
+  </footer>
+</div>

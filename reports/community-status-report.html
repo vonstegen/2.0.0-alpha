@@ -1,0 +1,266 @@
+<title>ResonantOS 2.0.0-alpha — Community Status & Where to Start</title>
+<style>
+  :root{
+    --bg:#F5F7FA; --panel:#FFFFFF; --panel-2:#EEF1F6; --ink:#141B24; --ink-2:#495568;
+    --line:#DBE1EA; --line-2:#C7D0DC;
+    --accent:#356392; --accent-soft:#E4ECF4;
+    --go:#2E7D5B; --go-bg:#E4F1EA;
+    --warn:#B5791A; --warn-bg:#F7EDD7;
+    --stop:#AE4136; --stop-bg:#F6E2DF;
+    --seed:#3E7A54; --seed-bg:#E6F1E9;
+    --shadow:0 1px 2px rgba(20,27,36,.06),0 4px 16px rgba(20,27,36,.05);
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0E141C; --panel:#151D28; --panel-2:#1B2531; --ink:#E7ECF3; --ink-2:#9BA9BC;
+      --line:#25313F; --line-2:#33465a; --accent:#6FA6D6; --accent-soft:#1A2836;
+      --go:#5BB88A; --go-bg:#15271F; --warn:#D9A94A; --warn-bg:#2A2415; --stop:#D8776B; --stop-bg:#2A1815;
+      --seed:#6FBE89; --seed-bg:#15271E;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.28);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#F5F7FA; --panel:#FFFFFF; --panel-2:#EEF1F6; --ink:#141B24; --ink-2:#495568;
+    --line:#DBE1EA; --line-2:#C7D0DC; --accent:#356392; --accent-soft:#E4ECF4;
+    --go:#2E7D5B; --go-bg:#E4F1EA; --warn:#B5791A; --warn-bg:#F7EDD7; --stop:#AE4136; --stop-bg:#F6E2DF;
+    --seed:#3E7A54; --seed-bg:#E6F1E9;
+    --shadow:0 1px 2px rgba(20,27,36,.06),0 4px 16px rgba(20,27,36,.05);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0E141C; --panel:#151D28; --panel-2:#1B2531; --ink:#E7ECF3; --ink-2:#9BA9BC;
+    --line:#25313F; --line-2:#33465a; --accent:#6FA6D6; --accent-soft:#1A2836;
+    --go:#5BB88A; --go-bg:#15271F; --warn:#D9A94A; --warn-bg:#2A2415; --stop:#D8776B; --stop-bg:#2A1815;
+    --seed:#6FBE89; --seed-bg:#15271E;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.28);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;font-size:16px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px;margin:0 auto;padding:clamp(20px,4vw,56px) clamp(16px,4vw,40px)}
+  h1,h2,h3{text-wrap:balance;line-height:1.15;margin:0}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+  code,.mono{font-family:var(--mono);font-size:.85em}
+  a{color:var(--accent)}
+  .mono-issue{font-family:var(--mono);font-weight:600;color:var(--accent)}
+
+  header.mast{border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:32px}
+  header.mast h1{font-size:clamp(26px,4.4vw,40px);letter-spacing:-.02em;font-weight:800;margin:10px 0 6px}
+  header.mast .sub{color:var(--ink-2);font-size:15px;max-width:64ch}
+  .metaline{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:16px;font-size:13px;color:var(--ink-2);font-family:var(--mono)}
+  .metaline b{color:var(--ink);font-weight:600}
+
+  .statusgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:36px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 17px;box-shadow:var(--shadow)}
+  .stat .lab{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin-bottom:7px;display:flex;align-items:center;gap:7px}
+  .stat .val{font-size:15px;font-weight:600}
+  .stat .val small{display:block;font-weight:400;color:var(--ink-2);font-size:13px;margin-top:3px}
+  .stat.go{border-top:3px solid var(--go)} .stat.warn{border-top:3px solid var(--warn)} .stat.acc{border-top:3px solid var(--accent)}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+
+  section{margin:0 0 40px}
+  h2.sec{font-size:13px;font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);padding-bottom:9px;border-bottom:1px solid var(--line);margin-bottom:20px;display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+  h2.sec span{color:var(--ink-2);font-size:11px;letter-spacing:.06em;text-transform:none;font-family:var(--sans)}
+  .lede{font-size:15px;color:var(--ink-2);margin:-6px 0 20px;max-width:70ch}
+
+  .pill{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.03em;padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .p-seed{color:var(--seed);background:var(--seed-bg)} .p-go{color:var(--go);background:var(--go-bg)}
+  .p-warn{color:var(--warn);background:var(--warn-bg)} .p-stop{color:var(--stop);background:var(--stop-bg)}
+  .p-acc{color:var(--accent);background:var(--accent-soft)}
+
+  /* good first issue cards */
+  .gfi{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--seed);border-radius:12px;padding:17px 18px;box-shadow:var(--shadow);display:flex;flex-direction:column}
+  .card .ch{display:flex;align-items:center;gap:9px;margin-bottom:4px;flex-wrap:wrap}
+  .card .ch .id{font-family:var(--mono);font-weight:700;color:var(--seed);font-size:14px}
+  .card h3{font-size:16px;font-weight:700;margin:2px 0 8px;letter-spacing:-.01em}
+  .card p{margin:0 0 12px;font-size:13.5px;color:var(--ink-2);flex:1}
+  .card .kv{font-size:12.5px;border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:6px}
+  .card .kv div{display:flex;gap:8px}
+  .card .kv .k{font-family:var(--mono);color:var(--ink-2);flex:none;min-width:64px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding-top:1px}
+  .card .kv .v{font-family:var(--mono);font-size:11.5px;word-break:break-word;color:var(--ink)}
+  .card .kv .v b{color:var(--accent);font-weight:600}
+
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+  table.grid{width:100%;border-collapse:collapse;font-size:13.5px}
+  table.grid th,table.grid td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.grid th{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);font-weight:600}
+  table.grid tr:last-child td{border-bottom:none}
+  table.grid td b{font-weight:600}
+
+  .flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0}
+  .step{position:relative;padding:14px 16px;background:var(--panel);border:1px solid var(--line);border-radius:12px;margin:6px}
+  .step .n{font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:700;letter-spacing:.08em}
+  .step h4{font-size:14px;margin:4px 0 4px}
+  .step p{margin:0;font-size:12.5px;color:var(--ink-2)}
+
+  .phases{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+  .phase{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow)}
+  .phase .ph-h{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px}
+  .phase h3{font-size:16px;font-weight:750;margin-bottom:10px}
+  .phase ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+  .phase li{font-size:13px;padding-left:15px;position:relative;color:var(--ink-2)}
+  .phase li::before{content:"";position:absolute;left:0;top:7px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+  .phase li b{color:var(--ink);font-weight:600}
+  .phase.now{border-top:3px solid var(--go)} .phase.gate{border-top:3px solid var(--stop)}
+  .phase.b1{border-top:3px solid var(--accent)} .phase.b2{border-top:3px solid var(--warn)}
+
+  .callout{border-left:3px solid var(--stop);background:var(--stop-bg);border-radius:0 8px 8px 0;padding:13px 16px;font-size:14px;margin:4px 0}
+  .note{background:var(--accent-soft);border:1px solid var(--line);border-radius:10px;padding:13px 16px;font-size:13.5px}
+  footer{border-top:1px solid var(--line);margin-top:44px;padding-top:20px;font-size:12.5px;color:var(--ink-2)}
+  strong.k{color:var(--ink);font-weight:700}
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <div class="eyebrow">Community Status · Contributor Guide</div>
+    <h1>ResonantOS 2.0.0-alpha</h1>
+    <div class="sub">A browser-first AI “Augmentor” — a Chrome side-panel extension plus a local model-routing bridge. This page is where things stand, what’s safe to test today, and the best places to make a first contribution.</div>
+    <div class="metaline">
+      <span>branch <b>dev @ 6f92af7</b></span>
+      <span>open issues <b>78</b></span>
+      <span>beta.1 <b>23 open</b></span>
+      <span>beta.2 <b>15 open</b></span>
+      <span>tests <b>704 green</b></span>
+    </div>
+  </header>
+
+  <div class="statusgrid">
+    <div class="stat go">
+      <div class="lab"><span class="dot" style="background:var(--go)"></span>Shipped &amp; working</div>
+      <div class="val">Provider Fabric, bridge auth, page Q&amp;A<small>multi-model routing with visible fallback; install → chat works today</small></div>
+    </div>
+    <div class="stat warn">
+      <div class="lab"><span class="dot" style="background:var(--warn)"></span>In review</div>
+      <div class="val">Browser-agent safety fixes<small>#268 (public-submit handoff) &amp; #269 (live-test harness) — the beta.1 safety gate</small></div>
+    </div>
+    <div class="stat acc">
+      <div class="lab"><span class="dot" style="background:var(--accent)"></span>Board &amp; docs</div>
+      <div class="val">In full sync<small>every open task has a priority, an owner-area, and a code entry-point</small></div>
+    </div>
+  </div>
+
+  <section>
+    <h2 class="sec">Good first issues <span>vetted, well-scoped, low-risk — each names the file to start from</span></h2>
+    <p class="lede">These four are labelled <code>good first issue</code>. They extend features that already work, have a clear entry-point and a focused test, and touch no safety-critical code. Comment on the issue to claim it before you start.</p>
+    <div class="gfi">
+
+      <div class="card">
+        <div class="ch"><span class="id">#218</span><span class="pill p-seed">good first issue</span><span class="pill p-go">✅ extends shipped</span></div>
+        <h3>Page-understanding fixtures</h3>
+        <p>Add focused test fixtures for article-, PDF-, and media-like pages so the Augmentor’s page reading and its “unsupported content” messages are covered. Mostly writing tests against an existing capability — a gentle way in.</p>
+        <div class="kv">
+          <div><span class="k">Start</span><span class="v"><b>…/src/lib/chat-turn-controller.js</b> · pageContextForSnapshot</span></div>
+          <div><span class="k">Test</span><span class="v">node --test browser-first/test/chat-turn-controller.test.mjs</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ch"><span class="id">#221</span><span class="pill p-seed">good first issue</span><span class="pill p-go">✅ extends shipped</span></div>
+        <h3>One-click &amp; question summaries</h3>
+        <p>Round out the summarize flow (there’s already a <code>summarize</code> action at shortcut&nbsp;S). Add the question-driven path and its coverage. Small, self-contained, user-visible.</p>
+        <div class="kv">
+          <div><span class="k">Start</span><span class="v"><b>…/src/lib/content-inline-actions.js</b></span></div>
+          <div><span class="k">Test</span><span class="v">node --test browser-first/test/composer-controller.test.mjs</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ch"><span class="id">#219</span><span class="pill p-seed">good first issue</span><span class="pill p-acc">new action</span></div>
+        <h3>Counterpoints &amp; explain-jargon</h3>
+        <p>Add two inline actions — “give me the counterpoint” and “explain the jargon” — to the selection menu. The existing <code>explain</code> action (shortcut&nbsp;E) is a working template to copy.</p>
+        <div class="kv">
+          <div><span class="k">Start</span><span class="v"><b>…/src/lib/content-inline-actions.js</b> · extend inlineActionList</span></div>
+          <div><span class="k">Test</span><span class="v">node --test browser-first/test/composer-controller.test.mjs</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ch"><span class="id">#237</span><span class="pill p-seed">good first issue</span><span class="pill p-warn">draft PR open</span></div>
+        <h3>Augmentor workflow recipes (docs)</h3>
+        <p>Write step-by-step recipes (job search, travel, study, product research) for the Product Guide. Pure docs — no runtime code. <b>Note:</b> a draft <a href="https://github.com/ResonantOS/2.0.0-alpha/pull/239">PR #239</a> exists, so the best help here is <b>reviewing or extending it</b> rather than starting fresh.</p>
+        <div class="kv">
+          <div><span class="k">Start</span><span class="v"><b>docs/product/PRODUCT_GUIDE.md</b> + a new docs/ recipes page</span></div>
+          <div><span class="k">Test</span><span class="v">npm run docs:check &amp;&amp; npm run test:docs</span></div>
+        </div>
+      </div>
+
+    </div>
+    <div class="note" style="margin-top:14px"><strong class="k">Ready to level up?</strong> Once you’ve landed one of the above, these are the natural next tasks — bigger, still well-specified, each with a handoff block in the issue: <span class="mono-issue">#252</span> explicit <code>@tab</code> referencing · <span class="mono-issue">#220</span> cross-tab comparison with provenance · <span class="mono-issue">#241</span> Alt+A / Alt+S shortcut contract.</div>
+  </section>
+
+  <section>
+    <h2 class="sec">How a contribution flows <span>issue → PR → green CI</span></h2>
+    <div class="flow">
+      <div class="step"><div class="n">01</div><h4>Claim an issue</h4><p>Comment to claim it. Every issue carries a <b>Contributor handoff</b> block — an entry-point file, a focused test, and the runtime boundary.</p></div>
+      <div class="step"><div class="n">02</div><h4>Start from the file</h4><p>Open the named module. Read <code>AGENTS.md</code> + <code>docs/reference/CAPABILITY_MATRIX.md</code> for context. Stay inside the browser-first Alpha runtime.</p></div>
+      <div class="step"><div class="n">03</div><h4>Test as you go</h4><p>Run <code>node --test &lt;file&gt;</code> to target one suite. <code>npm run test:browser-first</code> runs all 704 — it ignores path args, so use <code>node --test</code> to focus.</p></div>
+      <div class="step"><div class="n">04</div><h4>Open a PR</h4><p>CI runs <code>verify:alpha</code> (build + docs + the full suite). Green CI + a short “what/why” is all a review needs.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">The roadmap <span>where the project is headed</span></h2>
+    <div class="phases">
+      <div class="phase now">
+        <div class="ph-h">Today · GO</div><h3>Try it, safely</h3>
+        <ul>
+          <li><b>Install → bridge → provider → chat</b> works now</li>
+          <li>Page Q&amp;A, highlight-to-ask, summaries</li>
+          <li>Add a provider → routing → visible fallback</li>
+          <li><b>Agent Control stays off</b> for community testing</li>
+        </ul>
+      </div>
+      <div class="phase gate">
+        <div class="ph-h">The gate · in review</div><h3>Agent-control safety</h3>
+        <ul>
+          <li><b>#268</b> public-submit is human-only, non-bypassable</li>
+          <li><b>#269</b> the live-browser test harness, restored</li>
+          <li>then <b>#223 / #224 / #226</b> live safety proofs</li>
+          <li>closes epic <b>#211</b> — opens community agent testing</li>
+        </ul>
+      </div>
+      <div class="phase b1">
+        <div class="ph-h">beta.1 · 23 open</div><h3>Acceptance surface</h3>
+        <ul>
+          <li>Page/chat acceptance + shortcuts (<b>#218 #220 #221 #241 #252</b>)</li>
+          <li>Onboarding &amp; tester setup (<b>#213 #230</b>)</li>
+          <li>Living-Archive continuity (<b>#212 #228</b>)</li>
+          <li>Provider trace &amp; artifacts (<b>#214 #225 #232</b>)</li>
+        </ul>
+      </div>
+      <div class="phase b2">
+        <div class="ph-h">beta.2 · 15 open</div><h3>Connectors &amp; more</h3>
+        <ul>
+          <li>Gmail / Calendar connectors, voice, personalization</li>
+          <li>All <b>opt-in, consent-gated, deferred</b> for now</li>
+          <li>Needs an OAuth + secure-vault foundation first</li>
+          <li>Not yet ready to pick up — tracked, not started</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">What the Augmentor must never do <span>the human-only boundaries</span></h2>
+    <p class="lede">If you touch Agent Control, these lines are load-bearing. The extension refuses them by design — a change that lets any of these happen automatically is a regression, not a feature.</p>
+    <div class="tbl-wrap">
+    <table class="grid">
+      <thead><tr><th>Boundary</th><th>Rule</th><th>Reference</th></tr></thead>
+      <tbody>
+        <tr><td><b>Public submit / post / publish</b></td><td>Prepared, then the <b>human clicks it</b> on the page — never auto-submitted</td><td class="mono">#240 · #268</td></tr>
+        <tr><td><b>Password / payment / card fields</b></td><td>Never typed into by the agent; human-only</td><td class="mono">#224</td></tr>
+        <tr><td><b>Wallet connect / sign · checkout · login</b></td><td>Hard-blocked; refused, not approvable</td><td class="mono">#12 · #211</td></tr>
+        <tr><td><b>Email / calendar send</b></td><td>Draft only; the human sends</td><td class="mono">#234 · #235</td></tr>
+        <tr><td><b>Stop / cancel</b></td><td>Always available; leaves no dangling action</td><td class="mono">#226</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="callout" style="margin-top:14px">If you’re testing and the agent crosses one of these <em>without</em> an explicit human action, stop and file a security issue — that’s a boundary regression.</div>
+  </section>
+
+  <footer>
+    <div><strong class="k">For maintainers &amp; reviewers:</strong> the companion due-diligence review and full technical roadmap live in a separate report. This session brought the board into full sync, closed the executability gaps (every task now names a code entry-point), and put the two safety-gate fixes (#268, #269) into review with cross-vendor certification.</div>
+    <div style="margin-top:10px">Read first: <code>README.md</code> · <code>CONTRIBUTING.md</code> · <code>AGENTS.md</code> · <code>docs/augmentor-tester-runbook.md</code>. Feature status &amp; canonical issues: <code>docs/augmentor-future-list-acceptance-matrix.md</code>.</div>
+  </footer>
+</div>
