@@ -422,13 +422,19 @@ const ambiguousTargetResponse = (kind, target, candidates) => ({
   candidates
 });
 
+// #240: public-commit verbs. A control carrying one of these is treated as a
+// public submit even without a <form> (SPA buttons, links, type="button" that
+// wire up JS submit) — it is a human-only handoff, never auto-clicked.
+const PUBLIC_COMMIT_VERBS = /\b(submit|send|post|publish|save|share|buy|pay|confirm|connect|sign|reserve|book|order|checkout|apply|vote|subscribe|register|comment)\b/i;
 const isSubmitLikeElement = (element) => {
   const type = String(element.getAttribute("type") || "").toLowerCase();
   const role = String(element.getAttribute("role") || "").toLowerCase();
+  const tag = element.tagName ? element.tagName.toLowerCase() : "";
   const text = visibleText(element).toLowerCase();
   return type === "submit" ||
     (element instanceof HTMLButtonElement && (!type || type === "submit") && Boolean(element.closest("form"))) ||
-    (role === "button" && Boolean(element.closest("form")) && /\b(submit|send|post|publish|save|share|buy|pay|confirm|connect|sign)\b/i.test(text));
+    // formless / type="button" / link / role=button commits are still human-only
+    ((tag === "button" || tag === "a" || role === "button" || role === "link") && PUBLIC_COMMIT_VERBS.test(text));
 };
 
 const isHardRestrictedElement = (element, fallbackText = "") => {
@@ -453,13 +459,18 @@ const clickElement = (element, { userApproved = false, fallbackText = "" } = {})
       error: `Clicking "${visibleText(element) || fallbackText}" crosses a wallet/payment/login/credential boundary and must be completed by the human.`
     };
   }
-  if (isSubmitLikeElement(element) && !userApproved) {
-    pulseControlOverlay({ state: "blocked", label: "Approval required for public action", phase: "blocked", target: element });
+  // #240: submit-like is UNCONDITIONALLY human-only. Do not add a userApproved
+  // or any other bypass gate here — an in-panel approval must never turn a public
+  // submit into an agent-performed click. The human clicks it on the page.
+  if (isSubmitLikeElement(element)) {
+    element.scrollIntoView({ block: "center", inline: "center", behavior: "auto" });
+    pulseControlOverlay({ state: "blocked", label: "Human-only: click this yourself", phase: "handoff", target: element });
     return {
       ok: false,
       approvalRequired: true,
       deniedToAutomation: true,
-      error: `Clicking "${visibleText(element) || fallbackText}" looks like a submit/public action and requires human approval.`
+      humanHandoff: true,
+      error: `Clicking "${visibleText(element) || fallbackText}" is a public submit/commit action and must be performed by the human on the page.`
     };
   }
   element.scrollIntoView({ block: "center", inline: "center", behavior: "auto" });
@@ -676,6 +687,20 @@ const setNativeValue = (element, value) => {
   element.dispatchEvent(new Event("change", { bubbles: true }));
 };
 
+// #240: a field that is safe to submit on its own (a search box) must NOT submit
+// a form that also carries sensitive or public-commit fields. Only auto-submit a
+// form whose every data field classifies as a search query.
+const formIsSafeToAutoSubmit = (form) => {
+  if (!form) return true; // no enclosing form -> Enter only affects the field itself
+  const fields = form.querySelectorAll("input, textarea, select");
+  for (const candidate of fields) {
+    const candidateType = String(candidate.getAttribute("type") || "").toLowerCase();
+    if (["hidden", "submit", "button", "reset", "search"].includes(candidateType)) continue;
+    if (classifyEditableField(candidate).kind !== "search-query") return false;
+  }
+  return true;
+};
+
 const typeIntoPage = ({ text, field = "", ref = "", submit = false, userApproved = false } = {}) => {
   const value = String(text ?? "").trim();
   if (!value) {
@@ -710,6 +735,18 @@ const typeIntoPage = ({ text, field = "", ref = "", submit = false, userApproved
         deniedToAutomation: true,
         fieldSafety,
         error: "Submitting a non-search field requires human approval."
+      };
+    }
+    if (!formIsSafeToAutoSubmit(element.form)) {
+      element.scrollIntoView({ block: "center", inline: "center", behavior: "auto" });
+      pulseControlOverlay({ state: "blocked", label: "Human-only: submit this form yourself", phase: "handoff", target: element });
+      return {
+        ok: false,
+        approvalRequired: true,
+        deniedToAutomation: true,
+        humanHandoff: true,
+        fieldSafety,
+        error: "This search field is inside a form with sensitive or public-submit fields; the human must submit it on the page."
       };
     }
     element.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));

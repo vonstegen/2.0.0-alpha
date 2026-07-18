@@ -25,10 +25,14 @@ export function createControlApprovalActions({
 
     const approval = pendingApproval;
     const boundary = approvalBoundaryForStep(approval.step, approval.reason);
-    if (boundary === "hard") {
+    // #240: public-submit joins hard as non-approvable — an in-panel approval must
+    // never execute a public commit. The human performs it on the page, then resumes.
+    if (boundary === "hard" || boundary === "public-submit") {
       await addMessage(
         "system",
-        `Cannot automate this action: ${controlStepLabel(approval.step)}.\nWallet, payment, login, credential, signing, and transfer actions are human-only.`
+        boundary === "public-submit"
+          ? `Cannot automate this action: ${controlStepLabel(approval.step)}.\nPublic submit and commit actions (send, publish, post, reserve, order, apply, confirm) are human-only — click it yourself on the page, then resume.`
+          : `Cannot automate this action: ${controlStepLabel(approval.step)}.\nWallet, payment, login, credential, signing, and transfer actions are human-only.`
       );
       return;
     }
