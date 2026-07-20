@@ -65,6 +65,18 @@ test("control approval actions block hard-boundary automation", async () => {
   assert.match(harness.events.find((event) => event[0] === "message")?.[2], /human-only/);
 });
 
+test("#240: control approval actions block public-submit automation", async () => {
+  const harness = createHarness({
+    approvalBoundaryForStep: () => "public-submit",
+    pendingApproval: { reason: "public submit", step: { type: "click", text: "Submit public form" } },
+  });
+
+  await harness.actions.approvePendingControlStep();
+
+  assert.equal(harness.events.some((event) => event[0] === "approve"), false, "public-submit must not reach the runner approve path");
+  assert.match(harness.events.find((event) => event[0] === "message")?.[2], /human-only/);
+});
+
 test("control approval actions trust only safe task classes before approving", async () => {
   const harness = createHarness();
 
