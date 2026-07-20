@@ -200,6 +200,19 @@ test("side panel command router dispatches natural browser intents before chat",
   assert.deepEqual(dispatched.at(-1), ["control", "add the visible item on this page to the cart"]);
 });
 
+test("side panel command router sends compound navigate-and-act commands to agent control", async () => {
+  const harness = createHarness();
+
+  await harness.router.respondToCommand("go to fifa.com and click on news");
+  await harness.router.respondToCommand("open espn.com and search for scores");
+
+  const dispatched = harness.calls.filter((call) => call[0] !== "bind");
+  assert.deepEqual(dispatched, [
+    ["control", "go to fifa.com and click on news"],
+    ["control", "open espn.com and search for scores"]
+  ]);
+});
+
 test("side panel command router dispatches natural delegation before chat", async () => {
   const harness = createHarness();
 

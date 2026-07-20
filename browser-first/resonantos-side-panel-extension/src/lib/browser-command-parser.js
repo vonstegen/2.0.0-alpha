@@ -148,6 +148,29 @@ export function parseControlIntent(message) {
   return { goal: (match[2] || normalized).trim() };
 }
 
+// A compound "go to <site> and <do something>" command needs navigation first,
+// so it belongs in agent-control mode — not the single-action fast paths
+// (click/type/scroll/read) that operate on the *current* page. Without this,
+// "go to fifa.com and click on news" was swallowed by the click rule and never
+// navigated. It fires only when BOTH a real navigation target and a follow-up
+// action are present, so bare "click Submit" and bare "go to fifa.com" are
+// untouched.
+export function parseBrowserNavigationTaskIntent(message) {
+  const normalized = String(message ?? "").trim();
+  if (/^\//.test(normalized)) {
+    return null;
+  }
+  const hasNavigationTarget = browserTargetPattern.test(normalized) && browserIntentVerbs.test(normalized);
+  if (!hasNavigationTarget) {
+    return null;
+  }
+  const hasFollowupAction = /\b(click|press|tap|select|choose|find|search|look\s+for|add|put|fill|complete|submit|scroll|read|inspect|check|compare|buy|book|type|enter|watch|play|download)\b/i.test(normalized);
+  if (!hasFollowupAction) {
+    return null;
+  }
+  return { goal: normalized };
+}
+
 export function parseAutonomousBrowserActionIntent(message) {
   const normalized = String(message ?? "").trim();
   if (/^\//.test(normalized)) {

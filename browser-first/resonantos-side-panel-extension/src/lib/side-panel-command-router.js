@@ -1,6 +1,7 @@
 import { parseNaturalDelegationIntent } from "./app-command-handlers.js";
 import {
   parseAutonomousBrowserActionIntent,
+  parseBrowserNavigationTaskIntent,
   parseClickIntent,
   parseControlIntent,
   parseFormsIntent,
@@ -59,6 +60,11 @@ export function createSidePanelCommandRouter(handlers) {
 
     const controlIntent = parseControlIntent(value);
     if (controlIntent) return handlers.runControlCommand(controlIntent.goal);
+
+    // Compound "go to <site> and <act>" tasks route to agent control before the
+    // single-action fast paths can swallow the "<act>" half against the wrong page.
+    const navigationTaskIntent = parseBrowserNavigationTaskIntent(value);
+    if (navigationTaskIntent) return handlers.runControlCommand(navigationTaskIntent.goal);
 
     const delegationIntent = parseNaturalDelegationIntent(value);
     if (delegationIntent) {

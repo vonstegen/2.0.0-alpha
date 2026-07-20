@@ -7,6 +7,7 @@ import {
   normalizeSearchQuery,
   parseAmazonShoppingTask,
   parseAutonomousBrowserActionIntent,
+  parseBrowserNavigationTaskIntent,
   parseClickIntent,
   parseControlIntent,
   parseNaturalBrowserIntent,
@@ -43,6 +44,30 @@ test("browser command parser extracts page read, click, type, and scroll intents
   assert.equal(parseClickIntent("open resonantos.com"), null);
   assert.deepEqual(parseTypeIntent('type "pizza stone" into the search bar'), { text: "pizza stone", submit: true });
   assert.deepEqual(parseScrollIntent("scroll to the bottom"), { direction: "bottom" });
+});
+
+test("browser command parser routes compound navigate-and-act commands as control tasks", () => {
+  // Compound: navigation target + follow-up action -> full agent control.
+  assert.deepEqual(
+    parseBrowserNavigationTaskIntent("go to fifa.com and click on news"),
+    { goal: "go to fifa.com and click on news" }
+  );
+  assert.deepEqual(
+    parseBrowserNavigationTaskIntent("open espn.com and search for scores"),
+    { goal: "open espn.com and search for scores" }
+  );
+  assert.deepEqual(
+    parseBrowserNavigationTaskIntent("go to amazon.it and find me a rtx5090"),
+    { goal: "go to amazon.it and find me a rtx5090" }
+  );
+  // Pure navigation (no action) stays a plain open, not a control run.
+  assert.equal(parseBrowserNavigationTaskIntent("go to resonantos.com/dao"), null);
+  assert.equal(parseBrowserNavigationTaskIntent("can you navigate to manoloremiddi.com?"), null);
+  // Bare single actions (no navigation target) stay on the current-page fast path.
+  assert.equal(parseBrowserNavigationTaskIntent('click "Add to cart"'), null);
+  assert.equal(parseBrowserNavigationTaskIntent("scroll to the bottom"), null);
+  // Slash commands are never natural-language intents.
+  assert.equal(parseBrowserNavigationTaskIntent("/control go to fifa.com and click news"), null);
 });
 
 test("browser command parser separates structured edit and control intents", () => {
