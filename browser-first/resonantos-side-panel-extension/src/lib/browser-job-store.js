@@ -2,6 +2,10 @@ const TERMINAL_JOB_STATUSES = ["completed", "blocked", "denied", "cancelled", "f
 const ACTIVE_JOB_STATUSES = ["queued", "running", "paused", "approval"];
 const LOCK_HOLDING_JOB_STATUSES = ["queued", "running", "approval"];
 const VALID_JOB_STATUSES = [...ACTIVE_JOB_STATUSES, ...TERMINAL_JOB_STATUSES];
+// "Settled" jobs the human can clear or collapse in the monitor: finished with
+// nothing left to act on. blocked/failed are intentionally excluded — they
+// usually still need a human, so "Clear done" must not silently discard them.
+const CLEARABLE_JOB_STATUSES = ["completed", "cancelled", "denied"];
 const DEFAULT_STALE_JOB_THRESHOLD_MS = 15 * 60 * 1000;
 
 const defaultNow = () => new Date().toISOString();
@@ -189,6 +193,10 @@ export function normalizeBrowserJob(job, { now = defaultNow } = {}) {
 
 export function isTerminalBrowserJobStatus(status) {
   return TERMINAL_JOB_STATUSES.includes(status);
+}
+
+export function isClearableBrowserJobStatus(status) {
+  return CLEARABLE_JOB_STATUSES.includes(status);
 }
 
 export function isActiveBrowserJobStatus(status) {
@@ -555,8 +563,19 @@ export function createBrowserJobStore({
     return setMonitorCollapsed(!monitorCollapsed);
   }
 
+  async function clearCompletedJobs() {
+    const before = jobs.length;
+    // Keep the focused job even if it settled, so we never yank a card the human
+    // is currently inspecting; persist() re-nulls activeJobId if it went away.
+    jobs = jobs.filter((job) => job.id === activeJobId || !isClearableBrowserJobStatus(job.status));
+    const removed = before - jobs.length;
+    await persist();
+    return removed;
+  }
+
   return {
     activateJob,
+    clearCompletedJobs,
     conflictingActiveJobForLock,
     createJob,
     currentJob,

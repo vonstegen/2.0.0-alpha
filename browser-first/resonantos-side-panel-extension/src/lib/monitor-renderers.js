@@ -1,4 +1,4 @@
-import { staleBrowserJobEvidence } from "./browser-job-store.js";
+import { isClearableBrowserJobStatus, staleBrowserJobEvidence } from "./browser-job-store.js";
 import {
   controlActionStateLabel,
   controlRunPhaseLabel,
@@ -639,10 +639,49 @@ export function createMonitorRenderers({
       updateContextDockVisibility();
       return;
     }
-    browserJobs.slice(0, 8).forEach((job) => {
+    // Surface jobs that still need a human first; Array.sort is stable, so this
+    // keeps each group's recency order (the store hands us updatedAt-desc jobs).
+    const orderedJobs = [...browserJobs].sort((left, right) => {
+      const leftRank = ["queued", "running", "paused", "approval"].includes(left.status) ? 0 : 1;
+      const rightRank = ["queued", "running", "paused", "approval"].includes(right.status) ? 0 : 1;
+      return leftRank - rightRank;
+    });
+    orderedJobs.slice(0, 8).forEach((job) => {
       const item = document.createElement("li");
       item.dataset.status = job.status;
       item.dataset.active = job.id === activeJobId ? "true" : "false";
+      // Settled jobs (completed / cancelled / denied) that aren't focused collapse
+      // to a single readable line — goal + status + time + the two actions that
+      // still apply — instead of the full diagnostic card meant for live work.
+      if (isClearableBrowserJobStatus(job.status) && job.id !== activeJobId) {
+        item.dataset.compact = "true";
+        const compactDetails = document.createElement("div");
+        const compactTitle = document.createElement("strong");
+        compactTitle.textContent = job.goal;
+        const compactMeta = document.createElement("small");
+        compactMeta.textContent = `${job.status} · ${job.updatedAt.replace("T", " ").slice(0, 16)}`;
+        compactDetails.append(compactTitle, compactMeta);
+        const compactActions = document.createElement("div");
+        compactActions.className = "job-actions";
+        const addCompactButton = (label, buttonTitle, handler) => {
+          if (typeof handler !== "function") return;
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = label;
+          button.title = buttonTitle;
+          button.addEventListener("click", () => handler(job));
+          compactActions.append(button);
+        };
+        addCompactButton("Continue", `Continue ${job.goal}`, onContinueBrowserJob);
+        addCompactButton("Report", `Save report for ${job.goal}`, onSaveBrowserJobReport);
+        const compactState = document.createElement("span");
+        compactState.className = "job-state";
+        compactState.textContent = job.status;
+        compactActions.append(compactState);
+        item.append(compactDetails, compactActions);
+        jobList.append(item);
+        return;
+      }
       const details = document.createElement("div");
       const title = document.createElement("strong");
       title.textContent = job.goal;

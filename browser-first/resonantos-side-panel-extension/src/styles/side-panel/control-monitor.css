@@ -19,6 +19,14 @@
   display: none;
 }
 
+/* Collapsed Agent Control: keep the header, hide the task body. */
+#control-monitor[data-collapsed="true"] .control-current-action,
+#control-monitor[data-collapsed="true"] #control-summary-card,
+#control-monitor[data-collapsed="true"] #control-step-list,
+#control-monitor[data-collapsed="true"] #control-artifacts {
+  display: none;
+}
+
 .control-monitor-header {
   display: flex;
   align-items: flex-start;
@@ -141,6 +149,10 @@
 .control-current-action strong {
   color: rgba(247, 255, 249, 0.9);
   font-size: 0.72rem;
+  /* The action text must be fully readable, not truncated to one line. */
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .control-current-action .control-target-meta,
@@ -185,6 +197,10 @@
   border-radius: 13px;
   background: rgba(36, 209, 143, 0.07);
   padding: 9px 10px;
+  /* A long result summary scrolls inside the card instead of stretching the
+     whole panel past the dock. */
+  max-height: 220px;
+  overflow-y: auto;
 }
 
 .control-summary-card[hidden] {

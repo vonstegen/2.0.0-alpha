@@ -120,6 +120,16 @@ textarea:disabled {
   font-weight: 800;
 }
 
+/* Workspace toggle: filled/accented when the Augmentor workspace is showing. */
+.workspace-toggle[aria-pressed="true"] {
+  background: rgba(36, 209, 143, 0.16);
+  color: var(--text);
+}
+
+.workspace-toggle[aria-pressed="true"]:hover {
+  background: rgba(36, 209, 143, 0.24);
+}
+
 .transcript {
   display: flex;
   flex-direction: column;

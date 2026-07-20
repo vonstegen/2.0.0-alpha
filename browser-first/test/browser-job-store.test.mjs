@@ -638,6 +638,41 @@ test("browser job store updates terminal completion and monitor collapsed state"
   assert.equal(harness.writes.at(-1).collapsed, false);
 });
 
+test("browser job store clears settled jobs but keeps live and focused work", async () => {
+  const harness = createHarness();
+  const done = await harness.store.createJob({ goal: "done task", activate: false });
+  const cancelledJob = await harness.store.createJob({ goal: "cancel task", activate: false });
+  const live = await harness.store.createJob({ goal: "live task" });
+  await harness.store.updateJob(done.id, { status: "completed" });
+  await harness.store.updateJob(cancelledJob.id, { status: "cancelled" });
+
+  const removed = await harness.store.clearCompletedJobs();
+
+  assert.equal(removed, 2);
+  assert.deepEqual(harness.store.getJobs().map((job) => job.id), [live.id]);
+  assert.equal(harness.store.getActiveJobId(), live.id);
+  // The clear must be persisted, not just in-memory.
+  assert.deepEqual(harness.writes.at(-1).jobs.map((job) => job.id), [live.id]);
+});
+
+test("browser job store leaves blocked and failed jobs when clearing done work", async () => {
+  const harness = createHarness();
+  const blocked = await harness.store.createJob({ goal: "blocked task", activate: false });
+  const failed = await harness.store.createJob({ goal: "failed task", activate: false });
+  const done = await harness.store.createJob({ goal: "done task", activate: false });
+  await harness.store.updateJob(blocked.id, { status: "blocked" });
+  await harness.store.updateJob(failed.id, { status: "failed" });
+  await harness.store.updateJob(done.id, { status: "completed" });
+
+  const removed = await harness.store.clearCompletedJobs();
+
+  assert.equal(removed, 1);
+  assert.deepEqual(
+    harness.store.getJobs().map((job) => job.status).sort(),
+    ["blocked", "failed"]
+  );
+});
+
 test("browser job store preserves human stop state from stale runner updates unless explicitly resumed", async () => {
   const harness = createHarness({
     active: "job-a",

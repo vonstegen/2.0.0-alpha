@@ -26,7 +26,7 @@
     "default_path": "src/side-panel.html"
   },
   "chrome_url_overrides": {
-    "newtab": "src/main-workspace.html"
+    "newtab": "src/newtab-redirect.html"
   },
   "action": {
     "default_title": "Open ResonantOS"

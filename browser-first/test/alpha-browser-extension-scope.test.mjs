@@ -55,6 +55,10 @@ test("2.0.0 alpha release scope is Chrome extension and bridge only", async () =
   );
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.side_panel.default_path, "src/side-panel.html");
+  // New tabs may redirect to a user-chosen page, but must never be forced onto
+  // the Augmentor workspace — that is opt-in via the side-panel toggle.
+  assert.notEqual(manifest.chrome_url_overrides?.newtab, "src/main-workspace.html");
+  assert.equal(manifest.chrome_url_overrides?.newtab, "src/newtab-redirect.html");
   assert.equal(manifest.permissions.includes("audioCapture"), false);
   assert.match(manifest.content_security_policy.extension_pages, /connect-src 'self' http:\/\/127\.0\.0\.1:\*/);
   // The extension connects to a user-configured bridge that can live on any

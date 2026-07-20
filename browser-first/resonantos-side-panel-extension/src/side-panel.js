@@ -27,6 +27,8 @@ import { createControlRunState } from "./lib/control-run-state.js";
 import { createControlStepExecutor } from "./lib/control-step-executor.js";
 import { createControlTabTargets } from "./lib/control-tab-targets.js";
 import { createControlApprovalActions } from "./lib/control-approval-actions.js";
+import { createCollapsiblePanel } from "./lib/collapsible-panel.js";
+import { createMainWorkspaceToggle } from "./lib/main-workspace-toggle.js";
 import { createMessageActionController } from "./lib/message-action-controller.js";
 import { createMonitorRenderers } from "./lib/monitor-renderers.js";
 import { createSidePanelBrowserActionController } from "./lib/side-panel-browser-action-controller.js";
@@ -77,6 +79,7 @@ const {
   controlMonitor,
   controlMonitorStatus,
   controlMonitorTitle,
+  controlMonitorToggle,
   controlPreflightApproveButton,
   controlPreflightBody,
   controlPreflightCard,
@@ -91,6 +94,7 @@ const {
   fileInput,
   jobList,
   jobMonitor,
+  jobMonitorClear,
   jobMonitorTitle,
   jobMonitorToggle,
   modelSelect,
@@ -98,6 +102,7 @@ const {
   permissionManagerPanel,
   permissionManagerTitle,
   readButton,
+  workspaceToggle,
   regenerationModeSelect,
   saveIntakeButton,
   saveSelectionButton,
@@ -105,6 +110,7 @@ const {
   sitePermissionMode,
   sitePermissionNote,
   sitePermissionPanel,
+  sitePermissionToggle,
   taskConsentList,
   taskConsentPanel,
   taskConsentTitle,
@@ -210,6 +216,27 @@ async function setRegenerationModePreference(mode) {
 
 const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 const { withBrowserActionLock } = createBrowserActionLock();
+const mainWorkspaceToggle = createMainWorkspaceToggle();
+
+// Collapsible context-dock panels: a Show/Hide toggle per panel, persisted, so
+// the human can expand one to read it and collapse the rest. JOBS keeps its own
+// store-backed collapse; Site and Agent Control use this reusable controller.
+const sitePermissionCollapse = createCollapsiblePanel({
+  section: sitePermissionPanel,
+  toggle: sitePermissionToggle,
+  storage: chrome.storage?.local,
+  storageKey: STORAGE_KEYS.sitePermissionCollapsed
+});
+const controlMonitorCollapse = createCollapsiblePanel({
+  section: controlMonitor,
+  toggle: controlMonitorToggle,
+  storage: chrome.storage?.local,
+  storageKey: STORAGE_KEYS.controlMonitorCollapsed
+});
+sitePermissionCollapse.bind();
+controlMonitorCollapse.bind();
+void sitePermissionCollapse.hydrate();
+void controlMonitorCollapse.hydrate();
 const composerController = createComposerController({
   commandForm,
   commandInput,
@@ -1112,7 +1139,11 @@ const lifecycleController = createSidePanelLifecycleController({
   getPendingControlPreflight: () => pendingControlPreflight,
   getStatusLabel: () => statusLabel,
   getTurnBusy: () => turnBusy,
+  jobMonitorClear,
   jobMonitorToggle,
+  workspaceToggle,
+  toggleMainWorkspace: () => mainWorkspaceToggle.toggle(),
+  getMainWorkspaceVisible: () => mainWorkspaceToggle.isVisible(),
   messageActions,
   modelSelect,
   persistChatState,

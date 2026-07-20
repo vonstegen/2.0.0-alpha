@@ -411,6 +411,56 @@ test("monitor renderers render collapsed and expanded browser jobs", () => {
   assert.deepEqual(harness.state.cancelled, ["job-a"]);
 });
 
+test("monitor renderers collapse settled jobs to a compact card and surface live work first", () => {
+  const browserJobs = [
+    { id: "job-done", goal: "Done task", status: "completed", updatedAt: "2026-05-26T09:00:00.000Z", planner: "loop" },
+    { id: "job-live", goal: "Live task", status: "running", updatedAt: "2026-05-26T10:00:00.000Z", planner: "loop" }
+  ];
+  const harness = createHarness({ browserJobs, jobMonitorCollapsed: false, activeJobId: "job-live" });
+
+  harness.renderers.renderJobMonitor();
+
+  const items = [...harness.dom.window.document.querySelectorAll("#jobs-list > li")];
+  // Active-first ordering: the running job renders before the settled one regardless of input order.
+  assert.deepEqual(items.map((item) => item.dataset.status), ["running", "completed"]);
+
+  const compact = harness.dom.window.document.querySelector('#jobs-list > li[data-compact="true"]');
+  assert.equal(compact.dataset.status, "completed");
+  assert.match(compact.textContent, /Done task/);
+  assert.match(compact.textContent, /completed/);
+  // Compact keeps only the two actions that apply to a finished job.
+  assert.deepEqual(
+    [...compact.querySelectorAll(".job-actions button")].map((button) => button.textContent),
+    ["Continue", "Report"]
+  );
+  compact.querySelector(".job-actions button").click();
+  assert.deepEqual(harness.state.continued, ["job-done"]);
+
+  // The live job stays a full card.
+  const liveItem = items.find((item) => item.dataset.status === "running");
+  assert.notEqual(liveItem.dataset.compact, "true");
+});
+
+test("monitor renderers keep a focused settled job in full detail", () => {
+  const browserJobs = [
+    {
+      id: "job-done",
+      goal: "Focused done",
+      status: "completed",
+      updatedAt: "2026-05-26T10:00:00.000Z",
+      planner: "loop",
+      steps: [{ state: "completed", label: "Read page", type: "read" }]
+    }
+  ];
+  const harness = createHarness({ browserJobs, jobMonitorCollapsed: false, activeJobId: "job-done" });
+
+  harness.renderers.renderJobMonitor();
+
+  const item = harness.dom.window.document.querySelector("#jobs-list > li");
+  assert.notEqual(item.dataset.compact, "true");
+  assert.match(item.textContent, /Focused browser job/);
+});
+
 test("monitor renderers expose scheduler state for queued browser jobs", () => {
   const browserJobs = [
     { id: "job-a", goal: "A task", status: "running", updatedAt: "2026-05-26T10:00:00.000Z", planner: "loop" },

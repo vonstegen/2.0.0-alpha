@@ -24,12 +24,15 @@
             <strong id="site-permission-host">No readable page</strong>
             <small id="site-permission-note">Choose how much browser help Augmentor may use here.</small>
           </div>
-          <select id="site-permission-mode" aria-label="Current site permission">
-            <option value="blocked">Blocked</option>
-            <option value="read-only">Read only</option>
-            <option value="ask-before-action">Ask before action</option>
-            <option value="trusted-for-safe-actions">Trusted safe actions</option>
-          </select>
+          <div class="site-permission-controls">
+            <button id="site-permission-toggle" class="panel-collapse-toggle" type="button" aria-expanded="true" title="Show or hide site details">Hide</button>
+            <select id="site-permission-mode" aria-label="Current site permission">
+              <option value="blocked">Blocked</option>
+              <option value="read-only">Read only</option>
+              <option value="ask-before-action">Ask before action</option>
+              <option value="trusted-for-safe-actions">Trusted safe actions</option>
+            </select>
+          </div>
         </section>
         <section id="task-consent-panel" class="task-consent-panel" aria-label="Task consent history" hidden>
           <div class="task-consent-header">
@@ -66,7 +69,10 @@
               <span class="eyebrow">Jobs</span>
               <strong id="job-monitor-title">No durable browser jobs</strong>
             </div>
-            <button id="job-monitor-toggle" type="button">Show</button>
+            <div class="job-monitor-actions">
+              <button id="job-monitor-clear" type="button" title="Clear finished jobs (completed, cancelled, denied)">Clear done</button>
+              <button id="job-monitor-toggle" type="button">Show</button>
+            </div>
           </div>
           <ol id="job-list" class="job-list" hidden></ol>
         </section>
@@ -78,6 +84,7 @@
             </div>
             <div class="control-monitor-actions">
               <span id="control-monitor-status" class="control-status">idle</span>
+              <button id="control-monitor-toggle" class="panel-collapse-toggle" type="button" aria-expanded="true" title="Show or hide task details">Hide</button>
               <button id="control-stop" type="button" class="control-stop-button">Stop</button>
             </div>
           </div>
@@ -109,6 +116,9 @@
         <textarea id="command-input" rows="3" placeholder="Message Augmentor"></textarea>
         <div id="attachment-strip" class="attachment-strip" hidden></div>
         <div class="composer-toolbar">
+          <button id="workspace-toggle" type="button" class="icon-button workspace-toggle" aria-pressed="false" title="Show or hide the Augmentor workspace" aria-label="Show or hide the Augmentor workspace">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+          </button>
           <button id="attach-file" type="button" class="icon-button" title="Attach file" aria-label="Attach file">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
           </button>
