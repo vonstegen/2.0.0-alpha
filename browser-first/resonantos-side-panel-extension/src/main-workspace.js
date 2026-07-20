@@ -44,6 +44,7 @@ const STORAGE_KEYS = {
   thinkingDepth: "augmentorThinkingDepth",
   attachments: "augmentorBrowserAttachments",
   projects: "augmentorBrowserProjects",
+  folders: "augmentorBrowserFolders",
   pendingSidebarPrompt: "augmentorPendingSidebarPrompt",
   activeWorkspace: "augmentorMainWorkspace",
   augmentorConfig: "augmentorConfig",
