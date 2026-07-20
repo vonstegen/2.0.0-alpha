@@ -19,14 +19,6 @@
   display: none;
 }
 
-/* Collapsed Agent Control: keep the header, hide the task body. */
-#control-monitor[data-collapsed="true"] .control-current-action,
-#control-monitor[data-collapsed="true"] #control-summary-card,
-#control-monitor[data-collapsed="true"] #control-step-list,
-#control-monitor[data-collapsed="true"] #control-artifacts {
-  display: none;
-}
-
 .control-monitor-header {
   display: flex;
   align-items: flex-start;

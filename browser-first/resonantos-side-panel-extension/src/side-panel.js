@@ -27,7 +27,7 @@ import { createControlRunState } from "./lib/control-run-state.js";
 import { createControlStepExecutor } from "./lib/control-step-executor.js";
 import { createControlTabTargets } from "./lib/control-tab-targets.js";
 import { createControlApprovalActions } from "./lib/control-approval-actions.js";
-import { createCollapsiblePanel } from "./lib/collapsible-panel.js";
+import { createDockTabs } from "./lib/dock-tabs.js";
 import { createMainWorkspaceToggle } from "./lib/main-workspace-toggle.js";
 import { createMessageActionController } from "./lib/message-action-controller.js";
 import { createMonitorRenderers } from "./lib/monitor-renderers.js";
@@ -79,7 +79,16 @@ const {
   controlMonitor,
   controlMonitorStatus,
   controlMonitorTitle,
-  controlMonitorToggle,
+  dockTabSite,
+  dockTabControl,
+  dockTabJobs,
+  dockDotSite,
+  dockDotControl,
+  dockDotJobs,
+  dockPopout,
+  dockPopoutTitle,
+  dockPopoutClose,
+  dockPopoutBody,
   controlPreflightApproveButton,
   controlPreflightBody,
   controlPreflightCard,
@@ -110,7 +119,6 @@ const {
   sitePermissionMode,
   sitePermissionNote,
   sitePermissionPanel,
-  sitePermissionToggle,
   taskConsentList,
   taskConsentPanel,
   taskConsentTitle,
@@ -218,25 +226,22 @@ const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 const { withBrowserActionLock } = createBrowserActionLock();
 const mainWorkspaceToggle = createMainWorkspaceToggle();
 
-// Collapsible context-dock panels: a Show/Hide toggle per panel, persisted, so
-// the human can expand one to read it and collapse the rest. JOBS keeps its own
-// store-backed collapse; Site and Agent Control use this reusable controller.
-const sitePermissionCollapse = createCollapsiblePanel({
-  section: sitePermissionPanel,
-  toggle: sitePermissionToggle,
-  storage: chrome.storage?.local,
-  storageKey: STORAGE_KEYS.sitePermissionCollapsed
+// Top-of-sidecar tabs: relocate the Site / Agent Control / Jobs panels into a
+// full-size popout overlay, hidden until their link is clicked. Approval and
+// consent panels stay in the inline context-dock so they auto-surface.
+dockPopoutBody.append(sitePermissionPanel, controlMonitor, jobMonitor);
+const dockTabs = createDockTabs({
+  tabs: [
+    { name: "site", button: dockTabSite, dot: dockDotSite, panel: sitePermissionPanel },
+    { name: "control", button: dockTabControl, dot: dockDotControl, panel: controlMonitor },
+    { name: "jobs", button: dockTabJobs, dot: dockDotJobs, panel: jobMonitor }
+  ],
+  popout: dockPopout,
+  popoutTitle: dockPopoutTitle,
+  closeButton: dockPopoutClose,
+  titles: { site: "Site", control: "Agent Control", jobs: "Jobs" }
 });
-const controlMonitorCollapse = createCollapsiblePanel({
-  section: controlMonitor,
-  toggle: controlMonitorToggle,
-  storage: chrome.storage?.local,
-  storageKey: STORAGE_KEYS.controlMonitorCollapsed
-});
-sitePermissionCollapse.bind();
-controlMonitorCollapse.bind();
-void sitePermissionCollapse.hydrate();
-void controlMonitorCollapse.hydrate();
+dockTabs.bind();
 const composerController = createComposerController({
   commandForm,
   commandInput,

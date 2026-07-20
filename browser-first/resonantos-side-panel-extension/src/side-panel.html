@@ -9,7 +9,21 @@
   <body>
     <main class="chat-shell" aria-label="Augmentor chat">
       <section class="chat-workspace" aria-label="Active Augmentor workspace">
+      <nav id="dock-tabs" class="dock-tabs" aria-label="Browser panels">
+        <button id="dock-tab-site" class="dock-tab" type="button" aria-expanded="false" aria-controls="dock-popout">Site<span id="dock-dot-site" class="dock-tab-dot" hidden aria-hidden="true"></span></button>
+        <button id="dock-tab-control" class="dock-tab" type="button" aria-expanded="false" aria-controls="dock-popout">Agent Control<span id="dock-dot-control" class="dock-tab-dot" hidden aria-hidden="true"></span></button>
+        <button id="dock-tab-jobs" class="dock-tab" type="button" aria-expanded="false" aria-controls="dock-popout">Jobs<span id="dock-dot-jobs" class="dock-tab-dot" hidden aria-hidden="true"></span></button>
+      </nav>
+      <div class="chat-body">
       <section id="transcript" class="transcript" aria-live="polite"></section>
+      <section id="dock-popout" class="dock-popout" aria-label="Browser panel" data-open="none" hidden>
+        <div class="dock-popout-header">
+          <strong id="dock-popout-title">Panel</strong>
+          <button id="dock-popout-close" class="dock-popout-close" type="button" aria-label="Close panel">&#10005;</button>
+        </div>
+        <div id="dock-popout-body" class="dock-popout-body"></div>
+      </section>
+      </div>
       <section id="context-dock" class="context-dock" aria-label="Browser context and task status" hidden>
         <section id="activity-panel" class="activity-panel" aria-live="polite" hidden>
           <span class="activity-pulse"></span>
@@ -24,15 +38,12 @@
             <strong id="site-permission-host">No readable page</strong>
             <small id="site-permission-note">Choose how much browser help Augmentor may use here.</small>
           </div>
-          <div class="site-permission-controls">
-            <button id="site-permission-toggle" class="panel-collapse-toggle" type="button" aria-expanded="true" title="Show or hide site details">Hide</button>
-            <select id="site-permission-mode" aria-label="Current site permission">
-              <option value="blocked">Blocked</option>
-              <option value="read-only">Read only</option>
-              <option value="ask-before-action">Ask before action</option>
-              <option value="trusted-for-safe-actions">Trusted safe actions</option>
-            </select>
-          </div>
+          <select id="site-permission-mode" aria-label="Current site permission">
+            <option value="blocked">Blocked</option>
+            <option value="read-only">Read only</option>
+            <option value="ask-before-action">Ask before action</option>
+            <option value="trusted-for-safe-actions">Trusted safe actions</option>
+          </select>
         </section>
         <section id="task-consent-panel" class="task-consent-panel" aria-label="Task consent history" hidden>
           <div class="task-consent-header">
@@ -84,7 +95,6 @@
             </div>
             <div class="control-monitor-actions">
               <span id="control-monitor-status" class="control-status">idle</span>
-              <button id="control-monitor-toggle" class="panel-collapse-toggle" type="button" aria-expanded="true" title="Show or hide task details">Hide</button>
               <button id="control-stop" type="button" class="control-stop-button">Stop</button>
             </div>
           </div>
