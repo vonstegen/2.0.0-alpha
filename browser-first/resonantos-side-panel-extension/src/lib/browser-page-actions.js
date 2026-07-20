@@ -16,6 +16,15 @@ const readOnlyAllowedContentActions = new Set([
   "resonator"
 ]);
 
+const subframeContentActionTypes = new Set([
+  "click_text",
+  "detect_forms",
+  "get_selection",
+  "read_page",
+  "scroll_page",
+  "type_text"
+]);
+
 function safeBrowserUrlForDisplay(value) {
   try {
     const url = new URL(String(value || ""));
@@ -231,7 +240,9 @@ export function createBrowserPageActions(deps) {
 
   async function sendContentActionToFrames(tabId, message) {
     const frames = await chrome.webNavigation?.getAllFrames?.({ tabId }).catch(() => null);
-    const frameIds = Array.isArray(frames) && frames.length ? frames.map((frame) => frame.frameId) : [0];
+    const frameIds = subframeContentActionTypes.has(message.type) && Array.isArray(frames) && frames.length
+      ? frames.map((frame) => frame.frameId)
+      : [0];
     const responses = [];
     for (const frameId of frameIds) {
       const response = await chrome.tabs.sendMessage(tabId, message, { frameId }).catch((error) => ({

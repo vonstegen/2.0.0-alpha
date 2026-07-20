@@ -1099,11 +1099,20 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
   });
 });
 
+const subframeActionTypes = new Set([
+  "click_text",
+  "detect_forms",
+  "get_selection",
+  "read_page",
+  "scroll_page",
+  "type_text"
+]);
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || message.channel !== "resonantos.browser_first.content") {
     return false;
   }
-  if (!isTopWindow()) {
+  if (!isTopWindow() && !subframeActionTypes.has(message.type)) {
     return false;
   }
 
