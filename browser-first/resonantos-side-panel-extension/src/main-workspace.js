@@ -536,9 +536,6 @@ const dockControlEls = {
 };
 const dockPermissionList = document.querySelector("#permission-manager-list");
 const dockPermissionTitle = document.querySelector("#permission-manager-title");
-const dockSiteHost = document.querySelector("#site-permission-host");
-const dockSiteNote = document.querySelector("#site-permission-note");
-const dockSiteMode = document.querySelector("#site-permission-mode");
 
 async function refreshDockControl() {
   const snapshot = await mainBrowserJobController.readJobs().catch(() => null);
@@ -560,27 +557,8 @@ async function refreshDockPermissions() {
   });
 }
 
-async function refreshDockSite() {
-  const url = lastSnapshot?.url ?? "";
-  if (!url) {
-    dockSiteHost.textContent = "No readable page";
-    dockSiteNote.textContent = "Open a page in the browser to manage its permission.";
-    return;
-  }
-  const mode = await sitePermissionStore.permissionForUrl(url).catch(() => "ask-before-action");
-  dockSiteHost.textContent = sitePermissionStore.siteKeyForUrl(url);
-  if (dockSiteMode) dockSiteMode.value = mode;
-}
-dockSiteMode?.addEventListener("change", async () => {
-  const url = lastSnapshot?.url ?? "";
-  if (!url) return;
-  await sitePermissionStore.setSitePermission(sitePermissionStore.siteKeyForUrl(url), dockSiteMode.value).catch(() => undefined);
-  await refreshDockPermissions();
-});
-
 const dockTabs = createDockTabs({
   tabs: [
-    { name: "site", button: document.querySelector("#dock-tab-site"), dot: document.querySelector("#dock-dot-site"), panel: document.querySelector("#site-permission-panel") },
     { name: "control", button: document.querySelector("#dock-tab-control"), dot: document.querySelector("#dock-dot-control"), panel: document.querySelector("#dock-control-panel") },
     { name: "jobs", button: document.querySelector("#dock-tab-jobs"), dot: document.querySelector("#dock-dot-jobs"), panel: document.querySelector("#main-browser-jobs") },
     { name: "chats", button: document.querySelector("#dock-tab-chats"), dot: document.querySelector("#dock-dot-chats"), panel: document.querySelector("#chats-panel") },
@@ -589,13 +567,12 @@ const dockTabs = createDockTabs({
   popout: document.querySelector("#dock-popout"),
   popoutTitle: document.querySelector("#dock-popout-title"),
   closeButton: document.querySelector("#dock-popout-close"),
-  titles: { site: "Site", control: "Control", jobs: "Jobs", chats: "Chats", permissions: "Permissions" },
+  titles: { control: "Control", jobs: "Jobs", chats: "Chats", permissions: "Permissions" },
   onOpen: (name) => {
     if (name === "chats") renderRailNavigation();
     else if (name === "jobs") void renderMainBrowserJobStatusFromStorage();
     else if (name === "control") void refreshDockControl();
     else if (name === "permissions") void refreshDockPermissions();
-    else if (name === "site") void refreshDockSite();
   }
 });
 dockTabs.bind();

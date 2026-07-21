@@ -18,9 +18,8 @@ test("main-workspace.html exposes the top-bar dock and relocates Projects/Chats 
   );
   const d = new JSDOM(html).window.document;
   const required = [
-    "dock-tabs", "dock-tab-site", "dock-tab-control", "dock-tab-jobs", "dock-tab-chats", "dock-tab-permissions",
+    "dock-tabs", "dock-tab-control", "dock-tab-jobs", "dock-tab-chats", "dock-tab-permissions",
     "dock-popout", "dock-popout-title", "dock-popout-close",
-    "site-permission-panel", "site-permission-host", "site-permission-mode",
     "dock-control-panel", "dock-control-title", "dock-control-status", "dock-control-step-list",
     "main-browser-jobs", "chats-panel", "rail-project-list", "rail-chat-list", "rail-new-project",
     "permission-manager-panel", "permission-manager-list", "permission-manager-title"
@@ -41,8 +40,10 @@ test("main-workspace.html exposes the top-bar dock and relocates Projects/Chats 
   assert.ok(d.getElementById("rail-resize"), "the rail must have a resize handle");
   const dockButtons = [...d.querySelectorAll("#dock-tabs button")].map((b) => b.id);
   assert.deepEqual(dockButtons, [
-    "dock-tab-site", "dock-tab-control", "dock-tab-jobs", "dock-tab-permissions", "dock-tab-chats", "new-chat"
-  ], "Chats is the rightmost tab with new-chat to its right");
+    "dock-tab-control", "dock-tab-jobs", "dock-tab-permissions", "dock-tab-chats", "new-chat"
+  ], "Site removed from the main panel; Chats rightmost with new-chat to its right");
+  assert.equal(d.getElementById("dock-tab-site"), null, "the Site tab is removed from the main panel");
+  assert.equal(d.getElementById("site-permission-panel"), null, "the orphaned Site panel is removed");
 });
 
 test("renderDockPermissions lists stored grants and drops the ask-before-action default", () => {
