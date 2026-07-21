@@ -80,6 +80,26 @@ bridge infrastructure (documented here because it lives outside the repo).
   "Approve Agent Control?" gate is never hidden behind a tab. A per-step approval
   inside the Agent Control popout lights its activity dot (fail-closed).
 
+## Chats feature — project → folder → chat, in tandem across surfaces
+
+Codex/Claude-style chat organization, built in four phases. Both surfaces
+already read/write the same chat storage keys, so this is one dataset shared by
+the sidecar and the main workspace.
+
+| Phase | Commit | What it adds |
+|---|---|---|
+| P1 | `bfdbdf1` | **Data model** — a `folders[]` tier (each folder belongs to a project) + `folderId` on sessions → project → folder → chat. Folder CRUD + move-to-folder; moving projects or deleting a folder/project unfiles chats; hydrate drops orphaned folders. New key `augmentorBrowserFolders`. |
+| P2 | `1ca4102` | **Main rail** — folders render under each project (expand/collapse, rename, delete); **New folder** per project; per-chat **Move to folder** menu; drag-onto-folder. Folder names via `textContent` (no HTML injection). Pure `groupProjectSessionsByFolder` helper. |
+| P3 | `657cded` | **Sidecar Chats tab** — a 4th top link whose popout renders the same tree from the shared store (shared `buildChatTree` helper); expand state is shared with the rail; click-to-open switches the active session and reveals its transcript. `dock-tabs` gains an `onOpen` hook. |
+| P4 | `0f23576` | **Live tandem sync** — each surface listens to `storage.onChanged` and re-hydrates + re-renders on the other's chat/folder/project/active-session changes. Self-writes are skipped via a per-write `writer` token (`instanceId:seq`) and a pure `shouldSyncChatChange` guard, so no flicker or loop. |
+
+New pure, tested helpers: `groupProjectSessionsByFolder`, `buildChatTree`,
+`shouldSyncChatChange`. New modules: `side-panel-chats-tree.js`, `chat-sync.js`.
+Every new guard is anti-false-green mutation-proven. Suite stayed green each
+phase (ended at browser-first 760 / vitest 312). Also fixed a lingering-timer
+test-hygiene issue in the rail move menu (attach the outside-click listener
+immediately since the trigger stops propagation).
+
 ## Local infrastructure (not in the repo)
 
 These configure the local machine and are recorded here for reproducibility.
