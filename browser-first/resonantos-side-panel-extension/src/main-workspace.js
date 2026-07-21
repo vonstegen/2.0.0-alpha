@@ -29,6 +29,8 @@ import { readPersonalizationSettings } from "./lib/personalization-settings.js";
 import { runReviewableCapture } from "./lib/main-workspace-review-handoff.js";
 import { createMainWorkspaceActionController } from "./lib/main-workspace-action-controller.js";
 import { createMainWorkspaceRailController } from "./lib/main-workspace-rail-controller.js";
+import { createDockTabs } from "./lib/dock-tabs.js";
+import { renderDockControl, renderDockPermissions } from "./lib/main-workspace-dock-panels.js";
 import { isRailVisibleChatSession, railSearchMatchesProject, railSearchMatchesSession } from "./lib/main-workspace-rail.js";
 import { renderSettingsWorkspace } from "./lib/main-workspace-settings.js";
 import { createMessageActionController } from "./lib/message-action-controller.js";
@@ -523,6 +525,80 @@ const {
   renderRailNavigation,
   switchToSession,
 } = railController;
+
+// --- Top-bar dock (Site · Control · Jobs · Chats · Permissions), mirroring the
+// side panel. The panels live in #dock-popout and pop out full-size; Chats holds
+// the Projects/Chats tree that used to sit in the left rail. ---
+const dockControlEls = {
+  titleEl: document.querySelector("#dock-control-title"),
+  statusEl: document.querySelector("#dock-control-status"),
+  stepListEl: document.querySelector("#dock-control-step-list")
+};
+const dockPermissionList = document.querySelector("#permission-manager-list");
+const dockPermissionTitle = document.querySelector("#permission-manager-title");
+const dockSiteHost = document.querySelector("#site-permission-host");
+const dockSiteNote = document.querySelector("#site-permission-note");
+const dockSiteMode = document.querySelector("#site-permission-mode");
+
+async function refreshDockControl() {
+  const snapshot = await mainBrowserJobController.readJobs().catch(() => null);
+  const jobs = Array.isArray(snapshot?.jobs) ? snapshot.jobs : [];
+  const job = jobs.find((entry) => entry.id === snapshot?.activeJobId)
+    ?? jobs.find((entry) => entry.status === "running" || entry.status === "blocked")
+    ?? jobs[0] ?? null;
+  renderDockControl(dockControlEls, job, { document });
+}
+
+async function refreshDockPermissions() {
+  const permissions = await sitePermissionStore.sitePermissions().catch(() => ({}));
+  renderDockPermissions(dockPermissionList, dockPermissionTitle, permissions, {
+    document,
+    onReset: async (siteKey) => {
+      await sitePermissionStore.resetSitePermission(siteKey).catch(() => undefined);
+      await refreshDockPermissions();
+    }
+  });
+}
+
+async function refreshDockSite() {
+  const url = lastSnapshot?.url ?? "";
+  if (!url) {
+    dockSiteHost.textContent = "No readable page";
+    dockSiteNote.textContent = "Open a page in the browser to manage its permission.";
+    return;
+  }
+  const mode = await sitePermissionStore.permissionForUrl(url).catch(() => "ask-before-action");
+  dockSiteHost.textContent = sitePermissionStore.siteKeyForUrl(url);
+  if (dockSiteMode) dockSiteMode.value = mode;
+}
+dockSiteMode?.addEventListener("change", async () => {
+  const url = lastSnapshot?.url ?? "";
+  if (!url) return;
+  await sitePermissionStore.setSitePermission(sitePermissionStore.siteKeyForUrl(url), dockSiteMode.value).catch(() => undefined);
+  await refreshDockPermissions();
+});
+
+const dockTabs = createDockTabs({
+  tabs: [
+    { name: "site", button: document.querySelector("#dock-tab-site"), dot: document.querySelector("#dock-dot-site"), panel: document.querySelector("#site-permission-panel") },
+    { name: "control", button: document.querySelector("#dock-tab-control"), dot: document.querySelector("#dock-dot-control"), panel: document.querySelector("#dock-control-panel") },
+    { name: "jobs", button: document.querySelector("#dock-tab-jobs"), dot: document.querySelector("#dock-dot-jobs"), panel: document.querySelector("#main-browser-jobs") },
+    { name: "chats", button: document.querySelector("#dock-tab-chats"), dot: document.querySelector("#dock-dot-chats"), panel: document.querySelector("#chats-panel") },
+    { name: "permissions", button: document.querySelector("#dock-tab-permissions"), dot: document.querySelector("#dock-dot-permissions"), panel: document.querySelector("#permission-manager-panel") }
+  ],
+  popout: document.querySelector("#dock-popout"),
+  popoutTitle: document.querySelector("#dock-popout-title"),
+  closeButton: document.querySelector("#dock-popout-close"),
+  titles: { site: "Site", control: "Control", jobs: "Jobs", chats: "Chats", permissions: "Permissions" },
+  onOpen: (name) => {
+    if (name === "chats") renderRailNavigation();
+    else if (name === "jobs") void renderMainBrowserJobStatusFromStorage();
+    else if (name === "control") void refreshDockControl();
+    else if (name === "permissions") void refreshDockPermissions();
+    else if (name === "site") void refreshDockSite();
+  }
+});
+dockTabs.bind();
 
 function setActiveWorkspace(workspaceId, { bindSession = false, persist = false } = {}) {
   activeWorkspace = allowedWorkspaces.has(workspaceId) ? workspaceId : "answer";
