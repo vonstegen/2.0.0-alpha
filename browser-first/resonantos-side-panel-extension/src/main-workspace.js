@@ -600,6 +600,18 @@ const dockTabs = createDockTabs({
 });
 dockTabs.bind();
 
+// Collapse / expand the left rail. Collapsed leaves a narrow icon strip so the
+// toggle itself stays reachable to expand it back (see body[data-rail-collapsed]).
+const railToggle = document.querySelector("#rail-toggle");
+railToggle?.addEventListener("click", () => {
+  const collapsed = document.body.dataset.railCollapsed === "true";
+  document.body.dataset.railCollapsed = collapsed ? "false" : "true";
+  const label = collapsed ? "Collapse sidebar" : "Expand sidebar";
+  railToggle.setAttribute("aria-label", label);
+  railToggle.setAttribute("title", label);
+  railToggle.setAttribute("aria-expanded", collapsed ? "true" : "false");
+});
+
 function setActiveWorkspace(workspaceId, { bindSession = false, persist = false } = {}) {
   activeWorkspace = allowedWorkspaces.has(workspaceId) ? workspaceId : "answer";
   document.body.dataset.workspace = activeWorkspace;

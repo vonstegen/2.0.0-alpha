@@ -276,3 +276,31 @@
   display: grid;
   gap: 12px;
 }
+
+/* Collapsed left rail: a narrow icon strip. Text labels hide but the icons and
+   the collapse toggle stay visible, so the rail can be expanded again. */
+body[data-rail-collapsed="true"] .workspace-shell {
+  grid-template-columns: 58px minmax(0, 1fr);
+}
+
+body[data-rail-collapsed="true"] .workspace-rail {
+  padding: 14px 8px;
+}
+
+body[data-rail-collapsed="true"] .workspace-rail :is(
+  .rail-item span,
+  .rail-text,
+  .rail-section h2,
+  .brand-lockup strong,
+  .rail-user-card > span:last-child,
+  .rail-section-row button,
+  #rail-search-box
+) {
+  display: none;
+}
+
+body[data-rail-collapsed="true"] .workspace-rail .rail-item,
+body[data-rail-collapsed="true"] .workspace-rail .rail-project,
+body[data-rail-collapsed="true"] .workspace-rail .rail-user-card {
+  justify-content: center;
+}
