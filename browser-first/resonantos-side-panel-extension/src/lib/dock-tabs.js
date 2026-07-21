@@ -75,6 +75,21 @@ export function createDockTabs({
     }
   }
 
+  // Explicit, state-driven activity flag. Panels rendered lazily (e.g. the main
+  // workspace's Site/Control/Permissions) can't rely on a DOM MutationObserver,
+  // so both surfaces call this from the SAME shared-store change with the SAME
+  // computed blocking — keeping their dots in sync. blocking=true turns the dot
+  // red (see dock-tab-dot[data-blocking]); the open-panel rule still applies.
+  function signalActivity(name, { blocking = false } = {}) {
+    if (name === openName) return;
+    const tab = tabFor(name);
+    if (tab?.dot) {
+      tab.dot.hidden = false;
+      tab.dot.dataset.active = "true";
+      tab.dot.dataset.blocking = blocking ? "true" : "false";
+    }
+  }
+
   function open(name) {
     if (!tabFor(name)) return;
     openName = name;
@@ -123,6 +138,7 @@ export function createDockTabs({
     close,
     toggle,
     notePanelActivity,
+    signalActivity,
     render,
     isOpen: () => openName,
     disconnect: () => observers.splice(0).forEach((observer) => observer.disconnect())

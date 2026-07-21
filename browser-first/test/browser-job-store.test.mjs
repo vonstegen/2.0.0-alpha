@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   browserJobSchedulerState,
   createBrowserJobStore,
+  hasBlockingBrowserJob,
   isActiveBrowserJobStatus,
   isLockHoldingBrowserJobStatus,
   isTerminalBrowserJobStatus,
@@ -196,6 +197,17 @@ test("browser job store normalizes job shape and status classes", () => {
   assert.equal(isLockHoldingBrowserJobStatus("paused"), false);
   assert.equal(isTerminalBrowserJobStatus("cancelled"), true);
   assert.equal(isTerminalBrowserJobStatus("paused"), false);
+});
+
+test("hasBlockingBrowserJob flags jobs that need the human", () => {
+  assert.equal(hasBlockingBrowserJob([{ status: "running" }, { status: "queued" }]), false);
+  assert.equal(hasBlockingBrowserJob([{ status: "approval" }]), true);
+  assert.equal(hasBlockingBrowserJob([{ status: "blocked" }]), true);
+  assert.equal(hasBlockingBrowserJob([{ status: "failed" }]), true);
+  assert.equal(hasBlockingBrowserJob([{ status: "denied" }]), true);
+  assert.equal(hasBlockingBrowserJob([{ status: "running", pendingApproval: { step: {} } }]), true);
+  assert.equal(hasBlockingBrowserJob([]), false);
+  assert.equal(hasBlockingBrowserJob(null), false);
 });
 
 test("browser job store persists bounded pending approval only for approval jobs", () => {

@@ -129,3 +129,28 @@ test("dock tabs clear the blocking flag when the panel is opened", () => {
   controller.open("jobs");
   assert.equal(d.getElementById("dot-jobs").dataset.blocking, "false");
 });
+
+test("signalActivity flags a dot from state, without a DOM change (for lazy panels)", () => {
+  const { d, controller } = setup();
+  controller.bind();
+  controller.signalActivity("jobs", { blocking: false });
+  const dot = d.getElementById("dot-jobs");
+  assert.equal(dot.hidden, false);
+  assert.equal(dot.dataset.active, "true");
+  assert.equal(dot.dataset.blocking, "false");
+});
+
+test("signalActivity with blocking turns the dot red", () => {
+  const { d, controller } = setup();
+  controller.bind();
+  controller.signalActivity("jobs", { blocking: true });
+  assert.equal(d.getElementById("dot-jobs").dataset.blocking, "true");
+});
+
+test("signalActivity never badges the open panel", () => {
+  const { d, controller } = setup();
+  controller.bind();
+  controller.open("jobs");
+  controller.signalActivity("jobs", { blocking: true });
+  assert.equal(d.getElementById("dot-jobs").hidden, true);
+});

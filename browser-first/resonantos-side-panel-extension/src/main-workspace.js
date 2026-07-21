@@ -30,6 +30,7 @@ import { runReviewableCapture } from "./lib/main-workspace-review-handoff.js";
 import { createMainWorkspaceActionController } from "./lib/main-workspace-action-controller.js";
 import { createMainWorkspaceRailController } from "./lib/main-workspace-rail-controller.js";
 import { createDockTabs } from "./lib/dock-tabs.js";
+import { hasBlockingBrowserJob } from "./lib/browser-job-store.js";
 import { renderDockControl, renderDockPermissions } from "./lib/main-workspace-dock-panels.js";
 import { isRailVisibleChatSession, railSearchMatchesProject, railSearchMatchesSession } from "./lib/main-workspace-rail.js";
 import { renderSettingsWorkspace } from "./lib/main-workspace-settings.js";
@@ -1105,6 +1106,12 @@ chrome.storage?.onChanged?.addListener?.((changes, areaName) => {
   if (areaName !== "local") return;
   if (changes[STORAGE_KEYS.browserJobs] || changes[STORAGE_KEYS.activeBrowserJob]) {
     void renderMainBrowserJobStatusFromStorage();
+    // Keep the Jobs + Control dots in sync with the side panel: light them on
+    // any job change, red (blocking) when a job needs the human.
+    const jobs = changes[STORAGE_KEYS.browserJobs]?.newValue ?? [];
+    const blocking = hasBlockingBrowserJob(jobs);
+    dockTabs.signalActivity("jobs", { blocking });
+    dockTabs.signalActivity("control", { blocking });
   }
   // Live tandem sync: mirror chat/folder/project/active-session changes made in
   // the sidecar (or another tab). Our own writes carry our instanceId and are skipped.

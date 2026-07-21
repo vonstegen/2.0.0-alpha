@@ -203,6 +203,16 @@ export function isActiveBrowserJobStatus(status) {
   return ACTIVE_JOB_STATUSES.includes(status);
 }
 
+// A job is "blocking" when it needs the human before it can go on: awaiting
+// approval, or blocked/failed/denied. Drives the dock's red activity dot the
+// same way on both surfaces.
+const BLOCKING_JOB_STATUSES = new Set(["approval", "blocked", "failed", "denied"]);
+export function hasBlockingBrowserJob(jobs = []) {
+  return (Array.isArray(jobs) ? jobs : []).some(
+    (job) => BLOCKING_JOB_STATUSES.has(job?.status) || Boolean(job?.pendingApproval)
+  );
+}
+
 export function isLockHoldingBrowserJobStatus(status) {
   return LOCK_HOLDING_JOB_STATUSES.includes(status);
 }
