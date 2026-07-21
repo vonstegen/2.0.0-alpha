@@ -8,6 +8,7 @@ import {
   formatDurationMs,
   sitePermissionDescription,
 } from "./monitor-progress.js";
+import { renderStepList } from "./step-list.js";
 
 export {
   controlActionStateLabel,
@@ -383,29 +384,26 @@ export function createMonitorRenderers({
       progressTrack.querySelector("i").style.width = `${progress.percent}%`;
       progressTrack.setAttribute("aria-label", `Agent Control progress ${progress.percent} percent`);
     }
-    controlStepList.replaceChildren();
-    currentControlRun.steps.forEach((step, index) => {
-      const item = document.createElement("li");
-      item.dataset.state = step.state ?? "pending";
-      item.dataset.index = String(index + 1);
-      const main = document.createElement("span");
-      main.className = "control-step-main";
-      main.textContent = controlStepLabel(step);
-      item.append(main);
-      if (step.note) {
-        const note = document.createElement("small");
-        note.className = "control-step-note";
-        note.textContent = step.note;
-        item.append(note);
-      }
-      const state = document.createElement("em");
-      state.className = "control-step-state";
-      state.textContent = controlActionStateLabel(step.state);
-      item.append(state);
-      const rows = stepDetailRows(step);
-      if (rows.length) {
+    // The step list uses the shared Claude-app-style component (glyph + label +
+    // "N of M" progress pill), consistent with the rest of the Augmentor. Each
+    // step keeps its full action/safety detail in an expander via renderExtra, so
+    // adopting the clean look never costs the #240 pre-approval visibility.
+    renderStepList(controlStepList, currentControlRun.steps, {
+      document,
+      label: (step) => controlStepLabel(step),
+      renderExtra: (step) => {
+        // Settled steps (completed/cancelled) stay as clean single lines — a
+        // detail toggle on the done list is just clutter. Detail appears only
+        // where it is actionable: the running step and any blocked/failed one.
+        if (step.state === "completed" || step.state === "cancelled") return null;
+        const rows = stepDetailRows(step);
+        if (!rows.length) return null;
         const detail = document.createElement("details");
         detail.className = "control-step-detail";
+        // A step that needs the human (blocked/failed) opens its detail by
+        // default — that is exactly when its action, safety class, and next step
+        // must be visible before you approve. Settled steps stay collapsed.
+        if (step.state === "blocked" || step.state === "failed") detail.open = true;
         const summary = document.createElement("summary");
         summary.textContent = "Details";
         detail.append(summary);
@@ -418,9 +416,8 @@ export function createMonitorRenderers({
           row.append(key, text);
           detail.append(row);
         });
-        item.append(detail);
+        return detail;
       }
-      controlStepList.append(item);
     });
     if (currentControlRun.artifacts?.length) {
       controlArtifacts.hidden = false;

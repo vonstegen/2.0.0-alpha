@@ -119,7 +119,8 @@
 .dock-popout[data-open="site"] #site-permission-panel,
 .dock-popout[data-open="control"] #control-monitor,
 .dock-popout[data-open="jobs"] #job-monitor,
-.dock-popout[data-open="chats"] #chats-panel {
+.dock-popout[data-open="chats"] #chats-panel,
+.dock-popout[data-open="permissions"] #permission-manager-panel {
   display: block;
 }
 

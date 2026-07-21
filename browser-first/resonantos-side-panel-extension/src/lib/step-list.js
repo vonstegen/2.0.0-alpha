@@ -31,7 +31,11 @@ export function stepListProgress(steps = []) {
   return { done, total };
 }
 
-export function renderStepList(container, steps = [], { document: doc, label = (step) => step?.label ?? "" } = {}) {
+// `renderExtra(step, index, view)` is an optional hook: return a node and it is
+// appended under the step's number + label (in a `.step-list-extra` slot that
+// clears the glyph column). Agent Control uses it to keep each action's detail
+// expander attached to its step while the list itself stays Claude-app clean.
+export function renderStepList(container, steps = [], { document: doc, label = (step) => step?.label ?? "", renderExtra = null } = {}) {
   const view = doc ?? (typeof document !== "undefined" ? document : null);
   if (!container || !view) return { done: 0, total: 0 };
   const list = Array.isArray(steps) ? steps : [];
@@ -73,6 +77,16 @@ export function renderStepList(container, steps = [], { document: doc, label = (
     status.textContent = ` — ${stepStateText(step?.state ?? "pending")}`;
 
     item.append(glyph, num, text, status);
+
+    if (typeof renderExtra === "function") {
+      const extra = renderExtra(step, index, view);
+      if (extra) {
+        const slot = view.createElement("div");
+        slot.className = "step-list-extra";
+        slot.append(extra);
+        item.append(slot);
+      }
+    }
     ol.append(item);
   });
 

@@ -86,10 +86,12 @@ const {
   dockTabControl,
   dockTabJobs,
   dockTabChats,
+  dockTabPermissions,
   dockDotSite,
   dockDotControl,
   dockDotJobs,
   dockDotChats,
+  dockDotPermissions,
   chatsPanel,
   chatsTree,
   dockPopout,
@@ -233,10 +235,11 @@ const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 const { withBrowserActionLock } = createBrowserActionLock();
 const mainWorkspaceToggle = createMainWorkspaceToggle();
 
-// Top-of-sidecar tabs: relocate the Site / Agent Control / Jobs panels into a
-// full-size popout overlay, hidden until their link is clicked. Approval and
-// consent panels stay in the inline context-dock so they auto-surface.
-dockPopoutBody.append(sitePermissionPanel, controlMonitor, jobMonitor);
+// Top-of-sidecar tabs: relocate the Site / Agent Control / Jobs / Permissions
+// panels into a full-size popout overlay, hidden until their link is clicked.
+// Approval and consent panels stay in the inline context-dock so they
+// auto-surface.
+dockPopoutBody.append(sitePermissionPanel, controlMonitor, jobMonitor, permissionManagerPanel);
 // chatsTreeRenderer is assigned after the chat store + renderers exist below;
 // onOpen reads it lazily so the Chats tree refreshes each time the tab opens.
 let chatsTreeRenderer = null;
@@ -245,12 +248,13 @@ const dockTabs = createDockTabs({
     { name: "site", button: dockTabSite, dot: dockDotSite, panel: sitePermissionPanel },
     { name: "control", button: dockTabControl, dot: dockDotControl, panel: controlMonitor },
     { name: "jobs", button: dockTabJobs, dot: dockDotJobs, panel: jobMonitor },
-    { name: "chats", button: dockTabChats, dot: dockDotChats, panel: chatsPanel }
+    { name: "chats", button: dockTabChats, dot: dockDotChats, panel: chatsPanel },
+    { name: "permissions", button: dockTabPermissions, dot: dockDotPermissions, panel: permissionManagerPanel }
   ],
   popout: dockPopout,
   popoutTitle: dockPopoutTitle,
   closeButton: dockPopoutClose,
-  titles: { site: "Site", control: "Agent Control", jobs: "Jobs", chats: "Chats" },
+  titles: { site: "Site", control: "Agent Control", jobs: "Jobs", chats: "Chats", permissions: "Permissions" },
   onOpen: (name) => { if (name === "chats") chatsTreeRenderer?.render(); }
 });
 dockTabs.bind();

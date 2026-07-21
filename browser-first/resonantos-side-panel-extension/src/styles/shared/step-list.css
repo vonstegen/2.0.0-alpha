@@ -87,6 +87,14 @@
   content: "\2013"; /* – (stopped) */
 }
 
+/* Optional per-step extra content (e.g. the agent-control detail expander).
+   It clears the glyph column and sits under the number + label so the list
+   stays clean until you open a step. */
+.step-list-extra {
+  grid-column: 2 / -1;
+  margin-top: 3px;
+}
+
 .step-list-num {
   color: rgba(207, 219, 210, 0.62);
   font-weight: 800;

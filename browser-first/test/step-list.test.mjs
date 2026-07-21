@@ -104,3 +104,22 @@ test("renderStepList carries explicit list semantics for VoiceOver", () => {
     ["listitem", "listitem", "listitem", "listitem"]
   );
 });
+
+test("renderExtra attaches per-step content in a slot that clears the glyph column", () => {
+  const { document, host } = container();
+  renderStepList(host, steps, {
+    document,
+    // Only the third step gets extra content; the rest return null.
+    renderExtra: (step, index) => {
+      if (index !== 2) return null;
+      const note = document.createElement("span");
+      note.className = "probe-detail";
+      note.textContent = `detail for ${step.label}`;
+      return note;
+    }
+  });
+  const slots = host.querySelectorAll(".step-list-extra");
+  assert.equal(slots.length, 1, "renderExtra returning null adds no slot");
+  const item = host.querySelectorAll(".step-list-item")[2];
+  assert.equal(item.querySelector(".step-list-extra .probe-detail").textContent, "detail for Present the design");
+});
