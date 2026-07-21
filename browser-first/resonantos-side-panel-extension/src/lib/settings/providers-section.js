@@ -109,7 +109,7 @@ function providerAccountForm(provider = {}) {
   return form;
 }
 
-function openProviderAccountModal({ bridgeRequest, getBridgeRequest, statusNode, reload }) {
+export function openProviderAccountModal({ bridgeRequest, getBridgeRequest, statusNode, reload }) {
   const bridge = () => (typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest);
   const overlay = document.createElement("div");
   overlay.className = "settings-provider-modal";
@@ -135,7 +135,15 @@ function openProviderAccountModal({ bridgeRequest, getBridgeRequest, statusNode,
   save.textContent = "Save account";
   actions.append(save);
   form.append(actions);
-  panel.append(heading, form);
+  // Status lives INSIDE the modal so save progress and — critically — save
+  // failures are shown to the user while the dialog is still open. Writing them
+  // to the settings page behind the modal (the old behavior) hid the error and
+  // left the dialog stuck with no signal (#271).
+  const modalStatus = document.createElement("p");
+  modalStatus.className = "settings-provider-modal-status";
+  modalStatus.setAttribute("role", "status");
+  modalStatus.setAttribute("aria-live", "polite");
+  panel.append(heading, form, modalStatus);
   overlay.append(panel);
   document.body.append(overlay);
   close.addEventListener("click", () => overlay.remove());
@@ -145,18 +153,21 @@ function openProviderAccountModal({ bridgeRequest, getBridgeRequest, statusNode,
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     save.disabled = true;
-    setStatus(statusNode, "Saving provider account...");
+    setStatus(modalStatus, "Saving provider account…");
     try {
       await bridge()("/providers/accounts", {
         method: "POST",
         capability: "provider-credential-write",
         body: providerAccountPayload(form),
       });
+      // Success: close the dialog, then surface confirmation on the settings page.
       overlay.remove();
       setStatus(statusNode, "Provider account saved.", "success");
       await reload();
     } catch (error) {
-      setStatus(statusNode, `Provider account save failed: ${safeErrorMessage(error)}`, "error");
+      // Failure: keep the dialog open and show the reason in the dialog so the
+      // user can correct the input and retry — do not write it behind the modal.
+      setStatus(modalStatus, `Save failed: ${safeErrorMessage(error)}`, "error");
     } finally {
       save.disabled = false;
     }
