@@ -134,6 +134,35 @@ textarea:disabled {
   }
 }
 
+/* New-chat "+" lives in the dock, to the right of the Chats tab. */
+.dock-new-chat {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(207, 219, 210, 0.8);
+  cursor: pointer;
+}
+
+.dock-new-chat:hover {
+  color: var(--text);
+  background: rgba(36, 209, 143, 0.14);
+  border-color: rgba(36, 209, 143, 0.4);
+}
+
+.dock-new-chat svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .composer {
   border: 1px solid var(--line);
   background: var(--panel);

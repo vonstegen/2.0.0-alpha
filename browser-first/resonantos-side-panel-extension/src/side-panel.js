@@ -92,6 +92,7 @@ const {
   dockDotJobs,
   dockDotChats,
   dockDotPermissions,
+  dockNewChat,
   chatsPanel,
   chatsTree,
   dockPopout,
@@ -475,6 +476,17 @@ chatsTreeRenderer = createSidePanelChatsTree({
     chatsTreeRenderer.render();
     dockTabs.close();
   }
+});
+
+// New-chat "+" in the dock (mirrors the main panel): create a fresh session and
+// reveal its empty transcript, ready to type.
+dockNewChat?.addEventListener("click", async () => {
+  await chatSessionStore.createSession({ workspaceId: "answer" });
+  renderMessages();
+  renderAttachments();
+  chatsTreeRenderer.render();
+  dockTabs.close();
+  commandInput?.focus();
 });
 
 const addMessage = async (role, content, { persist = true, usage = null } = {}) => {

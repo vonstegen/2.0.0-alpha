@@ -61,6 +61,7 @@ const sidePanelElementSelectors = {
   dockDotJobs: "#dock-dot-jobs",
   dockDotChats: "#dock-dot-chats",
   dockDotPermissions: "#dock-dot-permissions",
+  dockNewChat: "#dock-new-chat",
   chatsPanel: "#chats-panel",
   chatsTree: "#chats-tree",
   dockPopout: "#dock-popout",
