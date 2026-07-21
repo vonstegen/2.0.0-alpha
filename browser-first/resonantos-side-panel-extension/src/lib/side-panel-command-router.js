@@ -10,6 +10,7 @@ import {
   parseReadPageIntent,
   parseScrollIntent,
   parseStructuredPageEditIntent,
+  parseSummarizePageIntent,
   parseTypeIntent
 } from "./browser-command-parser.js";
 
@@ -82,6 +83,13 @@ export function createSidePanelCommandRouter(handlers) {
 
     const clickIntent = parseClickIntent(value);
     if (clickIntent) return handlers.clickActivePageText(clickIntent);
+
+    // A bare "summarize" / "tldr" / "recap" reads the current page and lets the
+    // model summarize it — an LLM summary that matches the inline Summarize,
+    // with no /control needed. This sits before the generic read intent so a
+    // summarize verb never falls to the title+excerpt acknowledgement below.
+    const summarizePageIntent = parseSummarizePageIntent(value);
+    if (summarizePageIntent) return handlers.summarizeActivePage();
 
     const readPageIntent = parseReadPageIntent(value);
     if (readPageIntent) return handlers.summarizeSnapshot();

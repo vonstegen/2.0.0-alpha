@@ -45,6 +45,7 @@ function createHarness() {
     saveIntake: handler("save"),
     scrollActivePage: handler("scroll"),
     searchBrowser: handler("search"),
+    summarizeActivePage: handler("summarize-page"),
     summarizeSnapshot: handler("summary"),
     typeIntoActivePage: handler("type")
   });
@@ -198,6 +199,21 @@ test("side panel command router dispatches natural browser intents before chat",
   const dispatched = harness.calls.filter((call) => call[0] !== "bind");
   assert.deepEqual(dispatched.at(-2), ["control", "go to amazon.it and find me a rtx5090"]);
   assert.deepEqual(dispatched.at(-1), ["control", "add the visible item on this page to the cart"]);
+});
+
+test("side panel command router reads + summarizes the page for a bare summarize/tldr/recap", async () => {
+  const harness = createHarness();
+
+  // Bare summarize-family commands route to a silent page read + chat summary
+  // (handler "summarize-page"), before the generic read intent's title+excerpt.
+  await harness.router.respondToCommand("summarize");
+  await harness.router.respondToCommand("tldr");
+  await harness.router.respondToCommand("recap this page");
+  // A plain conversational message still goes to chat, untouched by the branch.
+  await harness.router.respondToCommand("what should I cook tonight?");
+
+  const dispatched = harness.calls.filter((call) => call[0] !== "bind").map((call) => call[0]);
+  assert.deepEqual(dispatched, ["summarize-page", "summarize-page", "summarize-page", "chat"]);
 });
 
 test("side panel command router sends compound navigate-and-act commands to agent control", async () => {

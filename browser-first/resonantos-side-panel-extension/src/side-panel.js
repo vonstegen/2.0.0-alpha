@@ -254,7 +254,7 @@ const dockTabs = createDockTabs({
   popout: dockPopout,
   popoutTitle: dockPopoutTitle,
   closeButton: dockPopoutClose,
-  titles: { site: "Site", control: "Agent Control", jobs: "Jobs", chats: "Chats", permissions: "Permissions" },
+  titles: { site: "Site", control: "Control", jobs: "Jobs", chats: "Chats", permissions: "Permissions" },
   onOpen: (name) => { if (name === "chats") chatsTreeRenderer?.render(); }
 });
 dockTabs.bind();
@@ -1093,6 +1093,16 @@ controlStopButton.addEventListener("click", () => {
   void cancelBrowserJob(currentControlRun?.id ?? browserJobStore.getActiveJobId() ?? "");
 });
 
+// A bare "summarize"/"tldr"/"recap" means "summarize the page I'm looking at":
+// read it silently to populate the snapshot, then let the chat turn summarize
+// with that page context (runChatTurn already injects pageContextForSnapshot).
+// This yields an LLM summary that matches the inline floating-panel Summarize,
+// without requiring /control.
+const summarizeActivePage = async () => {
+  await readActivePage({ announce: false });
+  return runChatTurn();
+};
+
 const commandRouter = createSidePanelCommandRouter({
   allowControlPreflightOnceForTaskClass,
   bindMentionedTab,
@@ -1128,6 +1138,7 @@ const commandRouter = createSidePanelCommandRouter({
   saveIntake,
   scrollActivePage,
   searchBrowser,
+  summarizeActivePage,
   summarizeSnapshot,
   typeIntoActivePage
 });

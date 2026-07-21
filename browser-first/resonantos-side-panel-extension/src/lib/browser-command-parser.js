@@ -103,6 +103,19 @@ export function parseReadPageIntent(message) {
     : null;
 }
 
+// A message that is essentially *just* a "summarize"/"tl;dr"/"recap" command
+// means "summarize the page I'm looking at" — no /control and no need to spell
+// out "the page". It is bounded to the whole message so a richer ask that only
+// starts with the verb ("summarize these notes: ...") still falls through to
+// normal chat. Routing this to a silent page read + a chat turn gives an LLM
+// summary that matches the inline floating-panel Summarize.
+export function parseSummarizePageIntent(message) {
+  const normalized = String(message ?? "").trim();
+  if (!normalized || /^\//.test(normalized)) return null;
+  const command = /^(?:please\s+|pls\s+|can\s+you\s+|could\s+you\s+)?(?:summari[sz]e|summary|tl;?dr|recap|sum\s+(?:it\s+)?up)(?:\s+(?:it|this|that|the\s+page|this\s+page|the\s+site|for\s+me|please))*[.!?]*$/i;
+  return command.test(normalized) ? { action: "summarize_page" } : null;
+}
+
 export function parseStructuredPageEditIntent(message) {
   const normalized = String(message ?? "").trim();
   if (/^\//.test(normalized) || !/\b(add|edit|update|write|insert|change|replace)\b/i.test(normalized)) {
