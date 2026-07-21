@@ -116,6 +116,18 @@ export function parseSummarizePageIntent(message) {
   return command.test(normalized) ? { action: "summarize_page" } : null;
 }
 
+// A bare continuation phrase ("try again", "continue", "retry", "keep going")
+// means "carry on the Agent Control run I just resumed" — not a new task and not
+// chat. Callers gate this on there actually being a resumable run, so a stray
+// "continue" in pure chat still goes to chat. Bounded to the whole message so
+// "continue to the checkout and pay" stays a real task.
+export function parseControlContinuationIntent(message) {
+  const normalized = String(message ?? "").trim();
+  if (!normalized || /^\//.test(normalized)) return null;
+  const phrase = /^(?:please\s+|pls\s+)?(?:try\s+again|retry(?:\s+(?:it|that))?|continue|keep\s+going|carry\s+on|go\s+on|resume|one\s+more\s+time)[.!?]*$/i;
+  return phrase.test(normalized) ? { action: "control_continue" } : null;
+}
+
 export function parseStructuredPageEditIntent(message) {
   const normalized = String(message ?? "").trim();
   if (/^\//.test(normalized) || !/\b(add|edit|update|write|insert|change|replace)\b/i.test(normalized)) {

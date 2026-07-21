@@ -3,6 +3,7 @@ import {
   parseAutonomousBrowserActionIntent,
   parseBrowserNavigationTaskIntent,
   parseClickIntent,
+  parseControlContinuationIntent,
   parseControlIntent,
   parseFormsIntent,
   parseNaturalBrowserIntent,
@@ -57,6 +58,13 @@ export function createSidePanelCommandRouter(handlers) {
         return handlers.saveWalletDaoAuditToArchive(body.replace(/^audit\b/i, "").trim());
       }
       if (name === "dao") return handlers.prepareDaoWorkflowGuidance(body);
+    }
+
+    // "try again" / "continue" / "retry" after a resumed run continues that run
+    // instead of falling to chat and demanding /control. Gated on there being a
+    // resumable run so a stray "continue" in pure chat still reaches the model.
+    if (parseControlContinuationIntent(value) && handlers.hasResumableControlRun?.()) {
+      return handlers.continueBrowserJob("");
     }
 
     const controlIntent = parseControlIntent(value);

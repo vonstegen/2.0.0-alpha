@@ -3,12 +3,13 @@ import test from "node:test";
 
 import { createSidePanelCommandRouter } from "../resonantos-side-panel-extension/src/lib/side-panel-command-router.js";
 
-function createHarness() {
+function createHarness({ resumableControlRun = false } = {}) {
   const calls = [];
   const handler = (name) => async (...args) => {
     calls.push([name, ...args]);
   };
   const router = createSidePanelCommandRouter({
+    hasResumableControlRun: () => resumableControlRun,
     allowControlPreflightOnceForTaskClass: handler("allow-control-once"),
     bindMentionedTab: handler("bind"),
     cancelBrowserJob: handler("cancel"),
@@ -214,6 +215,24 @@ test("side panel command router reads + summarizes the page for a bare summarize
 
   const dispatched = harness.calls.filter((call) => call[0] !== "bind").map((call) => call[0]);
   assert.deepEqual(dispatched, ["summarize-page", "summarize-page", "summarize-page", "chat"]);
+});
+
+test("side panel command router continues a resumable run on a bare 'try again', else chats", async () => {
+  const resumable = createHarness({ resumableControlRun: true });
+  await resumable.router.respondToCommand("try again");
+  await resumable.router.respondToCommand("continue");
+  assert.deepEqual(
+    resumable.calls.filter((call) => call[0] !== "bind").map((call) => call[0]),
+    ["continue", "continue"]
+  );
+
+  // With no resumable run, a bare "try again" is just a chat turn.
+  const noRun = createHarness({ resumableControlRun: false });
+  await noRun.router.respondToCommand("try again");
+  assert.deepEqual(
+    noRun.calls.filter((call) => call[0] !== "bind").map((call) => call[0]),
+    ["chat"]
+  );
 });
 
 test("side panel command router sends compound navigate-and-act commands to agent control", async () => {

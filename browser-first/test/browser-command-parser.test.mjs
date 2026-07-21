@@ -14,6 +14,7 @@ import {
   parseNaturalSearchIntent,
   parseQuotedText,
   parseReadPageIntent,
+  parseControlContinuationIntent,
   parseScrollIntent,
   parseStructuredPageEditIntent,
   parseSummarizePageIntent,
@@ -64,6 +65,18 @@ test("browser command parser treats a bare summarize/tldr/recap as summarize-the
   assert.equal(parseSummarizePageIntent("/summarize"), null);
   // A non-summarize read verb is left to the generic read intent.
   assert.equal(parseSummarizePageIntent("read this page"), null);
+});
+
+test("browser command parser recognizes bare continuation phrases", () => {
+  assert.deepEqual(parseControlContinuationIntent("try again"), { action: "control_continue" });
+  assert.deepEqual(parseControlContinuationIntent("continue"), { action: "control_continue" });
+  assert.deepEqual(parseControlContinuationIntent("retry"), { action: "control_continue" });
+  assert.deepEqual(parseControlContinuationIntent("keep going"), { action: "control_continue" });
+  assert.deepEqual(parseControlContinuationIntent("resume"), { action: "control_continue" });
+  // A continuation verb that carries a real task is not a bare continuation.
+  assert.equal(parseControlContinuationIntent("continue to the checkout and pay"), null);
+  assert.equal(parseControlContinuationIntent("try a different search engine"), null);
+  assert.equal(parseControlContinuationIntent("/continue"), null);
 });
 
 test("browser command parser routes compound navigate-and-act commands as control tasks", () => {

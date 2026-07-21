@@ -1117,6 +1117,9 @@ const commandRouter = createSidePanelCommandRouter({
   cancelBrowserJob,
   approveControlPreflight,
   continueBrowserJob,
+  // A bare "try again"/"continue" only continues a run when one exists to
+  // continue; otherwise it stays a normal chat turn.
+  hasResumableControlRun: () => browserJobStore.getJobs().length > 0,
   denyControlPreflight,
   runBrowserCommand,
   runCapabilitiesCommand,
