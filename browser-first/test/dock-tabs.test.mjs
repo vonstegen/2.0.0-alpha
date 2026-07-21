@@ -88,3 +88,44 @@ test("the close button dismisses the open popout", () => {
   assert.equal(d.getElementById("popout").hidden, true);
   assert.equal(d.getElementById("popout").dataset.open, "none");
 });
+
+test("dock tabs flag a blocking message behind a closed tab as a blocking dot", () => {
+  const { d, controller } = setup();
+  controller.bind();
+  const block = d.createElement("div");
+  block.setAttribute("data-status", "blocked");
+  block.textContent = "job blocked, needs you";
+  d.getElementById("jobs-panel").append(block);
+
+  controller.notePanelActivity("jobs");
+
+  const dot = d.getElementById("dot-jobs");
+  assert.equal(dot.hidden, false);
+  assert.equal(dot.dataset.blocking, "true");
+});
+
+test("dock tabs keep a non-blocking change as a normal (green) dot", () => {
+  const { d, controller } = setup();
+  controller.bind();
+  d.getElementById("site-panel").textContent = "a normal permission update";
+
+  controller.notePanelActivity("site");
+
+  const dot = d.getElementById("dot-site");
+  assert.equal(dot.hidden, false);
+  assert.equal(dot.dataset.blocking, "false");
+});
+
+test("dock tabs clear the blocking flag when the panel is opened", () => {
+  const { d, controller } = setup();
+  controller.bind();
+  const approval = d.createElement("div");
+  approval.className = "approval-card";
+  approval.textContent = "Approve?";
+  d.getElementById("jobs-panel").append(approval);
+  controller.notePanelActivity("jobs");
+  assert.equal(d.getElementById("dot-jobs").dataset.blocking, "true");
+
+  controller.open("jobs");
+  assert.equal(d.getElementById("dot-jobs").dataset.blocking, "false");
+});

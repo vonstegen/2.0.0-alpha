@@ -4,6 +4,25 @@
 // clears when the human opens it. Content changes are detected by comparing a
 // text signature, so a re-render with identical content doesn't false-flag.
 
+// A panel is "blocking" when it holds something that needs the human: a visible
+// approval card, or a blocked/failed/awaiting job or control step. Its tab dot
+// then goes red + blinking (see dock-tab-dot[data-blocking] in CSS) instead of
+// the normal green activity dot.
+export const DOCK_BLOCKING_SELECTOR = [
+  '[data-state="blocked"]',
+  '[data-state="approval"]',
+  '[data-status="blocked"]',
+  '[data-status="failed"]',
+  '[data-status="denied"]',
+  '[data-attention="stale"]',
+  '.approval-card:not([hidden])',
+  '.job-approval-card'
+].join(", ");
+
+function defaultIsBlocking(panel) {
+  return Boolean(panel && typeof panel.querySelector === "function" && panel.querySelector(DOCK_BLOCKING_SELECTOR));
+}
+
 export function createDockTabs({
   tabs = [],            // [{ name, button, dot, panel }]
   popout = null,        // the overlay section
@@ -11,6 +30,7 @@ export function createDockTabs({
   closeButton = null,
   titles = {},          // { name: "Human label" }
   onOpen = () => {},    // called with the tab name whenever a panel is opened
+  isBlocking = defaultIsBlocking, // (panel) -> does it hold a needs-human message?
   observe = true        // wire MutationObservers (off in unit tests)
 } = {}) {
   let openName = null;
@@ -40,6 +60,7 @@ export function createDockTabs({
     if (tab?.dot) {
       tab.dot.hidden = true;
       tab.dot.dataset.active = "false";
+      tab.dot.dataset.blocking = "false";
     }
     signatures.set(name, signatureOf(tab)); // baseline so we don't re-flag
   }
@@ -50,6 +71,7 @@ export function createDockTabs({
     if (tab?.dot) {
       tab.dot.hidden = false;
       tab.dot.dataset.active = "true";
+      tab.dot.dataset.blocking = isBlocking(tab.panel) ? "true" : "false";
     }
   }
 

@@ -117,6 +117,23 @@ textarea:disabled {
   display: none;
 }
 
+/* Blocking message behind the link → red + blinking, to pull the eye. */
+.dock-tab-dot[data-blocking="true"] {
+  background: rgba(255, 90, 74, 0.98);
+  box-shadow: 0 0 9px rgba(255, 90, 74, 0.8);
+  animation: dock-dot-blink 0.9s steps(1, end) infinite;
+}
+
+@keyframes dock-dot-blink {
+  50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-tab-dot[data-blocking="true"] {
+    animation: none;
+  }
+}
+
 .composer {
   border: 1px solid var(--line);
   background: var(--panel);
