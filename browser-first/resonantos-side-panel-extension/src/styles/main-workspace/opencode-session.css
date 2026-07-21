@@ -133,3 +133,18 @@
 .oc-composer { display: flex; gap: 8px; align-items: flex-end; }
 .oc-composer textarea { flex: 1; resize: none; border: 1px solid rgba(148, 255, 198, 0.15); border-radius: 11px; background: rgba(5, 8, 7, 0.6); color: #eef7f0; font: inherit; font-size: 0.72rem; padding: 9px 11px; }
 .oc-composer button { border: 1px solid rgba(36, 209, 143, 0.5); border-radius: 11px; background: rgba(36, 209, 143, 0.16); color: #eef7f0; font-weight: 800; font-size: 0.7rem; padding: 9px 16px; cursor: pointer; }
+
+/* Entry point + mount area in the OpenCode workspace panel */
+.opencode-start-session {
+  margin-top: 10px;
+  border: 1px solid rgba(36, 209, 143, 0.5);
+  border-radius: 10px;
+  background: rgba(36, 209, 143, 0.16);
+  color: #eef7f0;
+  font-weight: 800;
+  font-size: 0.7rem;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+.opencode-start-session[hidden] { display: none; }
+.opencode-session-area:not(:empty) { min-height: 480px; margin-top: 10px; }
