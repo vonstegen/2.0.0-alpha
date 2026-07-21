@@ -65,7 +65,7 @@ describe("shell boot controller", () => {
         runtimeType: "agent-addon",
         surfaces: [],
         requestedCapabilities: [],
-        systemSlots: [{ id: "chat-interface", recommended: true }],
+        systemSlots: [{ id: "chat-interface", role: "default-provider", replaceable: true, recommended: true }],
         providerRequirements: { sharedProfiles: [], supportsPrivateCredentials: false },
         archiveIntegration: { readScopes: [], intakeWriteScopes: [], canRequestIngest: false, canWriteKnowledgePages: false },
         health: { strategy: "none" },
@@ -86,7 +86,6 @@ describe("shell boot controller", () => {
   });
 
   it("skips non-recommended addons during first-run setup", async () => {
-    const state = buildDefaultState([]);
     const manifests: AddOnManifest[] = [
       {
         id: "custom-addon",
@@ -105,12 +104,13 @@ describe("shell boot controller", () => {
         compatibility: { shellVersion: "^0.1.0", platforms: ["macOS"] },
       },
     ];
+    const state = buildDefaultState(manifests);
 
     const { applyFirstRunRecommendedAddOns } = await import("./controller");
     const result = applyFirstRunRecommendedAddOns(state, manifests, ["custom-addon"]);
 
     expect(result.uiPreferences.recommendedAddOnsReviewed).toBe(true);
-    expect(result.installations["custom-addon"]?.installed).toBeFalsy();
+    expect(result.installations["custom-addon"]?.installed).toBe(false);
   });
 
   it("marks recommended addons as reviewed", async () => {
