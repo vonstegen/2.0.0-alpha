@@ -30,3 +30,18 @@ export function railSearchMatchesProject(project, projectSessions = [], query = 
   const projectHaystack = [project?.name, project?.id].join(" ").toLowerCase();
   return projectHaystack.includes(normalized) || projectSessions.some((session) => railSearchMatchesSession(session, normalized));
 }
+
+// Split a project's chats into its folders and the loose (unfiled) chats. A chat
+// whose folderId points at a folder not in this project falls back to loose, so
+// the tree never renders a chat under a folder it does not belong to.
+export function groupProjectSessionsByFolder(projectSessions = [], projectFolders = []) {
+  const byFolder = new Map(projectFolders.map((folder) => [folder.id, []]));
+  const looseSessions = [];
+  for (const session of projectSessions) {
+    const bucket = session?.folderId ? byFolder.get(session.folderId) : null;
+    if (bucket) bucket.push(session);
+    else looseSessions.push(session);
+  }
+  const folderGroups = projectFolders.map((folder) => ({ folder, sessions: byFolder.get(folder.id) ?? [] }));
+  return { folderGroups, looseSessions };
+}
