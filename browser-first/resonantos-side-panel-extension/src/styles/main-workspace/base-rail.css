@@ -90,10 +90,11 @@ button {
 
 .workspace-shell {
   display: grid;
-  grid-template-columns: 268px minmax(0, 1fr);
+  grid-template-columns: var(--rail-width, 268px) minmax(0, 1fr);
   height: 100dvh;
   min-height: 100%;
   overflow: hidden;
+  position: relative;
 }
 
 .workspace-rail {

@@ -67,7 +67,6 @@ const STORAGE_KEYS = {
 const transcript = document.querySelector("#transcript");
 const workspaceButtons = [...document.querySelectorAll("[data-workspace]")];
 const newChatButton = document.querySelector("#new-chat");
-const openSidebarButton = document.querySelector("#open-sidebar");
 const mainBrowserJobs = document.querySelector("#main-browser-jobs");
 const railNewChatButton = document.querySelector("#rail-new-chat");
 const railSearchToggle = document.querySelector("#rail-search-toggle");
@@ -612,6 +611,53 @@ railToggle?.addEventListener("click", () => {
   railToggle.setAttribute("aria-expanded", collapsed ? "true" : "false");
 });
 
+// Draggable left-rail width (persisted). The handle rides the rail's right edge;
+// the shell reads --rail-width for its first grid column.
+const railResize = document.querySelector("#rail-resize");
+const RAIL_MIN = 180;
+const RAIL_MAX = 460;
+const railWidthValue = () =>
+  parseInt(getComputedStyle(document.documentElement).getPropertyValue("--rail-width"), 10) || 268;
+const applyRailWidth = (px) => {
+  const clamped = Math.max(RAIL_MIN, Math.min(RAIL_MAX, Math.round(px)));
+  document.documentElement.style.setProperty("--rail-width", `${clamped}px`);
+  return clamped;
+};
+chrome.storage?.local?.get?.("augmentorRailWidth").then((stored) => {
+  const px = Number(stored?.augmentorRailWidth);
+  if (Number.isFinite(px)) applyRailWidth(px);
+}).catch(() => undefined);
+
+if (railResize) {
+  let dragging = false;
+  const onMove = (event) => {
+    if (dragging) applyRailWidth(event.clientX);
+  };
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove("rail-resizing");
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    void chrome.storage?.local?.set?.({ augmentorRailWidth: railWidthValue() }).catch(() => undefined);
+  };
+  railResize.addEventListener("pointerdown", (event) => {
+    if (document.body.dataset.railCollapsed === "true") return;
+    dragging = true;
+    document.body.classList.add("rail-resizing");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    event.preventDefault();
+  });
+  railResize.addEventListener("keydown", (event) => {
+    const step = event.shiftKey ? 24 : 8;
+    if (event.key === "ArrowLeft") { applyRailWidth(railWidthValue() - step); event.preventDefault(); }
+    else if (event.key === "ArrowRight") { applyRailWidth(railWidthValue() + step); event.preventDefault(); }
+    else return;
+    void chrome.storage?.local?.set?.({ augmentorRailWidth: railWidthValue() }).catch(() => undefined);
+  });
+}
+
 function setActiveWorkspace(workspaceId, { bindSession = false, persist = false } = {}) {
   activeWorkspace = allowedWorkspaces.has(workspaceId) ? workspaceId : "answer";
   document.body.dataset.workspace = activeWorkspace;
@@ -971,7 +1017,6 @@ async function createNewChat() {
 }
 
 newChatButton?.addEventListener("click", createNewChat);
-openSidebarButton?.addEventListener("click", () => void openSidebar());
 railNewChatButton?.addEventListener("click", createNewChat);
 railSearchToggle?.addEventListener("click", () => {
   railSearchBox.hidden = !railSearchBox.hidden;

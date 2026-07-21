@@ -32,6 +32,17 @@ test("main-workspace.html exposes the top-bar dock and relocates Projects/Chats 
   assert.equal(d.querySelector(".workspace-rail .rail-project-list"), null, "Projects list must not remain in the rail");
   assert.ok(d.querySelector("#chats-panel #rail-project-list"), "Projects list must live in the Chats panel");
   assert.ok(d.querySelector("#chats-panel #rail-chat-list"), "Chats list must live in the Chats panel");
+
+  // The dead top header + Show-Augmentor-sidebar button are gone; new-chat "+"
+  // lives in the dock to the right of the Chats tab; the rail has a resize handle.
+  assert.equal(d.querySelector(".workspace-topbar"), null, "the dead top header must be removed");
+  assert.equal(d.getElementById("open-sidebar"), null, "the Show Augmentor sidebar button must be removed");
+  assert.ok(d.querySelector("#dock-tabs #new-chat"), "new-chat must live inside the dock");
+  assert.ok(d.getElementById("rail-resize"), "the rail must have a resize handle");
+  const dockButtons = [...d.querySelectorAll("#dock-tabs button")].map((b) => b.id);
+  assert.deepEqual(dockButtons, [
+    "dock-tab-site", "dock-tab-control", "dock-tab-jobs", "dock-tab-permissions", "dock-tab-chats", "new-chat"
+  ], "Chats is the rightmost tab with new-chat to its right");
 });
 
 test("renderDockPermissions lists stored grants and drops the ask-before-action default", () => {

@@ -304,3 +304,66 @@ body[data-rail-collapsed="true"] .workspace-rail .rail-project,
 body[data-rail-collapsed="true"] .workspace-rail .rail-user-card {
   justify-content: center;
 }
+
+/* Draggable divider on the rail's right edge. Rides the --rail-width boundary. */
+.rail-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--rail-width, 268px) - 3px);
+  width: 6px;
+  z-index: 20;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.rail-resize:hover,
+.rail-resize:focus-visible,
+body.rail-resizing .rail-resize {
+  background: rgba(36, 209, 143, 0.45);
+  outline: none;
+}
+
+/* Can't resize a collapsed rail — hide the handle. */
+body[data-rail-collapsed="true"] .rail-resize {
+  display: none;
+}
+
+/* While dragging, kill selection/iframe interference across the shell. */
+body.rail-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.rail-resizing iframe {
+  pointer-events: none;
+}
+
+/* New-chat "+" lives in the dock, to the right of the Chats tab. */
+.dock-new-chat {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(148, 255, 198, 0.15);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(207, 219, 210, 0.8);
+  cursor: pointer;
+}
+
+.dock-new-chat:hover {
+  color: #eef7f0;
+  background: rgba(36, 209, 143, 0.14);
+  border-color: rgba(36, 209, 143, 0.4);
+}
+
+.dock-new-chat svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
