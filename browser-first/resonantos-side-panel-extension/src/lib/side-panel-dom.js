@@ -5,6 +5,7 @@ export const SIDE_PANEL_STORAGE_KEYS = {
   activeSessionId: "augmentorActiveBrowserSessionId",
   projects: "augmentorBrowserProjects",
   folders: "augmentorBrowserFolders",
+  writer: "augmentorChatWriter",
   pendingSidebarPrompt: "augmentorPendingSidebarPrompt",
   augmentorConfig: "augmentorConfig",
   model: "augmentorModel",

@@ -30,6 +30,7 @@ import { createControlApprovalActions } from "./lib/control-approval-actions.js"
 import { createDockTabs } from "./lib/dock-tabs.js";
 import { createSidePanelChatsTree } from "./lib/side-panel-chats-tree.js";
 import { isRailVisibleChatSession } from "./lib/main-workspace-rail.js";
+import { shouldSyncChatChange } from "./lib/chat-sync.js";
 import { createMainWorkspaceToggle } from "./lib/main-workspace-toggle.js";
 import { createMessageActionController } from "./lib/message-action-controller.js";
 import { createMonitorRenderers } from "./lib/monitor-renderers.js";
@@ -260,9 +261,11 @@ const composerController = createComposerController({
   navigator
 });
 
+const chatInstanceId = `sidecar-${Math.random().toString(36).slice(2, 10)}`;
 const chatSessionStore = createChatSessionStore({
   storage: chrome.storage?.local,
   storageKeys: STORAGE_KEYS,
+  instanceId: chatInstanceId,
   getModel: () => modelSelect.value,
   getThinkingDepth: () => thinkingDepthSelect.value,
   setModel: (model) => {
@@ -478,6 +481,20 @@ const addMessage = async (role, content, { persist = true, usage = null } = {}) 
   setContextMeter(lastSnapshot);
   return message;
 };
+
+// Live tandem sync: when the main workspace (or any other surface) changes the
+// shared chats/folders/projects/active session, re-hydrate and re-render so the
+// sidecar stays in lockstep. Our own writes carry our instanceId and are skipped.
+const CHAT_SYNC_KEYS = [STORAGE_KEYS.sessions, STORAGE_KEYS.folders, STORAGE_KEYS.projects, STORAGE_KEYS.activeSessionId];
+chrome?.storage?.onChanged?.addListener?.((changes, area) => {
+  if (area !== "local") return;
+  if (!shouldSyncChatChange(changes, { keys: CHAT_SYNC_KEYS, writerKey: STORAGE_KEYS.writer, instanceId: chatInstanceId })) return;
+  void chatSessionStore.hydrate().then(() => {
+    renderMessages();
+    renderAttachments();
+    chatsTreeRenderer.render();
+  });
+});
 
 const dictationController = createDictationController({
   addMessage,

@@ -23,11 +23,15 @@ export function createChatSessionStore({
   isAllowedModel,
   isAllowedThinkingDepth,
   now = defaultNow,
-  createId = defaultId
+  createId = defaultId,
+  // A per-instance token stamped on every write so each surface can tell its own
+  // writes from the other surface's when reacting to storage change events.
+  instanceId = `chat-${defaultId()}`
 }) {
   let messages = [];
   let forks = [];
   let attachments = [];
+  let writeSeq = 0;
   let sessions = [];
   let projects = [];
   let folders = [];
@@ -201,7 +205,10 @@ export function createChatSessionStore({
       [storageKeys.activeSessionId]: activeSessionId,
       [storageKeys.model]: getModel(),
       [storageKeys.thinkingDepth]: getThinkingDepth(),
-      [storageKeys.attachments]: attachments
+      [storageKeys.attachments]: attachments,
+      // Unique per write (seq changes each time) so the token always appears in
+      // storage-change events; the instanceId prefix identifies the writer.
+      [storageKeys.writer]: `${instanceId}:${++writeSeq}`
     };
     await storage?.set?.(Object.fromEntries(
       Object.entries(payload).filter(([key]) => key !== "undefined")

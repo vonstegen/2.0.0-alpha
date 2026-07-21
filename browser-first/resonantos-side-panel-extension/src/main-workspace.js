@@ -3,6 +3,7 @@ import { normalizeBrowserUrl } from "./lib/browser-command-parser.js";
 import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, initCapabilityTokens, isUnauthorizedBridgeError, resolveBridgeConfig } from "./lib/bridge-client.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 import { createChatSessionStore } from "./lib/chat-session-store.js";
+import { shouldSyncChatChange } from "./lib/chat-sync.js";
 import { createComposerController } from "./lib/composer-controller.js";
 import {
   contextUsageSnapshot,
@@ -45,6 +46,7 @@ const STORAGE_KEYS = {
   attachments: "augmentorBrowserAttachments",
   projects: "augmentorBrowserProjects",
   folders: "augmentorBrowserFolders",
+  writer: "augmentorChatWriter",
   pendingSidebarPrompt: "augmentorPendingSidebarPrompt",
   activeWorkspace: "augmentorMainWorkspace",
   augmentorConfig: "augmentorConfig",
@@ -259,9 +261,11 @@ const composerController = createComposerController({
   forceClipboardFallback: true,
   navigator
 });
+const chatInstanceId = `main-${Math.random().toString(36).slice(2, 10)}`;
 const chatSessionStore = createChatSessionStore({
   storage: chrome.storage?.local,
   storageKeys: STORAGE_KEYS,
+  instanceId: chatInstanceId,
   getModel: () => modelSelect.value,
   getThinkingDepth: () => thinkingDepthSelect.value,
   setModel: (model) => {
@@ -968,6 +972,15 @@ chrome.storage?.onChanged?.addListener?.((changes, areaName) => {
   if (areaName !== "local") return;
   if (changes[STORAGE_KEYS.browserJobs] || changes[STORAGE_KEYS.activeBrowserJob]) {
     void renderMainBrowserJobStatusFromStorage();
+  }
+  // Live tandem sync: mirror chat/folder/project/active-session changes made in
+  // the sidecar (or another tab). Our own writes carry our instanceId and are skipped.
+  if (shouldSyncChatChange(changes, {
+    keys: [STORAGE_KEYS.sessions, STORAGE_KEYS.folders, STORAGE_KEYS.projects, STORAGE_KEYS.activeSessionId],
+    writerKey: STORAGE_KEYS.writer,
+    instanceId: chatInstanceId
+  })) {
+    void chatSessionStore.hydrate().then(() => renderAll());
   }
 });
 window.addEventListener("hashchange", () => {

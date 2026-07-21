@@ -22,11 +22,13 @@ function createHarness(initial = {}) {
       sessions: "sessions",
       projects: "projects",
       folders: "folders",
+      writer: "writer",
       activeSessionId: "activeSessionId",
       model: "model",
       thinkingDepth: "thinkingDepth",
       attachments: "attachments"
     },
+    instanceId: "test-instance",
     getModel: () => model,
     getThinkingDepth: () => thinkingDepth,
     setModel: (value) => {
@@ -552,4 +554,16 @@ test("chat session store persists folders", async () => {
   const lastWrite = harness.writes.at(-1);
   assert.equal(Array.isArray(lastWrite.folders), true);
   assert.equal(lastWrite.folders.length, 1);
+});
+
+test("chat session store stamps a per-write writer token for cross-surface sync", async () => {
+  const harness = createHarness();
+  await harness.store.hydrate();
+  await harness.store.createProject("Alpha");
+  const firstWriter = harness.writes.at(-1).writer;
+  await harness.store.createProject("Beta");
+  const secondWriter = harness.writes.at(-1).writer;
+
+  assert.match(firstWriter, /^test-instance:\d+$/);
+  assert.notEqual(firstWriter, secondWriter, "the token changes each write so it always appears in storage events");
 });
