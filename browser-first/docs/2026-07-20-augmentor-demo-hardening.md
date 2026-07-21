@@ -140,7 +140,7 @@ plist already set `PATH` (incl. `/opt/homebrew/bin`) and `WorkingDirectory`, and
 ```
 ProgramArguments:
   /bin/bash
-  /Users/dr.tom/2.0.0-alpha/start-augmentor-bridge.sh
+  <repo-root>/start-augmentor-bridge.sh
 ```
 
 ### `start-augmentor-bridge.sh` (repo root, untracked — out of release scope)
