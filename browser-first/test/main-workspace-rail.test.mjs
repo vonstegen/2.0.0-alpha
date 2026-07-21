@@ -4,6 +4,7 @@ import { JSDOM } from "jsdom";
 
 import { createMainWorkspaceRailController } from "../resonantos-side-panel-extension/src/lib/main-workspace-rail-controller.js";
 import {
+  buildChatTree,
   groupProjectSessionsByFolder,
   isRailVisibleChatSession,
   normalizedRailQuery,
@@ -185,4 +186,25 @@ test("main workspace rail renders folders under a project and moves a loose chat
   item.click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.deepEqual(setFolderCalls, [["s-loose", "folder-1"]]);
+});
+
+test("main workspace rail builds a project -> folder -> chat tree with unfiled chats", () => {
+  const projects = [{ id: "p1", name: "Alpha" }];
+  const folders = [{ id: "f1", projectId: "p1", name: "Specs" }];
+  const sessions = [
+    { id: "s1", projectId: "p1", folderId: "f1" },
+    { id: "s2", projectId: "p1", folderId: "" },
+    { id: "s3", projectId: "", folderId: "" },
+    { id: "s4", projectId: "gone", folderId: "" }
+  ];
+
+  const tree = buildChatTree(projects, folders, sessions);
+
+  assert.equal(tree.projects.length, 1);
+  assert.deepEqual(
+    tree.projects[0].folderGroups.map((group) => [group.folder.id, group.sessions.map((s) => s.id)]),
+    [["f1", ["s1"]]]
+  );
+  assert.deepEqual(tree.projects[0].looseSessions.map((s) => s.id), ["s2"]);
+  assert.deepEqual(tree.unfiledSessions.map((s) => s.id), ["s3", "s4"], "no-project and orphaned-project chats are unfiled");
 });

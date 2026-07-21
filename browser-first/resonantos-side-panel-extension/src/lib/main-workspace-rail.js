@@ -45,3 +45,19 @@ export function groupProjectSessionsByFolder(projectSessions = [], projectFolder
   const folderGroups = projectFolders.map((folder) => ({ folder, sessions: byFolder.get(folder.id) ?? [] }));
   return { folderGroups, looseSessions };
 }
+
+// Build the full project → folder → chat tree shared by the main rail and the
+// sidecar Chats tab, so both surfaces render the same structure from the same
+// store. Sessions should already be filtered to the visible set; `orderItems`
+// applies the caller's sort (pinned-first, recency) to projects and folders.
+export function buildChatTree(projects = [], folders = [], sessions = [], { orderItems = (items) => [...items] } = {}) {
+  const projectIds = new Set(projects.map((project) => project.id));
+  const projectNodes = orderItems(projects).map((project) => {
+    const projectSessions = sessions.filter((session) => session.projectId === project.id);
+    const projectFolders = orderItems(folders.filter((folder) => folder.projectId === project.id));
+    const { folderGroups, looseSessions } = groupProjectSessionsByFolder(projectSessions, projectFolders);
+    return { project, folderGroups, looseSessions };
+  });
+  const unfiledSessions = sessions.filter((session) => !session.projectId || !projectIds.has(session.projectId));
+  return { projects: projectNodes, unfiledSessions };
+}

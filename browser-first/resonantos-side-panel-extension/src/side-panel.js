@@ -28,6 +28,8 @@ import { createControlStepExecutor } from "./lib/control-step-executor.js";
 import { createControlTabTargets } from "./lib/control-tab-targets.js";
 import { createControlApprovalActions } from "./lib/control-approval-actions.js";
 import { createDockTabs } from "./lib/dock-tabs.js";
+import { createSidePanelChatsTree } from "./lib/side-panel-chats-tree.js";
+import { isRailVisibleChatSession } from "./lib/main-workspace-rail.js";
 import { createMainWorkspaceToggle } from "./lib/main-workspace-toggle.js";
 import { createMessageActionController } from "./lib/message-action-controller.js";
 import { createMonitorRenderers } from "./lib/monitor-renderers.js";
@@ -82,9 +84,13 @@ const {
   dockTabSite,
   dockTabControl,
   dockTabJobs,
+  dockTabChats,
   dockDotSite,
   dockDotControl,
   dockDotJobs,
+  dockDotChats,
+  chatsPanel,
+  chatsTree,
   dockPopout,
   dockPopoutTitle,
   dockPopoutClose,
@@ -230,16 +236,21 @@ const mainWorkspaceToggle = createMainWorkspaceToggle();
 // full-size popout overlay, hidden until their link is clicked. Approval and
 // consent panels stay in the inline context-dock so they auto-surface.
 dockPopoutBody.append(sitePermissionPanel, controlMonitor, jobMonitor);
+// chatsTreeRenderer is assigned after the chat store + renderers exist below;
+// onOpen reads it lazily so the Chats tree refreshes each time the tab opens.
+let chatsTreeRenderer = null;
 const dockTabs = createDockTabs({
   tabs: [
     { name: "site", button: dockTabSite, dot: dockDotSite, panel: sitePermissionPanel },
     { name: "control", button: dockTabControl, dot: dockDotControl, panel: controlMonitor },
-    { name: "jobs", button: dockTabJobs, dot: dockDotJobs, panel: jobMonitor }
+    { name: "jobs", button: dockTabJobs, dot: dockDotJobs, panel: jobMonitor },
+    { name: "chats", button: dockTabChats, dot: dockDotChats, panel: chatsPanel }
   ],
   popout: dockPopout,
   popoutTitle: dockPopoutTitle,
   closeButton: dockPopoutClose,
-  titles: { site: "Site", control: "Agent Control", jobs: "Jobs" }
+  titles: { site: "Site", control: "Agent Control", jobs: "Jobs", chats: "Chats" },
+  onOpen: (name) => { if (name === "chats") chatsTreeRenderer?.render(); }
 });
 dockTabs.bind();
 const composerController = createComposerController({
@@ -437,10 +448,33 @@ const {
   window
 });
 
+// The sidecar "Chats" tab: a mirror of the main-workspace rail from the shared
+// store. Opening a chat switches the shared active session and reveals its
+// transcript (both surfaces stay in sync via the same storage keys).
+chatsTreeRenderer = createSidePanelChatsTree({
+  container: chatsTree,
+  document,
+  chatSessionStore,
+  isVisibleSession: isRailVisibleChatSession,
+  orderItems: (items) => [...items].sort((left, right) => (
+    left.pinned !== right.pinned
+      ? (left.pinned ? -1 : 1)
+      : new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+  )),
+  onOpenSession: async (sessionId) => {
+    await chatSessionStore.switchSession(sessionId);
+    renderMessages();
+    renderAttachments();
+    chatsTreeRenderer.render();
+    dockTabs.close();
+  }
+});
+
 const addMessage = async (role, content, { persist = true, usage = null } = {}) => {
   const message = await chatSessionStore.addMessage(role, content, { persist, usage });
   if (!message) return null;
   renderMessages();
+  chatsTreeRenderer.render();
   setContextMeter(lastSnapshot);
   return message;
 };
@@ -1201,6 +1235,7 @@ try {
 
 hydrateChatSettings().then(async () => {
   await hydrateRegenerationModePreference();
+  chatsTreeRenderer.render();
   await loadBrowserJobs();
   await tabContextController.hydrateInitialContext();
   await consumePendingSidebarPrompt();

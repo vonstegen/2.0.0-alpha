@@ -13,6 +13,7 @@
         <button id="dock-tab-site" class="dock-tab" type="button" aria-expanded="false" aria-controls="dock-popout">Site<span id="dock-dot-site" class="dock-tab-dot" hidden aria-hidden="true"></span></button>
         <button id="dock-tab-control" class="dock-tab" type="button" aria-expanded="false" aria-controls="dock-popout">Agent Control<span id="dock-dot-control" class="dock-tab-dot" hidden aria-hidden="true"></span></button>
         <button id="dock-tab-jobs" class="dock-tab" type="button" aria-expanded="false" aria-controls="dock-popout">Jobs<span id="dock-dot-jobs" class="dock-tab-dot" hidden aria-hidden="true"></span></button>
+        <button id="dock-tab-chats" class="dock-tab" type="button" aria-expanded="false" aria-controls="dock-popout">Chats<span id="dock-dot-chats" class="dock-tab-dot" hidden aria-hidden="true"></span></button>
       </nav>
       <div class="chat-body">
       <section id="transcript" class="transcript" aria-live="polite"></section>
@@ -21,7 +22,11 @@
           <strong id="dock-popout-title">Panel</strong>
           <button id="dock-popout-close" class="dock-popout-close" type="button" aria-label="Close panel">&#10005;</button>
         </div>
-        <div id="dock-popout-body" class="dock-popout-body"></div>
+        <div id="dock-popout-body" class="dock-popout-body">
+          <section id="chats-panel" class="chats-panel" aria-label="Chats">
+            <div id="chats-tree" class="chats-tree"></div>
+          </section>
+        </div>
       </section>
       </div>
       <section id="context-dock" class="context-dock" aria-label="Browser context and task status" hidden>

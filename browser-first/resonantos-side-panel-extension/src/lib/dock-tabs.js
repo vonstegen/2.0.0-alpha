@@ -10,6 +10,7 @@ export function createDockTabs({
   popoutTitle = null,   // heading shown in the overlay
   closeButton = null,
   titles = {},          // { name: "Human label" }
+  onOpen = () => {},    // called with the tab name whenever a panel is opened
   observe = true        // wire MutationObservers (off in unit tests)
 } = {}) {
   let openName = null;
@@ -57,6 +58,7 @@ export function createDockTabs({
     openName = name;
     render();
     clearActivity(name);
+    onOpen(name);
   }
 
   function close() {
