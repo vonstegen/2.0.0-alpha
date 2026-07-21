@@ -100,6 +100,29 @@ phase (ended at browser-first 760 / vitest 312). Also fixed a lingering-timer
 test-hygiene issue in the rail move menu (attach the outside-click listener
 immediately since the trigger stops propagation).
 
+## Shared step-list + spinner component
+
+A reusable Claude-app-style task/plan step list, used identically in the sidecar
+and the main panel — both import `src/lib/step-list.js` and the shared
+`src/styles/shared/step-list.css`, so it is consistent by construction. Numbered
+steps carry a per-state glyph (✓ done + strikethrough, animated spinner
+in-progress, ○ pending, ! blocked, ✕ failed, – cancelled) and a floating
+"N of M" progress pill with a spinner. Structure-only renderer; all visuals in
+CSS; `prefers-reduced-motion` respected.
+
+**Certified at full rig tier.** A three-vendor review panel — `cursor-agent`,
+`codex` (OpenAI gpt-5.5), `pi` (Google gemini-2.5-flash) — drove accessibility
+fixes my single pass missed: a `role="status"` pill that was rebuilt each render
+(2-vendor corroboration) is now a **persistent node updated in place**; each step
+gained screen-reader state text; `role=list`/`role=listitem` restore VoiceOver
+list semantics; a missing cancelled-state glyph, unreliable pill centering, and
+low text contrast were all fixed. 9 jsdom tests; progress/spinner/persistent-pill
+guards mutation-proven.
+
+> **Not yet wired to a live step source** — it is a reusable renderer; the
+> natural first use site is the agent-control step list in both surfaces
+> (see Open follow-ups).
+
 ## Local infrastructure (not in the repo)
 
 These configure the local machine and are recorded here for reproducibility.
@@ -145,14 +168,25 @@ echo "Bridge starting with providers: $(printf '%s' "$RESONANTOS_PROVIDER_SECRET
 exec node run-bridge-minimal.mjs
 ```
 
+### Reviewer-CLI provider fixes (for the rig's multi-vendor panel)
+Both cross-vendor review CLIs were broken and were fixed during the step-list
+certification (recorded in the `multi-model-review-access-map` memory):
+- **codex** — `~/.codex/config.toml` had `model = "gpt-5.6-sol"` (CLI 0.142.0
+  rejects it) and `model_reasoning_effort = "ultra"` (invalid enum). Fixed to
+  `gpt-5.5` + `high`; `codex exec --skip-git-repo-check "…"` verified. Backup at
+  `~/.codex/config.toml.bak-*`.
+- **pi** — `~/.pi/agent/settings.json` defaults to keyless `deepseek`, and pi
+  reads keys from env vars (not the openclaw/ResonantOS stores). Working form:
+  `GEMINI_API_KEY="$(jq -r .google.apiKey ~/.openclaw/auth-profiles.json)" pi --model google/gemini-2.5-flash "…"` (never `--api-key`, which leaks into argv).
+
 ## Verification (at the tip of the branch)
 
 | Command | Result |
 | --- | --- |
-| `npm run test:browser-first` | 740 / 740 pass |
+| `npm run test:browser-first` | 769 / 769 pass |
 | `npm test` (vitest) | 312 / 312 pass |
 | `node scripts/browser-first-release-scope-audit.mjs --committed --strict` | 0 deferred, 0 manual review |
-| `scripts/rig-mutate` anti-false-green (hermes ×2, routing, click-dwell, dock-tabs) | all NON-VACUOUS |
+| `scripts/rig-mutate` anti-false-green (hermes ×2, routing, click-dwell, dock-tabs, folders, buildChatTree, chat-sync, step-list ×3) | all NON-VACUOUS |
 
 ## Excluded from the repo, and why
 - `start-augmentor-bridge.sh` — a machine-specific dev launcher; out of the
@@ -160,6 +194,13 @@ exec node run-bridge-minimal.mjs
 - The launchd plist — local system configuration under `~/Library/LaunchAgents`.
 
 ## Open follow-ups
+- **Wire the step-list into a live use site** — the certified component renders no
+  real steps yet; the natural site is the agent-control step list (`#control-step-list`)
+  in both surfaces.
+- **Blocking red-blink tab dot** — the sidecar top-bar tab dots should go red +
+  blinking (vs green) when the panel holds a blocking/needs-human message
+  (approval, blocked/failed job or step). Spec in the `queued-blocking-red-blink-dot`
+  memory.
 - **Visual check of the popout overlay** — the CSS positioning was not verified in
   a live extension; reload and confirm the overlay covers the chat (not the
   composer).
