@@ -30,15 +30,15 @@ bridge infrastructure (documented here because it lives outside the repo).
 - Files: `src/lib/browser-job-store.js` (`clearCompletedJobs`,
   `isClearableBrowserJobStatus`), `src/lib/monitor-renderers.js`.
 
-### 2. Workspace toggle + new-tab redirect (`befead7`)
+### 2. Workspace toggle + new-tab handling (`befead7`)
 - New tabs no longer force the Augmentor workspace. The workspace is opt-in via
   a **toggle in the composer** (`main-workspace-toggle.js` — show / focus / hide
   with a last-tab guard).
-- `chrome_url_overrides.newtab` now points at a small redirect page
-  (`newtab-redirect.html` / `newtab-redirect-url.js`) that sends new tabs to a
-  **configurable default (swisscows)**; override with
-  `chrome.storage.local.set({ augmentorNewTabUrl: "https://…" })` (http(s) only,
-  falls back to the default).
+- The extension does **not** override Chrome's new-tab page. (An earlier build
+  redirected new tabs to a configurable default via `chrome_url_overrides.newtab`
+  + a small redirect page; that redirect — and the host-side new-tab ownership
+  seeding — was removed so the browser keeps whatever new-tab page the human has
+  configured.)
 
 ### 3. Agent-control natural commands (`92c6053`)
 - Compound "go to `<site>` and `<act>`" commands route to agent control **without
@@ -140,7 +140,7 @@ plist already set `PATH` (incl. `/opt/homebrew/bin`) and `WorkingDirectory`, and
 ```
 ProgramArguments:
   /bin/bash
-  /Users/dr.tom/2.0.0-alpha/start-augmentor-bridge.sh
+  <repo-root>/start-augmentor-bridge.sh
 ```
 
 ### `start-augmentor-bridge.sh` (repo root, untracked — out of release scope)
