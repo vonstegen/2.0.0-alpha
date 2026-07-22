@@ -40,6 +40,7 @@ import { createSidePanelBrowserJobController } from "./lib/side-panel-browser-jo
 import { createSidePanelChatHydration } from "./lib/side-panel-chat-hydration.js";
 import { createSidePanelCommandRouter } from "./lib/side-panel-command-router.js";
 import { createSidePanelControlCommandController } from "./lib/side-panel-control-command-controller.js";
+import { isControllableTabUrl } from "./lib/control-target-classification.js";
 import { createSidePanelControlPreflightController } from "./lib/side-panel-control-preflight-controller.js";
 import {
   getSidePanelElements,
@@ -287,7 +288,7 @@ const browserJobStore = createBrowserJobStore({
   storageKeys: STORAGE_KEYS
 });
 
-const isReadableBrowserTab = (tab) => typeof tab?.url === "string" && /^https?:\/\//i.test(tab.url);
+const isReadableBrowserTab = (tab) => isControllableTabUrl(tab?.url);
 const sidePanelUi = createSidePanelUiController({
   activityDetail,
   activityLabel,
@@ -932,6 +933,7 @@ const controlCommandController = createSidePanelControlCommandController({
   ensureControlTabForUrl,
   getBrowserJobScheduler: () => browserJobScheduler,
   getCurrentControlRun: () => currentControlRun,
+  getRawActiveTab: async () => (await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []))[0] ?? null,
   permissionForUrl,
   persistContextDockExpanded,
   renderControlMonitor: () => renderControlMonitor(),
