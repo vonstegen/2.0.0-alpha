@@ -1,5 +1,6 @@
 import { createBrowserPageActions } from "./lib/browser-page-actions.js";
 import { normalizeBrowserUrl } from "./lib/browser-command-parser.js";
+import { isControllableTabUrl } from "./lib/control-target-classification.js";
 import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, initCapabilityTokens, isUnauthorizedBridgeError, resolveBridgeConfig } from "./lib/bridge-client.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 import { createChatSessionStore } from "./lib/chat-session-store.js";
@@ -290,7 +291,7 @@ const taskConsentStore = createTaskConsentStore({
   taskConsentStorageKey: STORAGE_KEYS.taskConsents
 });
 
-const isReadableBrowserTab = (tab) => typeof tab?.url === "string" && /^https?:\/\//i.test(tab.url);
+const isReadableBrowserTab = (tab) => isControllableTabUrl(tab?.url);
 const setMainActivity = (_phase, label, detail = "") => {
   updateConnectionLine(detail ? `${label}: ${detail}` : label);
 };
