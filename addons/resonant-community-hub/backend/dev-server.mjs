@@ -73,6 +73,17 @@ async function loadHandler(file) {
 
 const server = http.createServer(async (req, res) => {
   const method = (req.method || "GET").toUpperCase();
+  // Dev-only permissive CORS so a local Vite preview page (a different localhost
+  // port) can call this harness. Production never has the browser hit the API
+  // directly (Art. II) — this relaxation lives ONLY in the dev server.
+  res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "authorization, content-type");
+  if (method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
   const { pathname, searchParams } = new URL(req.url, "http://127.0.0.1");
   // Accept both the public /v1/* shape and the raw /api/v1/* shape.
   const normalized = pathname.replace(/^\/api/, "");
