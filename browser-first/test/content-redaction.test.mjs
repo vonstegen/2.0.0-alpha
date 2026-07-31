@@ -169,6 +169,13 @@ test("content field safety policy classifies high-risk editable fields before au
     <input id="email" type="email" name="email">
     <textarea id="draft"></textarea>
     <input id="generic" type="text" name="topic">
+    <input id="passwd" type="text" name="passwd">
+    <input id="pwd" type="text" name="pwd">
+    <input id="pin" type="text" name="pin">
+    <input id="passkey" type="text" name="passkey">
+    <input id="seccode" type="text" name="security_code">
+    <label for="pinlabel">Pin</label>
+    <input id="pinlabel" type="text" name="pin_label">
   `, { runScripts: "outside-only", url: "https://example.test/" });
   dom.window.eval(await readFile(fieldSafetyScriptPath, "utf8"));
   const classify = (selector) => dom.window.ResonantOSContentFieldSafety.classifyEditableField(dom.window.document.querySelector(selector));
@@ -185,6 +192,12 @@ test("content field safety policy classifies high-risk editable fields before au
   assert.equal(classify("#draft").kind, "document-edit");
   assert.equal(classify("#generic").kind, "generic-text");
   assert.equal(classify("#generic").safeToSubmit, false);
+  // #224: credential aliases typed as type="text" must never classify as
+  // generic-text, or Agent Control would type into them.
+  for (const selector of ["#passwd", "#pwd", "#pin", "#passkey", "#seccode", "#pinlabel"]) {
+    assert.equal(classify(selector).kind, "credential", `${selector} must be a credential boundary`);
+    assert.equal(classify(selector).safeToType, false, `${selector} must not be typable by Agent Control`);
+  }
 });
 
 test("content page snapshots redact sensitive and ambiguous editable values", async () => {
@@ -561,4 +574,168 @@ test("content page snapshots expose accessible field labels for planner targetin
 
   assert.equal(snapshot.fields.find((field) => field.id === "booking-date")?.label, "preferred booking date");
   assert.equal(snapshot.fields.find((field) => field.id === "project-name")?.label, "Project name");
+});
+
+test("#224: typing by label into credential/payment/login/contact fields is denied before any value change", async () => {
+  const { dom, listener } = await loadContentScript(`
+    <!doctype html>
+    <label for="credential">Password</label>
+    <input id="credential" type="password" name="password" value="existing-secret">
+    <label for="payment">Card number</label>
+    <input id="payment" type="text" name="card-number" value="4111222233334444">
+    <label for="login">Username</label>
+    <input id="login" type="text" name="username" value="existing-user">
+    <label for="contact">Email</label>
+    <input id="contact" type="email" name="email" value="human@example.com">
+    <label for="generic">Topic</label>
+    <input id="generic" type="text" name="topic" value="">
+  `);
+
+  const cases = [
+    { field: "Password", kind: "credential", id: "credential", expected: "existing-secret" },
+    { field: "Card number", kind: "payment", id: "payment", expected: "4111222233334444" },
+    { field: "Username", kind: "login", id: "login", expected: "existing-user" },
+    { field: "Email", kind: "personal-contact", id: "contact", expected: "human@example.com" }
+  ];
+  for (const { field, kind, id, expected } of cases) {
+    let response = null;
+    listener({
+      channel: "resonantos.browser_first.content",
+      type: "type_text",
+      field,
+      text: "new-value",
+      userApproved: true,
+    }, {}, (payload) => {
+      response = payload;
+    });
+
+    assert.equal(response?.ok, false, `${field} must be blocked before typing`);
+    assert.equal(response.approvalRequired, true, `${field} must require human action`);
+    assert.equal(response.deniedToAutomation, true, `${field} must be denied to automation`);
+    assert.equal(response.fieldSafety.kind, kind, `${field} must report the ${kind} boundary`);
+    assert.match(response.error, /human-only|human-controlled/, `${field} must return a hard-boundary diagnostic`);
+    assert.equal(dom.window.document.getElementById(id).value, expected, `${field} value must be unchanged after a blocked typing attempt`);
+    assert.equal(dom.window.document.getElementById("generic").value, "", "a safe field must not receive the blocked text");
+  }
+
+  let generic = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "type_text",
+    field: "Topic",
+    text: "hello world",
+  }, {}, (payload) => {
+    generic = payload;
+  });
+  assert.equal(generic?.ok, true, "generic text fields remain typable under policy");
+  assert.equal(dom.window.document.getElementById("generic").value, "hello world");
+});
+
+test("#224: typing by exact ref into a sensitive field is denied and never reclassifies it safe", async () => {
+  const { dom, listener } = await loadContentScript(`
+    <!doctype html>
+    <label for="passwd">Passwd</label>
+    <input id="passwd" type="text" name="passwd" value="old-secret">
+    <label for="otp">Code</label>
+    <input id="otp" type="text" name="otp" value="">
+    <label for="search">Search</label>
+    <input id="search" type="search" name="q" value="">
+  `);
+  let snapshot = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "read_page",
+  }, {}, (payload) => {
+    snapshot = payload.snapshot;
+  });
+  const passwdRef = snapshot.fields.find((field) => field.id === "passwd").ref;
+  const otpRef = snapshot.fields.find((field) => field.id === "otp").ref;
+  assert.equal(snapshot.fields.find((field) => field.id === "passwd").fieldKind, "credential");
+  assert.equal(snapshot.fields.find((field) => field.id === "otp").fieldKind, "credential");
+
+  for (const [ref, id, kind] of [[passwdRef, "passwd", "credential"], [otpRef, "otp", "credential"]]) {
+    const originalValue = dom.window.document.getElementById(id).value;
+    let response = null;
+    listener({
+      channel: "resonantos.browser_first.content",
+      type: "type_text",
+      ref,
+      text: "hacked",
+      userApproved: true,
+    }, {}, (payload) => {
+      response = payload;
+    });
+
+    assert.equal(response?.ok, false, `exact ref ${ref} (${id}) must still be blocked`);
+    assert.equal(response.deniedToAutomation, true);
+    assert.equal(response.fieldSafety.kind, kind, "an exact ref must never reclassify a sensitive target as safe");
+    assert.equal(dom.window.document.getElementById(id).value, originalValue, `${id} value must be unchanged`);
+  }
+
+  const searchRef = snapshot.fields.find((field) => field.id === "search").ref;
+  let search = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "type_text",
+    ref: searchRef,
+    text: "resonantos",
+  }, {}, (payload) => {
+    search = payload;
+  });
+  assert.equal(search?.ok, true, "a safe exact ref still types normally");
+});
+
+test("#224: ambiguous label matches expose fieldKind so sensitive candidates are distinguishable", async () => {
+  const { listener } = await loadContentScript(`
+    <!doctype html>
+    <label for="code-search">Code</label>
+    <input id="code-search" type="search" name="code-search" value="">
+    <label for="code-otp">Code</label>
+    <input id="code-otp" type="text" name="otp" value="">
+    <label for="code-card">Code</label>
+    <input id="code-card" type="text" name="card_code" value="">
+  `);
+
+  let response = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "type_text",
+    field: "Code",
+    text: "123",
+  }, {}, (payload) => {
+    response = payload;
+  });
+
+  assert.equal(response?.ok, false);
+  assert.equal(response.ambiguousTarget, true);
+  assert.match(response.error, /matched 3 visible candidates/i);
+  assert.deepEqual(Array.from(response.candidates, (candidate) => candidate.fieldKind), ["search-query", "credential", "payment"]);
+  assert.ok(response.candidates.every((candidate) => /^r\d+$/.test(candidate.ref)), "ambiguous candidates expose exact refs");
+});
+
+test("#224: submit on a generic non-search field stays human-gated while the typed value lands", async () => {
+  const { dom, listener } = await loadContentScript(`
+    <!doctype html>
+    <form id="note-form">
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes"></textarea>
+      <button type="submit">Save</button>
+    </form>
+  `);
+
+  let response = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "type_text",
+    field: "Notes",
+    text: "draft note",
+    submit: true,
+  }, {}, (payload) => {
+    response = payload;
+  });
+
+  assert.equal(response?.ok, false);
+  assert.equal(response.deniedToAutomation, true);
+  assert.match(response.error, /human approval/i, "non-search submit stays human-gated");
+  assert.equal(dom.window.document.getElementById("notes").value, "draft note", "the typed draft lands even when auto-submit is denied");
 });
