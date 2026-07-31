@@ -56,11 +56,12 @@ Agent Control also has a dedicated real-browser certification lane in
 nightly, and on manual dispatch. Every run uploads a redacted JSON/Markdown
 scenario matrix plus panel/page screenshots for 14 days. Missing Chrome,
 loopback denial, launch failure, or missing evidence is non-passing in CI; local
-sandbox denials remain explicit non-certified skips. Until
-[#240](https://github.com/ResonantOS/2.0.0-alpha/issues/240) supplies the
-non-bypassable public-submit handoff, that scenario is reported as a gate rather
-than a false pass. Manual dispatch can set `public_submit_contract=required` to
-make the pre-#240 approval path fail certification.
+sandbox denials remain explicit non-certified skips. The non-bypassable
+public-submit handoff from
+[#240](https://github.com/ResonantOS/2.0.0-alpha/issues/240) is present in the
+runner, so the post-approval-public-submit scenario reports a real pass or fail
+instead of a gate. Manual dispatch can set `public_submit_contract=required` to
+fail certification if the handoff regresses.
 
 Runtime discovery is fixed-root and canonical: ambient `PATH`, arbitrary
 Hermes profile roots, and arbitrary OpenCode command paths are not executable

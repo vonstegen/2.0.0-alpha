@@ -79,7 +79,7 @@ function humanInterventionState({ boundary = "safe", result = {}, step = {} } = 
   if (boundary === "public-submit" || /\b(submit|send|post|publish|share|comment|save)\b/.test(text)) {
     return {
       state: "public-submit",
-      action: "Review the visible page state and destination, then approve once only if you intend to submit/post/send publicly, or deny/delegate the blocker."
+      action: "This action is human-only: click the submit/commit control yourself on the page, then resume or continue the job. Augmentor never clicks public-submit controls."
     };
   }
   if (boundary === "hard") {
@@ -685,13 +685,22 @@ export function createAgentControlRunner(deps) {
           }
         });
         if (!executedResult?.ok) {
-          const canRequestHumanApproval = executedResult?.approvalRequired && boundary === "public-submit";
-          const status = canRequestHumanApproval ? "approval" : "blocked";
+          // #240: public-submit is a terminal human handoff, never an executable
+          // approval. The content script already refused the action; the runner
+          // must not expose "Approve once" or an approval job for it. The human
+          // clicks the control on the page, then resumes/continues the job with a
+          // fresh page observation. Do not route this into setPendingApproval.
+          const isHumanHandoff = Boolean(executedResult?.humanHandoff) ||
+            (executedResult?.approvalRequired && boundary === "public-submit");
+          // Terminal state: no executed step ever leaves the loop in "approval".
+          // Approval-required steps are human handoffs (blocked) and safe steps
+          // flow through pre-granted task consent instead.
+          const status = "blocked";
           const reason = executedResult?.approvalRequired
             ? "Stopped because this step requires human approval."
             : `Stopped because this step failed: ${executedResult?.error ?? "unknown error"}`;
           updateControlStep(stepIndex, executedResult?.approvalRequired ? "blocked" : "failed", controlResultSummary(executedResult), {
-            phase: executedResult?.approvalRequired ? "waiting-for-human" : "blocked",
+            phase: isHumanHandoff ? "handoff" : executedResult?.approvalRequired ? "waiting-for-human" : "blocked",
             observation: {
               title: getLastSnapshot()?.title ?? snapshot?.title ?? null,
               url: getLastSnapshot()?.url ?? snapshot?.url ?? null
@@ -718,27 +727,29 @@ export function createAgentControlRunner(deps) {
             })
           });
           finishControlRun(status);
-          setStatus(canRequestHumanApproval ? "Needs approval" : "Control blocked");
-          setActivity("failed", "Control mode blocked", controlStepLabel(step));
-          await addMessage("system", `Agent Control Mode blocked at action ${stepIndex + 1}: ${controlStepLabel(step)}\n${reason}`);
-          if (canRequestHumanApproval) {
-            setPendingApproval({
-              step: { ...step },
-              stepIndex,
-              reason: executedResult?.error ?? "This browser action requires human approval.",
-              results,
-              history
-            });
-            renderControlMonitor();
-          }
-          const archiveResult = await saveControlReportToArchive(results, canRequestHumanApproval ? "approval-required" : "blocked");
+          setStatus(isHumanHandoff ? "Human action required" : "Control blocked");
+          setActivity("failed", isHumanHandoff ? "Human-only action: complete it on the page" : "Control mode blocked", controlStepLabel(step));
+          const message = isHumanHandoff
+            ? [
+              `Agent Control Mode stopped at action ${stepIndex + 1}: ${controlStepLabel(step)}`,
+              executedResult?.error ?? "This action is human-only.",
+              "This is human-only: click the submit/commit control yourself on the page, then resume or continue the job."
+            ].join("\n")
+            : `Agent Control Mode blocked at action ${stepIndex + 1}: ${controlStepLabel(step)}\n${reason}`;
+          await addMessage("system", message);
+          // #240: no failed step ever creates a pending approval or "Approve
+          // once" surface. Hard and public-submit boundaries are terminal human
+          // handoffs; safe steps needing approval flow through pre-granted task
+          // consent instead. Continue resumes a blocked job from a fresh page
+          // observation after the human acts.
+          const archiveResult = await saveControlReportToArchive(results, isHumanHandoff ? "blocked-human-handoff" : "blocked");
           if (archiveResult?.path) {
             const artifacts = [...(getCurrentControlRun()?.artifacts ?? []), { type: "archive-intake", path: archiveResult.path }];
             updateControlRunArtifacts(artifacts);
             renderControlMonitor();
             await updateBrowserJob(getCurrentControlRun()?.id, { artifacts });
           }
-          return { ok: false, results, approvalRequired: Boolean(executedResult?.approvalRequired) };
+          return { ok: false, results, approvalRequired: Boolean(executedResult?.approvalRequired), handoff: isHumanHandoff };
         }
         updateControlStep(stepIndex, "completed", consent ? `trusted task consent · ${controlResultSummary(executedResult)}` : controlResultSummary(executedResult), {
           phase: "verified",
@@ -838,6 +849,52 @@ export function createAgentControlRunner(deps) {
 
   async function approvePendingControlStep(approval) {
     if (!approval || !getCurrentControlRun()) return;
+    // #240: hard and public-submit steps can never be approved into execution.
+    // An in-panel "Approve once" must never turn a wallet/payment/login/
+    // credential/public-commit action into an agent click. If a stale approval
+    // object still carries such a step, refuse it as a terminal handoff.
+    const approvalBoundary = approvalBoundaryForStep(approval.step, approval.reason);
+    if (approvalBoundary === "hard" || approvalBoundary === "public-submit") {
+      setPendingApproval(null);
+      renderControlMonitor();
+      updateControlStep(approval.stepIndex, "blocked", "human-only handoff", {
+        phase: "handoff",
+        observation: {
+          title: getLastSnapshot()?.title ?? null,
+          url: getLastSnapshot()?.url ?? null
+        },
+        decision: "Approval was requested, but this action is human-only and cannot be automated.",
+        action: controlStepLabel(approval.step),
+        approvalDecision: "human-only-handoff",
+        result: "human-only handoff",
+        safetyClass: approvalBoundary,
+        confidence: "high",
+        uncertainty: approval.reason ?? "This action crosses a human-only boundary.",
+        nextHumanAction: "Complete the action yourself on the page, then resume or continue the job."
+      });
+      finishControlRun("blocked");
+      setStatus("Human action required");
+      setActivity("failed", "Human-only action: complete it on the page", controlStepLabel(approval.step));
+      await addMessage(
+        "system",
+        [
+          `Cannot automate this action: ${controlStepLabel(approval.step)}`,
+          "Public submit/commit, wallet, payment, login, credential, signing, and transfer actions are human-only.",
+          "Click it yourself on the page, then resume or continue the job."
+        ].join("\n")
+      );
+      await saveControlReportToArchive([
+        ...(Array.isArray(approval.results) ? approval.results : []),
+        {
+          step: approval.step,
+          result: {
+            error: "human-only handoff",
+            ok: false
+          }
+        }
+      ], "blocked-human-handoff");
+      return;
+    }
     setPendingApproval(null);
     renderControlMonitor();
     setStatus("Approved once");
