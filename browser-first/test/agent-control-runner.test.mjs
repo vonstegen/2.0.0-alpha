@@ -35,6 +35,7 @@ function createHarness(overrides = {}) {
   const stepResults = overrides.stepResults ?? [{ ok: true, clickedText: "Next" }];
   const savedReports = [];
   let stepResultIndex = 0;
+  let jobStatus = overrides.jobStatus ?? null;
 
   const deps = {
     addMessage: async (role, content) => events.push(["message", role, content]),
@@ -69,6 +70,7 @@ function createHarness(overrides = {}) {
       events.push(["finish", status]);
     },
     getActiveJobId: () => activeJobId,
+    getActiveJobStatus: () => jobStatus,
     getCurrentControlRun: () => controlRun,
     getLastSnapshot: () => lastSnapshot,
     observeControlPage: async () => {
@@ -126,6 +128,9 @@ function createHarness(overrides = {}) {
     nextActionRequests,
     getPendingApproval: () => pendingApproval,
     runner: createAgentControlRunner(deps),
+    setJobStatus: (status) => {
+      jobStatus = status;
+    },
     setLastSnapshot: (snapshot) => {
       lastSnapshot = snapshot;
     }
@@ -668,4 +673,79 @@ test("#223: credential typing attempt blocks the run with the credential boundar
   assert.match(step.details.result, /credential|human/i, "step evidence must name the credential boundary");
   assert.match(step.details.humanInterventionState, /login|credential|human/i, "human intervention state must reflect the boundary");
   assert.equal(win.document.getElementById("cert-password").value, "", "the password field must stay empty");
+});
+
+test("#226: cancellation during preflight halts the run before any step executes", async () => {
+  const harness = createHarness({ jobStatus: "cancelled" });
+
+  const result = await harness.runner.continueControlLoop({ goal: "click next" });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.stopped, "cancelled");
+  assert.equal(harness.events.filter((event) => event[0] === "execute").length, 0);
+  assert.equal(harness.nextActionRequests.length, 0);
+  assert.equal(harness.getControlRun().status, "cancelled");
+  assert.equal(harness.getPendingApproval(), null);
+  assert.ok(harness.events.some((event) => event[0] === "message" && /stopped by human/.test(event[2])));
+  assert.ok(harness.events.some((event) => event[0] === "job" && event[2].status === "cancelled"));
+});
+
+test("#226: cancellation mid-step halts the run before the next action plans or executes", async () => {
+  const harness = createHarness({
+    executeControlStep: async (step) => {
+      harness.setJobStatus("cancelled");
+      return { ok: true, clickedText: "Next" };
+    }
+  });
+
+  const result = await harness.runner.continueControlLoop({ goal: "click next" });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.stopped, "cancelled");
+  assert.equal(harness.events.filter((event) => event[0] === "execute").length, 1);
+  assert.equal(harness.nextActionRequests.length, 1);
+  assert.equal(harness.getControlRun().status, "cancelled");
+  assert.equal(harness.getControlRun().steps[0].state, "cancelled");
+  assert.equal(harness.getControlRun().steps[0].note, "Stopped by human.");
+  assert.match(harness.getControlRun().steps[0].details.nextHumanAction, /restart or resume/);
+  assert.equal(harness.getPendingApproval(), null);
+});
+
+test("#226: pause mid-step halts the run as paused without executing further steps", async () => {
+  const harness = createHarness({
+    executeControlStep: async (step) => {
+      harness.setJobStatus("paused");
+      return { ok: true, clickedText: "Next" };
+    }
+  });
+
+  const result = await harness.runner.continueControlLoop({ goal: "click next" });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.stopped, "paused");
+  assert.equal(harness.events.filter((event) => event[0] === "execute").length, 1);
+  assert.equal(harness.nextActionRequests.length, 1);
+  assert.equal(harness.getControlRun().status, "paused");
+  assert.equal(harness.getPendingApproval(), null);
+});
+
+test("#226: approving a pending step after cancellation executes nothing and clears the approval", async () => {
+  const harness = createHarness({ jobStatus: "cancelled" });
+  harness.getControlRun().steps.push({ type: "click", text: "Place order", state: "blocked" });
+  const approval = {
+    step: { type: "click", text: "Place order", submit: true },
+    stepIndex: 0,
+    reason: "public submit requires human approval",
+    results: [],
+    history: []
+  };
+
+  const result = await harness.runner.approvePendingControlStep(approval);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.stopped, "cancelled");
+  assert.equal(harness.events.filter((event) => event[0] === "execute").length, 0);
+  assert.equal(harness.getControlRun().status, "cancelled");
+  assert.equal(harness.getPendingApproval(), null);
+  assert.ok(harness.events.some((event) => event[0] === "message" && /stopped by human/.test(event[2])));
 });
