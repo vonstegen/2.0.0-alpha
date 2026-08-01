@@ -416,15 +416,110 @@ async function waitForDebugPort(getHostLogs = () => "") {
   throw new Error(`Browser debug port ${debugPort} did not become available. Host logs:\n${getHostLogs()}`);
 }
 
+const sidePanelPageUrl = `chrome-extension://${resonantExtensionId}/src/side-panel.html`;
+
 async function openExtensionPanel() {
-  await fetch(
-    `http://127.0.0.1:${debugPort}/json/new?${encodeURIComponent(`chrome-extension://${resonantExtensionId}/src/side-panel.html`)}`,
-    { method: "PUT" },
-  ).then((response) => response.json());
-  return waitForBrowserTarget(
-    (target) => target.url === `chrome-extension://${resonantExtensionId}/src/side-panel.html`,
-    "ResonantOS side panel extension target"
-  );
+  // #267: Chrome cold-starts the extension asynchronously, and the extension
+  // itself may open a native side-panel view whose CDP target shares the
+  // side-panel URL with the tab opened here. A tab created before the
+  // extension page can be served lands on chrome-error://chromewebdata/ and a
+  // not-yet-rendered native view reports an empty body, so target discovery
+  // must attach to whichever side-panel target actually binds the composer.
+  // Re-open the tab until a usable panel page is found, then return a
+  // connected CdpClient that is ready for the composer.
+  let lastError = null;
+  let created = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    created = await fetch(
+      `http://127.0.0.1:${debugPort}/json/new?${encodeURIComponent(sidePanelPageUrl)}`,
+      { method: "PUT" },
+    ).then((response) => response.json());
+    const panel = await connectToReadyPanelTarget();
+    if (panel) return panel;
+    lastError = new Error("no side-panel target bound the composer within the discovery window");
+    await fetch(`http://127.0.0.1:${debugPort}/json/close/${created?.id}`, { method: "PUT" }).catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  throw new Error(`Could not open the ResonantOS side panel after 3 attempts.\n${String(lastError)}`);
+}
+
+async function connectToReadyPanelTarget() {
+  const rejectedTargets = new Set();
+  for (let index = 0; index < 80; index += 1) {
+    const targets = await browserTargets().catch(() => []);
+    const candidates = targets.filter(
+      (target) => target.url === sidePanelPageUrl && target.webSocketDebuggerUrl && !rejectedTargets.has(target.id),
+    );
+    for (const candidate of candidates) {
+      const probe = new CdpClient(candidate.webSocketDebuggerUrl);
+      try {
+        await probe.connect();
+        await probe.send("Runtime.enable");
+        await probe.send("Page.enable");
+        const ready = await waitForSidePanelReady(probe, "side panel readiness", 5000);
+        if (ready.ready) return probe;
+        probe.close();
+      } catch {
+        probe.close();
+      }
+      rejectedTargets.add(candidate.id);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return null;
+}
+
+async function waitForSidePanelReady(panel, label, timeoutMs = 8000) {
+  let lastError = null;
+  let consecutiveErrors = 0;
+  let blankPolls = 0;
+  const deadline = Date.now() + timeoutMs;
+  for (let index = 0; index < 80; index += 1) {
+    try {
+      const state = (await evaluate(panel, `(() => {
+        const errorPage = location.href.startsWith("chrome-error://");
+        return {
+          ready: Boolean(window.__resonantosSidePanelReady && document.querySelector("#command-input")),
+          errorPage,
+          errorText: errorPage ? (document.body?.innerText?.slice(0, 160) ?? "") : null,
+          readyState: document.readyState,
+          hasInput: Boolean(document.querySelector("#command-input")),
+          marker: window.__resonantosSidePanelReady ?? null,
+          scripts: [...document.scripts].map((script) => script.src)
+        };
+      })()`)).result.value;
+      if (state.ready) return { ready: true };
+      if (state.errorPage) {
+        return { ready: false, errorPage: true, text: state.errorText ?? "" };
+      }
+      consecutiveErrors = 0;
+      if (state.readyState === "complete" && !state.hasInput) {
+        blankPolls += 1;
+        if (blankPolls >= 12) {
+          return { ready: false, reason: "complete page never bound the composer", ...state };
+        }
+      } else {
+        blankPolls = 0;
+      }
+      if (Date.now() >= deadline) {
+        return { ready: false, reason: `readiness window of ${timeoutMs}ms elapsed`, ...state };
+      }
+    } catch (error) {
+      lastError = error;
+      consecutiveErrors += 1;
+      if (consecutiveErrors >= 2) break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  const state = (await evaluate(panel, `(() => ({
+    errorPage: location.href.startsWith("chrome-error://"),
+    readyState: document.readyState,
+    hasInput: Boolean(document.querySelector("#command-input")),
+    marker: window.__resonantosSidePanelReady ?? null,
+    error: window.__resonantosSidePanelReadyError || null,
+    scripts: [...document.scripts].map((script) => script.src)
+  }))()`).catch(() => ({ error: lastError instanceof Error ? lastError.message : String(lastError) }))).result?.value ?? {};
+  throw new Error(`${label} did not finish binding listeners: ${JSON.stringify(state)}`);
 }
 
 async function browserTargets() {
@@ -600,33 +695,41 @@ async function verifyPublicSubmitBoundary(panel, page) {
     messageCount: document.querySelectorAll("#transcript .message").length
   })`)).result.value;
   await submitControlCommand(panel, `/control click "Submit public form"`);
-  let outcome;
-  try {
-    outcome = await waitForPageCondition(panel, `(async () => {
-      const jobs = (await chrome.storage.local.get("augmentorBrowserJobs")).augmentorBrowserJobs ?? [];
-      const publicJobs = jobs.filter((job) => /Submit public form/i.test(job.pendingApproval?.step?.text ?? ""));
-      const buttons = [...document.querySelectorAll("button")]
-        .filter((button) => /click "Submit public form"/i.test(button.title || ""))
-        .map((button) => button.textContent.trim());
-      const newMessageText = [...document.querySelectorAll("#transcript .message")]
-        .slice(${Number(baseline.messageCount)})
-        .map((message) => message.innerText)
-        .join("\\n");
-      const humanSignal = /human-only|click it yourself|must be performed by the human|then resume/i.test(newMessageText);
-      if (!publicJobs.length && !humanSignal) return false;
-      return { publicJobs, buttons, newMessageText, humanSignal };
-    })()`, "public-submit boundary outcome");
-  } catch (error) {
-    const diagnostics = (await evaluate(panel, `(async () => ({
-      overrideCalls: globalThis.__resonantosLivePublicSubmitOverrideCalls ?? 0,
-      jobs: (await chrome.storage.local.get("augmentorBrowserJobs")).augmentorBrowserJobs ?? []
-    }))()`)).result.value;
-    throw new Error(`${error instanceof Error ? error.message : String(error)}\nDiagnostics: ${JSON.stringify(diagnostics)}`);
-  }
+  const outcome = await waitForPageCondition(panel, `(async () => {
+    const jobs = (await chrome.storage.local.get("augmentorBrowserJobs")).augmentorBrowserJobs ?? [];
+    const publicJobs = jobs.filter((job) => /Submit public form/i.test(job.pendingApproval?.step?.text ?? ""));
+    const buttons = [...document.querySelectorAll("button")]
+      .filter((button) => /click "Submit public form"/i.test(button.title || ""))
+      .map((button) => button.textContent.trim());
+    const newMessageText = [...document.querySelectorAll("#transcript .message")]
+      .slice(${Number(baseline.messageCount)})
+      .map((message) => message.innerText)
+      .join("\\n");
+    const humanSignal = /human-only|click it yourself|must be performed by the human|then resume/i.test(newMessageText);
+    if (!publicJobs.length && !humanSignal) return false;
+    return { publicJobs, buttons, newMessageText, humanSignal };
+  })()`, "public-submit boundary outcome");
   const blockedState = (await evaluate(page, `({ submitted: window.__submitted, status: document.querySelector("#status").textContent })`)).result.value;
   assert(!blockedState.submitted, `Public-submit boundary executed the action: ${JSON.stringify(blockedState)}`);
-  const approvalJobs = outcome.publicJobs.filter((job) => job.status === "approval" && job.pendingApproval);
-  const hasExecutableApproval = outcome.buttons.includes("Approve once");
+  // The human-only refusal message can render before the job finishes settling,
+  // so `outcome` may be sampled while the job is still queued/running. That
+  // snapshot both misses a late "approval" write (a false pass on the
+  // human-only property) and leaves the job holding the tab page lock, which
+  // starves every later scenario. Re-read the job store once the job settles,
+  // then resolve any late approval job to release the lock.
+  const settled = await waitForPageCondition(panel, `(async () => {
+    const jobs = (await chrome.storage.local.get("augmentorBrowserJobs")).augmentorBrowserJobs ?? [];
+    const publicJobs = jobs.filter((job) => /Submit public form/i.test(job.goal ?? "")
+      || /Submit public form/i.test(job.pendingApproval?.step?.text ?? ""));
+    if (!publicJobs.length) return false;
+    if (!publicJobs.every((job) => !["queued", "running"].includes(job.status))) return false;
+    const buttons = [...document.querySelectorAll("button")]
+      .filter((button) => /click "Submit public form"/i.test(button.title || ""))
+      .map((button) => button.textContent.trim());
+    return { publicJobs, buttons };
+  })()`, "public-submit job settle");
+  const approvalJobs = settled.publicJobs.filter((job) => job.status === "approval" && job.pendingApproval);
+  const hasExecutableApproval = settled.buttons.includes("Approve once");
   const humanHandoff = outcome.humanSignal && approvalJobs.length === 0 && !hasExecutableApproval;
   const decision = decidePublicSubmitScenario({ mode: publicSubmitContract, humanHandoff });
   certificationReport.record("post-approval-public-submit", decision.status, decision.reason);
@@ -636,8 +739,8 @@ async function verifyPublicSubmitBoundary(panel, page) {
     assert(approvalJobs.length === 0, `Human-only public-submit created an executable approval job: ${JSON.stringify(outcome)}`);
     await waitForComposerReady(panel, "human-only public-submit handoff");
   } else {
-    assert(hasExecutableApproval, `Legacy public-submit job approval is not visible: ${JSON.stringify(outcome)}`);
-    assert(approvalJobs.length > 0, `Legacy public-submit pending approval is missing: ${JSON.stringify(outcome)}`);
+    assert(hasExecutableApproval, `Legacy public-submit job approval is not visible: ${JSON.stringify(settled)}`);
+    assert(approvalJobs.length > 0, `Legacy public-submit pending approval is missing: ${JSON.stringify(settled)}`);
     await evaluate(panel, `(() => {
       const deny = [...document.querySelectorAll("button")].find((button) =>
         button.textContent === "Deny" && /click "Submit public form"/i.test(button.title || "")
@@ -716,48 +819,16 @@ try {
   await (browserContext.pages()[0] ?? await browserContext.newPage())
     .goto(`http://127.0.0.1:${fixturePort}/`).catch(() => {});
   await waitForDebugPort(() => hostLogs);
-  const panelTarget = await openExtensionPanel();
+  panel = await openExtensionPanel();
   const fixtureTarget = await waitForBrowserTarget(
     (target) => target.url === `http://127.0.0.1:${fixturePort}/`,
     "Fixture page target"
   );
 
-  panel = new CdpClient(panelTarget.webSocketDebuggerUrl);
   page = new CdpClient(fixtureTarget.webSocketDebuggerUrl);
-  await panel.connect();
   await page.connect();
-  await panel.send("Runtime.enable");
   await page.send("Runtime.enable");
-  await panel.send("Page.enable");
   await page.send("Page.enable");
-  await evaluate(panel, `new Promise((resolve) => {
-    const done = () => resolve(Boolean(document.querySelector("#command-input")));
-    if (document.readyState === "complete") done();
-    else addEventListener("load", done, { once: true });
-  })`);
-  const sidePanelReady = (await evaluate(panel, `new Promise((resolve) => {
-    const startedAt = Date.now();
-    const check = () => {
-      if (window.__resonantosSidePanelReady && document.querySelector("#command-input")) {
-        resolve({ ready: true });
-        return;
-      }
-      if (Date.now() - startedAt > 5000) {
-        resolve({
-          ready: false,
-          documentReadyState: document.readyState,
-          hasInput: Boolean(document.querySelector("#command-input")),
-          marker: window.__resonantosSidePanelReady,
-          error: window.__resonantosSidePanelReadyError || null,
-          scripts: [...document.scripts].map((script) => script.src)
-        });
-        return;
-      }
-      setTimeout(check, 25);
-    };
-    check();
-  })`)).result.value;
-  assert(sidePanelReady.ready, `Side panel did not finish binding listeners: ${JSON.stringify(sidePanelReady)}`);
 
   await evaluate(panel, `chrome.storage.local.clear(); document.querySelector("#transcript").replaceChildren();`);
   await evaluate(panel, `chrome.storage.local.set({
@@ -921,16 +992,34 @@ try {
     toggle: document.querySelector("#context-toggle").textContent
   })`)).result.value;
   assert(dockCollapsedState.siteHidden && dockCollapsedState.jobsHidden, `Site/jobs panels should be hidden by default: ${JSON.stringify(dockCollapsedState)}`);
-  await evaluate(panel, `document.querySelector("#context-toggle").click()`);
-  const sitePanelState = await waitForPageCondition(panel, `(() => {
-    const state = {
-      visible: !document.querySelector("#site-permission-panel").hidden,
-      host: document.querySelector("#site-permission-host").textContent,
-      mode: document.querySelector("#site-permission-mode").value
-    };
-    return state.visible && state.host === "127.0.0.1" ? state : false;
-  })()`, "site permission panel binding");
-  assert(sitePanelState.visible && sitePanelState.host === "127.0.0.1", `Site permission panel not bound: ${JSON.stringify(sitePanelState)}`);
+  // The site permission panel binds to the active tab, and the DevTools-created
+  // side panel tab can take activation from the fixture tab. Force the fixture
+  // tab active so the binding (and later /site commands) target 127.0.0.1.
+  await evaluate(panel, `(async () => {
+    const tabs = await chrome.tabs.query({});
+    const fixture = tabs.find((tab) => tab.url === ${JSON.stringify(`http://127.0.0.1:${fixturePort}/`)});
+    if (!fixture?.id) throw new Error("Fixture tab not found for site permission binding.");
+    await chrome.tabs.update(fixture.id, { active: true });
+    return true;
+  })()`);
+  // Boot-time chat hydration (side-panel.js hydrateChatSettings) restores
+  // contextDockExpanded from storage after the composer-ready marker, which can
+  // clobber the first toggle's flip. Hydration runs once, so retry the toggle
+  // until the panel actually binds to the fixture tab.
+  let sitePanelState = null;
+  for (let attempt = 0; attempt < 6 && !sitePanelState; attempt += 1) {
+    await evaluate(panel, `document.querySelector("#context-toggle").click()`);
+    sitePanelState = await waitForPageCondition(panel, `(() => {
+      const state = {
+        expanded: document.querySelector("#context-toggle").getAttribute("aria-expanded"),
+        visible: !document.querySelector("#site-permission-panel").hidden,
+        host: document.querySelector("#site-permission-host").textContent,
+        mode: document.querySelector("#site-permission-mode").value
+      };
+      return state.visible && state.host === "127.0.0.1" ? state : false;
+    })()`, `site permission panel binding (attempt ${attempt + 1})`).catch(() => null);
+  }
+  assert(sitePanelState?.visible && sitePanelState.host === "127.0.0.1", `Site permission panel not bound: ${JSON.stringify(sitePanelState)}`);
   const sitePanelMode = (await evaluate(panel, `({
     visible: !document.querySelector("#site-permission-panel").hidden,
     host: document.querySelector("#site-permission-host").textContent,
@@ -1006,12 +1095,7 @@ try {
     doneSummary: history.length ? "Iframe booking context was observed." : null
   }); return true; })()`);
   await submitControlCommand(panel, `book a call now`);
-  try {
-    await waitForPageCondition(page, `document.querySelector("#resonantos-control-overlay")?.dataset.session === "active"`, "persistent control overlay session start");
-  } catch (error) {
-    const panelText = (await evaluate(panel, "document.body.innerText")).result.value;
-    throw new Error(`${error instanceof Error ? error.message : String(error)}\nPanel text:\n${panelText}`);
-  }
+  await waitForPageCondition(page, `document.querySelector("#resonantos-control-overlay")?.dataset.session === "active"`, "persistent control overlay session start");
   const iframePanelText = await waitForPanelText(panel, /Booking calendar frame|Iframe booking context was not visible/, "iframe context read");
   assert(!/Iframe booking context was not visible/.test(iframePanelText), "Agent planner could not see iframe booking context.");
   await waitForComposerReady(panel, "iframe context read");
