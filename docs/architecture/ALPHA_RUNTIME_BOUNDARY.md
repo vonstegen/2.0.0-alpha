@@ -57,8 +57,10 @@ The default bridge binds to `127.0.0.1`. Alpha documentation and validation
 assume loopback operation. A non-loopback bind is an explicit operator
 configuration and does not change the Alpha release boundary.
 
-Every JSON route requires the bridge token. Privileged route families also
-require a scoped capability token. Capability tokens are minted from a
+Every JSON route normally requires the bridge token. The single consultation
+route may instead accept an individually revocable key that authorizes only
+`POST /augmentor/consultation`; it cannot authorize any other bridge route.
+Privileged route families also require a scoped capability token. Capability tokens are minted from a
 separate bootstrap token and are checked again by the Node bridge; UI state or
 an extension control is not an authorization boundary.
 
@@ -72,6 +74,7 @@ page-to-filesystem, and page-to-process paths are outside the architecture.
 | --- | --- | --- |
 | `/providers/*`, `/augmentor/chat`, `/augmentor/inline` | `provider-host-service.mjs` and `provider-bridge-service.mjs` | Session-held provider credentials, provider routing, approved cloud or local model endpoints |
 | `/augmentor/control-plan`, `/augmentor/next-action`, `/web/news` | `agent-control-host-service.mjs` | Provider-backed planning and approved network reads |
+| `/augmentor/consultation` | `augmentor-consultation-host-service.mjs` | Approved neutral projection, hashed selected-agent grants, isolated in-memory cache |
 | `/memory/*`, `/archive/*` | `memory-host-service.mjs`, memory source services, and `archive-review-host-service.mjs` | User-approved source roots, Living Archive intake/review/promotion state |
 | `/addons/*`, `/hermes/*`, `/opencode/*`, `/goals` | `addon-delegation-host-service.mjs` and `addon-delegation-service.mjs` | Optional local runtimes, scoped workspaces, delegation artifacts |
 | `/status`, `/workspace/inspect`, `/browser/*`, `/diagnostics/report` | `browser-diagnostics-host-service.mjs` | Redacted local diagnostics and approved download actions |

@@ -17,6 +17,7 @@
     "test:browser-first:live": "node browser-first/test/agent-control-live.mjs",
     "browser-first:dev": "node run-bridge-minimal.mjs",
     "browser-first:bridge": "node run-bridge-minimal.mjs",
+    "augmentor:consultation-access": "node browser-first/host/augmentor-consultation-access-cli.mjs",
     "health": "node scripts/health-check.mjs",
     "test:health": "node --test --test-concurrency=1 scripts/health-check.test.mjs",
     "engineer:prompt": "node scripts/engineer-runner.mjs prompt",

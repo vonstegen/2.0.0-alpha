@@ -31,6 +31,7 @@ import {
 } from "./browser-first-host-utils.mjs";
 import { runBrowserFirstSelfTest } from "./browser-first-self-test-service.mjs";
 import { createAgentControlHostService } from "./agent-control-host-service.mjs";
+import { createAugmentorConsultationHostService } from "./augmentor-consultation-host-service.mjs";
 import { buildBridgeCapabilityTokens } from "./bridge-capability-tokens.mjs";
 import { createAddonDelegationHostService } from "./addon-delegation-host-service.mjs";
 import { createAddonDelegationService } from "./addon-delegation-service.mjs";
@@ -353,12 +354,15 @@ const { agentControlRoutes } = createAgentControlHostService({
   sanitizeAssistantContent,
 });
 
+const { augmentorConsultationRoutes } = createAugmentorConsultationHostService({ userRoot });
+
 const { extensionPrefsRoutes, flushPendingExtensionPrefs } = createExtensionPrefsHostService({ userRoot });
 
 const bridgeRoutes = [
   ...browserDiagnosticsRoutes,
   ...providerBridgeRoutes,
   ...agentControlRoutes,
+  ...augmentorConsultationRoutes,
   ...memoryBridgeRoutes,
   ...addonDelegationRoutes,
   ...opencodeSessionRoutes,

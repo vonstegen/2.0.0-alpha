@@ -23,6 +23,9 @@ scope, area, and delivery state belong in
   community tester from install to a proof checklist, with the human-only boundaries.
 - [Side-Panel Command Reference](reference/COMMANDS.md) lists the supported
   Augmentor slash commands and their safety boundaries.
+- [Augmentor Consultation API](reference/AUGMENTOR_CONSULTATION_API.md) explains
+  how selected agents receive revocable, read-only access to the approved
+  ontology projection.
 - [Status](STATUS.md) records the latest verified snapshot.
 
 ## Change The Extension

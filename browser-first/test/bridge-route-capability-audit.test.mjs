@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { createAddonDelegationHostService } from "../host/addon-delegation-host-service.mjs";
 import { createAgentControlHostService } from "../host/agent-control-host-service.mjs";
+import { createAugmentorConsultationHostService } from "../host/augmentor-consultation-host-service.mjs";
 import { createExtensionPrefsHostService } from "../host/extension-prefs-host-service.mjs";
 import { createMemoryHostService } from "../host/memory-host-service.mjs";
 import { createProviderHostService } from "../host/provider-host-service.mjs";
@@ -104,9 +105,15 @@ test("extension bridge client capability map matches gated host routes", async (
     const memory = createMemoryHostService(handlers(memoryHandlers));
     const addon = createAddonDelegationHostService(handlers(addonHandlers));
     const prefs = createExtensionPrefsHostService({ userRoot: () => root });
+    const consultation = createAugmentorConsultationHostService({
+      userRoot: () => root,
+      service: { consult: async () => ({ status: "no_match" }) },
+      authenticate: async () => null,
+    });
     const routes = [
       ...provider.providerBridgeRoutes,
       ...agent.agentControlRoutes,
+      ...consultation.augmentorConsultationRoutes,
       ...memory.memoryBridgeRoutes,
       ...addon.addonDelegationRoutes,
       ...prefs.extensionPrefsRoutes,

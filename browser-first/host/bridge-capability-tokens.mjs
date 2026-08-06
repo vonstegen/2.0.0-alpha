@@ -26,6 +26,7 @@ export const BRIDGE_CAPABILITY_TOKEN_SPECS = Object.freeze([
   { capability: "provider-diagnostics-read", arg: "provider-diagnostics-token", env: "RESONANTOS_BROWSER_FIRST_PROVIDER_DIAGNOSTICS_TOKEN" },
   { capability: "provider-model-invoke", arg: "provider-model-invoke-token", env: "RESONANTOS_BROWSER_FIRST_PROVIDER_MODEL_INVOKE_TOKEN" },
   { capability: "agent-control-plan", arg: "agent-control-plan-token", env: "RESONANTOS_BROWSER_FIRST_AGENT_CONTROL_PLAN_TOKEN" },
+  { capability: "augmentor-consultation-read", arg: "augmentor-consultation-token", env: "RESONANTOS_BROWSER_FIRST_AUGMENTOR_CONSULTATION_TOKEN" },
   { capability: "memory-settings-write", arg: "memory-settings-token", env: "RESONANTOS_BROWSER_FIRST_MEMORY_SETTINGS_TOKEN" },
   { capability: "memory-source-browse", arg: "memory-source-browse-token", env: "RESONANTOS_BROWSER_FIRST_MEMORY_SOURCE_BROWSE_TOKEN" },
   { capability: "memory-source-scan", arg: "memory-source-scan-token", env: "RESONANTOS_BROWSER_FIRST_MEMORY_SOURCE_SCAN_TOKEN" },

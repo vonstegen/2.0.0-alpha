@@ -35,6 +35,7 @@ const BRIDGE_ROUTE_CAPABILITIES = Object.freeze({
   "POST /augmentor/inline": "provider-model-invoke",
   "POST /augmentor/control-plan": "agent-control-plan",
   "POST /augmentor/next-action": "agent-control-plan",
+  "POST /augmentor/consultation": "augmentor-consultation-read",
   "POST /web/news": "agent-control-plan",
   "POST /memory/settings": "memory-settings-write",
   "POST /memory/source/browse": "memory-source-browse",

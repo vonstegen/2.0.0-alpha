@@ -312,6 +312,7 @@ test("known canonical, ADR, icon, and deleted documentation pass strict audit", 
     "INSTALL.md",
     "SUPPORT.md",
     "docs/architecture/ADR-999-release-metadata.md",
+    "docs/reference/AUGMENTOR_CONSULTATION_API.md",
     "docs/reference/COMMANDS.md",
     "public/icons/README.md",
   ];

@@ -11,6 +11,8 @@ const bridgeCapabilityHeader = "x-resonantos-bridge-capability-token";
 const bridgeCapabilityHeaderName = "X-ResonantOS-Bridge-Capability-Token";
 const bridgeCapabilityBootstrapHeader = "x-resonantos-capability-bootstrap-token";
 const bridgeCapabilityBootstrapHeaderName = "X-ResonantOS-Capability-Bootstrap-Token";
+const consultationAccessHeader = "x-resonantos-consultation-key";
+const consultationAccessHeaderName = "X-ResonantOS-Consultation-Key";
 
 // ResonantOS bridge network configuration
 // (read by startBridgeServer / writeBridgeConfig)
@@ -234,7 +236,7 @@ function writeJson(response, status, payload, extensionOrigin, requestHeaders, a
   const allowOrigin = pickAllowedOrigin(requestHeaders, extensionOrigin, allowedOrigins);
   const headers = {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Headers": `Content-Type, ${bridgeTokenHeaderName}, ${bridgeCapabilityHeaderName}, ${bridgeCapabilityBootstrapHeaderName}`,
+    "Access-Control-Allow-Headers": `Content-Type, ${bridgeTokenHeaderName}, ${bridgeCapabilityHeaderName}, ${bridgeCapabilityBootstrapHeaderName}, ${consultationAccessHeaderName}`,
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Vary": "Origin",
   };
@@ -1047,31 +1049,53 @@ export async function evaluateBridgeRequestForSelfTest({
   bridgeCapabilityTokens = {},
   capabilityBootstrapToken,
   routes = [],
+  signal,
+  networkContext = { isLoopback: true, isSecure: true, ipAllowlistActive: true },
 } = {}) {
   try {
     const request = {
       method,
       url,
       headers: normalizeHeaders(headers),
+      signal,
+      networkContext,
     };
     if (method === "OPTIONS") {
       return { status: 204, payload: {} };
     }
-    if (!isAuthorizedBridgeRequest(request, bridgeToken)) {
+    const route = compileRoutes(routes).get(routeKey(method, url));
+    const bridgeAuthorized = isAuthorizedBridgeRequest(request, bridgeToken);
+    let authContext = null;
+    if (bridgeAuthorized) {
+      authContext = typeof route?.localAuthContext === "function"
+        ? await route.localAuthContext(request)
+        : { mode: "bridge" };
+    } else if (route?.clientAuthenticator) {
+      try {
+        authContext = await route.clientAuthenticator(request);
+      } catch {
+        authContext = null;
+      }
+    }
+    if (!authContext) {
       return { status: 401, payload: { ok: false, error: "Unauthorized browser-first bridge request." } };
     }
-    const route = compileRoutes(routes).get(routeKey(method, url));
     if (!route) {
       return { status: 404, payload: { ok: false, error: "Unknown browser-first bridge route." } };
     }
-    if (route.requiredCapabilityBootstrap && !isAuthorizedCapabilityBootstrapRequest(request, capabilityBootstrapToken)) {
+    if (route.requiredCapabilityBootstrap && (!bridgeAuthorized || !isAuthorizedCapabilityBootstrapRequest(request, capabilityBootstrapToken))) {
       return { status: 403, payload: { ok: false, error: "Bridge route requires capability bootstrap authorization." } };
     }
-    if (!isAuthorizedCapabilityRequest(request, bridgeCapabilityTokens, route.requiredCapability)) {
+    const capabilityAuthorized = bridgeAuthorized
+      ? isAuthorizedCapabilityRequest(request, bridgeCapabilityTokens, route.requiredCapability)
+      : authContext.capabilities?.includes(route.requiredCapability);
+    if (!capabilityAuthorized) {
       return { status: 403, payload: { ok: false, error: `Bridge route requires ${route.requiredCapability} capability.` } };
     }
     const payload = method === "POST" ? body : {};
-    const result = await route.handler(payload, request);
+    const handlerHeaders = { ...request.headers };
+    delete handlerHeaders[consultationAccessHeader];
+    const result = await route.handler(payload, { ...request, headers: handlerHeaders, authContext: Object.freeze({ ...authContext }) });
     return { status: 200, payload: { ok: true, ...result } };
   } catch (error) {
     return { status: 500, payload: { ok: false, error: error instanceof Error ? error.message : String(error) } };
@@ -1121,6 +1145,10 @@ export function createBridgeRequestHandler({
       openPathPrefixes,
     });
   return async function handleBridgeRequest(request, response) {
+    const abortController = new AbortController();
+    const abort = () => abortController.abort(new Error("Bridge request disconnected."));
+    request.once("aborted", abort);
+    response.once("close", abort);
     try {
       // IP allowlist (in addition to bridge-token auth). Returns 403 early
       // so a probe from a non-allowlisted network never sees a real response.
@@ -1155,6 +1183,12 @@ export function createBridgeRequestHandler({
         bridgeCapabilityTokens,
         capabilityBootstrapToken,
         routes: internalRoutes,
+        signal: abortController.signal,
+        networkContext: {
+          isLoopback: ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(String(request.socket?.remoteAddress ?? "")),
+          isSecure: Boolean(request.socket?.encrypted),
+          ipAllowlistActive: allowedCidrs.length > 0,
+        },
       });
       writeJson(response, result.status, result.payload, extensionOrigin, request.headers, allowedOrigins);
     } catch (error) {
@@ -1166,6 +1200,9 @@ export function createBridgeRequestHandler({
         request.headers,
         allowedOrigins,
       );
+    } finally {
+      request.off("aborted", abort);
+      response.off("close", abort);
     }
   };
 }

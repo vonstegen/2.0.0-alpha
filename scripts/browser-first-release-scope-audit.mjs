@@ -31,6 +31,7 @@ const includeDocs = new Set([
   "docs/architecture/MODULE_MAP.md",
   "docs/architecture/MODULE-OWNERSHIP.md",
   "docs/product/PRODUCT_GUIDE.md",
+  "docs/reference/AUGMENTOR_CONSULTATION_API.md",
   "docs/reference/CAPABILITY_MATRIX.md",
   "docs/reference/COMMANDS.md",
   "docs/release/ALPHA_DISTRIBUTION.md",
