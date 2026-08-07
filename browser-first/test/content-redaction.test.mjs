@@ -133,10 +133,66 @@ test("content inline actions expose stable shortcuts and button markup", async (
 
   assert.equal(inlineActionByShortcut("s"), "summarize");
   assert.equal(inlineActionByShortcut("P"), "send");
+  assert.equal(inlineActionByShortcut("c"), "counterpoint");
   assert.equal(inlineActionByShortcut("x"), "");
-  assert.equal(inlineActionList.length, 8);
+  assert.equal(inlineActionList.length, 9);
   assert.match(renderInlineActions(), /data-action="summarize"/);
+  assert.match(renderInlineActions(), /data-action="counterpoint"/);
   assert.match(renderInlineActions(), /<kbd>S<\/kbd>/);
+  assert.match(renderInlineActions(), /<kbd>C<\/kbd>/);
+});
+
+test("counterpoint inline action routes selection and page context to the bridge", async () => {
+  const { listener, sentMessages, window } = await loadContentScript(
+    '<!doctype html><html><head><title>Test Page</title></head><body><p>claim text here</p></body></html>',
+    { url: "https://example.test/article" },
+  );
+  listener(
+    { channel: "resonantos.browser_first.content", type: "show_inline_assistant_for_text", text: "claim text here" },
+    {},
+    () => {},
+  );
+  const panel = window.document.getElementById("resonantos-inline-assistant");
+  assert.ok(panel, "inline assistant panel exists");
+  panel.dataset.selection = "claim text here";
+  panel.querySelector('[data-action="counterpoint"]').click();
+  await new Promise((resolve) => window.setTimeout(resolve, 30));
+
+  const request = sentMessages.find((message) => message.type === "inline_assistant_request");
+  assert.ok(request, "counterpoint sent an inline_assistant_request");
+  assert.equal(request.channel, "resonantos.browser_first");
+  assert.equal(request.body.action, "counterpoint");
+  assert.equal(request.body.selection, "claim text here");
+  assert.match(request.body.pageContext, /Test Page/);
+  assert.match(request.body.pageContext, /https:\/\/example\.test\/article/);
+  // The bridge stub resolves with no reply, so the action falls back to a
+  // deterministic labeled prompt instead of an empty result.
+  assert.equal(panel.querySelector(".ros-inline-result").textContent, "Counterpoint:\nclaim text here");
+});
+
+test("inline assistant stays hidden on blocked sites so counterpoint is not reachable", async () => {
+  const { listener, window } = await loadContentScript(
+    '<!doctype html><html><head><title>Blocked</title></head><body><p>text</p></body></html>',
+    { url: "https://example.test/article" },
+  );
+  // Establish a visible inline button via the text handoff, then prove the
+  // blocked site permission hides the inline assistant and every action in it.
+  listener(
+    { channel: "resonantos.browser_first.content", type: "show_inline_assistant_for_text", text: "selected claim" },
+    {},
+    () => {},
+  );
+  const button = window.document.getElementById("resonantos-inline-button");
+  assert.equal(button.style.display, "block");
+  window.chrome.storage.local = {
+    get: async (key) => (key === "augmentorSitePermissions"
+      ? { augmentorSitePermissions: { "example.test": "blocked" } }
+      : {}),
+  };
+  window.document.dispatchEvent(new window.Event("selectionchange"));
+  await new Promise((resolve) => window.setTimeout(resolve, 160));
+  assert.equal(button.style.display, "none");
+  assert.equal(window.document.getElementById("resonantos-inline-assistant").style.display, "none");
 });
 
 test("content control refs preserve existing refs and find escaped values", async () => {

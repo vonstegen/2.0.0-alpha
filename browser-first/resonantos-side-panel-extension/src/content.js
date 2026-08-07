@@ -1036,6 +1036,7 @@ const localInlineResult = (action, text) => {
   if (action === "fact-check") return `Fact-check this claim with primary sources before relying on it:\n${clipped}`;
   if (action === "translate") return `Translation requires the configured model. Selected text:\n${clipped}`;
   if (action === "explain") return `Explanation:\n${clipped}`;
+  if (action === "counterpoint") return `Counterpoint:\n${clipped}`;
   return `Summary:\n${clipped}`;
 };
 

@@ -1,4 +1,4 @@
-const INLINE_ACTIONS = new Set(["custom", "summarize", "summary", "explain", "translate", "rewrite"]);
+const INLINE_ACTIONS = new Set(["custom", "summarize", "summary", "explain", "counterpoint", "translate", "rewrite"]);
 const SENSITIVE_KEY_PATTERN = /\b(password|passcode|passwd|pwd|credential|secret|token|api[-_ ]?key|authorization|bearer|cookie|session|private[-_ ]?key|seed|otp|2fa|mfa|card|credit|debit|cvc|cvv|iban|routing|ssn|payment|wallet|value)\b/i;
 const TOKEN_PATTERN = /\b(?:sk-[a-z0-9_-]{12,}|sk-ant-[a-z0-9_-]{12,}|sk-or-v1-[a-z0-9_-]{12,}|gh[pousr]_[a-z0-9_]{12,}|github_pat_[a-z0-9_]{12,}|hf_[a-z0-9_-]{12,}|xox[baprs]-[a-z0-9-]{12,}|xai-[a-z0-9_-]{12,}|gsk_[a-z0-9_-]{12,}|AIza[a-z0-9_-]{12,}|AKIA[A-Z0-9]{12,}|pk_live_[a-z0-9]{12,}|rk_live_[a-z0-9]{12,}|SG\.[a-z0-9._-]{12,})\b/gi;
 const ASSIGNMENT_SECRET_PATTERN = /\b(?:api[_-]?key|token|password|secret|authorization|bearer|session|cookie)\s*[:=]\s*['"]?[^'"\s]+/gi;

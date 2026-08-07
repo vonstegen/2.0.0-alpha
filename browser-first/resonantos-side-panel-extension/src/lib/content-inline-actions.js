@@ -5,6 +5,7 @@
     { action: "summarize", label: "Summarize", shortcut: "S" },
     { action: "explain", label: "Explain", shortcut: "E" },
     { action: "fact-check", label: "Fact-check", shortcut: "F" },
+    { action: "counterpoint", label: "Counterpoint", shortcut: "C" },
     { action: "translate", label: "Translate", shortcut: "T" },
     { action: "rewrite", label: "Rewrite", shortcut: "R" },
     { action: "send", label: "Send to side panel", shortcut: "P" },

@@ -34,6 +34,12 @@ test("background policy defaults unknown inline actions to summarize", () => {
   assert.equal(sanitizeInlineAssistantBody(null).action, "summarize");
 });
 
+test("background policy preserves the counterpoint inline action", () => {
+  const payload = sanitizeInlineAssistantBody({ action: "counterpoint", selection: "claim" });
+  assert.equal(payload.action, "counterpoint");
+  assert.equal(payload.selection, "claim");
+});
+
 test("background policy bounds and redacts Resonant Context snapshots", () => {
   const snapshot = sanitizeResonantContextSnapshot({
     title: "Example",
