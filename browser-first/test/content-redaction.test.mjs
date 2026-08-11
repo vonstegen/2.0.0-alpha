@@ -167,7 +167,7 @@ test("counterpoint inline action routes selection and page context to the bridge
   assert.match(request.body.pageContext, /https:\/\/example\.test\/article/);
   // The bridge stub resolves with no reply, so the action falls back to a
   // deterministic labeled prompt instead of an empty result.
-  assert.equal(panel.querySelector(".ros-inline-result").textContent, "Counterpoint:\nclaim text here");
+  assert.equal(panel.querySelector(".ros-inline-result").textContent, "Counterpoint to consider:\nclaim text here");
 });
 
 test("inline assistant stays hidden on blocked sites so counterpoint is not reachable", async () => {

@@ -1353,6 +1353,9 @@ export function createProviderBridgeService({
     if (action === "explain") {
       return `Plain-language explanation:\n${clipped}`;
     }
+    if (action === "counterpoint") {
+      return `Counterpoint to consider:\n${clipped}`;
+    }
     return `Summary:\n${clipped}`;
   }
 

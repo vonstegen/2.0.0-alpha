@@ -127,3 +127,19 @@ test("#231 no fallback flag when the primary route answers", async () => {
     assert.equal(out.routeNotice, "");
   });
 });
+
+test("#219 counterpoint inline action returns a deterministic bridge fallback when no provider is configured", async () => {
+  await withService(async (svc) => {
+    const out = await svc.executeInlineAssistant({
+      action: "counterpoint",
+      selection: "Taxes on land are always more efficient than taxes on income.",
+      prompt: "",
+    });
+    assert.equal(out.providerId, "local-fallback");
+    assert.equal(out.model, "local-inline-fallback");
+    assert.match(out.reply, /^Counterpoint to consider:\n/);
+    assert.match(out.reply, /Taxes on land are always more efficient than taxes on income\./);
+    // The counterpoint intent must not silently degrade to the default summary fallback.
+    assert.equal(/^Summary:\n/.test(out.reply), false);
+  });
+});
