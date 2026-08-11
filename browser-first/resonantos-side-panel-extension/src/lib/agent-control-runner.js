@@ -685,6 +685,56 @@ export function createAgentControlRunner(deps) {
           }
         });
         if (!executedResult?.ok) {
+          // #240 Part 3: a human-only public-submit handoff is terminal. Do not
+          // loop back to pending-approval — the human clicks it on the page
+          // and then asks the runner to resume (which forces a fresh observation).
+          if (executedResult?.humanHandoff) {
+            updateControlStep(stepIndex, "human-only-handoff", "Human-only: click it on the page, then resume", {
+              phase: "handoff",
+              decision: decision.thought ?? null,
+              action: controlStepLabel(executedStep),
+              actionRetry,
+              targetCandidates: targetCandidatesFromResult(executedResult),
+              result: controlResultSummary(executedResult),
+              safetyClass: "public-submit",
+              approvalDecision: "handoff",
+              ...strategyDetails(decision),
+              ...controlStepEvidence({
+                boundary: "public-submit",
+                decision,
+                result: executedResult,
+                status: "handoff"
+              }),
+              recoveryOptions: recoveryOptionsForStep({
+                snapshot: getLastSnapshot() ?? postActionSnapshot ?? snapshot,
+                step: executedStep,
+                result: executedResult,
+                verification: finalVerification
+              }),
+              nextHumanAction: "Click it yourself on the page. When you are ready to continue, ask me to resume and I will read the page state fresh."
+            });
+            finishControlRun("handoff");
+            renderControlMonitor();
+            setStatus("Human handoff");
+            setActivity("handoff", "Waiting for human to click", controlStepLabel(executedStep));
+            await addMessage(
+              "system",
+              [
+                `Human-only handoff at action ${stepIndex + 1}: ${controlStepLabel(executedStep)}`,
+                "",
+                "This is a public submit / commit. The runner cannot click it for you.",
+                "Click it yourself on the page, then ask me to resume and I will read the page state fresh."
+              ].join("\n")
+            );
+            const archiveResult = await saveControlReportToArchive(results, "human-handoff");
+            if (archiveResult?.path) {
+              const artifacts = [...(getCurrentControlRun()?.artifacts ?? []), { type: "archive-intake", path: archiveResult.path }];
+              updateControlRunArtifacts(artifacts);
+              renderControlMonitor();
+              await updateBrowserJob(getCurrentControlRun()?.id, { artifacts });
+            }
+            return { ok: false, results, humanHandoff: true };
+          }
           const canRequestHumanApproval = executedResult?.approvalRequired && boundary === "public-submit";
           const status = canRequestHumanApproval ? "approval" : "blocked";
           const reason = executedResult?.approvalRequired
@@ -846,6 +896,38 @@ export function createAgentControlRunner(deps) {
 
     const step = { ...approval.step, userApproved: true };
     const results = approval.results.slice(0, approval.results.length - 1);
+    // #240 Part 3: for public-submit boundaries the runner must NOT re-execute.
+    // A human-only handoff is terminal; the human clicks it on the page and then
+    // resumes with a fresh observation. Re-executing here would trap the human
+    // in a "needs approval" loop because content.js denies the click unconditionally.
+    const isPublicSubmitBoundary = approvalBoundaryForStep(step) === "public-submit";
+    if (isPublicSubmitBoundary) {
+      updateControlStep(approval.stepIndex, "human-only-handoff", "Human-only: click it on the page, then resume", {
+        phase: "handoff",
+        decision: "This is a public submit / commit; the runner cannot click it for you.",
+        action: controlStepLabel(step),
+        approvalDecision: "handoff",
+        safetyClass: "public-submit",
+        confidence: "high",
+        uncertainty: "Public-submit controls are unconditionally human-only. No automation, no approval bypass.",
+        nextHumanAction: "Click it yourself on the page. When you are ready to continue, ask me to resume and I will read the page state fresh."
+      });
+      finishControlRun("handoff");
+      renderControlMonitor();
+      setStatus("Human handoff");
+      setActivity("handoff", "Waiting for human to click", controlStepLabel(step));
+      await addMessage(
+        "system",
+        [
+          `Human-only handoff: ${controlStepLabel(step)}`,
+          "",
+          "This is a public submit / commit. The runner cannot click it for you.",
+          "Click it yourself on the page, then ask me to resume and I will read the page state fresh."
+        ].join("\n")
+      );
+      await saveControlReportToArchive(results, "human-handoff");
+      return;
+    }
     updateControlStep(approval.stepIndex, "active", "approved once", {
       phase: "acting",
       decision: "Human approved this action once.",

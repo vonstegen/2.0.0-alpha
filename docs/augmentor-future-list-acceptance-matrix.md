@@ -57,7 +57,7 @@ suffix are open. Safety-boundary rows are **never** casual good-first-issues.
 ### Automation
 | Capability | Canonical issue(s) | Status | Tests / proof | Safety boundary |
 |---|---|---|---|---|
-| Autonomous navigation / Agent Control | #118 · #225 · epic #211 | 🔧 needs hardening · 🔒 | click/type/scroll certification fixtures; live-browser proof | governed; human-only public-submit / field-typing boundaries |
+| Autonomous navigation / Agent Control | #118 · #225 · #240 · epic #211 | 🟢 supported (live + deterministic) · 🔧 stop/cancel hardening · 🔒 | deterministic `agent-control-public-submit.test.mjs` (12 assertions) + `agent-control-runner.test.mjs` handoff + CI live certification (`.github/workflows/agent-control-live.yml`); public-submit handoff is terminal (non-bypassable) | governed; human-only public-submit / field-typing boundaries |
 | Agent Control stop/cancel & recovery UX | #226 · epic #211 | 🔧 needs hardening · 🔒 | stop/cancel kill-path + recovery-state tests; live-browser proof | user can always halt an in-flight action; no orphaned run state |
 | Form reading & autofill guard | #31 (C) · #8 (C) | ✅ supported | autofill-guard tests | never auto-submits; approval-gated |
 | Multi-step workflows | #237 · #14 (C) · #12 (C) | ✅ supported | — | — |
