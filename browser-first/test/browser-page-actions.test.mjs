@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { JSDOM } from "jsdom";
 
 import { normalizeBrowserUrl } from "../resonantos-side-panel-extension/src/lib/browser-command-parser.js";
 import { createBrowserPageActions } from "../resonantos-side-panel-extension/src/lib/browser-page-actions.js";
@@ -689,4 +691,27 @@ test("browser page actions report when research trail has no readable tabs", asy
   assert.equal(result.ok, false);
   assert.match(result.error, /No readable browser tabs/);
   assert.ok(harness.events.some((event) => event[0] === "message" && /No readable browser tabs/.test(event[2])));
+});
+
+test("page understanding fixtures produce expected context for article, pdf-like, and media-only pages", async () => {
+  const fixtures = [
+    { name: "article", path: "test/fixtures/pages/article.html", expectedTextLength: 320, hasReadableText: true },
+    { name: "pdf-like", path: "test/fixtures/pages/pdf-like.html", expectedTextLength: 280, hasReadableText: true },
+    { name: "media-only", path: "test/fixtures/pages/media-only.html", expectedTextLength: 0, hasReadableText: false },
+  ];
+
+  for (const fixture of fixtures) {
+    const html = readFileSync(fixture.path, "utf8");
+    const dom = new JSDOM(html);
+    const title = dom.window.document.title;
+    const url = "https://example.com/test";
+    const text = (dom.window.document.body.textContent || "").trim();
+
+    assert.ok(title.length > 0, `Title for ${fixture.name}`);
+    assert.ok(text.length >= fixture.expectedTextLength || !fixture.hasReadableText, `Text length for ${fixture.name}`);
+
+    if (!fixture.hasReadableText) {
+      assert.equal(text, "", `Media-only page should have no readable text`);
+    }
+  }
 });

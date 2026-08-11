@@ -36,7 +36,7 @@ suffix are open. Safety-boundary rows are **never** casual good-first-issues.
 ### Web understanding
 | Capability | Canonical issue(s) | Status | Tests / proof | Safety boundary |
 |---|---|---|---|---|
-| Page content analysis / Q&A | #218 · #8 (C) | ✅ supported | page-understanding fixture coverage (#218); `npm run test:browser-first` | — |
+| Page content analysis / Q&A | #218 · #8 (C) | 🔧 needs hardening | page-understanding fixture coverage (#218); `npm run test:browser-first` | — |
 | Highlight-to-ask (inline assistant) | #9 (C) | ✅ supported | inline-assistant path in `provider-bridge-service` tests | — |
 | Counterpoints / explain-jargon | #219 | 🔮 future | fixtures TBD | — |
 | Image / media understanding | #242 | ⏸ deferred · 🔒 | live-browser proof; bounded media handling | privacy/security-sensitive |
