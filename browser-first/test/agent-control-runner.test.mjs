@@ -33,6 +33,13 @@ function createHarness(overrides = {}) {
   const stepResults = overrides.stepResults ?? [{ ok: true, clickedText: "Next" }];
   const savedReports = [];
   let stepResultIndex = 0;
+  const defaultObserveControlPage = async () => {
+    events.push(["observe"]);
+    if (snapshotSequence?.length) {
+      lastSnapshot = snapshotSequence.shift();
+    }
+    return lastSnapshot;
+  };
 
   const deps = {
     addMessage: async (role, content) => events.push(["message", role, content]),
@@ -68,13 +75,7 @@ function createHarness(overrides = {}) {
     getActiveJobId: () => activeJobId,
     getCurrentControlRun: () => controlRun,
     getLastSnapshot: () => lastSnapshot,
-    observeControlPage: async () => {
-      events.push(["observe"]);
-      if (snapshotSequence?.length) {
-        lastSnapshot = snapshotSequence.shift();
-      }
-      return lastSnapshot;
-    },
+    observeControlPage: overrides.observeControlPage ?? defaultObserveControlPage,
     renderControlMonitor: () => events.push(["render"]),
     requestNextControlAction: async (request) => {
       nextActionRequests.push(request);
@@ -523,4 +524,116 @@ test("agent control runner can approve or deny a pending step through injected s
   assert.equal(denyHarness.getControlRun().steps[0].details.approvalDecision, "denied");
   assert.equal(denyHarness.getSavedReports().at(-1).status, "denied");
   assert.equal(denyHarness.getSavedReports().at(-1).results.at(-1).result.error, "denied by human");
+});
+
+test("agent control runner cancels during preflight: no execute fired, approval cleared, status cancelled (#226)", async () => {
+  // #226 acceptance criterion (preflight): cancel lands before the first
+  // executeControlStep call. observeControlPage throws a cancel error on the
+  // very first observation in the run loop.
+  const harness = createHarness({
+    decisions: [{ status: "continue", thought: "submit", action: { type: "click", text: "Submit" } }],
+    stepResults: [{ ok: true }],
+    observeControlPage: async () => {
+      throw new Error("Browser job was cancelled.");
+    }
+  });
+
+  const result = await harness.runner.continueControlLoop({ goal: "submit form" });
+
+  assert.equal(result.status, "cancelled");
+  assert.equal(harness.getControlRun().status, "cancelled");
+  assert.equal(harness.getPendingApproval(), null, "pending approval must be cleared on cancel");
+  assert.equal(harness.events.filter((event) => event[0] === "execute").length, 0, "preflight cancel must not invoke executeControlStep");
+  const cancelMessages = harness.events.filter(
+    (event) => event[0] === "message" && /Agent Control Mode cancelled/.test(event[2])
+  );
+  assert.ok(cancelMessages.length >= 1, "a system message naming the cancellation must be emitted");
+  assert.match(cancelMessages[0][2], /Next: Restart the task or ask me to resume/);
+  assert.equal(harness.getSavedReports().at(-1).status, "cancelled");
+});
+
+test("agent control runner cancels during a running step: in-flight step marked cancelled, approval cleared (#226)", async () => {
+  // #226 acceptance criterion (running): the first executeControlStep
+  // succeeds and completes; the second observe (verification snapshot for
+  // the next step) trips a cancel error mid-run. The previously active
+  // step must be marked cancelled and pending approval cleared.
+  const observeFactory = () => {
+    let count = 0;
+    return async () => {
+      count += 1;
+      // The second observe throws cancel to simulate the user hitting Cancel
+      // mid-run. The first observe returns a usable snapshot.
+      if (count >= 2) throw new Error("Browser job was cancelled by human.");
+      return { title: "Fixture", url: "https://example.test/", text: "Before", controls: [{ ref: "c1", text: "Next" }] };
+    };
+  };
+  const harness = createHarness({
+    decisions: [
+      { status: "continue", thought: "click next", action: { type: "click", text: "Next" } },
+      { status: "continue", thought: "click next again", action: { type: "click", text: "Next" } }
+    ],
+    snapshots: [
+      { title: "Fixture", url: "https://example.test/", text: "Before", controls: [{ ref: "c1", text: "Next" }] },
+      { title: "Fixture", url: "https://example.test/", text: "After click", controls: [{ ref: "c2", text: "Done" }] }
+    ],
+    stepResults: [
+      { ok: true, clickedText: "Next" },
+      { ok: true, clickedText: "Next" }
+    ],
+    observeControlPage: observeFactory()
+  });
+
+  const result = await harness.runner.continueControlLoop({ goal: "click next twice" });
+
+  assert.equal(result.status, "cancelled");
+  assert.equal(harness.getControlRun().status, "cancelled");
+  assert.equal(harness.getPendingApproval(), null);
+  // The in-flight step at the moment of cancel must be marked cancelled
+  // (no stranded "active" step in the trail).
+  const states = harness.getControlRun().steps.map((step) => step.state);
+  assert.ok(states.includes("cancelled"), `expected a cancelled step in the trail; got states=${JSON.stringify(states)}`);
+  assert.ok(!states.includes("active"), `no step should stay "active" after a cancel; got states=${JSON.stringify(states)}`);
+  const lastStep = harness.getControlRun().steps.at(-1);
+  assert.equal(lastStep.state, "cancelled");
+  assert.match(lastStep.details.nextHumanAction ?? "", /Restart the task or ask me to resume/);
+  assert.equal(harness.getSavedReports().at(-1).status, "cancelled");
+});
+
+test("agent control runner cancels after a blocked step: pending approval cleared, blocked step marked cancelled (#226)", async () => {
+  // #226 acceptance criterion (blocked): a step ends in blocked (with a
+  // pending approval). The next executeControlStep is never reached because
+  // observeControlPage throws cancel. Both the pending approval and the
+  // blocked step must be cleaned up.
+  const observeFactory = () => {
+    let count = 0;
+    return async () => {
+      count += 1;
+      if (count >= 2) throw new Error("Browser job was cancelled.");
+      return { title: "Fixture", url: "https://example.test/", text: "Before", controls: [{ ref: "c1", text: "Submit" }] };
+    };
+  };
+  const harness = createHarness({
+    decisions: [
+      { status: "continue", thought: "submit", action: { type: "click", text: "Submit" } },
+      { status: "continue", thought: "submit again", action: { type: "click", text: "Submit" } }
+    ],
+    approvalBoundaryForStep: () => "public-submit",
+    stepResults: [
+      { ok: false, approvalRequired: true, deniedToAutomation: true, error: "Public submit denied", safetyClass: "public-submit" },
+      { ok: false, approvalRequired: true, deniedToAutomation: true, error: "Public submit denied", safetyClass: "public-submit" }
+    ],
+    observeControlPage: observeFactory()
+  });
+
+  const result = await harness.runner.continueControlLoop({ goal: "submit public form" });
+
+  assert.equal(result.status, "cancelled");
+  assert.equal(harness.getControlRun().status, "cancelled");
+  // Pending approval must be cleared.
+  assert.equal(harness.getPendingApproval(), null);
+  // The blocked step must end up cancelled (not stranded in blocked state).
+  const states = harness.getControlRun().steps.map((step) => step.state);
+  assert.ok(states.includes("cancelled"), `expected a cancelled step in the trail; got states=${JSON.stringify(states)}`);
+  assert.ok(!states.includes("blocked"), `blocked step must be transitioned on cancel; got states=${JSON.stringify(states)}`);
+  assert.equal(harness.getSavedReports().at(-1).status, "cancelled");
 });

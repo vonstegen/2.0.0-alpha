@@ -597,7 +597,7 @@ export function createAgentControlRunner(deps) {
         setActivity("tool-running", `Executing browser action ${stepIndex + 1}`, controlStepLabel(step));
         const result = await executeControlStep(step);
         await setPageControlOverlay(true, "verifying", "verifying");
-        const verificationSnapshot = await deps.observeControlPage().catch(() => null);
+        const verificationSnapshot = await deps.observeControlPage().catch((err) => { if (err && /cancelled|paused/i.test(err.message ?? "")) throw err; return null; });
         const verification = verifyBrowserAction({
           after: verificationSnapshot,
           before: snapshot,
@@ -613,7 +613,7 @@ export function createAgentControlRunner(deps) {
         let postActionSnapshot = verificationSnapshot;
         let finalVerification = consent
           ? verifyBrowserAction({
-            after: (postActionSnapshot = await deps.observeControlPage().catch(() => verificationSnapshot)),
+            after: (postActionSnapshot = await deps.observeControlPage().catch((err) => { if (err && /cancelled|paused/i.test(err.message ?? "")) throw err; return verificationSnapshot; })),
             before: verificationSnapshot ?? snapshot,
             result: finalResult,
             step: finalStep
@@ -624,7 +624,7 @@ export function createAgentControlRunner(deps) {
           verificationRetry = "settle-reread";
           await setPageControlOverlay(true, "verifying", "verifying");
           await sleep(650);
-          const settledSnapshot = await deps.observeControlPage().catch(() => null);
+          const settledSnapshot = await deps.observeControlPage().catch((err) => { if (err && /cancelled|paused/i.test(err.message ?? "")) throw err; return null; });
           postActionSnapshot = settledSnapshot ?? postActionSnapshot;
           const settledVerification = verifyBrowserAction({
             after: postActionSnapshot,
@@ -652,7 +652,7 @@ export function createAgentControlRunner(deps) {
           executedStep = retryStep;
           executedResult = await executeControlStep(retryStep);
           await setPageControlOverlay(true, "verifying", "verifying");
-          const retrySnapshot = await deps.observeControlPage().catch(() => postActionSnapshot);
+          const retrySnapshot = await deps.observeControlPage().catch((err) => { if (err && /cancelled|paused/i.test(err.message ?? "")) throw err; return postActionSnapshot; });
           postActionSnapshot = retrySnapshot ?? postActionSnapshot;
           finalVerification = verifyBrowserAction({
             after: postActionSnapshot,
@@ -779,12 +779,51 @@ export function createAgentControlRunner(deps) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const status = /cancelled/i.test(message) ? "cancelled" : /paused/i.test(message) ? "paused" : "failed";
+      // #226: clear any pending approval so a cancelled run does not leave the
+      // approval card pinned to the panel until the next run starts.
+      setPendingApproval(null);
+      renderControlMonitor();
+      // #226: transition the in-flight step (active / approval / blocked /
+      // waiting-for-human) to "cancelled" so the trail does not strand a
+      // half-finished action.
+      const runForCleanup = getCurrentControlRun();
+      let inFlightIndex = -1;
+      if (runForCleanup?.steps?.length) {
+        for (let index = runForCleanup.steps.length - 1; index >= 0; index -= 1) {
+          const entryState = runForCleanup.steps[index]?.state;
+          if (entryState === "active" || entryState === "approval" || entryState === "blocked" || entryState === "waiting-for-human") {
+            inFlightIndex = index;
+            break;
+          }
+        }
+      }
+      const nextHumanAction = status === "cancelled"
+        ? "Restart the task or ask me to resume after you make any page changes yourself."
+        : status === "paused"
+        ? "Resume the task when you are ready, or cancel it from the panel."
+        : "Review the failure, then restart or resume the task from the panel.";
+      if (inFlightIndex !== -1) {
+        updateControlStep(inFlightIndex, "cancelled", `Cancelled during ${status}`, {
+          phase: "cancelled",
+          approvalDecision: "cancelled",
+          nextHumanAction
+        });
+      }
       finishControlRun(status);
       await updateBrowserJob(getActiveJobId(), { status, lastError: message });
       setStatus(status === "paused" ? "Paused" : status === "cancelled" ? "Cancelled" : "Control failed");
       setActivity(status === "paused" ? "paused" : "failed", `Control mode ${status}`, message);
-      await addMessage("system", `Agent Control Mode ${status}.\nGoal: ${goal}\nReason: ${message}`);
-      return { ok: false, results, error: message };
+      await addMessage(
+        "system",
+        [
+          `Agent Control Mode ${status}.`,
+          `Goal: ${goal}`,
+          `Reason: ${message}`,
+          `Next: ${nextHumanAction}`
+        ].join("\n")
+      );
+      await saveControlReportToArchive(results, status);
+      return { ok: false, results, error: message, status };
     }
   }
 

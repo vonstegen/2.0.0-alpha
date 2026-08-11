@@ -58,7 +58,7 @@ suffix are open. Safety-boundary rows are **never** casual good-first-issues.
 | Capability | Canonical issue(s) | Status | Tests / proof | Safety boundary |
 |---|---|---|---|---|
 | Autonomous navigation / Agent Control | #118 · #225 · epic #211 | 🔧 needs hardening · 🔒 | click/type/scroll certification fixtures; live-browser proof | governed; human-only public-submit / field-typing boundaries |
-| Agent Control stop/cancel & recovery UX | #226 · epic #211 | 🔧 needs hardening · 🔒 | stop/cancel kill-path + recovery-state tests; live-browser proof | user can always halt an in-flight action; no orphaned run state |
+| Agent Control stop/cancel & recovery UX | #226 · epic #211 | 🟢 supported (deterministic) · 🔒 live proof gated to #267 | deterministic cancel-path tests in `agent-control-runner.test.mjs` (preflight / running / blocked); pending approval cleared, in-flight step marked cancelled, `nextHumanAction` in user message | user can always halt an in-flight action; no orphaned run state |
 | Form reading & autofill guard | #31 (C) · #8 (C) | ✅ supported | autofill-guard tests | never auto-submits; approval-gated |
 | Multi-step workflows | #237 · #14 (C) · #12 (C) | ✅ supported | — | — |
 | Shopping decision packet / checkout handoff | #243 · #16 (C) | ⏸ deferred · 🔒 | packet assembly + human-confirm gate | **human-only** checkout; draft/packet only |
