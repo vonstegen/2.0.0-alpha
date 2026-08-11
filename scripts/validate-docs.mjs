@@ -1240,7 +1240,8 @@ export function validateDocumentationReachability(context) {
   const resolvedContext = buildContext(context.root, context);
   const tracked = new Set(
     (context.trackedFiles ?? trackedFiles(resolvedContext.root, resolvedContext.files))
-      .filter((path) => DOCUMENTATION_PATH.test(path) || path.startsWith("docs/")),
+      .filter((path) => DOCUMENTATION_PATH.test(path) || path.startsWith("docs/"))
+      .filter((path) => !path.startsWith("test/fixtures/")),
   );
   const documents = new Map(resolvedContext.documents.map((document) => [document.path, document]));
   const reached = new Set(
