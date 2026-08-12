@@ -47,6 +47,13 @@ const controlRefsScriptPath = path.join(
   "src",
   "lib",
   "content-control-refs.js",
+);const augmentorShortcutControllerScriptPath = path.join(
+  repoRoot,
+  "browser-first",
+  "resonantos-side-panel-extension",
+  "src",
+  "lib",
+  "augmentor-shortcut-controller.js",
 );
 const resonantContextScriptPath = path.join(
   repoRoot,
@@ -118,6 +125,7 @@ async function loadContentScript(html, { asChildFrame = false, loadSdk = false, 
   targetWindow.eval(await readFile(inlineActionsScriptPath, "utf8"));
   targetWindow.eval(await readFile(controlRefsScriptPath, "utf8"));
   targetWindow.eval(await readFile(contentScriptPath, "utf8"));
+  targetWindow.eval(await readFile(augmentorShortcutControllerScriptPath, "utf8"));
   assert.equal(typeof listener, "function");
   return { dom, listener, sentMessages, window: targetWindow };
 }
