@@ -131,12 +131,19 @@ test("content inline actions expose stable shortcuts and button markup", async (
     renderInlineActions,
   } = dom.window.ResonantOSInlineActions;
 
+
   assert.equal(inlineActionByShortcut("s"), "summarize");
+  assert.equal(inlineActionByShortcut("c"), "counterpoint");
+  assert.equal(inlineActionByShortcut("J"), "explain-jargon");
   assert.equal(inlineActionByShortcut("P"), "send");
   assert.equal(inlineActionByShortcut("x"), "");
-  assert.equal(inlineActionList.length, 8);
+  assert.equal(inlineActionList.length, 10);
   assert.match(renderInlineActions(), /data-action="summarize"/);
+  assert.match(renderInlineActions(), /data-action="counterpoint"/);
+  assert.match(renderInlineActions(), /data-action="explain-jargon"/);
   assert.match(renderInlineActions(), /<kbd>S<\/kbd>/);
+  assert.match(renderInlineActions(), /<kbd>C<\/kbd>/);
+  assert.match(renderInlineActions(), /<kbd>J<\/kbd>/);
 });
 
 test("content control refs preserve existing refs and find escaped values", async () => {

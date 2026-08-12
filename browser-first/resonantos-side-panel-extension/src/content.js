@@ -18,6 +18,11 @@ function sanitizeBrowserContextUrl(value, base = window.location.href) {
     return "";
   }
 }
+// Inline action surface gate — sourced from src/lib/content-inline-action-surface-gate.js
+// (loaded earlier in the content_scripts array). Keep the import here so the
+// helper is available synchronously at panel-render time and the gate logic
+// can be unit-tested independently of the content script.
+const { inlineActionAllowedForLocationGate } = globalThis.ResonantOSInlineActionSurfaceGate ?? {};
 (function initResonantContextSDK() {
   try {
     if (typeof window.ResonantContext === 'undefined' || typeof window._ResonantContext === 'undefined') {
@@ -1049,6 +1054,20 @@ const runInlineAction = async (action) => {
   const selection = panel.dataset.selection || currentSelectionDetails()?.text || "";
   if (!selection) {
     result.textContent = "No selected text is available.";
+    return;
+  }
+  const locationGate = inlineActionAllowedForLocationGate
+    ? inlineActionAllowedForLocationGate(location.href)
+    : { allowed: true };
+  if (!locationGate.allowed) {
+    result.textContent = locationGate.message;
+    return;
+  }
+  const sitePermissionMode = await chrome.storage?.local?.get?.("augmentorSitePermissions")
+    .then((value) => value?.augmentorSitePermissions?.mode)
+    .catch(() => null);
+  if (sitePermissionMode === "blocked") {
+    result.textContent = "Augmentor inline actions are blocked for this site by your saved site permission. Toggle the site permission in the side panel to re-enable inline actions.";
     return;
   }
   if (action === "send") {
