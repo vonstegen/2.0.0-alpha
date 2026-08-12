@@ -30,7 +30,7 @@ suffix are open. Safety-boundary rows are **never** casual good-first-issues.
 ### Core interface
 | Capability | Canonical issue(s) | Status | Tests / proof | Safety boundary |
 |---|---|---|---|---|
-| Side panel + Alt+A / Alt+S shortcuts | #241 · #46 (C) | 🔧 needs hardening | shortcut-contract + conflict handling — **live-browser proof** (#241) | — |
+| Side panel + Alt+A / Alt+S shortcuts | #241 · #46 (C) | 🔧 needs hardening | shortcut-contract + conflict handling — supported (deterministic); **live-browser proof** (#241 · #286) | — |
 | Augmentor mode selector + permission-state | #230 | 🔧 needs hardening | mode-select + permission-surface tests; live-browser proof | surfaces current permissions; no silent capability escalation |
 
 ### Web understanding

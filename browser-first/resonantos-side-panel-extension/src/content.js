@@ -144,6 +144,8 @@ const controlStatusTextClass = "ros-control-status-text";
 const controlStopButtonClass = "ros-control-stop-button";
 const editableSelector = "input, textarea, select, [contenteditable], [role='textbox']";
 let lastInlineSelectionDetails = null;
+let activeAltSRequestToken = "";
+let lastAltSSummaryContext = null;
 
 const isTopWindow = () => window.top === window;
 const classifyEditableField = (element) =>
@@ -828,6 +830,23 @@ const inlineStyles = `
 `;
 
 const { inlineActionByShortcut, renderInlineActions } = window.ResonantOSInlineActions;
+const ResonantOSAugmentorShortcutController = window.ResonantOSAugmentorShortcutController || {
+  classifyShortcut: () => ({ action: "none", conflict: "none" }),
+  createRequestToken: () => "",
+  isSummaryContextStale: () => true
+};
+const { classifyShortcut, createRequestToken, isSummaryContextStale } = ResonantOSAugmentorShortcutController;
+
+const AUGMENTOR_SHORTCUT_LABELS = Object.freeze({
+  "alt-a": "Open Augmentor", "alt-s": "Summarize page", none: "Unknown shortcut"
+});
+const AUGMENTOR_CONFLICT_LABELS = Object.freeze({
+  editing: "Focus is in an editable field — press the shortcut after exiting.",
+  composed: "IME composition is in progress — finish typing, then press the shortcut.",
+  combined: "Shortcut conflicts with another modifier (Ctrl/Shift/Meta).",
+  restricted: "Restricted page — shortcuts are disabled on this scheme.",
+  none: ""
+});
 
 const ensureInlineAssistantUi = () => {
   if (!document.getElementById("resonantos-inline-styles")) {
@@ -859,7 +878,7 @@ const ensureInlineAssistantUi = () => {
       <div class="ros-inline-actions">
         ${renderInlineActions()}
       </div>
-      <div class="ros-inline-result">Select text, then choose an action.</div>
+      <div class="ros-inline-result" aria-live="polite" aria-atomic="true">Select text, then choose an action.</div>
     `;
     panel.setAttribute("tabindex", "-1");
     panel.addEventListener("mousedown", (event) => {
@@ -1146,7 +1165,74 @@ document.addEventListener("mouseup", () => {
   globalThis.__resonantosInlineSelectionTimer = window.setTimeout(positionInlineButton, 120);
 }, true);
 
+
+const renderAugmentorShortcutResult = (text) => {
+  const { panel } = ensureInlineAssistantUi();
+  const result = panel.querySelector(".ros-inline-result");
+  if (result) result.textContent = text;
+};
+
+const runAugmentorAltA = async () => {
+  const details = currentSelectionDetails() ?? lastInlineSelectionDetails;
+  if (!details) {
+    renderAugmentorShortcutResult("Select text on the page to open the Augmentor inline panel, then press Alt+A again.");
+    return;
+  }
+  showInlinePanel("custom");
+  activeAltSRequestToken = "";
+  lastAltSSummaryContext = { url: sanitizeBrowserContextUrl(location.href), title: document.title };
+};
+
+const runAugmentorAltS = async (token) => {
+  // A non-empty token means the previous press is still in flight. Drop the
+  // duplicate press silently so the in-flight summary resolves.
+  if (activeAltSRequestToken && activeAltSRequestToken !== token) return;
+  const details = currentSelectionDetails() ?? lastInlineSelectionDetails;
+  const url = sanitizeBrowserContextUrl(location.href);
+  const title = document.title;
+  renderAugmentorShortcutResult(`Summarizing ${title || url}…`);
+  activeAltSRequestToken = token;
+  try {
+    const summary = await Promise.race([
+      localInlineResult("summarize", details?.text || document.body?.innerText || title),
+      timeoutAfter(8000, "Summary timed out")
+    ]);
+    // Only the most recent press is allowed to land its result.
+    if (token !== activeAltSRequestToken) return;
+    lastAltSSummaryContext = { url, title };
+    renderAugmentorShortcutResult(`Summary:\n${summary}`);
+    activeAltSRequestToken = "";
+  } catch (error) {
+    if (token !== activeAltSRequestToken) return;
+    renderAugmentorShortcutResult(`Summary unavailable: ${error instanceof Error ? error.message : "provider unreachable"}`);
+    activeAltSRequestToken = "";
+  }
+};
+
+const handleAugmentorShortcut = (event) => {
+  if (!isTopWindow()) return;
+  const { action, conflict } = classifyShortcut(event, { locationHref: location.href });
+  if (action === "none") {
+    if (conflict !== "none") {
+      const label = AUGMENTOR_CONFLICT_LABELS[conflict] || "";
+      if (label) renderAugmentorShortcutResult(label);
+    }
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  if (action === "alt-a") {
+    void runAugmentorAltA();
+    return;
+  }
+  if (action === "alt-s") {
+    void runAugmentorAltS(createRequestToken());
+    return;
+  }
+};
+
 document.addEventListener("keydown", (event) => {
+  handleAugmentorShortcut(event);
   if (event.key === "Escape") {
     const { button, panel } = ensureInlineAssistantUi();
     button.style.display = "none";
