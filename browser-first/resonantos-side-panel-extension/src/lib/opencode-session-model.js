@@ -24,7 +24,8 @@ export function createOpenCodeSessionState() {
     changedFiles: {}, // path -> { added, removed, status, touchedAt }
     approvals: [], // { id, tool, title, detail }
     todos: [], // { label, state }
-    context: { tokens: 0, cost: 0 }
+    context: { tokens: 0, cost: 0 },
+    roles: {} // messageId -> "user" | "assistant" (from message.updated; filters user echo)
   };
 }
 
@@ -68,8 +69,47 @@ export function normalizeOpenCodeEvent(raw) {
     const todos = Array.isArray(p.todos) ? p.todos : (Array.isArray(p) ? p : []);
     return { kind: "todos", todos: todos.map((t) => ({ label: t.content ?? t.text ?? t.label ?? "", state: t.status ?? t.state ?? "pending" })) };
   }
+  // OpenCode ≥1.18 event schema: message metadata arrives via message.updated,
+  // and part content streams as message.part.delta (field + delta) with
+  // authoritative message.part.updated snapshots. Handled here in addition to
+  // the older names above so both server generations render.
+  if (has(type, "message.updated") || has(type, "message-updated")) {
+    const info = p.info ?? p;
+    if (info?.id && info?.role) return { kind: "message-info", id: info.id, role: info.role };
+    return null;
+  }
+  if (has(type, "part.delta")) {
+    const kind = (p.field ?? "text") === "reasoning" ? "reasoning-delta" : "text-delta";
+    if (p.field && p.field !== "text" && p.field !== "reasoning") return null;
+    return { kind, messageId: p.messageID ?? p.messageId ?? "", text: p.delta ?? p.text ?? "" };
+  }
+  if (has(type, "part.updated")) {
+    const part = p.part ?? {};
+    if (part.type === "text" || part.type === "reasoning") {
+      return {
+        kind: part.type === "reasoning" ? "reasoning-set" : "text-set",
+        messageId: part.messageID ?? part.messageId ?? "",
+        partId: part.id ?? "",
+        text: part.text ?? ""
+      };
+    }
+    if (part.type === "tool") {
+      const st = part.state ?? {};
+      if (st.status === "completed") return { kind: "tool-completed", id: part.callID ?? part.id ?? "", ok: true, output: st.title ?? st.output ?? "" };
+      if (st.status === "error") return { kind: "tool-completed", id: part.callID ?? part.id ?? "", ok: false, error: st.error ?? "failed" };
+      return { kind: "tool-called", id: part.callID ?? part.id ?? "", tool: part.tool ?? "tool", input: st.title ?? "" };
+    }
+    return null; // step-start / step-finish / snapshot parts carry no transcript content
+  }
+  if (has(type, "session.idle")) {
+    return { kind: "session-meta", status: "idle" };
+  }
   if (has(type, "session.updated") || has(type, "session.status") || has(type, "session-meta")) {
-    return { kind: "session-meta", title: p.title, agent: p.agent, model: p.model, status: p.status };
+    // status may be a string (old servers) or an object like { type: "busy" }.
+    const raw = p.status;
+    const status = typeof raw === "string" ? raw : (raw && typeof raw === "object" ? (raw.type === "busy" ? "running" : raw.type) : undefined);
+    const info = p.info ?? {};
+    return { kind: "session-meta", title: p.title ?? info.title, agent: p.agent, model: p.model, status };
   }
   return null;
 }
@@ -88,8 +128,15 @@ export function applyOpenCodeEvent(state, event) {
   const next = { ...state, seq: state.seq + 1 };
 
   switch (event.kind) {
+    case "message-info": {
+      next.roles = { ...state.roles, [event.id]: event.role };
+      return next;
+    }
     case "text-delta":
     case "reasoning-delta": {
+      // The new schema streams parts for BOTH roles; the composer already shows
+      // the human's prompt, so user-message parts are excluded from the thread.
+      if (event.messageId && state.roles?.[event.messageId] === "user") return next;
       const type = event.kind === "reasoning-delta" ? "reasoning" : "text";
       const entries = [...state.entries];
       const current = lastEntryOfType(entries, type, event.messageId);
@@ -98,6 +145,25 @@ export function applyOpenCodeEvent(state, event) {
         entries[idx] = { ...current, text: (current.text ?? "") + (event.text ?? "") };
       } else {
         entries.push({ type, id: event.messageId || `msg-${next.seq}`, text: event.text ?? "" });
+      }
+      next.entries = entries;
+      next.status = state.approvals.length ? "waiting-approval" : "running";
+      return next;
+    }
+    case "text-set":
+    case "reasoning-set": {
+      if (event.messageId && state.roles?.[event.messageId] === "user") return next;
+      const type = event.kind === "reasoning-set" ? "reasoning" : "text";
+      const entries = [...state.entries];
+      // Snapshots are authoritative: replace the matching entry's text (matched
+      // by part id when known, else by message id), never append — this keeps
+      // mixed delta+snapshot streams idempotent.
+      const idx = entries.findIndex((entry) => entry.type === type
+        && ((event.partId && entry.partId === event.partId) || (!entry.partId && entry.id === event.messageId)));
+      if (idx >= 0) {
+        entries[idx] = { ...entries[idx], partId: event.partId || entries[idx].partId, text: event.text ?? "" };
+      } else {
+        entries.push({ type, id: event.messageId || `msg-${next.seq}`, partId: event.partId, text: event.text ?? "" });
       }
       next.entries = entries;
       next.status = state.approvals.length ? "waiting-approval" : "running";

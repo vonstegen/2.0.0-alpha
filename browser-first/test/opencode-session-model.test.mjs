@@ -113,3 +113,52 @@ test("the reducer never mutates the input state", () => {
   assert.notEqual(next, frozen);
   assert.deepEqual(base.changedFiles, {}, "input unchanged");
 });
+
+// ---- OpenCode ≥1.18 event schema (captured live from opencode serve 1.18.4) ----
+
+test("v1.18 schema: message.part.delta streams assistant text into the thread", () => {
+  let s = createOpenCodeSessionState();
+  s = applyOpenCodeEvent(s, normalizeOpenCodeEvent({ type: "message.updated", properties: { info: { id: "msg_a", role: "assistant" } } }));
+  s = applyOpenCodeEvent(s, normalizeOpenCodeEvent({ type: "message.part.delta", properties: { sessionID: "ses_1", messageID: "msg_a", partID: "prt_1", field: "text", delta: "OPENCODE " } }));
+  s = applyOpenCodeEvent(s, normalizeOpenCodeEvent({ type: "message.part.delta", properties: { sessionID: "ses_1", messageID: "msg_a", partID: "prt_1", field: "text", delta: "LIVE" } }));
+  assert.equal(s.entries.length, 1);
+  assert.equal(s.entries[0].type, "text");
+  assert.equal(s.entries[0].text, "OPENCODE LIVE");
+  assert.equal(s.status, "running");
+});
+
+test("v1.18 schema: message.part.updated snapshot replaces (idempotent with deltas)", () => {
+  let s = applyOpenCodeEvent(createOpenCodeSessionState(),
+    normalizeOpenCodeEvent({ type: "message.part.delta", properties: { messageID: "msg_a", partID: "prt_1", field: "text", delta: "OPEN" } }));
+  s = applyOpenCodeEvent(s, normalizeOpenCodeEvent({
+    type: "message.part.updated",
+    properties: { part: { type: "text", text: "OPENCODE LIVE PROOF", messageID: "msg_a", sessionID: "ses_1", id: "prt_1" }, time: 1787088674933 }
+  }));
+  assert.equal(s.entries.length, 1);
+  assert.equal(s.entries[0].text, "OPENCODE LIVE PROOF");
+});
+
+test("v1.18 schema: user-message parts never enter the thread", () => {
+  let s = createOpenCodeSessionState();
+  s = applyOpenCodeEvent(s, normalizeOpenCodeEvent({ type: "message.updated", properties: { info: { id: "msg_u", role: "user" } } }));
+  s = applyOpenCodeEvent(s, normalizeOpenCodeEvent({ type: "message.part.updated", properties: { part: { type: "text", text: "Say: ping", messageID: "msg_u", id: "prt_u" } } }));
+  s = applyOpenCodeEvent(s, normalizeOpenCodeEvent({ type: "message.part.delta", properties: { messageID: "msg_u", partID: "prt_u", field: "text", delta: "more" } }));
+  assert.equal(s.entries.length, 0);
+});
+
+test("v1.18 schema: session.status busy object maps to string status, idle ends it", () => {
+  let s = applyOpenCodeEvent(createOpenCodeSessionState(),
+    normalizeOpenCodeEvent({ type: "session.status", properties: { sessionID: "ses_1", status: { type: "busy" } } }));
+  assert.equal(s.status, "running");
+  s = applyOpenCodeEvent(s, normalizeOpenCodeEvent({ type: "session.idle", properties: { sessionID: "ses_1" } }));
+  assert.equal(s.status, "idle");
+});
+
+test("v1.18 schema: tool part transitions map to tool entries", () => {
+  let s = applyOpenCodeEvent(createOpenCodeSessionState(),
+    normalizeOpenCodeEvent({ type: "message.part.updated", properties: { part: { type: "tool", callID: "call_1", tool: "read", state: { status: "running", title: "reading file" } } } }));
+  assert.equal(s.entries[0].type, "tool");
+  assert.equal(s.entries[0].state, "running");
+  s = applyOpenCodeEvent(s, normalizeOpenCodeEvent({ type: "message.part.updated", properties: { part: { type: "tool", callID: "call_1", tool: "read", state: { status: "completed", title: "read done" } } } }));
+  assert.equal(s.entries[0].state, "completed");
+});
