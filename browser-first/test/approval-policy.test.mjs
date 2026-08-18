@@ -20,6 +20,13 @@ test("approval policy classifies hard wallet, credential, and signing boundaries
   assert.equal(approvalBoundaryForStep({ type: "click", text: "Details" }), "safe");
 });
 
+test("#224: approval policy matches every security-code separator spelling, aligned with the field classifier", () => {
+  assert.equal(approvalBoundaryForStep({ type: "type", field: "security code", text: "123" }), "hard");
+  assert.equal(approvalBoundaryForStep({ type: "type", field: "security_code", text: "123" }), "hard");
+  assert.equal(approvalBoundaryForStep({ type: "type", field: "security-code", text: "123" }), "hard");
+  assert.equal(approvalBoundaryForStep({ type: "type", field: "securityCode", text: "123" }), "hard");
+});
+
 test("approval policy rejects unsafe planner URLs and restricted targets", () => {
   assert.equal(sanitizePlannerUrl("resonantos.com/dao"), "https://resonantos.com/dao");
   assert.throws(() => sanitizePlannerUrl("file:///tmp/secret.txt"), /http and https/);

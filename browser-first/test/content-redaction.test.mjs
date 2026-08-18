@@ -739,3 +739,125 @@ test("#224: submit on a generic non-search field stays human-gated while the typ
   assert.match(response.error, /human approval/i, "non-search submit stays human-gated");
   assert.equal(dom.window.document.getElementById("notes").value, "draft note", "the typed draft lands even when auto-submit is denied");
 });
+
+// #224 alias-matrix close: word-boundary regexes never fire inside camelCase or
+// digit-suffixed concatenations, so these probes used to reach generic-text
+// with safeToType:true. Token-exact matching must classify every one of them
+// credential — and must never substring-match innocent words.
+const credentialAliasProbes = [
+  "pincode", "pin1", "pin2", "passwd2", "userPin", "loginPin", "txtPasswd", "secCode", "pass"
+];
+const credentialAliasNegatives = [
+  "shipping", "spinner", "pinned", "passenger", "compass"
+];
+
+test("#224: camelCase/digit-suffixed credential aliases classify credential, never substring-match innocents", async () => {
+  const probeInputs = credentialAliasProbes
+    .map((name, index) => `<input id="f${index}" type="text" name="${name}">`)
+    .join("\n");
+  const negativeInputs = credentialAliasNegatives
+    .map((name, index) => `<input id="n${index}" type="text" name="${name}">`)
+    .join("\n");
+  const dom = new JSDOM(`<!doctype html>\n${probeInputs}\n${negativeInputs}`, {
+    runScripts: "outside-only",
+    url: "https://example.test/",
+  });
+  dom.window.eval(await readFile(fieldSafetyScriptPath, "utf8"));
+  const classify = (selector) => dom.window.ResonantOSContentFieldSafety.classifyEditableField(dom.window.document.querySelector(selector));
+
+  credentialAliasProbes.forEach((name, index) => {
+    const safety = classify(`#f${index}`);
+    assert.equal(safety.kind, "credential", `name="${name}" must classify credential`);
+    assert.equal(safety.safeToType, false, `name="${name}" must not be typable by Agent Control`);
+    assert.equal(safety.safeToSubmit, false, `name="${name}" must not be submittable by Agent Control`);
+  });
+  credentialAliasNegatives.forEach((name, index) => {
+    const safety = classify(`#n${index}`);
+    assert.notEqual(safety.kind, "credential", `name="${name}" must not substring-match a credential alias`);
+    assert.equal(safety.kind, "generic-text", `name="${name}" stays a plain generic-text field`);
+  });
+});
+
+test("#224: typing into camelCase/digit-suffixed credential aliases is denied even with userApproved", async () => {
+  const inputs = credentialAliasProbes
+    .map((name, index) => `<input id="f${index}" type="text" name="${name}" value="human-secret">`)
+    .join("\n");
+  const { dom, listener } = await loadContentScript(`<!doctype html>\n${inputs}`);
+
+  let snapshot = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "read_page",
+  }, {}, (payload) => {
+    snapshot = payload.snapshot;
+  });
+
+  credentialAliasProbes.forEach((name, index) => {
+    const field = snapshot.fields.find((candidate) => candidate.id === `f${index}`);
+    assert.equal(field?.fieldKind, "credential", `snapshot must report name="${name}" as credential`);
+    assert.equal(field.valuePreview, "[redacted:credential]", `name="${name}" value must be redacted in snapshots`);
+
+    let response = null;
+    listener({
+      channel: "resonantos.browser_first.content",
+      type: "type_text",
+      ref: field.ref,
+      text: "hacked",
+      userApproved: true,
+    }, {}, (payload) => {
+      response = payload;
+    });
+
+    assert.equal(response?.ok, false, `typing into name="${name}" must be blocked`);
+    assert.equal(response.approvalRequired, true, `name="${name}" must require human action`);
+    assert.equal(response.deniedToAutomation, true, `name="${name}" must be denied to automation even with userApproved`);
+    assert.equal(response.fieldSafety.kind, "credential", `name="${name}" must report the credential boundary`);
+    assert.equal(dom.window.document.getElementById(`f${index}`).value, "human-secret", `name="${name}" value must be unchanged`);
+  });
+});
+
+test("#224: underscore-named search fields classify search-query but stay gated by formIsSafeToAutoSubmit", async () => {
+  const { dom, listener } = await loadContentScript(`
+    <!doctype html>
+    <form id="mixed-form">
+      <label for="terms">Search terms</label>
+      <input id="terms" type="text" name="search_terms" value="">
+      <label for="topic">Topic</label>
+      <input id="topic" type="text" name="topic" value="">
+      <button type="submit">Go</button>
+    </form>
+  `);
+
+  let snapshot = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "read_page",
+  }, {}, (payload) => {
+    snapshot = payload.snapshot;
+  });
+  const termsField = snapshot.fields.find((field) => field.id === "terms");
+  // The underscore normalization added for #224 makes name="search_terms"
+  // classify search-query (it was generic-text before) — document that shift...
+  assert.equal(termsField?.fieldKind, "search-query");
+
+  let response = null;
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "type_text",
+    ref: termsField.ref,
+    text: "resonantos hardening",
+    submit: true,
+  }, {}, (payload) => {
+    response = payload;
+  });
+
+  // ...and prove it does not widen auto-submit: the enclosing mixed form still
+  // fails formIsSafeToAutoSubmit, so the submit hands off to the human while
+  // the typed query lands in the field.
+  assert.equal(response?.ok, false);
+  assert.equal(response.deniedToAutomation, true);
+  assert.equal(response.humanHandoff, true, "mixed-form submit must hand off to the human");
+  assert.match(response.error, /human must submit/i);
+  assert.equal(dom.window.document.getElementById("terms").value, "resonantos hardening", "the typed query still lands");
+  assert.equal(dom.window.document.getElementById("topic").value, "", "no other field receives text");
+});
