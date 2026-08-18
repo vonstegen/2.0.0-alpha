@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { controlStepLabel } from "../resonantos-side-panel-extension/src/lib/agent-control-planner.js";
 import { approvalBoundaryForStep } from "../resonantos-side-panel-extension/src/lib/approval-policy.js";
+import { controlStepLabel } from "../resonantos-side-panel-extension/src/lib/agent-control-planner.js";
 import {
   browserJobStepHistory,
   controlResultSummary,
   createAgentControlRunner
 } from "../resonantos-side-panel-extension/src/lib/agent-control-runner.js";
+import { createCertifiedExecutor, loadCertificationPage } from "./agent-control-certification-fixtures.mjs";
 
 function createHarness(overrides = {}) {
   const events = [];
@@ -56,6 +57,7 @@ function createHarness(overrides = {}) {
     },
     executeControlStep: async (step) => {
       events.push(["execute", step]);
+      if (overrides.executeControlStep) return overrides.executeControlStep(step);
       return stepResults[stepResultIndex++] ?? { ok: true };
     },
     finishControlRun: (status, artifact = null) => {
@@ -563,4 +565,107 @@ test("agent control runner can approve or deny a pending step through injected s
   assert.equal(denyHarness.getControlRun().steps[0].details.approvalDecision, "denied");
   assert.equal(denyHarness.getSavedReports().at(-1).status, "denied");
   assert.equal(denyHarness.getSavedReports().at(-1).results.at(-1).result.error, "denied by human");
+});
+
+// #223: runner-level certification on the fixture page. The runner executes
+// through the REAL content.js safety layer, so run statuses and step details
+// certify user-visible behavior: safe plans complete with page effects, and
+// high-risk plans stop at the exact boundary named in the step evidence.
+async function createCertifiedRunner({ decisions }) {
+  const { win, send } = await loadCertificationPage();
+  const { executor } = createCertifiedExecutor({ win, send });
+  const harness = createHarness({
+    approvalBoundaryForStep,
+    decisions,
+    executeControlStep: executor.executeControlStep
+  });
+  return { harness, win };
+}
+
+test("#223: safe click/type/scroll plan completes on the certification fixture with visible page effects", async () => {
+  const { harness, win } = await createCertifiedRunner({
+    decisions: [
+      { status: "continue", thought: "load more rows", action: { type: "click", text: "Load more" } },
+      { status: "continue", thought: "search the catalog", action: { type: "type", text: "vintage synths", field: "Search the catalog" } },
+      { status: "continue", thought: "scroll the feed", action: { type: "scroll", direction: "down" } },
+      { status: "done", thought: "done", doneSummary: "Certification plan completed." }
+    ]
+  });
+
+  const result = await harness.runner.continueControlLoop({ goal: "certify safe actions" });
+
+  assert.equal(result.ok, true, "the safe plan must complete");
+  assert.equal(harness.getControlRun().status, "completed");
+  assert.ok(harness.getControlRun().steps.length >= 3, "all safe steps must be recorded");
+  for (const step of harness.getControlRun().steps) {
+    assert.equal(step.state, "completed", `${step.type} must show a completed state`);
+  }
+  assert.ok(win.__certClicks.loadMore >= 1, "the safe click must actuate the page handler");
+  assert.equal(win.document.getElementById("cert-search").value, "vintage synths", "the safe typed value must land on the page");
+  assert.ok(win.scrollY > 0, "the safe scroll must move the page");
+});
+
+test("#223: wallet connect attempt blocks the run with the wallet boundary named and nothing actuated", async () => {
+  const { harness, win } = await createCertifiedRunner({
+    decisions: [
+      { status: "continue", thought: "connect wallet", action: { type: "click", text: "Connect wallet" } }
+    ]
+  });
+
+  const result = await harness.runner.continueControlLoop({ goal: "connect wallet" });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.approvalRequired, true);
+  assert.equal(harness.getControlRun().status, "blocked");
+  assert.equal(harness.getPendingApproval(), null, "hard boundaries must never create an approval job");
+  const step = harness.getControlRun().steps[0];
+  assert.equal(step.state, "blocked");
+  assert.equal(step.details.safetyClass, "hard");
+  assert.match(step.details.result, /wallet|payment|login|credential/, "step evidence must name the boundary");
+  assert.match(step.note, /wallet|payment|login|credential|human/i, "step note must name the boundary");
+  assert.equal(win.__certClicks.wallet, 0, "the wallet control must never be actuated");
+  assert.equal(win.__certActivity, "fixture ready", "the page must remain untouched");
+});
+
+test("#223: public-submit attempt is a terminal human handoff with no approval job and nothing actuated", async () => {
+  const { harness, win } = await createCertifiedRunner({
+    decisions: [
+      { status: "continue", thought: "place order", action: { type: "click", text: "Place order" } }
+    ]
+  });
+
+  const result = await harness.runner.continueControlLoop({ goal: "checkout" });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.approvalRequired, true);
+  assert.equal(result.handoff, true, "#240: public-submit must be a terminal human handoff");
+  assert.equal(harness.getControlRun().status, "blocked");
+  assert.equal(harness.getPendingApproval(), null, "#240: public-submit must never create a pending approval");
+  const step = harness.getControlRun().steps[0];
+  assert.equal(step.state, "blocked");
+  // "Place order" is classified into the more specific checkout human-only
+  // state; either way the step must land in a human-only intervention state.
+  assert.match(step.details.humanInterventionState, /^(checkout|public-submit)$/, "the step must carry a human-only intervention state");
+  assert.match(step.details.result, /public submit|commit|human/, "step evidence must name the public-submit boundary");
+  assert.equal(win.__certClicks.placeOrder, 0, "the order control must never be actuated");
+});
+
+test("#223: credential typing attempt blocks the run with the credential boundary named and the field untouched", async () => {
+  const { harness, win } = await createCertifiedRunner({
+    decisions: [
+      { status: "continue", thought: "enter password", action: { type: "type", text: "hunter2", field: "Password" } }
+    ]
+  });
+
+  const result = await harness.runner.continueControlLoop({ goal: "sign in" });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.approvalRequired, true);
+  assert.equal(harness.getControlRun().status, "blocked", "credential typing must block without an approval job");
+  assert.equal(harness.getPendingApproval(), null);
+  const step = harness.getControlRun().steps[0];
+  assert.equal(step.details.safetyClass, "hard");
+  assert.match(step.details.result, /credential|human/i, "step evidence must name the credential boundary");
+  assert.match(step.details.humanInterventionState, /login|credential|human/i, "human intervention state must reflect the boundary");
+  assert.equal(win.document.getElementById("cert-password").value, "", "the password field must stay empty");
 });

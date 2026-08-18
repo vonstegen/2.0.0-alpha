@@ -61,7 +61,13 @@ public-submit handoff from
 [#240](https://github.com/ResonantOS/2.0.0-alpha/issues/240) is present in the
 runner, so the post-approval-public-submit scenario reports a real pass or fail
 instead of a gate. Manual dispatch can set `public_submit_contract=required` to
-fail certification if the handoff regresses.
+fail certification if the handoff regresses. Deterministic certification
+fixtures for safe click/type/scroll and blocked high-risk paths
+([#223](https://github.com/ResonantOS/2.0.0-alpha/issues/223)) run through
+`browser-first/test/agent-control-certification/run-certification.mjs` with
+run-ID-bound artifacts, and credential alias fields
+(`passwd`/`pwd`/`pin`/`passkey`/`security_code`) are hard typing boundaries
+([#224](https://github.com/ResonantOS/2.0.0-alpha/issues/224)).
 
 Runtime discovery is fixed-root and canonical: ambient `PATH`, arbitrary
 Hermes profile roots, and arbitrary OpenCode command paths are not executable
