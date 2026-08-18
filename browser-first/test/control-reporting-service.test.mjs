@@ -163,6 +163,56 @@ test("control reporting service redacts secrets from job reports and delegation 
   assert.doesNotMatch(bridgeCall[2].mission, /xyz789/);
 });
 
+test("control reporting service redacts archive metadata (titles and url) alongside content", async () => {
+  const harness = createHarness({
+    currentControlRun: {
+      id: "job-9",
+      goal: "log in with password=hunter2secret",
+      planner: "observe-act-verify-loop",
+      startedAt: "2026-05-26T10:00:00.000Z",
+      summary: "Observe and act",
+      status: "blocked",
+      timing: { durationMs: 1000 },
+      steps: [],
+      pageLock: { tabId: 7, siteKey: "example.test", url: "https://example.test/login", reason: "Agent Control goal" }
+    },
+    lastSnapshot: {
+      title: "Login",
+      url: "https://example.test/callback?code=4AbCdEfSecret&token=abc123&state=home"
+    }
+  });
+
+  await harness.service.saveControlReportToArchive([], "blocked");
+  const controlCall = harness.events.find((event) => event[0] === "bridge");
+  assert.match(controlCall[2].title, /Browser control blocked/);
+  assert.match(controlCall[2].title, /password=REDACTED/);
+  assert.doesNotMatch(controlCall[2].title, /hunter2secret/);
+  assert.match(controlCall[2].url, /code=REDACTED/);
+  assert.match(controlCall[2].url, /token=REDACTED/);
+  assert.match(controlCall[2].url, /state=home/);
+  assert.doesNotMatch(controlCall[2].url, /4AbCdEfSecret/);
+  assert.doesNotMatch(controlCall[2].url, /abc123/);
+
+  harness.events.length = 0;
+  await harness.service.saveBrowserJobReportToArchive({
+    id: "job-10",
+    goal: "resume with api_key=sekrit99",
+    status: "blocked",
+    planner: "observe-act-verify-loop",
+    createdAt: "2026-05-26T09:00:00.000Z",
+    updatedAt: "2026-05-26T09:02:00.000Z",
+    timing: { durationMs: 1000 },
+    summary: "Observed",
+    pageLock: null,
+    steps: [],
+    artifacts: []
+  });
+  const jobCall = harness.events.find((event) => event[0] === "bridge");
+  assert.match(jobCall[2].title, /Browser job blocked/);
+  assert.match(jobCall[2].title, /api_key=REDACTED/);
+  assert.doesNotMatch(jobCall[2].title, /sekrit99/);
+});
+
 test("control reporting service saves reports to archive intake", async () => {
   const harness = createHarness();
 

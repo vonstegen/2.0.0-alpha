@@ -13,12 +13,47 @@ test("redactTraceText redacts secret assignment forms", () => {
   assert.equal(redactTraceText("password=hunter2secret"), "password=REDACTED");
   assert.equal(redactTraceText("password: hunter2secret"), "password: REDACTED");
   assert.equal(redactTraceText("password:hunter2secret"), "password:REDACTED");
-  const bearer = redactTraceText("Token: Bearer abc123");
-  assert.match(bearer, /Token: REDACTED/);
-  assert.doesNotMatch(bearer, /Bearer/);
   assert.equal(redactTraceText("api_key = super-secret-value"), "api_key = REDACTED");
   assert.equal(redactTraceText("pin: 9876"), "pin: REDACTED");
   assert.equal(redactTraceText("otp is 123456"), "otp is 123456");
+});
+
+test("redactTraceText redacts the token following a Bearer scheme", () => {
+  const bearer = redactTraceText("Token: Bearer abc123");
+  assert.match(bearer, /Token: REDACTED/);
+  assert.doesNotMatch(bearer, /Bearer/);
+  assert.doesNotMatch(bearer, /abc123/);
+  const authorization = redactTraceText("Authorization: Bearer eyJhbGci.payload.signature-x");
+  assert.match(authorization, /Authorization: REDACTED/);
+  assert.doesNotMatch(authorization, /Bearer/);
+  assert.doesNotMatch(authorization, /eyJhbGci/);
+});
+
+test("redactTraceText redacts session, sid, csrf, key, and code assignments", () => {
+  assert.equal(redactTraceText("session=abc123def"), "session=REDACTED");
+  assert.equal(redactTraceText("sid: s-778899"), "sid: REDACTED");
+  assert.equal(redactTraceText("csrf=t0k3n-v4lue"), "csrf=REDACTED");
+  assert.equal(redactTraceText("key = private-key-material"), "key = REDACTED");
+  assert.equal(redactTraceText("code: 84h2k9"), "code: REDACTED");
+  const oauth = redactTraceText("https://a.test/cb?code=4/0AbCdEf&state=xyz");
+  assert.match(oauth, /code=REDACTED/);
+  assert.doesNotMatch(oauth, /4\/0AbCdEf/);
+});
+
+test("redactTraceText redacts secrets inside percent-encoded nested URLs", () => {
+  const nested = redactTraceText("https://a.test/login?next=https%3A%2F%2Fb.com%2F%3Ftoken%3Dabc123");
+  assert.match(nested, /%3Ftoken%3DREDACTED/i);
+  assert.doesNotMatch(nested, /abc123/);
+  const chained = redactTraceText("?return=https%3A%2F%2Fc.com%2Fpage%3Fa%3D1%26api_key%3Dsekrit99%26b%3D2");
+  assert.match(chained, /%26api_key%3DREDACTED/i);
+  assert.doesNotMatch(chained, /sekrit99/);
+  assert.match(chained, /%26b%3D2/i);
+});
+
+test("redactTraceText redacts full assignment values through commas and semicolons", () => {
+  assert.equal(redactTraceText("password=abc,defsecret"), "password=REDACTED");
+  assert.equal(redactTraceText("token: v1;part2;part3 done"), "token: REDACTED done");
+  assert.doesNotMatch(redactTraceText("secret=left,right tail"), /right/);
 });
 
 test("redactTraceText redacts long hex tokens and preserves short hex and normal text", () => {

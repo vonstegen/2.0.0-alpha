@@ -143,9 +143,9 @@ export function createControlReportingService({
     return bridge()("/archive/intake", {
       method: "POST",
       body: {
-        title: `Browser control ${status}: ${currentControlRun?.goal ?? "task"}`.slice(0, 160),
+        title: redactTraceText(`Browser control ${status}: ${currentControlRun?.goal ?? "task"}`).slice(0, 160),
         content,
-        url: lastSnapshot?.url ?? null,
+        url: lastSnapshot?.url ? redactTraceText(lastSnapshot.url) : null,
         sourceMessageId: currentControlRun?.id ?? null
       }
     }).catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
@@ -263,7 +263,7 @@ export function createControlReportingService({
     return bridge()("/archive/intake", {
       method: "POST",
       body: {
-        title: `Browser job ${job.status}: ${job.goal ?? "task"}`.slice(0, 160),
+        title: redactTraceText(`Browser job ${job.status}: ${job.goal ?? "task"}`).slice(0, 160),
         content,
         url: null,
         sourceMessageId: job.id ?? null
