@@ -823,7 +823,14 @@ const agentControlRunner = createAgentControlRunner({
   executeControlStep,
   finishControlRun,
   getActiveJobId: () => browserJobStore.getActiveJobId(),
-  getActiveJobStatus: () => browserJobStore.findJob(browserJobStore.getActiveJobId())?.status ?? null,
+  // #226: exact-id lookup of the run's OWN job. Never findJob (fuzzy) and
+  // never getActiveJobId() here: the store re-points activeJobId at the next
+  // active job as soon as the cancelled job goes terminal, which would make a
+  // cancelled run read an innocent queued job's status and keep executing.
+  getActiveJobStatus: (jobId) => {
+    const id = String(jobId ?? browserJobStore.getActiveJobId() ?? "");
+    return browserJobStore.getJobs().find((job) => job.id === id)?.status ?? null;
+  },
   getCurrentControlRun: () => currentControlRun,
   getLastSnapshot: () => lastSnapshot,
   observeControlPage,
