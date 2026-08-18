@@ -3,7 +3,6 @@ import test from "node:test";
 
 import { approvalBoundaryForStep } from "../resonantos-side-panel-extension/src/lib/approval-policy.js";
 import { controlStepLabel } from "../resonantos-side-panel-extension/src/lib/agent-control-planner.js";
-import { approvalBoundaryForStep } from "../resonantos-side-panel-extension/src/lib/approval-policy.js";
 import {
   browserJobStepHistory,
   controlResultSummary,
@@ -564,6 +563,9 @@ test("agent control runner can approve or deny a pending step through injected s
   assert.equal(denyHarness.getControlRun().status, "denied");
   assert.equal(denyHarness.getControlRun().steps[0].state, "blocked");
   assert.equal(denyHarness.getControlRun().steps[0].details.approvalDecision, "denied");
+  assert.equal(denyHarness.getSavedReports().at(-1).status, "denied");
+  assert.equal(denyHarness.getSavedReports().at(-1).results.at(-1).result.error, "denied by human");
+});
 
 // #223: runner-level certification on the fixture page. The runner executes
 // through the REAL content.js safety layer, so run statuses and step details
@@ -625,7 +627,7 @@ test("#223: wallet connect attempt blocks the run with the wallet boundary named
   assert.equal(win.__certActivity, "fixture ready", "the page must remain untouched");
 });
 
-test("#223: public-submit attempt creates an approval card and actuates nothing", async () => {
+test("#223: public-submit attempt is a terminal human handoff with no approval job and nothing actuated", async () => {
   const { harness, win } = await createCertifiedRunner({
     decisions: [
       { status: "continue", thought: "place order", action: { type: "click", text: "Place order" } }
@@ -636,10 +638,14 @@ test("#223: public-submit attempt creates an approval card and actuates nothing"
 
   assert.equal(result.ok, false);
   assert.equal(result.approvalRequired, true);
-  assert.equal(harness.getControlRun().status, "approval", "public-submit must surface an approval card");
-  assert.ok(harness.getPendingApproval(), "public-submit must carry a pending approval card");
+  assert.equal(result.handoff, true, "#240: public-submit must be a terminal human handoff");
+  assert.equal(harness.getControlRun().status, "blocked");
+  assert.equal(harness.getPendingApproval(), null, "#240: public-submit must never create a pending approval");
   const step = harness.getControlRun().steps[0];
-  assert.equal(step.details.safetyClass, "public-submit");
+  assert.equal(step.state, "blocked");
+  // "Place order" is classified into the more specific checkout human-only
+  // state; either way the step must land in a human-only intervention state.
+  assert.match(step.details.humanInterventionState, /^(checkout|public-submit)$/, "the step must carry a human-only intervention state");
   assert.match(step.details.result, /public submit|commit|human/, "step evidence must name the public-submit boundary");
   assert.equal(win.__certClicks.placeOrder, 0, "the order control must never be actuated");
 });
@@ -662,7 +668,4 @@ test("#223: credential typing attempt blocks the run with the credential boundar
   assert.match(step.details.result, /credential|human/i, "step evidence must name the credential boundary");
   assert.match(step.details.humanInterventionState, /login|credential|human/i, "human intervention state must reflect the boundary");
   assert.equal(win.document.getElementById("cert-password").value, "", "the password field must stay empty");
-});
-  assert.equal(denyHarness.getSavedReports().at(-1).status, "denied");
-  assert.equal(denyHarness.getSavedReports().at(-1).results.at(-1).result.error, "denied by human");
 });

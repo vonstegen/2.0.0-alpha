@@ -30,11 +30,11 @@
     "typing into credential and payment fields is denied with the boundary named",
     "safe click/type/scroll plan completes on the certification fixture",
     "wallet connect attempt blocks the run with the wallet boundary named",
-    "public-submit attempt creates an approval card",
+    "public-submit attempt is a terminal human handoff",
     "credential typing attempt blocks the run with the credential boundary named"
   ],
   "fullRegressionCommand": ["npm", "run", "test:browser-first"],
-  "minFullRegressionPassCount": 649,
+  "minFullRegressionPassCount": 840,
   "forbiddenEvidenceText": [
     "AC_CERT_SENTINEL_DO_NOT_LEAK"
   ],
