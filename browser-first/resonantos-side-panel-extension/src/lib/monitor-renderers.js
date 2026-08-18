@@ -1,3 +1,4 @@
+import { approvalBoundaryForStep } from "./approval-policy.js";
 import { isClearableBrowserJobStatus, staleBrowserJobEvidence } from "./browser-job-store.js";
 import {
   controlActionStateLabel,
@@ -444,10 +445,12 @@ export function createMonitorRenderers({
         boundary === "hard"
           ? "Hard boundary: wallet, payment, login, credential, signing, or irreversible value actions cannot be trusted by site."
           : boundary === "public-submit"
-            ? "Public-submit boundary: use approve once only when you have reviewed the page state."
+            ? "Public-submit boundary: this is human-only — click the control yourself on the page, then resume or continue the job. Augmentor never clicks public-submit controls."
             : "Safe-action boundary: you may approve once or trust this task class for this site."
       ].filter(Boolean).join("\n");
-      approvalApproveButton.disabled = boundary === "hard";
+      // #240: hard and public-submit approvals are never executable. The approve
+      // button stays disabled so no "Approve once" surface exists for them.
+      approvalApproveButton.disabled = boundary === "hard" || boundary === "public-submit";
       if (approvalAllowOnceButton) {
         approvalAllowOnceButton.disabled = boundary !== "safe";
         approvalAllowOnceButton.title = boundary === "safe"
@@ -820,7 +823,12 @@ export function createMonitorRenderers({
         addJobButton("Focus", `Focus ${job.goal}`, onActivateBrowserJob);
       }
       if (job.status === "approval" && job.pendingApproval) {
-        addJobButton("Approve once", `Approve the pending action for ${job.goal}`, onApproveBrowserJob, { primary: true });
+        // #240: a hard/public-submit pending approval is a handoff, not an
+        // executable approval — never render "Approve once" for it.
+        const pendingBoundary = approvalBoundaryForStep(job.pendingApproval.step, job.pendingApproval.reason);
+        if (pendingBoundary !== "hard" && pendingBoundary !== "public-submit") {
+          addJobButton("Approve once", `Approve the pending action for ${job.goal}`, onApproveBrowserJob, { primary: true });
+        }
         addJobButton("Deny", `Deny the pending action for ${job.goal}`, onDenyBrowserJob);
       }
       if (["queued", "running", "approval"].includes(job.status)) {

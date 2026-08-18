@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { controlStepLabel } from "../resonantos-side-panel-extension/src/lib/agent-control-planner.js";
+import { approvalBoundaryForStep } from "../resonantos-side-panel-extension/src/lib/approval-policy.js";
 import {
   browserJobStepHistory,
   controlResultSummary,
@@ -339,7 +340,7 @@ test("agent control runner continues a previous job with seeded planner history"
   assert.equal(harness.nextActionRequests[0].history[0].action.label, "Read booking page");
 });
 
-test("agent control runner stores pending approval when a step requires human review", async () => {
+test("#240: agent control runner makes a public-submit failure a terminal handoff with no approval job", async () => {
   const harness = createHarness({
     decisions: [{ status: "continue", thought: "submit", action: { type: "click", text: "Submit" } }],
     stepResults: [{ ok: false, approvalRequired: true, error: "Public submit requires approval." }]
@@ -349,13 +350,14 @@ test("agent control runner stores pending approval when a step requires human re
 
   assert.equal(result.ok, false);
   assert.equal(result.approvalRequired, true);
-  assert.equal(harness.getControlRun().status, "approval");
-  assert.equal(harness.getPendingApproval().step.text, "Submit");
+  assert.equal(result.handoff, true);
+  assert.equal(harness.getControlRun().status, "blocked");
+  assert.equal(harness.getPendingApproval(), null, "#240: no pending approval may exist for a public-submit step");
+  assert.ok(!harness.events.some((event) => event[0] === "pending"), "#240: no approval state may be exposed");
   assert.equal(harness.getControlRun().steps[0].details.confidence, "low");
   assert.match(harness.getControlRun().steps[0].details.uncertainty, /Public submit requires approval/);
   assert.equal(harness.getControlRun().steps[0].details.humanInterventionState, "public-submit");
-  assert.match(harness.getControlRun().steps[0].details.nextHumanAction, /approve once/);
-  assert.ok(harness.events.some((event) => event[0] === "pending" && event[1] === "click"));
+  assert.match(harness.getControlRun().steps[0].details.nextHumanAction, /click the submit\/commit control yourself on the page/);
 });
 
 test("agent control runner uses scoped task consent only for safe approval retries", async () => {
@@ -462,19 +464,57 @@ test("agent control runner preserves ambiguous target candidates for retargeting
   assert.equal(harness.getSavedReports().at(-1).results[0].result.ambiguousTarget, true);
 });
 
-test("agent control runner does not use task consent for public-submit approval", async () => {
+test("#240: agent control runner makes public-submit a terminal handoff, not an approval job", async () => {
   const harness = createHarness({
     decisions: [{ status: "continue", thought: "submit", action: { type: "click", text: "Submit" } }],
-    stepResults: [{ ok: false, approvalRequired: true, error: "Clicking Submit looks like a submit/public action and requires human approval." }],
+    stepResults: [{ ok: false, approvalRequired: true, humanHandoff: true, error: "Clicking \"Submit public form\" is a public submit/commit action and must be performed by the human on the page." }],
     taskConsents: [{ siteKey: "example.test", taskClass: "form-edit" }]
   });
 
   const result = await harness.runner.continueControlLoop({ goal: "fill this form" });
 
   assert.equal(result.ok, false);
+  assert.equal(result.handoff, true, "the run must report a human handoff");
   assert.equal(result.approvalRequired, true);
   assert.equal(harness.events.filter((event) => event[0] === "execute").length, 1);
-  assert.equal(harness.getControlRun().status, "approval");
+  assert.equal(harness.getControlRun().status, "blocked");
+  assert.equal(harness.getPendingApproval(), null, "public-submit must never create a pending approval");
+  assert.ok(!harness.events.some((event) => event[0] === "pending"), "no approval state may be exposed");
+  const step = harness.getControlRun().steps[0];
+  assert.equal(step.state, "blocked");
+  assert.equal(step.details.phase, "handoff");
+  assert.equal(step.details.humanInterventionState, "public-submit");
+  const message = harness.events.find((event) => event[0] === "message")[2];
+  assert.match(message, /must be performed by the human/);
+  assert.match(message, /click the submit\/commit control yourself on the page, then resume or continue the job/);
+  assert.equal(harness.getSavedReports().at(-1).status, "blocked-human-handoff");
+});
+
+test("#240: agent control runner refuses to approve a public-submit step into execution", async () => {
+  const harness = createHarness({
+    approvalBoundaryForStep: approvalBoundaryForStep,
+    decisions: [{ status: "done", thought: "done", doneSummary: "Done." }],
+    stepResults: [{ ok: true }]
+  });
+  const approval = {
+    step: { type: "click", text: "Submit public form" },
+    stepIndex: 0,
+    reason: "public submit",
+    results: [{ step: { type: "click", text: "Submit public form" }, result: { ok: false, approvalRequired: true } }],
+    history: []
+  };
+  harness.getControlRun().steps.push({ type: "click", text: "Submit public form", state: "blocked" });
+
+  await harness.runner.approvePendingControlStep(approval);
+
+  assert.equal(harness.events.filter((event) => event[0] === "execute").length, 0, "a public-submit step must never execute through approve-once");
+  assert.equal(harness.getControlRun().status, "blocked");
+  assert.equal(harness.getControlRun().steps[0].state, "blocked");
+  assert.equal(harness.getControlRun().steps[0].details.approvalDecision, "human-only-handoff");
+  const message = harness.events.find((event) => event[0] === "message")?.[2] ?? "";
+  assert.match(message, /human-only/);
+  assert.match(message, /click it yourself on the page, then resume or continue the job/i);
+  assert.equal(harness.getSavedReports().at(-1).status, "blocked-human-handoff");
 });
 
 test("agent control runner blocks hard human-only boundaries without pending approval", async () => {
@@ -497,25 +537,25 @@ test("agent control runner blocks hard human-only boundaries without pending app
 test("agent control runner can approve or deny a pending step through injected state", async () => {
   const approvalHarness = createHarness({
     decisions: [{ status: "done", thought: "done", doneSummary: "Done after approval." }],
-    stepResults: [{ ok: true, clickedText: "Submit" }]
+    stepResults: [{ ok: true, clickedText: "Open details" }]
   });
   const approval = {
-    step: { type: "click", text: "Submit" },
+    step: { type: "click", text: "Open details" },
     stepIndex: 0,
-    results: [{ step: { type: "click", text: "Submit" }, result: { ok: false, approvalRequired: true } }],
+    results: [{ step: { type: "click", text: "Open details" }, result: { ok: false, approvalRequired: true } }],
     history: []
   };
-  approvalHarness.getControlRun().steps.push({ type: "click", text: "Submit", state: "blocked" });
+  approvalHarness.getControlRun().steps.push({ type: "click", text: "Open details", state: "blocked" });
 
   await approvalHarness.runner.approvePendingControlStep(approval);
 
   assert.equal(approvalHarness.getControlRun().status, "completed");
   assert.equal(approvalHarness.getControlRun().steps[0].state, "completed");
-  assert.equal(approvalHarness.getControlRun().steps[0].note, 'clicked "Submit"');
+  assert.equal(approvalHarness.getControlRun().steps[0].note, 'clicked "Open details"');
   assert.equal(approvalHarness.getControlRun().steps[0].details.approvalDecision, "approved-once");
 
   const denyHarness = createHarness();
-  denyHarness.getControlRun().steps.push({ type: "click", text: "Submit", state: "blocked" });
+  denyHarness.getControlRun().steps.push({ type: "click", text: "Open details", state: "blocked" });
   await denyHarness.runner.denyPendingControlStep({ ...approval, results: [] });
 
   assert.equal(denyHarness.getControlRun().status, "denied");

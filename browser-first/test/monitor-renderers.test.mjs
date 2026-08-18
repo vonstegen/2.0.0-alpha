@@ -318,9 +318,9 @@ test("monitor renderers render control steps, artifacts, and approval boundaries
   assert.match(harness.dom.window.document.querySelector(".control-step-detail").textContent, /Product page/);
   assert.match(harness.dom.window.document.querySelector("#control-artifacts").textContent, /report: \/tmp\/report\.md/);
   assert.equal(harness.dom.window.document.querySelector("#approval").hidden, false);
-  assert.equal(harness.dom.window.document.querySelector("#approval-approve").disabled, false);
+  assert.equal(harness.dom.window.document.querySelector("#approval-approve").disabled, true, "#240: public-submit must never expose an executable approve-once button");
   assert.equal(harness.dom.window.document.querySelector("#approval-trust").disabled, true);
-  assert.match(harness.dom.window.document.querySelector("#approval-reason").textContent, /Public-submit boundary/);
+  assert.match(harness.dom.window.document.querySelector("#approval-reason").textContent, /Public-submit boundary: this is human-only — click the control yourself on the page, then resume or continue the job/);
 });
 
 test("a blocked step opens its detail by default so the human sees action/safety before approving", () => {
@@ -542,7 +542,7 @@ test("monitor renderers expose job-specific approval focus", () => {
           }
         }],
         stepIndex: 1,
-        step: { type: "click", text: "Submit public form" }
+        step: { type: "click", text: "Submit public form", boundary: "public-submit" }
       },
       pageLock: { tabId: 77, siteKey: "shop.example", url: "https://shop.example/review", reason: "Agent Control goal: submit reviewed form" },
       steps: [
@@ -551,7 +551,7 @@ test("monitor renderers expose job-specific approval focus", () => {
           state: "blocked",
           label: "Submit public form",
           type: "click",
-          details: { nextHumanAction: "Focus this browser job, review the page, then approve once or deny." }
+          details: { nextHumanAction: "Focus this browser job, then click the control yourself on the page and continue." }
         }
       ]
     }
@@ -565,7 +565,7 @@ test("monitor renderers expose job-specific approval focus", () => {
   harness.renderers.renderJobMonitor();
 
   assert.match(harness.dom.window.document.querySelector("#jobs-list").textContent, /approval/);
-  assert.match(harness.dom.window.document.querySelector("#jobs-list").textContent, /Focus this browser job/);
+  assert.match(harness.dom.window.document.querySelector("#jobs-list").textContent, /click the control yourself on the page and continue/);
   assert.match(harness.dom.window.document.querySelector("#jobs-list").textContent, /Visible page owner: this job follows the active readable tab/);
   assert.match(harness.dom.window.document.querySelector("#jobs-list").textContent, /Background approval: Focus activates tab 77 before approve or deny/);
   assert.match(harness.dom.window.document.querySelector(".job-approval-card").textContent, /Approval needed: Submit public form/);
@@ -573,14 +573,14 @@ test("monitor renderers expose job-specific approval focus", () => {
   assert.match(harness.dom.window.document.querySelector(".job-approval-card").textContent, /https:\/\/shop\.example\/review/);
   assert.match(harness.dom.window.document.querySelector(".job-approval-card").textContent, /shop\.example · tab 77/);
   assert.match(harness.dom.window.document.querySelector(".job-approval-card").textContent, /Review the visible page state before approving/);
-  [...harness.dom.window.document.querySelectorAll(".job-actions button")]
-    .find((button) => button.textContent === "Focus")
-    .click();
+  const jobButtons = [...harness.dom.window.document.querySelectorAll(".job-actions button")];
+  assert.equal(
+    jobButtons.some((button) => button.textContent === "Approve once"),
+    false,
+    "#240: a public-submit approval job must never expose an executable Approve-once button"
+  );
+  jobButtons.find((button) => button.textContent === "Focus").click();
   assert.deepEqual(harness.state.focused, ["job-approval"]);
-  [...harness.dom.window.document.querySelectorAll(".job-actions button")]
-    .find((button) => button.textContent === "Approve once")
-    .click();
-  assert.deepEqual(harness.state.approved, ["job-approval"]);
   [...harness.dom.window.document.querySelectorAll(".job-actions button")]
     .find((button) => button.textContent === "Deny")
     .click();

@@ -22,11 +22,14 @@
       form?.getAttribute?.("id"),
       form?.getAttribute?.("name"),
       form?.getAttribute?.("action")
-    ].filter(Boolean).join(" ").toLowerCase();
+    ].filter(Boolean).join(" ").replaceAll("_", " ").toLowerCase();
 
     if (
       type === "password" ||
-      /\b(password|passcode|passphrase|credential|secret|seed|private\s*key|otp|2fa|mfa|one[-\s]?time|verification\s*code|authenticator)\b/.test(haystack)
+      // #224: credential names also cover passwd/pwd/pin/passkey/security-code
+      // aliases — sites frequently use type="text" for these, and an unblocked
+      // generic-text classification would let Agent Control type into them.
+      /\b(password|passcode|passphrase|passwd|pwd|pin|passkey|security[\s_-]*code|credential|secret|seed|private\s*key|otp|2fa|mfa|one[-\s]?time|verification\s*code|authenticator)\b/.test(haystack)
     ) {
       return { kind: "credential", safeToType: false, safeToSubmit: false, reason: "Credential fields are human-only until the secure vault approval model exists." };
     }
