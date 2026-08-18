@@ -9,6 +9,7 @@ import {
   createAgentControlRunner
 } from "../resonantos-side-panel-extension/src/lib/agent-control-runner.js";
 import { createCertifiedExecutor, loadCertificationPage } from "./agent-control-certification-fixtures.mjs";
+import { createBrowserJobStore } from "../resonantos-side-panel-extension/src/lib/browser-job-store.js";
 
 function createHarness(overrides = {}) {
   const events = [];
@@ -35,6 +36,7 @@ function createHarness(overrides = {}) {
   const stepResults = overrides.stepResults ?? [{ ok: true, clickedText: "Next" }];
   const savedReports = [];
   let stepResultIndex = 0;
+  let jobStatus = overrides.jobStatus ?? null;
 
   const deps = {
     addMessage: async (role, content) => events.push(["message", role, content]),
@@ -69,6 +71,7 @@ function createHarness(overrides = {}) {
       events.push(["finish", status]);
     },
     getActiveJobId: () => activeJobId,
+    getActiveJobStatus: () => jobStatus,
     getCurrentControlRun: () => controlRun,
     getLastSnapshot: () => lastSnapshot,
     observeControlPage: async () => {
@@ -119,6 +122,8 @@ function createHarness(overrides = {}) {
     }
   };
 
+  Object.assign(deps, overrides.deps ?? {});
+
   return {
     events,
     getControlRun: () => controlRun,
@@ -126,6 +131,9 @@ function createHarness(overrides = {}) {
     nextActionRequests,
     getPendingApproval: () => pendingApproval,
     runner: createAgentControlRunner(deps),
+    setJobStatus: (status) => {
+      jobStatus = status;
+    },
     setLastSnapshot: (snapshot) => {
       lastSnapshot = snapshot;
     }
@@ -668,4 +676,152 @@ test("#223: credential typing attempt blocks the run with the credential boundar
   assert.match(step.details.result, /credential|human/i, "step evidence must name the credential boundary");
   assert.match(step.details.humanInterventionState, /login|credential|human/i, "human intervention state must reflect the boundary");
   assert.equal(win.document.getElementById("cert-password").value, "", "the password field must stay empty");
+});
+
+test("#226: cancellation during preflight halts the run before any step executes", async () => {
+  const harness = createHarness({ jobStatus: "cancelled" });
+
+  const result = await harness.runner.continueControlLoop({ goal: "click next" });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.stopped, "cancelled");
+  assert.equal(harness.events.filter((event) => event[0] === "execute").length, 0);
+  assert.equal(harness.nextActionRequests.length, 0);
+  assert.equal(harness.getControlRun().status, "cancelled");
+  assert.equal(harness.getPendingApproval(), null);
+  assert.ok(harness.events.some((event) => event[0] === "message" && /stopped by human/.test(event[2])));
+  assert.ok(harness.events.some((event) => event[0] === "job" && event[2].status === "cancelled"));
+});
+
+test("#226: cancellation mid-step halts the run before the next action plans or executes", async () => {
+  const harness = createHarness({
+    executeControlStep: async (step) => {
+      harness.setJobStatus("cancelled");
+      return { ok: true, clickedText: "Next" };
+    }
+  });
+
+  const result = await harness.runner.continueControlLoop({ goal: "click next" });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.stopped, "cancelled");
+  assert.equal(harness.events.filter((event) => event[0] === "execute").length, 1);
+  assert.equal(harness.nextActionRequests.length, 1);
+  assert.equal(harness.getControlRun().status, "cancelled");
+  assert.equal(harness.getControlRun().steps[0].state, "cancelled");
+  assert.equal(harness.getControlRun().steps[0].note, "Stopped by human.");
+  assert.match(harness.getControlRun().steps[0].details.nextHumanAction, /restart or resume/);
+  assert.equal(harness.getPendingApproval(), null);
+});
+
+test("#226: pause mid-step halts the run as paused without executing further steps", async () => {
+  const harness = createHarness({
+    executeControlStep: async (step) => {
+      harness.setJobStatus("paused");
+      return { ok: true, clickedText: "Next" };
+    }
+  });
+
+  const result = await harness.runner.continueControlLoop({ goal: "click next" });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.stopped, "paused");
+  assert.equal(harness.events.filter((event) => event[0] === "execute").length, 1);
+  assert.equal(harness.nextActionRequests.length, 1);
+  assert.equal(harness.getControlRun().status, "paused");
+  assert.equal(harness.getPendingApproval(), null);
+});
+
+test("#226: approving a pending step after cancellation executes nothing and clears the approval", async () => {
+  const harness = createHarness({ jobStatus: "cancelled" });
+  harness.getControlRun().steps.push({ type: "click", text: "Place order", state: "blocked" });
+  const approval = {
+    step: { type: "click", text: "Place order", submit: true },
+    stepIndex: 0,
+    reason: "public submit requires human approval",
+    results: [],
+    history: []
+  };
+
+  const result = await harness.runner.approvePendingControlStep(approval);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.stopped, "cancelled");
+  assert.equal(harness.events.filter((event) => event[0] === "execute").length, 0);
+  assert.equal(harness.getControlRun().status, "cancelled");
+  assert.equal(harness.getPendingApproval(), null);
+  assert.ok(harness.events.some((event) => event[0] === "message" && /stopped by human/.test(event[2])));
+});
+
+test("#226: cancelling the run job mid-loop with a queued job in the REAL store halts the run and never touches the queued job", async () => {
+  // Real browser-job-store: when the cancelled job goes terminal the store
+  // re-points activeJobId at the next active job (firstActiveJobId). The run
+  // must still resolve stop state by ITS OWN job id, not the reassigned
+  // active id, or the innocent queued job's status is read and the cancelled
+  // run keeps executing.
+  const initial = {};
+  const storage = {
+    get: async () => initial,
+    set: async (payload) => Object.assign(initial, payload)
+  };
+  let idIndex = 0;
+  const store = createBrowserJobStore({
+    storage,
+    storageKeys: {
+      activeBrowserJob: "active",
+      browserJobs: "jobs",
+      jobMonitorCollapsed: "collapsed"
+    },
+    createId: () => (idIndex++ === 0 ? "job-test" : `job-queued-${idIndex}`)
+  });
+  const runJob = await store.createJob({ goal: "primary control run goal" });
+  const queuedJob = await store.createJob({ goal: "second unrelated queued goal", status: "queued", activate: false });
+  assert.equal(store.getActiveJobId(), runJob.id);
+
+  const jobWrites = [];
+  const harness = createHarness({
+    decisions: [
+      { status: "continue", thought: "click next", action: { type: "click", text: "Next" } },
+      { status: "continue", thought: "click continue", action: { type: "click", text: "Continue" } },
+      { status: "continue", thought: "click save", action: { type: "click", text: "Save" } },
+      { status: "done", thought: "done", doneSummary: "Finished." }
+    ],
+    executeControlStep: async () => {
+      // Human hits Stop while the step is in flight: the run job goes
+      // terminal and the store immediately re-points activeJobId at the
+      // innocent queued job.
+      await store.updateJob(runJob.id, { status: "cancelled" });
+      assert.equal(store.getActiveJobId(), queuedJob.id);
+      return { ok: true, clickedText: "Next" };
+    },
+    deps: {
+      getActiveJobId: () => store.getActiveJobId(),
+      // Mirrors the side-panel wiring: exact-id lookup of the id the runner
+      // asks about (the run's own job id).
+      getActiveJobStatus: (jobId) => {
+        const id = String(jobId ?? store.getActiveJobId() ?? "");
+        return store.getJobs().find((job) => job.id === id)?.status ?? null;
+      },
+      updateBrowserJob: async (jobId, patch) => {
+        jobWrites.push([jobId, patch]);
+        return store.updateJob(jobId, patch);
+      }
+    }
+  });
+
+  const result = await harness.runner.continueControlLoop({ goal: "primary control run goal" });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.stopped, "cancelled");
+  // The step whose execution the human interrupted is the ONLY execute; no
+  // further browser action executes after cancellation.
+  assert.equal(harness.events.filter((event) => event[0] === "execute").length, 1);
+  assert.equal(harness.nextActionRequests.length, 1);
+  // The run's own durable job stays cancelled in the real store.
+  assert.equal(store.getJobs().find((job) => job.id === runJob.id)?.status, "cancelled");
+  // The innocent queued job is untouched: still queued, never flipped to
+  // running, and never the target of any runner write.
+  assert.equal(store.getJobs().find((job) => job.id === queuedJob.id)?.status, "queued");
+  assert.ok(jobWrites.every(([jobId]) => jobId !== queuedJob.id));
+  assert.equal(harness.getPendingApproval(), null);
 });

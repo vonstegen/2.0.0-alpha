@@ -391,6 +391,10 @@ export function createAgentControlRunner(deps) {
     executeControlStep,
     finishControlRun,
     getActiveJobId,
+    // (jobId) => status: MUST resolve status by the exact job id it is given
+    // (strict id equality, no fuzzy/goal-substring matching) so a run always
+    // reads its own job, never whichever job happens to be "active".
+    getActiveJobStatus = () => null,
     getCurrentControlRun,
     getLastSnapshot,
     renderControlMonitor,
@@ -408,10 +412,57 @@ export function createAgentControlRunner(deps) {
     updateControlStep
   } = deps;
 
+  // #226: always resolve stop/cancel state against the job THIS run started
+  // with. browserJobStore.getActiveJobId() is reassigned to the next active
+  // job the moment the cancelled job goes terminal, so reading the "active"
+  // job's status would inspect an innocent queued/paused job and let the
+  // cancelled run keep executing.
+  function controlRunJobId() {
+    return getCurrentControlRun()?.id ?? getActiveJobId();
+  }
+
+  function stoppedJobStatus() {
+    const status = getActiveJobStatus(controlRunJobId());
+    return ["cancelled", "paused"].includes(status) ? status : null;
+  }
+
+  async function stopRun(status, { goal = "", results = [] } = {}) {
+    finishControlRun(status);
+    setPendingApproval(null);
+    renderControlMonitor();
+    setStatus(status === "paused" ? "Paused" : "Cancelled");
+    setActivity(status === "paused" ? "paused" : "failed", status === "paused" ? "Control paused" : "Control stopped", goal);
+    await addMessage(
+      "system",
+      [
+        `Agent Control Mode ${status === "paused" ? "paused" : "stopped by human"}.`,
+        `Goal: ${goal}`,
+        "No further browser actions ran after stop. Pending approval and page control are cleared.",
+        "Review the page state, then continue the job or start a new task when ready."
+      ].join("\n")
+    );
+    await updateBrowserJob(controlRunJobId(), { status });
+    return { ok: false, results, stopped: status };
+  }
+
+  async function stopRunWithStep(status, { goal = "", results = [], stepIndex = null } = {}) {
+    if (stepIndex !== null) {
+      updateControlStep(stepIndex, "cancelled", "Stopped by human.", {
+        phase: "cancelled",
+        nextHumanAction: "Review the page state and restart or resume the browser task when ready."
+      });
+    }
+    return stopRun(status, { goal, results });
+  }
+
   async function continueControlLoop({ goal, history = [], results = [], startIndex = 0, maxSteps = 12 } = {}) {
     try {
       for (let loopIndex = startIndex; loopIndex < maxSteps; loopIndex += 1) {
-        await updateBrowserJob(getActiveJobId(), { status: "running" });
+        const stoppedBeforeLoop = stoppedJobStatus();
+        if (stoppedBeforeLoop) {
+          return stopRun(stoppedBeforeLoop, { goal, results });
+        }
+        await updateBrowserJob(controlRunJobId(), { status: "running" });
         await setPageControlOverlay(true, "reading", "reading");
         const snapshot = await deps.observeControlPage();
         await setPageControlOverlay(true, "reading", "reading");
@@ -595,7 +646,17 @@ export function createAgentControlRunner(deps) {
         const overlayAction = publicControlOverlayActionForStep(step);
         await setPageControlOverlay(true, overlayAction.label, overlayAction.phase);
         setActivity("tool-running", `Executing browser action ${stepIndex + 1}`, controlStepLabel(step));
+        // #226: last-instant stop check — nothing may await between this read
+        // and executeControlStep, or a stop landing in that window is missed.
+        const stoppedBeforeAction = stoppedJobStatus();
+        if (stoppedBeforeAction) {
+          return stopRunWithStep(stoppedBeforeAction, { goal, results, stepIndex });
+        }
         const result = await executeControlStep(step);
+        const stoppedAfterAction = stoppedJobStatus();
+        if (stoppedAfterAction) {
+          return stopRunWithStep(stoppedAfterAction, { goal, results, stepIndex });
+        }
         await setPageControlOverlay(true, "verifying", "verifying");
         const verificationSnapshot = await deps.observeControlPage().catch(() => null);
         const verification = verifyBrowserAction({
@@ -609,6 +670,12 @@ export function createAgentControlRunner(deps) {
           ? await taskConsentForStep({ goal, step, result })
           : null;
         const finalStep = consent ? { ...step, userApproved: true } : step;
+        // #226: last-instant stop check before the consent re-execute; no
+        // await may sit between this read and executeControlStep.
+        const stoppedBeforeConsentExecute = stoppedJobStatus();
+        if (stoppedBeforeConsentExecute) {
+          return stopRunWithStep(stoppedBeforeConsentExecute, { goal, results, stepIndex });
+        }
         const finalResult = consent ? await executeControlStep(finalStep) : result;
         let postActionSnapshot = verificationSnapshot;
         let finalVerification = consent
@@ -650,6 +717,12 @@ export function createAgentControlRunner(deps) {
           actionRetry = retryStep.retryStrategy;
           await setPageControlOverlay(true, "clicking", "clicking");
           executedStep = retryStep;
+          // #226: last-instant stop check — must follow the overlay await so
+          // no await separates this read from executeControlStep.
+          const stoppedBeforeRetry = stoppedJobStatus();
+          if (stoppedBeforeRetry) {
+            return stopRunWithStep(stoppedBeforeRetry, { goal, results, stepIndex });
+          }
           executedResult = await executeControlStep(retryStep);
           await setPageControlOverlay(true, "verifying", "verifying");
           const retrySnapshot = await deps.observeControlPage().catch(() => postActionSnapshot);
@@ -791,7 +864,7 @@ export function createAgentControlRunner(deps) {
       const message = error instanceof Error ? error.message : String(error);
       const status = /cancelled/i.test(message) ? "cancelled" : /paused/i.test(message) ? "paused" : "failed";
       finishControlRun(status);
-      await updateBrowserJob(getActiveJobId(), { status, lastError: message });
+      await updateBrowserJob(controlRunJobId(), { status, lastError: message });
       setStatus(status === "paused" ? "Paused" : status === "cancelled" ? "Cancelled" : "Control failed");
       setActivity(status === "paused" ? "paused" : "failed", `Control mode ${status}`, message);
       await addMessage("system", `Agent Control Mode ${status}.\nGoal: ${goal}\nReason: ${message}`);
@@ -849,6 +922,18 @@ export function createAgentControlRunner(deps) {
 
   async function approvePendingControlStep(approval) {
     if (!approval || !getCurrentControlRun()) return;
+    // #226: a run the human already stopped can never execute an approved
+    // step, whatever its safety class — clear the stale approval card and
+    // finish the stop instead. Checked before the #240 handoff branch so a
+    // stopped run does not post handoff guidance for a step that will not run.
+    const stoppedWhileApproval = stoppedJobStatus();
+    if (stoppedWhileApproval) {
+      setPendingApproval(null);
+      return stopRun(stoppedWhileApproval, {
+        goal: getCurrentControlRun().goal,
+        results: Array.isArray(approval.results) ? approval.results : []
+      });
+    }
     // #240: hard and public-submit steps can never be approved into execution.
     // An in-panel "Approve once" must never turn a wallet/payment/login/
     // credential/public-commit action into an agent click. If a stale approval
@@ -912,6 +997,17 @@ export function createAgentControlRunner(deps) {
       confidence: "medium",
       uncertainty: "Human approval was required before this step could run."
     });
+    // #226: last-instant stop check — the addMessage await above is a window
+    // where the human can stop the run; nothing may await between this read
+    // and executeControlStep.
+    const stoppedBeforeApprovedExecute = stoppedJobStatus();
+    if (stoppedBeforeApprovedExecute) {
+      return stopRunWithStep(stoppedBeforeApprovedExecute, {
+        goal: getCurrentControlRun().goal,
+        results,
+        stepIndex: approval.stepIndex
+      });
+    }
     const result = await executeControlStep(step);
     results.push({ step, result });
     if (!result?.ok) {
