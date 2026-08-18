@@ -43,6 +43,10 @@ in extension source, generated config, Chrome storage, fixtures, or diagnostics.
 npm run test:browser-first
 ```
 
+The [Agent Control certification fixtures](test/agent-control-certification/README.md)
+prove safe click/type/scroll completion and hard-boundary denial against the
+real content-mediation layer (fixture page:
+[agent-control-certification-page.html](test/fixtures/agent-control-certification/agent-control-certification-page.html)).
 The [HRR-033 deterministic certification gate](test/hrr033-certification/README.md)
 documents the focused context and Resonator evidence workflow used for deeper
 browser-first regression certification. Implementation notes for the Alpha
