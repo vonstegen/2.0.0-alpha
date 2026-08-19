@@ -38,7 +38,7 @@ suffix are open. Safety-boundary rows are **never** casual good-first-issues.
 |---|---|---|---|---|
 | Page content analysis / Q&A | #218 · #8 (C) | ✅ supported | page-understanding fixture coverage (#218); `npm run test:browser-first` | — |
 | Highlight-to-ask (inline assistant) | #9 (C) | ✅ supported | inline-assistant path in `provider-bridge-service` tests | — |
-| Counterpoints / explain-jargon | #219 | 🔮 future | fixtures TBD | — |
+| Counterpoints / explain-jargon | #219 | 🟢 supported (deterministic) · 🔒 live proof gated to #267 | `content-inline-actions.js` (counterpoint=C, explain-jargon=J handlers); `inline-action-surface-gate.js` blocks restricted-scheme + blocked-site; deterministic tests in `inline-action-surface-gate.test.mjs` and `content-redaction.test.mjs` | reads-only actions on user-selected text; no page mutation outside the selection; offline fallback for both new actions |
 | Image / media understanding | #242 | ⏸ deferred · 🔒 | live-browser proof; bounded media handling | privacy/security-sensitive |
 
 ### Cross-tab intelligence

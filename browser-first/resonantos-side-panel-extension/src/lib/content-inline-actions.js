@@ -4,6 +4,8 @@
     { action: "custom", label: "Ask", shortcut: "A" },
     { action: "summarize", label: "Summarize", shortcut: "S" },
     { action: "explain", label: "Explain", shortcut: "E" },
+    { action: "counterpoint", label: "Counterpoint", shortcut: "C" },
+    { action: "explain-jargon", label: "Explain jargon", shortcut: "J" },
     { action: "fact-check", label: "Fact-check", shortcut: "F" },
     { action: "translate", label: "Translate", shortcut: "T" },
     { action: "rewrite", label: "Rewrite", shortcut: "R" },
