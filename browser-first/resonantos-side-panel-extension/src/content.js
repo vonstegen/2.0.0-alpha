@@ -1053,6 +1053,69 @@ const showInlinePanel = (initialAction = "summarize") => {
   void runInlineAction(initialAction);
 };
 
+const uniqueInlineTerms = (items) => {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = item.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const localCounterpointResult = (clipped) => {
+  const absoluteWords = uniqueInlineTerms(Array.from(
+    clipped.matchAll(/\b(always|never|all|none|every|everyone|everything|only|must|guaranteed|proves|obvious|impossible)\b/gi),
+    (match) => match[0]
+  )).slice(0, 6);
+  const hasEvidenceMarker = /\b\d+(?:\.\d+)?%?\b|https?:\/\/|\[[0-9]+\]|\([A-Z][A-Za-z]+,\s*\d{4}\)|\b(study|survey|source|data|evidence|because|according to)\b/i.test(clipped);
+  const considerations = [];
+  if (absoluteWords.length) {
+    considerations.push(`Absolute wording: "${absoluteWords.join("\", \"")}" may need exceptions, scope, or a weaker claim.`);
+  } else {
+    considerations.push("Scope check: ask what cases, audience, timeframe, or constraints might make this claim less general.");
+  }
+  considerations.push(hasEvidenceMarker
+    ? "Evidence check: verify whether the cited numbers or sources actually support the full claim."
+    : "Evidence gap: this selection does not show sources, measurements, or examples that would let a reader test the claim.");
+  considerations.push("Alternative explanations: consider incentives, timing, implementation quality, or selection effects before treating the claim as settled.");
+  return `Counterpoint:\nLocal heuristic only; no sources were checked.\n- ${considerations.join("\n- ")}\nSelected claim: ${clipped}`;
+};
+
+const localSimpleSentenceStructure = (sentence) => {
+  const words = sentence.split(/\s+/).filter(Boolean);
+  const verbIndex = words.findIndex((word, index) =>
+    index > 0 && /^(is|are|was|were|be|being|been|has|have|had|will|can|could|should|must|may|might|does|do|did)$/i.test(word.replace(/[^A-Za-z]/g, ""))
+      || index > 0 && /(?:ed|ing|izes?|ises?|ates?|ifies?|s)$/.test(word.replace(/[^A-Za-z]/g, ""))
+  );
+  if (verbIndex <= 0 || verbIndex >= words.length - 1) {
+    return sentence
+      ? `Simple structure: main idea = "${sentence}".`
+      : "Simple structure: identify the main actor, the action, and what the action affects.";
+  }
+  const subject = words.slice(0, verbIndex).join(" ");
+  const action = words[verbIndex];
+  const object = words.slice(verbIndex + 1).join(" ");
+  return `Simple structure: "${subject}" does "${action}" to or with "${object}".`;
+};
+
+const localPlainTermsResult = (clipped) => {
+  const jargonTerms = uniqueInlineTerms(Array.from(
+    clipped.matchAll(/\b(?:[A-Z]{2,}|[A-Za-z]+(?:[A-Z][a-z]+)+|[A-Za-z]{11,})\b/g),
+    (match) => match[0]
+  )).slice(0, 8);
+  const simpleStructure = clipped
+    .split(/[.!?]/)[0]
+    .replace(/[,;:]\s*/g, ". ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const simpler = localSimpleSentenceStructure(simpleStructure);
+  const terms = jargonTerms.length
+    ? `Possible jargon-like terms: ${jargonTerms.join(", ")}.`
+    : "No obvious acronym or long technical terms stood out; simplify by naming who does what and why.";
+  return `Plain terms:\nLocal heuristic only; no glossary or network lookup was used.\n${terms}\n${simpler}`;
+};
+
 const localInlineResult = (action, text) => {
   const clipped = String(text ?? "").replace(/\s+/g, " ").trim().slice(0, 800);
   if (action === "custom") return `Apply the custom instruction to this selected text:\n${clipped}`;
@@ -1060,6 +1123,8 @@ const localInlineResult = (action, text) => {
   if (action === "fact-check") return `Fact-check this claim with primary sources before relying on it:\n${clipped}`;
   if (action === "translate") return `Translation requires the configured model. Selected text:\n${clipped}`;
   if (action === "explain") return `Explanation:\n${clipped}`;
+  if (action === "counterpoint") return localCounterpointResult(clipped);
+  if (action === "explain-jargon") return localPlainTermsResult(clipped);
   return `Summary:\n${clipped}`;
 };
 

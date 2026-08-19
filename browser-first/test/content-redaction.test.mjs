@@ -108,6 +108,11 @@ async function loadContentScript(html, { asChildFrame = false, loadSdk = false, 
       },
     },
     storage: {
+      local: {
+        get() {
+          return Promise.resolve({ augmentorSitePermissions: {} });
+        },
+      },
       onChanged: {
         addListener() {},
       },
@@ -149,9 +154,58 @@ test("content inline actions expose stable shortcuts and button markup", async (
   assert.match(renderInlineActions(), /data-action="summarize"/);
   assert.match(renderInlineActions(), /data-action="counterpoint"/);
   assert.match(renderInlineActions(), /data-action="explain-jargon"/);
+  assert.match(renderInlineActions(), /title="Counterpoint \(C\)">Counterpoint/);
+  assert.match(renderInlineActions(), /title="Explain jargon \(J\)">Explain jargon/);
   assert.match(renderInlineActions(), /<kbd>S<\/kbd>/);
   assert.match(renderInlineActions(), /<kbd>C<\/kbd>/);
   assert.match(renderInlineActions(), /<kbd>J<\/kbd>/);
+});
+
+test("content inline counterpoint action uses a labeled local heuristic fallback (#219)", async () => {
+  const { dom, listener } = await loadContentScript(`
+    <!doctype html>
+    <main>The rollout will always improve every workflow without tradeoffs.</main>
+  `);
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "show_inline_assistant_for_text",
+    text: "The rollout will always improve every workflow without tradeoffs.",
+    rect: { bottom: 120, left: 24, top: 96, width: 320 },
+  }, {}, () => {});
+
+  dom.window.document.querySelector("#resonantos-inline-button").click();
+  dom.window.document.querySelector('[data-action="counterpoint"]').click();
+  await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+
+  const result = dom.window.document.querySelector("#resonantos-inline-assistant .ros-inline-result")?.textContent ?? "";
+  assert.match(result, /^Counterpoint:/);
+  assert.doesNotMatch(result, /^Summary:/);
+  assert.match(result, /local heuristic/i);
+  assert.match(result, /always|every/i);
+});
+
+test("content inline explain-jargon action uses a labeled local heuristic fallback (#219)", async () => {
+  const { dom, listener } = await loadContentScript(`
+    <!doctype html>
+    <main>The API pipeline synchronizes cryptographic metadata across Kubernetes clusters.</main>
+  `);
+  listener({
+    channel: "resonantos.browser_first.content",
+    type: "show_inline_assistant_for_text",
+    text: "The API pipeline synchronizes cryptographic metadata across Kubernetes clusters.",
+    rect: { bottom: 120, left: 24, top: 96, width: 320 },
+  }, {}, () => {});
+
+  dom.window.document.querySelector("#resonantos-inline-button").click();
+  dom.window.document.querySelector('[data-action="explain-jargon"]').click();
+  await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+
+  const result = dom.window.document.querySelector("#resonantos-inline-assistant .ros-inline-result")?.textContent ?? "";
+  assert.match(result, /^Plain terms:/);
+  assert.doesNotMatch(result, /^Summary:/);
+  assert.match(result, /local heuristic/i);
+  assert.match(result, /API|Kubernetes|cryptographic/i);
+  assert.match(result, /Simple structure:/);
 });
 
 test("content control refs preserve existing refs and find escaped values", async () => {
