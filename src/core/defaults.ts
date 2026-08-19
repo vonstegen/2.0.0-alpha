@@ -903,7 +903,7 @@ export const buildDefaultState = (manifests: AddOnManifest[]): ResonantShellStat
     manifests.map((manifest) => [manifest.id, createDefaultInstallation(manifest, "bundled")]),
   );
 
-  return {
+  const raw: ResonantShellState = {
     strategistIdentity: {
       id: "strategist.identity",
       defaultName: "Augmentor",
@@ -965,4 +965,6 @@ export const buildDefaultState = (manifests: AddOnManifest[]): ResonantShellStat
     },
     distributionModel: "curated-plus-sideload",
   };
+
+  return structuredClone(raw) as ResonantShellState;
 };
