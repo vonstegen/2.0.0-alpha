@@ -693,25 +693,55 @@ test("browser page actions report when research trail has no readable tabs", asy
   assert.ok(harness.events.some((event) => event[0] === "message" && /No readable browser tabs/.test(event[2])));
 });
 
-test("page understanding fixtures produce expected context for article, pdf-like, and media-only pages", async () => {
-  const fixtures = [
-    { name: "article", path: "test/fixtures/pages/article.html", expectedTextLength: 320, hasReadableText: true },
-    { name: "pdf-like", path: "test/fixtures/pages/pdf-like.html", expectedTextLength: 280, hasReadableText: true },
-    { name: "media-only", path: "test/fixtures/pages/media-only.html", expectedTextLength: 0, hasReadableText: false },
+test("page understanding fixtures: the REAL content.js read_page extracts the expected context", async () => {
+  // #218: prove extraction through the real content-mediation layer, not
+  // jsdom's own textContent — same loading pattern as the #223 certification
+  // fixtures: eval the real content scripts into the fixture page and route
+  // read_page through the actual chrome.runtime.onMessage listener.
+  const { readFile } = await import("node:fs/promises");
+  const path = await import("node:path");
+  const { JSDOM } = await import("jsdom");
+  const repoRoot = path.resolve(import.meta.dirname, "..", "..");
+  const ext = (...p2) => path.join(repoRoot, "browser-first", "resonantos-side-panel-extension", "src", ...p2);
+  const contentScripts = [
+    ext("lib", "control-overlay.js"),
+    ext("lib", "content-field-safety.js"),
+    ext("lib", "content-inline-actions.js"),
+    ext("lib", "content-control-refs.js"),
+    ext("content.js")
   ];
-
-  for (const fixture of fixtures) {
-    const html = readFileSync(fixture.path, "utf8");
-    const dom = new JSDOM(html);
-    const title = dom.window.document.title;
-    const url = "https://example.com/test";
-    const text = (dom.window.document.body.textContent || "").trim();
-
-    assert.ok(title.length > 0, `Title for ${fixture.name}`);
-    assert.ok(text.length >= fixture.expectedTextLength || !fixture.hasReadableText, `Text length for ${fixture.name}`);
-
-    if (!fixture.hasReadableText) {
-      assert.equal(text, "", `Media-only page should have no readable text`);
-    }
+  async function readPageThroughRealLayer(fixtureRel) {
+    const html = await readFile(path.join(repoRoot, fixtureRel), "utf8");
+    const dom = new JSDOM(html, { runScripts: "dangerously", url: "https://fixtures.test/" + fixtureRel, pretendToBeVisual: true });
+    const win = dom.window;
+    let listener = null;
+    win.chrome = {
+      runtime: { onMessage: { addListener(cb) { listener = cb; } }, sendMessage: () => Promise.resolve() },
+      storage: { onChanged: { addListener() {} } }
+    };
+    win.HTMLElement.prototype.scrollIntoView = function scrollIntoView() {};
+    for (const scriptPath of contentScripts) win.eval(await readFile(scriptPath, "utf8"));
+    assert.equal(typeof listener, "function", "content.js must register its message listener on " + fixtureRel);
+    const snapshot = await new Promise((resolve) => {
+      listener({ channel: "resonantos.browser_first.content", type: "read_page" }, {}, resolve);
+    });
+    return snapshot;
   }
+
+  const article = await readPageThroughRealLayer("test/fixtures/pages/article.html");
+  assert.equal(article.ok, true);
+  assert.match(article.snapshot.title, /Quantum Computing Breakthrough/);
+  assert.match(article.snapshot.text, /256-qubit processor/, "real extractor must surface the article body");
+  assert.match(article.snapshot.text, /Error rates are below 0.1%/);
+
+  const pdfLike = await readPageThroughRealLayer("test/fixtures/pages/pdf-like.html");
+  assert.equal(pdfLike.ok, true);
+  assert.match(pdfLike.snapshot.title, /Annual Report 2025/);
+  assert.match(pdfLike.snapshot.text, /Revenue: \$2.34B/, "dense report text must survive extraction");
+
+  const mediaOnly = await readPageThroughRealLayer("test/fixtures/pages/media-only.html");
+  assert.equal(mediaOnly.ok, true);
+  assert.match(mediaOnly.snapshot.title, /Product Gallery/);
+  const visible = String(mediaOnly.snapshot.text ?? "").trim();
+  assert.ok(visible.length < 40, "media-only page yields no substantial visible text (got: " + visible.slice(0, 60) + ")");
 });
