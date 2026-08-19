@@ -47,6 +47,11 @@ The [Agent Control certification fixtures](test/agent-control-certification/READ
 prove safe click/type/scroll completion and hard-boundary denial against the
 real content-mediation layer (fixture page:
 [agent-control-certification-page.html](test/fixtures/agent-control-certification/agent-control-certification-page.html)).
+The page-understanding fixtures ([article.html](test/fixtures/pages/article.html),
+[pdf-like.html](test/fixtures/pages/pdf-like.html),
+[media-only.html](test/fixtures/pages/media-only.html)) prove read_page
+extraction through the real content-mediation layer in
+`test/browser-page-actions.test.mjs` (#218).
 The [HRR-033 deterministic certification gate](test/hrr033-certification/README.md)
 documents the focused context and Resonator evidence workflow used for deeper
 browser-first regression certification. Implementation notes for the Alpha
