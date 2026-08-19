@@ -148,3 +148,78 @@
 }
 .opencode-start-session[hidden] { display: none; }
 .opencode-session-area:not(:empty) { min-height: 480px; margin-top: 10px; }
+
+/* Desktop-app-style live workspace shell: session-browser rail + session pane */
+.opencode-ide {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 14px;
+  min-height: 520px;
+  margin-top: 10px;
+}
+.opencode-ide[hidden] { display: none; }
+.ocb-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid rgba(36, 209, 143, 0.14);
+  border-radius: 14px;
+  background: rgba(10, 15, 12, 0.72);
+  padding: 12px;
+  min-height: 0;
+}
+.ocb-project { display: flex; align-items: center; gap: 8px; }
+.ocb-project strong { color: rgba(247, 255, 249, 0.95); font-size: 0.8rem; }
+.ocb-project-mark {
+  display: inline-grid; place-items: center;
+  width: 22px; height: 22px;
+  border: 1px solid rgba(36, 209, 143, 0.35);
+  border-radius: 7px;
+  background: rgba(36, 209, 143, 0.14);
+  color: #24d18f; font-size: 0.66rem; font-weight: 900;
+}
+.ocb-search {
+  border: 1px solid rgba(148, 255, 198, 0.15);
+  border-radius: 9px;
+  background: rgba(5, 8, 7, 0.6);
+  color: #eef7f0;
+  font: inherit; font-size: 0.66rem;
+  padding: 7px 9px;
+}
+.ocb-new {
+  border: 1px solid rgba(36, 209, 143, 0.4);
+  border-radius: 9px;
+  background: rgba(36, 209, 143, 0.12);
+  color: #eef7f0; font-size: 0.66rem; font-weight: 800;
+  padding: 7px 9px; cursor: pointer; text-align: left;
+}
+.ocb-list { display: flex; flex-direction: column; gap: 3px; overflow: auto; min-height: 0; }
+.ocb-group {
+  margin: 8px 2px 3px;
+  color: rgba(143, 159, 149, 0.75);
+  font-size: 0.56rem; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase;
+}
+.ocb-session {
+  display: flex; align-items: center; gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(214, 229, 219, 0.82);
+  font-size: 0.68rem; text-align: left;
+  padding: 7px 8px; cursor: pointer;
+  overflow: hidden;
+}
+.ocb-session:hover { background: rgba(36, 209, 143, 0.07); }
+.ocb-session[data-active="true"] {
+  border-color: rgba(36, 209, 143, 0.3);
+  background: rgba(36, 209, 143, 0.12);
+  color: #f7fff9;
+}
+.ocb-session-mark {
+  flex: 0 0 auto;
+  width: 8px; height: 8px;
+  border-radius: 999px;
+  background: rgba(36, 209, 143, 0.55);
+}
+.ocb-session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ocb-empty { color: rgba(143, 159, 149, 0.7); font-size: 0.66rem; margin: 6px 2px; }

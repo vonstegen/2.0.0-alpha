@@ -4,6 +4,7 @@
 import { delegationGuidanceText } from "./delegation-guidance.js";
 import { createOpenCodeSession } from "./main-workspace-opencode-session.js";
 import { createOpenCodeBridgeSource } from "./opencode-bridge-source.js";
+import { createOpenCodeSessionBrowser, seedEventsFromMessages } from "./opencode-session-browser.js";
 import { opencodeStatusMessage } from "./runtime-error-messages.js";
 
 function setStatus(node, text, tone = "neutral") {
@@ -204,44 +205,100 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
     }
   });
 
-  // Live session: mount the streaming OpenCode workspace element. The bridge
-  // starts (reuses) `opencode serve` and returns the session + its /event URL;
-  // the element streams events directly from the server (host_permissions cover
-  // 127.0.0.1) and routes prompts/permissions back through the bridge.
+  // Live workspace: a desktop-app-style two-pane shell — session browser rail
+  // (search, Today/Older groups, resume-on-click, New session) on the left,
+  // the streaming session element on the right. The bridge starts (reuses)
+  // `opencode serve`; the element streams events directly from the server
+  // (host_permissions cover 127.0.0.1) and routes prompts/permissions back
+  // through the bridge. Resume replays history through the SAME event path the
+  // live stream uses, so both render identically.
+  const ide = document.createElement("div");
+  ide.className = "opencode-ide";
+  ide.hidden = true;
+  const railMount = document.createElement("div");
+  railMount.className = "opencode-ide-rail";
   const sessionArea = document.createElement("div");
   sessionArea.className = "opencode-session-area";
-  section.append(sessionArea);
+  ide.append(railMount, sessionArea);
+  section.append(ide);
   let activeSession = null;
+  let browserRail = null;
 
-  async function startLiveSession() {
-    startSessionButton.disabled = true;
+  function mountSession(info, seedMessages = []) {
+    activeSession?.destroy?.();
+    sessionArea.replaceChildren();
+    const source = createOpenCodeBridgeSource({
+      // Idempotent: return the already-known session so subscribe + prompt share it.
+      startSession: async () => ({ sessionId: info.sessionId, eventUrl: info.eventUrl }),
+      openEventStream: (eventUrl) => fetch(eventUrl),
+      postJson: (path, body) => bridge()(path, { method: "POST", body })
+    });
+    const seeds = seedEventsFromMessages(seedMessages);
+    const subscribe = (onEvent) => {
+      for (const event of seeds) onEvent(event);
+      return source.subscribe(onEvent);
+    };
+    activeSession = createOpenCodeSession({
+      document,
+      container: sessionArea,
+      scope: "",
+      subscribe,
+      sendPrompt: source.sendPrompt,
+      replyPermission: source.replyPermission,
+      revert: async () => {}
+    });
+    browserRail?.setActive?.(info.sessionId);
+  }
+
+  function openWorkspaceShell() {
+    header.hidden = true;
+    boundaryCard.hidden = true;
+    taskForm.hidden = true;
+    ide.hidden = false;
+    if (!browserRail) {
+      browserRail = createOpenCodeSessionBrowser({
+        document,
+        container: railMount,
+        projectName: "2.0.0-alpha",
+        listSessions: () => bridge()("/opencode/sessions/list", { method: "POST", body: {} }),
+        onNewSession: () => void newSession(),
+        onOpenSession: (sessionId) => void resumeSession(sessionId)
+      });
+    }
+    void browserRail.refresh();
+  }
+
+  async function newSession() {
     setStatus(taskStatus, "Starting OpenCode session…");
     try {
       const info = await bridge()("/opencode/session/start", { method: "POST", body: {} });
       if (!info?.sessionId) throw new Error("No session id returned.");
-      header.hidden = true;
-      boundaryCard.hidden = true;
-      taskForm.hidden = true;
-      activeSession?.destroy?.();
-      sessionArea.replaceChildren();
-      const source = createOpenCodeBridgeSource({
-        // Idempotent: return the already-started session so subscribe + prompt share it.
-        startSession: async () => ({ sessionId: info.sessionId, eventUrl: info.eventUrl }),
-        openEventStream: (eventUrl) => fetch(eventUrl),
-        postJson: (path, body) => bridge()(path, { method: "POST", body })
-      });
-      activeSession = createOpenCodeSession({
-        document,
-        container: sessionArea,
-        scope: info.baseUrl ? "" : "",
-        subscribe: source.subscribe,
-        sendPrompt: source.sendPrompt,
-        replyPermission: source.replyPermission,
-        revert: async () => {}
-      });
+      openWorkspaceShell();
+      mountSession(info, []);
+      await browserRail.refresh();
+      browserRail.setActive(info.sessionId);
       setStatus(taskStatus, "");
     } catch (error) {
       setStatus(taskStatus, opencodeStatusMessage(error, "Could not start OpenCode session"), "error");
+    }
+  }
+
+  async function resumeSession(sessionId) {
+    setStatus(taskStatus, "Resuming session…");
+    try {
+      const list = await bridge()("/opencode/sessions/list", { method: "POST", body: {} });
+      const history = await bridge()("/opencode/session/messages", { method: "POST", body: { sessionId } });
+      mountSession({ sessionId, eventUrl: list.eventUrl, baseUrl: list.baseUrl }, history.messages ?? []);
+      setStatus(taskStatus, "");
+    } catch (error) {
+      setStatus(taskStatus, opencodeStatusMessage(error, "Could not resume OpenCode session"), "error");
+    }
+  }
+
+  async function startLiveSession() {
+    startSessionButton.disabled = true;
+    try {
+      await newSession();
     } finally {
       startSessionButton.disabled = false;
     }

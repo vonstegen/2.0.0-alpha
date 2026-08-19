@@ -93,6 +93,8 @@ export function createOpencodeHttpClient({ fetchImpl, baseUrl, headers = {} } = 
         ...(decision?.remember ? { remember: true } : {})
       }),
     listAgents: () => call("GET", "/agent"),
+    listSessions: () => call("GET", "/session"),
+    messages: (sessionId) => call("GET", `/session/${encodeURIComponent(sessionId)}/message`),
     eventUrl: () => `${baseUrl}/event`
   };
 }
