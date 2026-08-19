@@ -17,7 +17,8 @@
 //   - exact       : bare Alt+(A|S) on a non-editable target
 //   - editing     : the focused target is an editable input/textarea/contenteditable
 //   - composed    : the event is still composing (IME in progress)
-//   - combined    : event had metaKey/ctrlKey/shiftKey modifier also pressed
+//   - combined    : event had metaKey/ctrlKey/shiftKey modifier also pressed,
+//                   except the documented Alt+Shift+A side-panel command
 //   - restricted  : the page is one we never dispatch from (chrome://, about:, etc.)
 //   - none        : not a recognized shortcut for Augmentor
 
@@ -47,6 +48,11 @@
     event && (event.metaKey || event.ctrlKey || event.shiftKey)
   );
 
+  const isDocumentedSidePanelCommand = (event) => Boolean(
+    event && event.altKey === true && event.shiftKey === true &&
+      event.ctrlKey !== true && event.metaKey !== true && event.code === "KeyA"
+  );
+
   // Map event.code to the canonical key identity. KeyboardEvent.code values
   // are layout-independent (QWERTY-A is always "KeyA" regardless of OS
   // modifier mapping or input layout). Returns "" for unknown / missing codes.
@@ -64,14 +70,15 @@
    */
   const classifyShortcut = (event, context = {}) => {
     if (!event || typeof event !== "object") return { action: "none", conflict: "none" };
-    if (event.isComposing === true) return { action: "none", conflict: "composed" };
     if (!event.altKey || event.altKey !== true) return { action: "none", conflict: "none" };
+    const action = codeToAction(event);
+    if (!action) return { action: "none", conflict: "none" };
+    if (isDocumentedSidePanelCommand(event)) return { action: "none", conflict: "none" };
+    if (event.isComposing === true) return { action: "none", conflict: "composed" };
     if (hasAuxiliaryModifiers(event)) return { action: "none", conflict: "combined" };
     if (isRestrictedScheme(context.locationHref ?? "")) return { action: "none", conflict: "restricted" };
     if (isEditableTarget(event.target)) return { action: "none", conflict: "editing" };
-    const action = codeToAction(event);
-    if (action) return { action, conflict: "none" };
-    return { action: "none", conflict: "none" };
+    return { action, conflict: "none" };
   };
 
   /**

@@ -77,6 +77,16 @@ test("classifyShortcut returns alt-s for Alt+S and is case-insensitive", async (
   }
 });
 
+test("classifyShortcut keeps plain Alt+A and Alt+S active", async () => {
+  const ctrl = await loadController();
+  const altA = ctrl.classifyShortcut(makeEvent({ key: "a", code: "KeyA", altKey: true }));
+  assert.equal(altA.action, "alt-a");
+  assert.equal(altA.conflict, "none");
+  const altS = ctrl.classifyShortcut(makeEvent({ key: "s", code: "KeyS", altKey: true }));
+  assert.equal(altS.action, "alt-s");
+  assert.equal(altS.conflict, "none");
+});
+
 test("classifyShortcut rejects other Alt+letter combos", async () => {
   const ctrl = await loadController();
   for (const key of ["b", "F", "ArrowUp", "Enter", " ", "1"]) {
@@ -88,7 +98,7 @@ test("classifyShortcut rejects other Alt+letter combos", async () => {
   }
 });
 
-test("classifyShortcut rejects ctrlKey/metaKey pairs as combined conflict", async () => {
+test("classifyShortcut rejects auxiliary modifiers as combined conflict for shortcut keys", async () => {
   const ctrl = await loadController();
   assert.equal(
     ctrl.classifyShortcut(makeEvent({ key: "a", code: "KeyA", altKey: true, ctrlKey: true })).conflict,
@@ -99,7 +109,7 @@ test("classifyShortcut rejects ctrlKey/metaKey pairs as combined conflict", asyn
     "combined"
   );
   assert.equal(
-    ctrl.classifyShortcut(makeEvent({ key: "a", code: "KeyA", altKey: true, shiftKey: true })).conflict,
+    ctrl.classifyShortcut(makeEvent({ key: "S", code: "KeyS", altKey: true, shiftKey: true })).conflict,
     "combined"
   );
 });
@@ -112,15 +122,31 @@ test("classifyShortcut reports composed conflict for IME events", async () => {
   );
 });
 
+test("classifyShortcut ignores IME composition when Alt is not involved", async () => {
+  const ctrl = await loadController();
+  const result = ctrl.classifyShortcut(makeEvent({ key: "Process", code: "KeyA", isComposing: true }));
+  assert.equal(result.action, "none");
+  assert.equal(result.conflict, "none");
+});
+
+test("classifyShortcut leaves Alt+Shift+A to the documented side-panel command", async () => {
+  const ctrl = await loadController();
+  const result = ctrl.classifyShortcut(makeEvent({ key: "A", code: "KeyA", altKey: true, shiftKey: true }));
+  assert.equal(result.action, "none");
+  assert.equal(result.conflict, "none");
+});
+
 test("classifyShortcut reports editing conflict when focus is on a real form field", async () => {
   const ctrl = await loadController();
   const onInput = makeEvent({
+    code: "KeyA",
     key: "a",
     altKey: true,
     target: { tagName: "INPUT", isContentEditable: false, type: "text" }
   });
   assert.equal(ctrl.classifyShortcut(onInput).conflict, "editing");
   const onContentEditable = makeEvent({
+    code: "KeyS",
     key: "s",
     altKey: true,
     target: { tagName: "DIV", isContentEditable: true }
