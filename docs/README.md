@@ -21,6 +21,9 @@ scope, area, and delivery state belong in
   tests/proof, and safety boundary.
 - [Augmentor tester runbook & proof checklist](augmentor-tester-runbook.md) walks a
   community tester from install to a proof checklist, with the human-only boundaries.
+- [Augmentor workflow recipes](recipes/index.md) give safe, copy-paste-able
+  Augmentor flows and human-only checkpoints for job search, travel,
+  education/tracking, and product research (issue #237).
 - [Side-Panel Command Reference](reference/COMMANDS.md) lists the supported
   Augmentor slash commands and their safety boundaries.
 - [Status](STATUS.md) records the latest verified snapshot.

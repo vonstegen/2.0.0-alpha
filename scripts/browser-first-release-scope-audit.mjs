@@ -38,6 +38,11 @@ const includeDocs = new Set([
   "docs/browser-first-bridge-setup-runbook.md",
   "docs/augmentor-future-list-acceptance-matrix.md",
   "docs/augmentor-tester-runbook.md",
+  "docs/recipes/education-tracking.md",
+  "docs/recipes/index.md",
+  "docs/recipes/job-search.md",
+  "docs/recipes/product-research.md",
+  "docs/recipes/travel.md",
 ]);
 
 function readOptionValue(argv, index, name) {
