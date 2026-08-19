@@ -628,6 +628,70 @@ test("browser page actions create deterministic summary intake when provider fai
   assert.match(bridgeCall[2].body.content, /First fact/);
 });
 
+test("browser page actions summarize current page with a chosen template sends the template prompt and labels the intake", async () => {
+  const harness = createHarness({
+    lastSnapshot: {
+      title: "Template Page",
+      url: "https://example.test/template",
+      text: "The page argues for quantum-resistant cryptography and notes some migration risks.",
+      links: [],
+      controls: [],
+      fields: []
+    },
+    bridgeRequest: async (route) => {
+      if (route === "/augmentor/chat") return { reply: "## TL;DR\nA page about cryptography migration.", model: "MiniMax-M3" };
+      if (route === "/archive/intake") return { path: "INTAKE/browser/template.md", bytes: 120 };
+      return { path: "REVIEW/requests/template.md", status: "pending" };
+    }
+  });
+
+  const result = await harness.actions.summarizeCurrentPageToArchive("tldr");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.reviewRequestPath, "REVIEW/requests/template.md");
+  // The template prompt contract drove the user message: TL;DR marker + source grounding (title + url).
+  const chatCall = harness.events.find((event) => event[0] === "bridge" && event[1] === "/augmentor/chat");
+  assert.match(chatCall[2].body.messages[0].content, /TL;DR/);
+  assert.match(chatCall[2].body.messages[0].content, /Template Page/);
+  assert.match(chatCall[2].body.messages[0].content, /https:\/\/example\.test\/template/);
+  // The intake is labelled with the template so a reviewer can see the shape.
+  const intakeCall = harness.events.find((event) => event[0] === "bridge" && event[1] === "/archive/intake");
+  assert.equal(intakeCall[2].body.title, "Summary (TL;DR): Template Page");
+  assert.equal(intakeCall[2].body.origin, "browser-page-summary");
+  // No trusted write: every summary still hands off to review.
+  const reviewCall = harness.events.find((event) => event[0] === "bridge" && event[1] === "/archive/review/request");
+  assert.equal(reviewCall[2].body.path, "INTAKE/browser/template.md");
+});
+
+test("browser page actions surface unsupported content for a media-only page with a structured template", async () => {
+  const harness = createHarness({
+    lastSnapshot: {
+      title: "Media Only",
+      url: "https://example.test/media",
+      text: "\n\n\n",
+      links: [],
+      controls: [],
+      fields: []
+    },
+    bridgeRequest: async (route) => {
+      if (route === "/augmentor/chat") return { reply: "should not be called", model: "MiniMax-M3" };
+      if (route === "/archive/intake") return { path: "INTAKE/browser/media.md", bytes: 120 };
+      return { path: "REVIEW/requests/media.md", status: "pending" };
+    }
+  });
+
+  const result = await harness.actions.summarizeCurrentPageToArchive("tldr");
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /No readable page content for the TL;DR template/);
+  // Skipped/unsupported content is visible to the user.
+  assert.ok(harness.events.some((event) => event[0] === "message" && /no readable text/i.test(event[2]) && /TL;DR/i.test(event[2])));
+  // No trusted write occurs for unsupported content: the chat model and the
+  // archive intake are never touched, so no review handoff starts.
+  assert.equal(harness.events.some((event) => event[0] === "bridge" && event[1] === "/augmentor/chat"), false);
+  assert.equal(harness.events.some((event) => event[0] === "bridge" && event[1] === "/archive/intake"), false);
+});
+
 test("browser page actions save multi-tab research trail to reviewed intake", async () => {
   const harness = createHarness({
     controlledTabId: 1,
