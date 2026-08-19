@@ -14,10 +14,15 @@ import {
   parseSummarizePageIntent,
   parseTypeIntent
 } from "./browser-command-parser.js";
+import { parseTabMentions } from "./tab-comparison-resolver.js";
 
 export function createSidePanelCommandRouter(handlers) {
   async function respondToCommand(value) {
-    await handlers.bindMentionedTab(value);
+    if (parseTabMentions(value).length >= 2) {
+      await handlers.resolveComparisonContext(value);
+    } else {
+      await handlers.bindMentionedTab(value);
+    }
     const slash = /^\/\s*([a-z-]+)(?:\s+([\s\S]*))?$/i.exec(value.trim());
     if (slash) {
       const name = slash[1].toLowerCase();

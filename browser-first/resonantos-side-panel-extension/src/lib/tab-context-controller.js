@@ -1,3 +1,4 @@
+import { resolveTabComparison } from "./tab-comparison-resolver.js";
 const INLINE_DRAFT_KEY = "augmentorInlineDraft";
 
 export function parseTabMention(message) {
@@ -86,6 +87,49 @@ export function createTabContextController({
     const draft = await chrome.storage?.local?.get?.(INLINE_DRAFT_KEY).catch(() => ({}));
     await consumeInlineDraft(draft?.[INLINE_DRAFT_KEY]);
   };
+  const resolveComparisonContext = async (message) => {
+    const allTabs = (await chrome.tabs.query({}).catch(() => []));
+    const comparison = resolveTabComparison(message, allTabs, isReadableBrowserTab);
+    const { items, skipped, ambiguous } = comparison;
+
+    // Ambiguous references: ask for clarification with candidate refs (#220).
+    for (const entry of ambiguous) {
+      const candidates = entry.candidates
+        .map((candidate) => `"${candidate.title || candidate.url}"`)
+        .join(", ");
+      await addMessage("system", `@${entry.mention} matched ${entry.candidates.length} open tabs: ${candidates}. Specify which tab you mean (e.g. by full title or @tab N).`);
+    }
+    // Unreadable/internal or unmatched tabs: skip with a visible reason (#220).
+    for (const entry of skipped) {
+      await addMessage("system", entry.reason);
+    }
+
+    if (items.length === 0) return comparison;
+
+    // A single, unambiguous mention preserves the pre-existing single-tab bind
+    // exactly, so the cross-tab path is a strict superset of the old behavior.
+    if (items.length === 1 && skipped.length === 0 && ambiguous.length === 0) {
+      return bindMentionedTab(message);
+    }
+
+    // Cross-tab comparison: report every resolved tab with title/URL provenance
+    // and bind the first resolved tab as the active context. No navigation
+    // authority is added (read-only context binding).
+    const provenanceLines = items.map((item) =>
+      `- @${item.mention}: ${item.title || item.url || "(no title)"} — ${item.url || "(no url)"}`
+    );
+    await addMessage("system", `Comparing ${items.length} tabs (each item carries tab provenance):\n${provenanceLines.join("\n")}`);
+    const first = items[0];
+    const tab = allTabs.find((candidate) => candidate.id === first.tabId);
+    if (tab?.id) {
+      setControlledTabId(tab.id);
+      await chrome.tabs.update(tab.id, { active: true }).catch(() => undefined);
+      setLastSnapshot(null);
+      setContextMeter(null);
+      await renderSitePermissionPanel(tab);
+    }
+    return comparison;
+  };
 
   return {
     bindBrowserListeners,
@@ -94,6 +138,7 @@ export function createTabContextController({
     handleStorageChanged,
     handleTabUpdated,
     hydrateInitialContext,
+    resolveComparisonContext,
     resolveTabMention
   };
 }

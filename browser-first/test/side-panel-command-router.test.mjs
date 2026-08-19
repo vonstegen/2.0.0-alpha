@@ -12,6 +12,7 @@ function createHarness({ resumableControlRun = false } = {}) {
     hasResumableControlRun: () => resumableControlRun,
     allowControlPreflightOnceForTaskClass: handler("allow-control-once"),
     bindMentionedTab: handler("bind"),
+    resolveComparisonContext: handler("compare"),
     cancelBrowserJob: handler("cancel"),
     approveControlPreflight: handler("approve-control"),
     continueBrowserJob: handler("continue"),
@@ -289,4 +290,14 @@ test("side panel command router gates wallet terms and falls back to chat", asyn
   await harness.router.respondToCommand("hello");
 
   assert.deepEqual(harness.calls.filter((call) => call[0] !== "bind").map((call) => call[0]), ["wallet", "chat"]);
+});
+
+test("side panel command router routes two or more @tab mentions to cross-tab comparison", async () => {
+  const harness = createHarness();
+
+  await harness.router.respondToCommand("compare @Alpha, @Beta");
+
+  // Two @tab mentions route to cross-tab comparison, not the single-tab bind.
+  assert.ok(harness.calls.some((call) => call[0] === "compare" && call[1] === "compare @Alpha, @Beta"));
+  assert.equal(harness.calls.some((call) => call[0] === "bind" && call[1] === "compare @Alpha, @Beta"), false);
 });
