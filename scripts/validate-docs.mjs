@@ -1241,7 +1241,7 @@ export function validateDocumentationReachability(context) {
   const tracked = new Set(
     (context.trackedFiles ?? trackedFiles(resolvedContext.root, resolvedContext.files))
       .filter((path) => DOCUMENTATION_PATH.test(path) || path.startsWith("docs/"))
-      .filter((path) => !path.startsWith("test/fixtures/")),
+      .filter((path) => !path.startsWith("test/fixtures/") && !path.startsWith("browser-first/test/fixtures/")),
   );
   const documents = new Map(resolvedContext.documents.map((document) => [document.path, document]));
   const reached = new Set(

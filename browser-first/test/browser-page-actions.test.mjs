@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import { JSDOM } from "jsdom";
 
 import { normalizeBrowserUrl } from "../resonantos-side-panel-extension/src/lib/browser-command-parser.js";
@@ -693,25 +694,92 @@ test("browser page actions report when research trail has no readable tabs", asy
   assert.ok(harness.events.some((event) => event[0] === "message" && /No readable browser tabs/.test(event[2])));
 });
 
+// Loads a static fixture page into jsdom, runs the real content.js extraction
+// layer inside it, and reads the page back through the content script's
+// `read_page` message — the same path the Augmentor uses — instead of
+// asserting jsdom's own body.textContent. Mirrors the #283 certification
+// fixture wiring (browser-first/test/agent-control-certification-fixtures.mjs).
+const pageUnderstandingContentScripts = [
+  "lib/control-overlay.js",
+  "lib/content-field-safety.js",
+  "lib/content-inline-actions.js",
+  "lib/content-control-refs.js",
+  "content.js"
+].map((rel) =>
+  path.join(
+    path.resolve(import.meta.dirname, "..", ".."),
+    "browser-first",
+    "resonantos-side-panel-extension",
+    "src",
+    rel
+  )
+);
+
+async function readFixturePage(fixturePath, url) {
+  const html = readFileSync(fixturePath, "utf8");
+  const dom = new JSDOM(html, { runScripts: "dangerously", url, pretendToBeVisual: true });
+  const win = dom.window;
+  let listener = null;
+  win.chrome = {
+    runtime: { onMessage: { addListener(cb) { listener = cb; } }, sendMessage() {} },
+    storage: { onChanged: { addListener() {} } }
+  };
+  win.HTMLElement.prototype.scrollIntoView = function scrollIntoView() {};
+  for (const scriptPath of pageUnderstandingContentScripts) win.eval(readFileSync(scriptPath, "utf8"));
+  if (typeof listener !== "function") {
+    throw new Error("content.js did not register a message listener for the page-understanding fixture");
+  }
+  return new Promise((resolve) => {
+    listener({ channel: "resonantos.browser_first.content", type: "read_page" }, {}, resolve);
+  });
+}
+
 test("page understanding fixtures produce expected context for article, pdf-like, and media-only pages", async () => {
+  // Asserts against the real content.js `read_page` extraction path (the
+  // Augmentor's page-understanding route), not jsdom's body.textContent — so a
+  // fixture or extraction change that breaks capture fails here instead of
+  // silently passing on raw DOM text. Refs #218.
   const fixtures = [
-    { name: "article", path: "test/fixtures/pages/article.html", expectedTextLength: 320, hasReadableText: true },
-    { name: "pdf-like", path: "test/fixtures/pages/pdf-like.html", expectedTextLength: 280, hasReadableText: true },
-    { name: "media-only", path: "test/fixtures/pages/media-only.html", expectedTextLength: 0, hasReadableText: false },
+    {
+      name: "article",
+      path: path.join(import.meta.dirname, "fixtures", "pages", "article.html"),
+      url: "https://example.com/article",
+      title: "Quantum Computing Breakthrough",
+      mustInclude: ["256-qubit", "superconducting", "drug discovery"]
+    },
+    {
+      name: "pdf-like",
+      path: path.join(import.meta.dirname, "fixtures", "pages", "pdf-like.html"),
+      url: "https://example.com/pdf-like",
+      title: "Annual Report 2025",
+      mustInclude: ["Acme Corp Annual Report", "$2.34B", "quantum-resistant cryptography"]
+    },
+    {
+      name: "media-only",
+      path: path.join(import.meta.dirname, "fixtures", "pages", "media-only.html"),
+      url: "https://example.com/media-only",
+      title: "Product Gallery",
+      mustInclude: []
+    }
   ];
 
   for (const fixture of fixtures) {
-    const html = readFileSync(fixture.path, "utf8");
-    const dom = new JSDOM(html);
-    const title = dom.window.document.title;
-    const url = "https://example.com/test";
-    const text = (dom.window.document.body.textContent || "").trim();
+    const response = await readFixturePage(fixture.path, fixture.url);
+    assert.equal(response.ok, true, `read_page ok for ${fixture.name}`);
+    const snapshot = response.snapshot;
+    assert.ok(snapshot, `snapshot present for ${fixture.name}`);
+    assert.equal(snapshot.title, fixture.title, `title extracted for ${fixture.name}`);
+    assert.equal(snapshot.url, fixture.url, `url sanitized for ${fixture.name}`);
+    assert.equal(snapshot.frame.isTop, true, `frame.isTop for ${fixture.name}`);
 
-    assert.ok(title.length > 0, `Title for ${fixture.name}`);
-    assert.ok(text.length >= fixture.expectedTextLength || !fixture.hasReadableText, `Text length for ${fixture.name}`);
-
-    if (!fixture.hasReadableText) {
-      assert.equal(text, "", `Media-only page should have no readable text`);
+    const text = String(snapshot.text ?? "");
+    if (fixture.mustInclude.length > 0) {
+      assert.ok(text.length > 300, `readable text captured for ${fixture.name} (got ${text.length})`);
+      for (const term of fixture.mustInclude) {
+        assert.ok(text.includes(term), `real extraction includes "${term}" for ${fixture.name}`);
+      }
+    } else {
+      assert.equal(text.trim(), "", `media-only page yields no readable text for ${fixture.name}`);
     }
   }
 });
