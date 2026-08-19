@@ -54,6 +54,7 @@ export function createSidePanelCommandRouter(handlers) {
       if (name === "control") return handlers.runControlCommand(body);
       if (name === "save" || name === "archive" || name === "intake") return handlers.saveIntake(body);
       if (name === "trail" || name === "researchtrail") return handlers.saveIntake(`trail ${body}`.trim());
+      if (name === "session") return handlers.runSessionCommand(body);
       if (name === "dao" && /^audit\b/i.test(body)) {
         return handlers.saveWalletDaoAuditToArchive(body.replace(/^audit\b/i, "").trim());
       }

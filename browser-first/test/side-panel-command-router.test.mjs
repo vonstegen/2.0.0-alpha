@@ -48,7 +48,8 @@ function createHarness({ resumableControlRun = false } = {}) {
     searchBrowser: handler("search"),
     summarizeActivePage: handler("summarize-page"),
     summarizeSnapshot: handler("summary"),
-    typeIntoActivePage: handler("type")
+    typeIntoActivePage: handler("type"),
+    runSessionCommand: handler("session"),
   });
   return { calls, router };
 }
@@ -70,6 +71,9 @@ test("side panel command router dispatches slash commands", async () => {
   await harness.router.respondToCommand("/calendar Planning | body: Draft the event");
   await harness.router.respondToCommand("/save selection");
   await harness.router.respondToCommand("/trail dao research");
+  await harness.router.respondToCommand("/session");
+  await harness.router.respondToCommand("/session summary");
+  await harness.router.respondToCommand("/session clear");
 
   assert.deepEqual(harness.calls, [
     ["bind", "/goal build the app"],
@@ -99,7 +103,13 @@ test("side panel command router dispatches slash commands", async () => {
     ["bind", "/save selection"],
     ["save", "selection"],
     ["bind", "/trail dao research"],
-    ["save", "trail dao research"]
+    ["save", "trail dao research"],
+    ["bind", "/session"],
+    ["session", ""],
+    ["bind", "/session summary"],
+    ["session", "summary"],
+    ["bind", "/session clear"],
+    ["session", "clear"]
   ]);
 });
 

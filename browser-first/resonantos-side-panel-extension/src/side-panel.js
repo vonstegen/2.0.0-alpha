@@ -54,6 +54,7 @@ import { createSidePanelUiController } from "./lib/side-panel-ui-controller.js";
 import { readPersonalizationSettings } from "./lib/personalization-settings.js";
 import { createSitePermissionStore } from "./lib/site-permission-store.js";
 import { createTabContextController } from "./lib/tab-context-controller.js";
+import { createSessionSummaryController } from "./lib/session-summary-controller.js";
 import { createTaskConsentStore } from "./lib/task-consent-store.js";
 
 const {
@@ -733,6 +734,13 @@ const tabContextController = createTabContextController({
   sitePermissionStorageKey: STORAGE_KEYS.sitePermissions
 });
 const bindMentionedTab = tabContextController.bindMentionedTab;
+const sessionSummaryController = createSessionSummaryController({
+  chrome,
+  isReadableBrowserTab,
+  addMessage,
+  setStatus
+});
+const runSessionCommand = sessionSummaryController.runSessionCommand;
 
 const controlPlanningService = createControlPlanningService({
   bridgeRequest: currentBridgeRequest,
@@ -1128,6 +1136,7 @@ const summarizeActivePage = async () => {
 const commandRouter = createSidePanelCommandRouter({
   allowControlPreflightOnceForTaskClass,
   bindMentionedTab,
+  runSessionCommand,
   clickActivePageText,
   detectActivePageForms,
   explainStructuredPageEditBoundary,
@@ -1295,6 +1304,7 @@ hydrateChatSettings().then(async () => {
   chatsTreeRenderer.render();
   await loadBrowserJobs();
   await tabContextController.hydrateInitialContext();
+  await sessionSummaryController.restoreSessionContext();
   await consumePendingSidebarPrompt();
 }).catch((error) => {
   setStatus("Context failed");
