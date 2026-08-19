@@ -39,6 +39,18 @@ export function createOpencodeSessionHostService(handlers = {}) {
         requiredCapability: "addon-runtime-control",
         handler: required("executeOpenCodeSessionStop"),
       },
+      {
+        method: "POST",
+        path: "/opencode/sessions/list",
+        requiredCapability: "addon-runtime-control",
+        handler: required("executeOpenCodeSessionsList"),
+      },
+      {
+        method: "POST",
+        path: "/opencode/session/messages",
+        requiredCapability: "addon-runtime-control",
+        handler: required("executeOpenCodeSessionMessages"),
+      },
     ],
   };
 }
@@ -80,6 +92,28 @@ export function createOpencodeSessionHandlers({ ensureServer, createClient }) {
       const c = await ensureClient();
       await c.replyPermission(sessionId, permissionId, decision ?? {});
       return { ok: true };
+    },
+    executeOpenCodeSessionsList: async () => {
+      const c = await ensureClient();
+      const sessions = await c.listSessions();
+      return {
+        ok: true,
+        eventUrl: c.eventUrl?.() ?? "",
+        baseUrl: serverInfo?.baseUrl ?? "",
+        sessions: (Array.isArray(sessions) ? sessions : []).map((s) => ({
+          id: s.id ?? s.sessionID ?? "",
+          title: s.title ?? "",
+          created: s.time?.created ?? 0,
+          updated: s.time?.updated ?? s.time?.created ?? 0
+        })).filter((s) => s.id)
+      };
+    },
+    executeOpenCodeSessionMessages: async (req) => {
+      const { sessionId } = bodyOf(req);
+      if (!sessionId) throw new Error("messages requires sessionId.");
+      const c = await ensureClient();
+      const messages = await c.messages(sessionId);
+      return { ok: true, messages: Array.isArray(messages) ? messages : [] };
     },
     executeOpenCodeSessionStop: async () => {
       try { serverInfo?.process?.kill?.(); } catch { /* noop */ }
