@@ -25,6 +25,8 @@ scope, area, and delivery state belong in
   Augmentor flows and human-only checkpoints for job search, travel,
   education/tracking, and product research (issue #237).
 - [Side-Panel Command Reference](reference/COMMANDS.md) lists the supported
+  Augmentor slash commands and their safety boundaries.
+- [Status](STATUS.md) records the latest verified snapshot.
 
 ## Change The Extension
 
