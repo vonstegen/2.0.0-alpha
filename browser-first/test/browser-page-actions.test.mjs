@@ -728,18 +728,18 @@ test("page understanding fixtures: the REAL content.js read_page extracts the ex
     return snapshot;
   }
 
-  const article = await readPageThroughRealLayer("test/fixtures/pages/article.html");
+  const article = await readPageThroughRealLayer("browser-first/test/fixtures/pages/article.html");
   assert.equal(article.ok, true);
   assert.match(article.snapshot.title, /Quantum Computing Breakthrough/);
   assert.match(article.snapshot.text, /256-qubit processor/, "real extractor must surface the article body");
   assert.match(article.snapshot.text, /Error rates are below 0.1%/);
 
-  const pdfLike = await readPageThroughRealLayer("test/fixtures/pages/pdf-like.html");
+  const pdfLike = await readPageThroughRealLayer("browser-first/test/fixtures/pages/pdf-like.html");
   assert.equal(pdfLike.ok, true);
   assert.match(pdfLike.snapshot.title, /Annual Report 2025/);
   assert.match(pdfLike.snapshot.text, /Revenue: \$2.34B/, "dense report text must survive extraction");
 
-  const mediaOnly = await readPageThroughRealLayer("test/fixtures/pages/media-only.html");
+  const mediaOnly = await readPageThroughRealLayer("browser-first/test/fixtures/pages/media-only.html");
   assert.equal(mediaOnly.ok, true);
   assert.match(mediaOnly.snapshot.title, /Product Gallery/);
   const visible = String(mediaOnly.snapshot.text ?? "").trim();

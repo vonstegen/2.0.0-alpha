@@ -38,7 +38,7 @@ expected to work now. Each row: what to do → expected → the issue/test backi
 | **Select a model → chat uses it** | pick the added model as a strategy primary → send a chat | reply comes from that provider; no silent swap | #207 / #231 · `provider-fallback-visibility.test.mjs` |
 | **Visible fallback** | pin a primary whose provider is down, with a working fallback → chat | a system notice names the fallback + points to Settings | #231 · `provider-fallback-visibility.test.mjs` |
 | **Remove a provider** | *Settings › Providers* → Remove on a user provider | provider leaves the dropdown; built-ins can't be removed | #207 · same test file |
-| **Page understanding / Q&A** | open a page → ask the Augmentor about its content | grounded answer scoped to the page; article/pdf-like pages return full text, media-only pages return fallback ("No readable text — only media with alt text available") | #218 · new fixtures in test/fixtures/pages/ + browser-page-actions.test.mjs |
+| **Page understanding / Q&A** | open a page → ask the Augmentor about its content | grounded answer scoped to the page; article/pdf-like pages return full text, media-only pages return fallback ("No readable text — only media with alt text available") | #218 · new fixtures in [browser-first/test/fixtures/pages/](../browser-first/test/fixtures/pages/article.html) + browser-page-actions.test.mjs |
 | **Highlight-to-ask** | select text → invoke the inline assistant | inline answer on the selection | #9 (C) |
 | **One-click / question summaries** | Alt+S (or the summarize action) on a page | concise summary | #221 · #222 |
 | **Cross-tab comparison** | ask to compare two open tabs | answer cites each tab (provenance) | #220 *(needs hardening)* |
