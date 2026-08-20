@@ -122,3 +122,16 @@ test("getSummaryTemplate returns the normalized template metadata", () => {
   assert.equal(getSummaryTemplate("tldr").label, "TL;DR");
   assert.equal(getSummaryTemplate("unknown").id, "summary");
 });
+
+test("summary templates registry is deeply frozen", () => {
+  const template = SUMMARY_TEMPLATES.find((entry) => entry.id === "tldr");
+  assert.throws(() => { template.label = "mutated"; }, TypeError);
+});
+
+test("summary template page excerpt never splits a surrogate pair at the 12000 cut", () => {
+  const text = "a".repeat(11999) + "\u{1F600}" + "tail after the emoji";
+  const prompt = buildSummaryPrompt("tldr", { title: "T", url: "https://t.test", text });
+  const excerptSection = prompt.split("## Page text\n")[1];
+  assert.equal(excerptSection.length, 11999);
+  assert.equal(excerptSection.includes("\uD83D"), false);
+});
