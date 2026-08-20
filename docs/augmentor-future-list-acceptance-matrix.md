@@ -30,7 +30,7 @@ suffix are open. Safety-boundary rows are **never** casual good-first-issues.
 ### Core interface
 | Capability | Canonical issue(s) | Status | Tests / proof | Safety boundary |
 |---|---|---|---|---|
-| Side panel + Alt+A / Alt+S shortcuts | #241 · #46 (C) | 🔧 needs hardening | shortcut-contract + conflict handling — supported (deterministic); **live-browser proof** (#241 · #286) | — |
+| Side panel + Alt+A / Alt+S shortcuts | #241 (C) · #46 (C) | ✅ supported | shortcut-contract + conflict handling in `augmentor-shortcut-controller.test.mjs` (23 tests); landed via PR #305 | — |
 | Augmentor mode selector + permission-state | #230 | 🔧 needs hardening | mode-select + permission-surface tests; live-browser proof | surfaces current permissions; no silent capability escalation |
 
 ### Web understanding
@@ -38,7 +38,7 @@ suffix are open. Safety-boundary rows are **never** casual good-first-issues.
 |---|---|---|---|---|
 | Page content analysis / Q&A | #218 · #8 (C) | ✅ supported | page-understanding fixture coverage (#218); `npm run test:browser-first` | — |
 | Highlight-to-ask (inline assistant) | #9 (C) | ✅ supported | inline-assistant path in `provider-bridge-service` tests | — |
-| Counterpoints / explain-jargon | #219 | 🟢 supported (deterministic) · 🔒 live proof gated to #267 | `content-inline-actions.js` (counterpoint=C, explain-jargon=J handlers); `inline-action-surface-gate.js` blocks restricted-scheme + blocked-site; deterministic tests in `inline-action-surface-gate.test.mjs` and `content-redaction.test.mjs` | reads-only actions on user-selected text; no page mutation outside the selection; offline fallback for both new actions |
+| Counterpoints / explain-jargon | #219 | ✅ supported (live gate #267 closed) | `content-inline-actions.js` (counterpoint=C, explain-jargon=J handlers); `inline-action-surface-gate.js` blocks restricted-scheme + blocked-site; deterministic tests in `inline-action-surface-gate.test.mjs` and `content-redaction.test.mjs` | reads-only actions on user-selected text; no page mutation outside the selection; offline fallback for both new actions |
 | Image / media understanding | #242 | ⏸ deferred · 🔒 | live-browser proof; bounded media handling | privacy/security-sensitive |
 
 ### Cross-tab intelligence
@@ -57,8 +57,8 @@ suffix are open. Safety-boundary rows are **never** casual good-first-issues.
 ### Automation
 | Capability | Canonical issue(s) | Status | Tests / proof | Safety boundary |
 |---|---|---|---|---|
-| Autonomous navigation / Agent Control | #118 · #225 · epic #211 | 🔧 needs hardening · 🔒 | click/type/scroll certification fixtures; live-browser proof | governed; human-only public-submit / field-typing boundaries |
-| Agent Control stop/cancel & recovery UX | #226 · epic #211 | 🔧 needs hardening · 🔒 | stop/cancel kill-path + recovery-state tests; live-browser proof | user can always halt an in-flight action; no orphaned run state |
+| Autonomous navigation / Agent Control | #118 · #225 (C) · epic #211 (C) | ✅ supported (governed core) · 🔒 · 🔧 multi-tab (#118) | click/type/scroll certification fixtures (#223); strict-contract live proof run 32199392482 | governed; human-only public-submit / field-typing boundaries |
+| Agent Control stop/cancel & recovery UX | #226 (C) · epic #211 (C) | ✅ supported · 🔒 | stop/cancel kill-path + recovery tests landed via PR #301; live-cert lane green | user can always halt an in-flight action; no orphaned run state |
 | Form reading & autofill guard | #31 (C) · #8 (C) | ✅ supported | autofill-guard tests | never auto-submits; approval-gated |
 | Multi-step workflows | #237 · #14 (C) · #12 (C) | ✅ supported | — | — |
 | Shopping decision packet / checkout handoff | #243 · #16 (C) | ⏸ deferred · 🔒 | packet assembly + human-confirm gate | **human-only** checkout; draft/packet only |
@@ -84,7 +84,7 @@ suffix are open. Safety-boundary rows are **never** casual good-first-issues.
 | Provider Fabric routing (add/select/route) | #207 (C) · #214 (epic) | ✅ supported | `provider-fabric-routing-propagation.test.mjs`; `provider-route-acceptance.test.mjs` | credential/route safeguards preserved |
 | Visible fallback + manual model preservation | #231 (C) | ✅ supported | `provider-fallback-visibility.test.mjs` | no silent model swap |
 | Provider route health / fallback acceptance | #233 (C) | ✅ supported | `provider-route-acceptance.test.mjs` (no-secret-leak) | secrets never surfaced |
-| Reasoning-trace / durable job trace | #225 | 🔮 future | step-counter proof; live-browser | — |
+| Reasoning-trace / durable job trace | #225 (C) | ✅ supported | durable job trace + visible step counter with redaction (`trace-redaction.js`), landed via PR #302 | secrets redacted from persisted traces |
 | Spreadsheet / document artifact contract | #232 | 🔮 future | artifact-contract tests | — |
 | Renderer-controlled routing hardening | #143 (C) | ✅ supported · 🔒 | routing input-validation tests | rejects renderer-controlled provider input |
 
