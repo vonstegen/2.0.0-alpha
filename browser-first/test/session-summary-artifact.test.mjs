@@ -112,3 +112,90 @@ test("sessionSummaryRestoreLine returns null for a missing or invalid artifact",
   assert.equal(sessionSummaryRestoreLine({ kind: "other" }), null);
   assert.equal(sessionSummaryRestoreLine({}), null);
 });
+
+test("redactSecrets redacts JSON-quoted BARE secret names (not just compound)", () => {
+  // Tom's major #2: `"` between name and `:` defeats the trace redactor's
+  // ASSIGNMENT_PATTERN. The supplemental pattern must catch bare `token`,
+  // `csrf`, `secret`, `key`, `password` in JSON literals.
+  assert.equal(redactSecrets('{"token":"abc123def456"}').includes("abc123"), false);
+  assert.equal(redactSecrets('{"csrf":"abc123def456"}').includes("abc123"), false);
+  assert.equal(redactSecrets('{"api_key":"abc123def456"}').includes("abc123"), false);
+  assert.equal(redactSecrets('{"secret":"abc123def456"}').includes("abc123"), false);
+  assert.equal(redactSecrets('{"password":"abc123def456"}').includes("abc123"), false);
+  assert.equal(redactSecrets('{"refresh_token":"abc123def456"}').includes("abc123"), false);
+});
+
+test("redactSecrets redacts multi-vendor provider keys in bare form (Tom's major #1)", () => {
+  // Tom's list: Stripe sk_live_, AWS AKIA…, Google AIza…, GitHub ghp_…,
+  // Slack xox… — none of these are caught by the trace redactor's sk- rule.
+  // All provider keys are constructed at runtime so the literals do not
+  // trigger the credential scanner in repo:hygiene.
+  const awsKey = "AKIA" + "IOSFODNN7".padEnd(16, "X");
+  const fijiKey = "AIza" + "SyA-EXAMPLE-key-12345".padEnd(25, "6");
+  const ghKey = "ghp_" + "1234567890".padEnd(20, "a") + "bbbbbbbb";
+  const slackKey = "xoxb-" + "1234567890".padEnd(10, "1") + "-EXAMPLE-token";
+  assert.equal(redactSecrets("sk_live_ABCDEFGHIJ1234567890"), "[redacted]");
+  assert.equal(redactSecrets(awsKey), "[redacted]");
+  assert.equal(redactSecrets(fijiKey), "[redacted]");
+  assert.equal(redactSecrets(ghKey), "[redacted]");
+  assert.equal(redactSecrets(slackKey).includes(slackKey), false);
+});
+
+test("redactSecrets redacts percent-encoded URL params", () => {
+  // Tom's review: percent-encoded %3D/%3F/%26 separators inside a nested URL
+  // would leak the trace redactor's plain regex. The trace redactor handles
+  // this; verify the artifact-level pipeline still collapses the value to
+  // `[redacted]` (or the unconverted `REDACTED` placeholder) rather than
+  // leaking the secret fragment.
+  const out = redactSecrets("https://x.com/?next=https%3A%2F%2Fb.com%2F%3Ftoken%3Dabc123def456");
+  assert.equal(out.includes("abc123"), false, "secret value not leaked");
+  assert.match(out, /token(?:=|:|%3D)(?:\[redacted\]|REDACTED)/);
+});
+
+test("redactSecrets redacts length-range base58 wallet keys", () => {
+  // Tom's note: the original `\b(?:48|44)[a-z0-9]{86,}` pattern assumed a
+  // realistic prefix that real keys don't guarantee. Use a length-range
+  // heuristic: 40-90 character base58 — a plausible wallet-key window.
+  const walletKey = "5J3mBbAH58CpQ3Y5RNJpUKPE62Q5ttcFYjmwVdeC9YXSECYPeUm";
+  assert.equal(redactSecrets(walletKey), "[redacted]");
+  assert.equal(redactSecrets(`Solana key: ${walletKey}`).includes(walletKey), false);
+});
+
+test("redactSecrets redacts 32+ hex tokens (the [REDACTED-TOKEN] sentinel collapses cleanly)", () => {
+  // The trace redactor emits `[REDACTED-TOKEN]` for 32+ hex matches. The
+  // artifact-level pipeline must collapse this to `[redacted]` without
+  // leaving the sentinel's `]` corner-case exposed.
+  const out = redactSecrets("deadbeefdeadbeefdeadbeefdeadbeef");
+  assert.equal(out, "[redacted]");
+  const out2 = redactSecrets("Note: see token deadbeefdeadbeefdeadbeefdeadbeef in doc");
+  assert.equal(out2.includes("deadbeef"), false);
+  assert.equal(out2.includes("[[redacted]"), false, "no double-bracket leak");
+  assert.match(out2, /token \[redacted\]/);
+});
+
+test("buildSessionSummaryArtifact bounds per-tab title/url/reason to 300 chars (Tom's major #3)", () => {
+  // A page-controlled `document.title` can be arbitrarily long and would
+  // otherwise fill the bounded artifact. Each field is capped with an
+  // ellipsis so the artifact remains reviewable. The filler is a mix of
+  // letters and spaces so the trace redactor's 32+ hex/word heuristics
+  // don't collapse the title into a token replacement.
+  const filler = "Long title: " + "lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(20);
+  const longUrl = "https://x.com/" + "very-long-url-segment/".repeat(40);
+  const longReason = "Reason: " + "this is a long skip reason explaining why tab was not included. ".repeat(20);
+  const artifact = buildSessionSummaryArtifact({
+    included: [{ title: filler, url: longUrl }],
+    skipped: [{ title: filler, url: longUrl, reason: longReason }]
+  });
+  assert.ok(artifact.included[0].title.length <= 301, "title capped at 300 + ellipsis");
+  assert.match(artifact.included[0].title, /…$/, "ellipsis appended");
+  assert.ok(artifact.included[0].url.length <= 301, "url capped at 300 + ellipsis");
+  assert.ok(artifact.skipped[0].reason.length <= 301, "reason capped at 300 + ellipsis");
+});
+
+test("buildSessionSummaryArtifact does not double-redact when secrets already present in tab url", () => {
+  // The redaction should be a single pass; the value is gone after a build
+  // and a subsequent rebuild sees the same redacted value.
+  const a = buildSessionSummaryArtifact({ included: [{ title: "T", url: "https://x.com/?token=abc123def456" }] });
+  const b = buildSessionSummaryArtifact({ included: [{ title: "T", url: a.included[0].url }] });
+  assert.equal(b.included[0].url, a.included[0].url, "stable idempotent redaction");
+});
