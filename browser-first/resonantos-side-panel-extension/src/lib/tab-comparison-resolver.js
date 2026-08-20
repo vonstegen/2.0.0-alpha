@@ -9,20 +9,38 @@
 // No browsing/navigation authority is added (#220 non-goal). The resolver only
 // classifies mentions against the supplied tab list; the controller decides how
 // to bind context and post the visible messages.
+//
+// Token grammar (post Tom's review):
+//   - Mention token terminates at whitespace (so `@A and @B` correctly
+//     produces two mentions, not one greedy "A and").
+//   - Multi-word quoted titles are supported: `@"Alpha Beta"`.
+//   - The literal `@tab N` form is preserved for ranked-tab references.
+//   - Email addresses (`bob@acme.com`) and other prose containing `@` are
+//     NOT treated as mentions because the token starts with `@` and requires
+//     letter/digit start.
+const MENTION_PATTERN = /(?:^|[\s,;!?([{])@(?:(tab\s+\d+)|"([^"]+)"|([a-z0-9][a-z0-9.:_-]{0,80}))/gi;
 
-const MENTION_PATTERN = /@([a-z0-9][a-z0-9 .:_-]{0,80})/gi;
+// Returns true when the message clearly expresses an explicit comparison
+// intent (verbs like "compare", "versus", "vs", "or", "diff"). This is the
+// gate that prevents ordinary prose from being diverted into the cross-tab
+// comparison path on the strength of two coincidental `@` symbols.
+const COMPARE_VERB_PATTERN = /\b(?:compare|versus|vs\.?|diff(?:erence)?(?:\s+between)?|between)\b/i;
+
+export function isCompareIntent(message) {
+  return COMPARE_VERB_PATTERN.test(String(message ?? ""));
+}
 
 // All unique @tab mentions in a message, in first-seen order, case-insensitively
-// de-duplicated. Mirrors parseTabMention's token shape but returns every mention
-// so cross-tab comparison can resolve more than one.
+// de-duplicated. Multi-word quoted titles (@"Alpha Beta") are captured as a
+// single mention; unquoted multi-word forms are NOT (the token terminates at
+// whitespace). The two alternatives of the alternation keep the [quoted] vs
+// [unquoted] paths explicit.
 export function parseTabMentions(message) {
   const seen = new Set();
   const out = [];
   const text = String(message ?? "");
-  const re = new RegExp(MENTION_PATTERN.source, MENTION_PATTERN.flags.replace("g", "g"));
-  let match;
-  while ((match = re.exec(text))) {
-    const mention = match[1].trim().replace(/[.,;!?]+$/g, "");
+  for (const match of text.matchAll(MENTION_PATTERN)) {
+    const mention = String(match[1] ?? match[2] ?? match[3] ?? "").trim().replace(/[.,;!?]+$/g, "");
     if (!mention) continue;
     const key = mention.toLowerCase();
     if (seen.has(key)) continue;
@@ -77,6 +95,8 @@ export function resolveTabComparison(message, allTabs, isReadableBrowserTab) {
     const result = resolveAmongReadable(mention, readable);
     if (result.kind === "resolved") {
       const tab = result.tab;
+      // Use TWO different mention strings that resolve to the same tab so the
+      // tab-id dedup logic actually runs (parser-level dedup is separate).
       if (tab.id != null) {
         if (seenIds.has(tab.id)) continue;
         seenIds.add(tab.id);

@@ -14,11 +14,17 @@ import {
   parseSummarizePageIntent,
   parseTypeIntent
 } from "./browser-command-parser.js";
-import { parseTabMentions } from "./tab-comparison-resolver.js";
+import { isCompareIntent, parseTabMentions } from "./tab-comparison-resolver.js";
 
 export function createSidePanelCommandRouter(handlers) {
   async function respondToCommand(value) {
-    if (parseTabMentions(value).length >= 2) {
+    // The cross-tab comparison path is gated on BOTH ≥2 mentions AND an explicit
+    // compare verb (compare/versus/vs/diff/between). This prevents ordinary
+    // prose containing two coincidental `@` symbols (e.g. an email address +
+    // handle) from being diverted into the comparison path on the strength of
+    // token count alone. The previous gate tripped on natural "@A and @B"
+    // phrasing and on email-handled text.
+    if (parseTabMentions(value).length >= 2 && isCompareIntent(value)) {
       await handlers.resolveComparisonContext(value);
     } else {
       await handlers.bindMentionedTab(value);
