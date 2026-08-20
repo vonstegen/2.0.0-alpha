@@ -630,6 +630,41 @@ test("browser page actions create deterministic summary intake when provider fai
   assert.match(bridgeCall[2].body.content, /First fact/);
 });
 
+test("browser page actions summarize with an unknown template id falls back to the default prompt and title end-to-end", async () => {
+  const harness = createHarness({
+    lastSnapshot: {
+      title: "Fallback Page",
+      url: "https://example.test/fallback",
+      text: "Readable text.",
+      links: [],
+      controls: [],
+      fields: []
+    },
+    bridgeRequest: async (route) => {
+      if (route === "/augmentor/chat") return { reply: "A summary.", model: "MiniMax-M3" };
+      if (route === "/archive/intake") return { path: "INTAKE/browser/fallback.md", bytes: 40 };
+      return { path: "REVIEW/requests/fallback.md", status: "pending" };
+    }
+  });
+
+  const result = await harness.actions.summarizeCurrentPageToArchive("no-such-template");
+
+  assert.equal(result.ok, true);
+  const chatCall = harness.events.find((event) => event[0] === "bridge" && event[1] === "/augmentor/chat");
+  // Byte-for-byte the pre-existing default prompt: no provenance line, no page text.
+  assert.equal(chatCall[2].body.messages[0].content, [
+    "Summarize this browser page for Living Archive intake.",
+    "Return concise markdown with:",
+    "- What this page is",
+    "- Key facts visible in the page",
+    "- Why it may matter",
+    "- Questions or uncertainties for review",
+    "- Suggested wiki entities/concepts to consider"
+  ].join("\n"));
+  const intakeCall = harness.events.find((event) => event[0] === "bridge" && event[1] === "/archive/intake");
+  assert.equal(intakeCall[2].body.title, "Summary: Fallback Page");
+});
+
 test("browser page actions summarize current page with a chosen template sends the template prompt and labels the intake", async () => {
   const harness = createHarness({
     lastSnapshot: {

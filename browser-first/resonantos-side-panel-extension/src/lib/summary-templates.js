@@ -17,7 +17,7 @@ export const SUMMARY_TEMPLATES = Object.freeze([
   { id: "pros-cons", label: "Pros / Cons", needsReadableText: true },
   { id: "decision-notes", label: "Decision notes", needsReadableText: true },
   { id: "bullets", label: "Bullets for notes", needsReadableText: true }
-]);
+].map(Object.freeze));
 
 const TEMPLATE_BY_ID = new Map(SUMMARY_TEMPLATES.map((template) => [template.id, template]));
 const DEFAULT_TEMPLATE_ID = "summary";
@@ -43,8 +43,9 @@ export function getSummaryTemplate(templateId) {
 // empty page is unsupported, so the summarize flow can surface that visibly
 // instead of silently emitting an empty summary.
 export function isTemplateSupported(templateId, snapshot) {
+  // getSummaryTemplate always resolves (unknown ids fall back to the default
+  // template), so there is no unresolved case here.
   const template = getSummaryTemplate(templateId);
-  if (!template) return false;
   if (!template.needsReadableText) return true;
   return String(snapshot?.text ?? "").trim().length > 0;
 }
@@ -57,7 +58,12 @@ function provenanceLine(snapshot) {
 
 function pageExcerpt(snapshot) {
   const text = String(snapshot?.text ?? "").trim();
-  return text.slice(0, 12000) || "(no readable text on this page)";
+  let excerpt = text.slice(0, 12000);
+  // Never split a surrogate pair at the cut: a trailing lone high surrogate
+  // would embed a broken character in the prompt.
+  const last = excerpt.charCodeAt(excerpt.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) excerpt = excerpt.slice(0, -1);
+  return excerpt || "(no readable text on this page)";
 }
 
 const SHAPES = {
