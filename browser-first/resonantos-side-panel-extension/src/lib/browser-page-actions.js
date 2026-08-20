@@ -7,6 +7,7 @@ import {
   walletDaoAuditMarkdown
 } from "./wallet-dao-audit-markdown.js";
 import { normalizeWalletProviderState, walletStateMarkdown } from "./wallet-state.js";
+import { buildSummaryIntakeTitle, buildSummaryPrompt, getSummaryTemplate, isTemplateSupported } from "./summary-templates.js";
 
 const readOnlyAllowedContentActions = new Set([
   "control_overlay",
@@ -831,13 +832,19 @@ export function createBrowserPageActions(deps) {
     ].join("\n").trim();
   }
 
-  async function summarizeCurrentPageToArchive() {
+  async function summarizeCurrentPageToArchive(templateId = "summary") {
     const response = deps.getLastSnapshot() ? { ok: true, snapshot: deps.getLastSnapshot() } : await readActivePage({ announce: false });
     const snapshot = response?.snapshot;
     if (!snapshot) {
       await addMessage("system", "There is no browser page context to summarize. Open a normal web page and read it first.");
       setStatus("Summary unavailable");
       return { ok: false, error: "No browser page context available." };
+    }
+    const template = getSummaryTemplate(templateId);
+    if (!isTemplateSupported(templateId, snapshot)) {
+      await addMessage("system", `This page has no readable text to summarize with the ${template.label} template. Open a normal web page with readable text and try again.`);
+      setStatus("Summary unavailable");
+      return { ok: false, error: `No readable page content for the ${template.label} template.` };
     }
     setActivity("thinking", "Summarising page for Living Archive intake", snapshot.title || snapshot.url);
     setStatus("Summarising page");
@@ -855,15 +862,7 @@ export function createBrowserPageActions(deps) {
           runtimeContext: "Create a source-grounded Living Archive intake summary. Do not claim trusted wiki promotion. Preserve uncertainty and cite visible source facts only.",
           messages: [{
             role: "user",
-            content: [
-              "Summarize this browser page for Living Archive intake.",
-              "Return concise markdown with:",
-              "- What this page is",
-              "- Key facts visible in the page",
-              "- Why it may matter",
-              "- Questions or uncertainties for review",
-              "- Suggested wiki entities/concepts to consider"
-            ].join("\n")
+            content: buildSummaryPrompt(templateId, snapshot)
           }]
         }
       });
@@ -883,7 +882,7 @@ export function createBrowserPageActions(deps) {
     const result = await bridge()("/archive/intake", {
       method: "POST",
       body: {
-        title: `Summary: ${snapshot.title || snapshot.url || "Untitled"}`,
+        title: buildSummaryIntakeTitle(templateId, snapshot),
         url: snapshot.url,
         origin: "browser-page-summary",
         content: pageSummaryIntakeMarkdown(snapshot, summary, { model, fallback })
