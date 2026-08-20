@@ -21,6 +21,9 @@ scope, area, and delivery state belong in
   tests/proof, and safety boundary.
 - [Augmentor tester runbook & proof checklist](augmentor-tester-runbook.md) walks a
   community tester from install to a proof checklist, with the human-only boundaries.
+- [Design](design/README.md) indexes the community-contributed ROSI design
+  system — the token catalog extracted from the live Browser extension UI,
+  the visual reference for new panels and add-ons.
 - [Augmentor workflow recipes](recipes/index.md) give safe, copy-paste-able
   Augmentor flows and human-only checkpoints for job search, travel,
   education/tracking, and product research (issue #237).

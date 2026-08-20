@@ -247,6 +247,12 @@ function classify(changedPath, state) {
       reason: "browser-first release documentation",
     };
   }
+  if (changedPath.startsWith("docs/design/")) {
+    return {
+      bucket: "include",
+      reason: "design-system reference documentation",
+    };
+  }
   if (canonicalRootFiles.has(changedPath) || changedPath === "public/icons/README.md") {
     return {
       bucket: "include",
