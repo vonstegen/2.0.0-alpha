@@ -177,3 +177,94 @@ test("#240: the runner boundary classifier agrees with the widened commit verbs"
   // a plain safe action stays safe
   assert.equal(approvalBoundaryForStep({ type: "click", text: "open details" }), "safe");
 });
+
+// --- #240 hardening graft (from community PR #288, credit GeneraI44) ---
+// Destructive controls, sensitive-form context, and POST/cross-origin
+// auto-submit gates. Each denial asserts the human-handoff contract.
+
+const GRAFT_PAGE = `<!doctype html>
+  <form id="postsearch" method="post">
+    <input name="q2" aria-label="Post query" placeholder="Post query">
+    <button type="submit">Go</button>
+  </form>
+  <form id="crossorigin" action="https://collector.example/submit">
+    <input name="q3" aria-label="Cross query" placeholder="Cross query">
+    <button type="submit">Go</button>
+  </form>
+  <form id="overrideform">
+    <input name="q4" aria-label="Override query" placeholder="Override query">
+    <button type="submit" formmethod="post">Go</button>
+  </form>
+  <form id="pwform" aria-label="Account details">
+    <input type="password" name="pw" aria-label="Passphrase">
+    <button id="innocent" type="button">View details</button>
+  </form>
+  <button id="deleteacct" type="button">Delete account</button>
+  <div id="status">idle</div>`;
+
+async function loadGraftPage() {
+  const dom = new JSDOM(GRAFT_PAGE, { runScripts: "outside-only", url: "https://shop.test/checkout" });
+  const win = dom.window;
+  let listener = null;
+  win.chrome = {
+    runtime: { onMessage: { addListener(cb) { listener = cb; } }, sendMessage: () => Promise.resolve() },
+    storage: { onChanged: { addListener() {} } },
+  };
+  win.HTMLElement.prototype.scrollIntoView = function scrollIntoView() {};
+  win.__resonantosControlDwellMs = 0;
+  for (const scriptPath of scripts) win.eval(await readFile(scriptPath, "utf8"));
+  win.eval(`
+    window.__deleted = false;
+    window.__innocentClicked = false;
+    window.__postSubmitted = false;
+    window.__crossSubmitted = false;
+    window.__overrideSubmitted = false;
+    document.querySelector("#deleteacct").addEventListener("click", () => { window.__deleted = true; });
+    document.querySelector("#innocent").addEventListener("click", () => { window.__innocentClicked = true; });
+    document.querySelector("#postsearch").addEventListener("submit", (e) => { e.preventDefault(); window.__postSubmitted = true; });
+    document.querySelector("#crossorigin").addEventListener("submit", (e) => { e.preventDefault(); window.__crossSubmitted = true; });
+    document.querySelector("#overrideform").addEventListener("submit", (e) => { e.preventDefault(); window.__overrideSubmitted = true; });
+  `);
+  const send = (message) => new Promise((resolve) => {
+    listener({ channel: "resonantos.browser_first.content", ...message }, {}, resolve);
+  });
+  return { win, send };
+}
+
+test("#240 graft: a destructive control (Delete account) is human-only even with approval", async () => {
+  const { win, send } = await loadGraftPage();
+  const res = await send({ type: "click_text", text: "Delete account", userApproved: true });
+  assert.equal(res.ok, false, "destructive verbs must never be agent-clicked");
+  assert.equal(res.deniedToAutomation, true);
+  assert.equal(res.humanHandoff, true);
+  assert.equal(win.__deleted, false, "the destructive control must NOT have fired");
+});
+
+test("#240 graft: an innocent-label button inside a form with a password field is human-only", async () => {
+  const { win, send } = await loadGraftPage();
+  const res = await send({ type: "click_text", text: "View details", userApproved: true });
+  assert.equal(res.ok, false, "a sensitive enclosing form makes every control human-only");
+  assert.equal(res.deniedToAutomation, true);
+  assert.equal(win.__innocentClicked, false);
+});
+
+test("#240 graft: typing+submit into a POST form is refused (auto-submit is GET-only)", async () => {
+  const { win, send } = await loadGraftPage();
+  const res = await send({ type: "type_text", field: "Post query", text: "hello", submit: true, userApproved: true });
+  assert.equal(res.ok, false, "POST forms commit data and are human-submit only");
+  assert.equal(win.__postSubmitted, false);
+});
+
+test("#240 graft: typing+submit into a cross-origin action form is refused", async () => {
+  const { win, send } = await loadGraftPage();
+  const res = await send({ type: "type_text", field: "Cross query", text: "hello", submit: true, userApproved: true });
+  assert.equal(res.ok, false, "cross-origin form actions are human-submit only");
+  assert.equal(win.__crossSubmitted, false);
+});
+
+test("#240 graft: a formmethod=post override on the submit control is refused", async () => {
+  const { win, send } = await loadGraftPage();
+  const res = await send({ type: "type_text", field: "Override query", text: "hello", submit: true, userApproved: true });
+  assert.equal(res.ok, false, "per-control method overrides get the same GET-only rule");
+  assert.equal(win.__overrideSubmitted, false);
+});
