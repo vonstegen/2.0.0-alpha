@@ -270,6 +270,69 @@ test("settings workspace renders provider status without exposing credentials", 
   }
 });
 
+test("settings browser control shows visible Augmentor mode and permission meaning", async () => {
+  const { container, cleanup } = setupDom();
+  const storage = memoryStorage({
+    augmentorBrowserJobs: []
+  });
+  const chromeApi = {
+    tabs: {
+      query: async () => [{ id: 7, url: "https://research.example/articles" }]
+    }
+  };
+  const sitePermissionStore = {
+    permissionForUrl: async () => "ask-before-action",
+    siteKeyForUrl: (url) => new URL(url).hostname.replace(/^www\./, ""),
+    sitePermissions: async () => ({})
+  };
+  const taskConsentStore = {
+    taskConsents: async () => ({
+      "research.example::research": {
+        siteKey: "research.example",
+        taskClass: "research",
+        mode: "allow-safe",
+        grantedAt: Date.parse("2026-06-01T00:00:00.000Z"),
+        expiresAt: Date.parse("2026-07-01T00:00:00.000Z"),
+        reason: "Approved research automation",
+        source: "human"
+      }
+    }),
+    revokeTaskConsent: async () => false
+  };
+  const bridgeRequest = async (route) => {
+    if (route === "/browser/downloads") return { entries: [], total: 0, root: "" };
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  try {
+    renderSettingsWorkspace({
+      container,
+      bridgeRequest,
+      chromeApi,
+      initialSection: "browser-control",
+      sitePermissionStore,
+      storage,
+      storageKeys: {
+        activeBrowserJob: "augmentorActiveBrowserJob",
+        browserJobs: "augmentorBrowserJobs"
+      },
+      taskConsentStore
+    });
+    await waitForCondition(() => /Mode: Fully delegated/.test(container.textContent));
+
+    assert.match(container.textContent, /research\.example · Mode: Fully delegated · Permission: Ask before action · safe actions allowed/);
+    assert.match(container.textContent, /Augmentor may run safe research actions for research\.example without per-action approval/);
+    assert.match(container.textContent, /Allowed/);
+    assert.match(container.textContent, /Page reading and safe actions within the approved research task class/);
+    assert.match(container.textContent, /Requires review/);
+    assert.match(container.textContent, /Actions outside the approved task class or unclear targets stop for review/);
+    assert.match(container.textContent, /Blocked/);
+    assert.match(container.textContent, /Wallet, login, payment, credentials, signing, personal autofill, and public-submit stay gated/);
+  } finally {
+    cleanup();
+  }
+});
+
 test("settings workspace saves provider credentials through the host bridge", async () => {
   const { container, cleanup } = setupDom();
   const calls = [];
@@ -2623,7 +2686,7 @@ test("settings browser control section manages scoped grants and browser jobs", 
     assert.match(container.textContent, /Browser management pages/);
     assert.match(container.textContent, /Recent downloads/);
     assert.match(container.textContent, /Browser job history/);
-    assert.match(container.textContent, /example\.com · Trusted safe actions/);
+    assert.match(container.textContent, /example\.com · Mode: Fully delegated · Permission: Trusted safe actions · safe actions allowed/);
     assert.match(container.textContent, /blocked\.test/);
     assert.match(container.textContent, /example\.com · shopping/);
     assert.match(container.textContent, /Find the booking page/);
