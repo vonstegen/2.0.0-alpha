@@ -87,3 +87,70 @@ test("session summary controller deletes the artifact on /session clear and the 
   // Deletion honored across a reload (storage is the source of truth).
   assert.equal(await loadSessionSummaryArtifact(harness.chrome), null);
 });
+
+test("session summary controller queries the current window only (Tom's scope)", async () => {
+  // Tom's review: `chrome.tabs.query({})` captures every open http(s) tab in
+  // the browser, persisting unrelated personal tabs. The fix scopes to
+  // `currentWindow: true` so other windows' tabs are never captured.
+  const queryArgs = [];
+  const events = [];
+  const store = new Map();
+  const chrome = {
+    tabs: {
+      query: async (filter) => {
+        queryArgs.push(filter);
+        return [{ id: 1, title: "Alpha", url: "https://alpha.test/" }];
+      }
+    },
+    storage: {
+      local: {
+        get: async (key) => store.has(key) ? { [key]: store.get(key) } : {},
+        set: async (patch) => { for (const [k, v] of Object.entries(patch)) store.set(k, v); },
+        remove: async (key) => { store.delete(key); }
+      }
+    }
+  };
+  const controller = createSessionSummaryController({
+    chrome,
+    isReadableBrowserTab: (tab) => /^https?:\/\//i.test(String(tab?.url ?? "")),
+    addMessage: async (role, content) => events.push(["message", role, content]),
+    setStatus: () => {}
+  });
+  await controller.runSessionCommand("summary");
+  assert.equal(queryArgs.length, 1);
+  assert.equal(queryArgs[0].currentWindow, true, "currentWindow: true scoping applied");
+});
+
+test("session summary controller surfaces save failures as a user-visible message (Tom's major #4)", async () => {
+  const events = [];
+  const chrome = {
+    tabs: {
+      query: async () => [{ id: 1, title: "Alpha", url: "https://alpha.test/" }]
+    },
+    storage: {
+      local: {
+        get: async () => { throw new Error("quota exceeded"); },
+        set: async () => { throw new Error("quota exceeded"); },
+        remove: async () => { throw new Error("quota exceeded"); }
+      }
+    }
+  };
+  const controller = createSessionSummaryController({
+    chrome,
+    isReadableBrowserTab: (tab) => /^https?:\/\//i.test(String(tab?.url ?? "")),
+    addMessage: async (role, content) => events.push(["message", role, content]),
+    setStatus: () => {}
+  });
+
+  const saveResult = await controller.runSessionCommand("summary");
+  assert.equal(saveResult.ok, false, "save returns ok:false on storage failure");
+  assert.ok(events.some((e) => e[0] === "message" && /Session summary save failed/.test(e[2]) && /quota exceeded/.test(e[2])));
+
+  const restoreResult = await controller.restoreSessionContext();
+  assert.equal(restoreResult, null, "restore returns null on storage failure");
+  assert.ok(events.some((e) => e[0] === "message" && /Session summary load failed/.test(e[2])));
+
+  const clearResult = await controller.runSessionCommand("clear");
+  assert.equal(clearResult.ok, false, "clear returns ok:false on storage failure");
+  assert.ok(events.some((e) => e[0] === "message" && /Session summary deletion failed/.test(e[2])));
+});
