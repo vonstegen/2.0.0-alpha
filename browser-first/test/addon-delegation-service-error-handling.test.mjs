@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { chmod, mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -116,6 +116,56 @@ test("Hermes delegation records failed status when artifact finalization fails",
 
 test("OpenCode delegation records failed status when artifact finalization fails", async () => {
   await assertFinalizationFailureIsTerminal("opencode");
+});
+
+test("add-on execution setting updates append an operator audit trail only for real toggles", async () => {
+  await withTempService(async (service, root) => {
+    const auditPath = path.join(root, "BrowserFirst", "Settings", "addon-governance-audit.jsonl");
+
+    await service.executeAddonExecutionSettingsUpdate({
+      addon: "opencode",
+      localCliExecution: true,
+    });
+
+    const firstLines = (await readFile(auditPath, "utf8")).trim().split("\n");
+    assert.equal(firstLines.length, 1);
+    const first = JSON.parse(firstLines[0]);
+    assert.equal(first.addonId, "opencode");
+    assert.equal(first.field, "localCliExecution");
+    assert.equal(first.from, false);
+    assert.equal(first.to, true);
+    assert.doesNotThrow(() => new Date(first.at).toISOString());
+    assert.equal((await stat(auditPath)).mode & 0o777, 0o600);
+
+    await service.executeAddonExecutionSettingsUpdate({
+      addon: "opencode",
+      localCliExecution: true,
+    });
+
+    const afterNoopLines = (await readFile(auditPath, "utf8")).trim().split("\n");
+    assert.equal(afterNoopLines.length, 1);
+
+    await service.executeAddonExecutionSettingsUpdate({
+      addon: "opencode",
+      localCliExecution: false,
+    });
+    await service.executeAddonExecutionSettingsUpdate({
+      addon: "opencode",
+      localCliExecution: true,
+    });
+
+    const entries = (await readFile(auditPath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(entries.map((entry) => [entry.from, entry.to]), [
+      [false, true],
+      [true, false],
+      [false, true],
+    ]);
+    assert.deepEqual(entries.map((entry) => entry.addonId), ["opencode", "opencode", "opencode"]);
+    assert.ok(entries.every((entry) => entry.field === "localCliExecution"));
+  });
 });
 
 test("Hermes status prefers session MiniMax credentials for alpha provider routing", async () => {
