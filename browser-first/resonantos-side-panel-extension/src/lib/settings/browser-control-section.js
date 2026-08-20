@@ -1,16 +1,21 @@
 import { noteCard, safeErrorMessage, setStatus, settingsHeader } from "./settings-common.js";
+import {
+  createModeStatusSection,
+  describeAugmentorModeStatus,
+  formatModeStatusLine,
+  permissionLabel
+} from "./mode-status-section.js";
 
 const terminalJobStatuses = new Set(["completed", "blocked", "denied", "cancelled", "failed"]);
 
-function permissionLabel(mode) {
-  if (mode === "blocked") return "Blocked";
-  if (mode === "read-only") return "Read only";
-  if (mode === "trusted-for-safe-actions") return "Trusted safe actions";
-  return "Ask before action";
-}
-
 function readableTab(tab) {
   return typeof tab?.url === "string" && /^https?:\/\//i.test(tab.url);
+}
+
+function activeDelegatedConsentForSite(consents, siteKey) {
+  return Object.values(consents)
+    .filter((consent) => consent?.siteKey === siteKey && ["allow-safe", "allow-once"].includes(consent?.mode))
+    .sort((left, right) => Number(right.grantedAt ?? 0) - Number(left.grantedAt ?? 0))[0] ?? null;
 }
 
 function row({ title, meta, actionLabel = "", onAction = null, actions = [] }) {
@@ -112,6 +117,8 @@ export function renderBrowserControlSection(container, { bridgeRequest, getBridg
     title: "Current site",
     body: "Checking the active browser tab and permission mode."
   });
+  const modeStatusHost = document.createElement("div");
+  modeStatusHost.className = "settings-mode-status-host";
   const permissionsList = document.createElement("ol");
   permissionsList.className = "settings-control-list";
   const jobsList = document.createElement("ol");
@@ -191,6 +198,7 @@ export function renderBrowserControlSection(container, { bridgeRequest, getBridg
     }),
     statusNode,
     currentCard,
+    modeStatusHost,
     grantsSection,
     browserDisclosure,
     downloadsDisclosure,
@@ -205,10 +213,6 @@ export function renderBrowserControlSection(container, { bridgeRequest, getBridg
     const mode = readableTab(tab) && sitePermissionStore
       ? await sitePermissionStore.permissionForUrl(tab.url)
       : "unavailable";
-    currentCard.querySelector("p").textContent = readableTab(tab)
-      ? `${siteKey} · ${permissionLabel(mode)}`
-      : "No readable http/https tab is currently active.";
-
     const [sitePermissions, taskConsents, jobs, activeJobId, downloads] = await Promise.all([
       sitePermissionStore?.sitePermissions?.().catch(() => ({})) ?? {},
       taskConsentStore?.taskConsents?.().catch(() => ({})) ?? {},
@@ -222,6 +226,15 @@ export function renderBrowserControlSection(container, { bridgeRequest, getBridg
     const consentEntries = Object.values(taskConsents)
       .filter((consent) => consent?.siteKey && consent?.taskClass)
       .sort((left, right) => `${left.siteKey}::${left.taskClass}`.localeCompare(`${right.siteKey}::${right.taskClass}`));
+    if (readableTab(tab)) {
+      const activeConsent = activeDelegatedConsentForSite(taskConsents, siteKey);
+      const modeStatus = describeAugmentorModeStatus({ permissionMode: mode, siteKey, consent: activeConsent });
+      currentCard.querySelector("p").textContent = `${siteKey} · ${formatModeStatusLine({ permissionMode: mode, siteKey, consent: activeConsent })}`;
+      modeStatusHost.replaceChildren(createModeStatusSection({ document, status: modeStatus }));
+    } else {
+      currentCard.querySelector("p").textContent = "No readable http/https tab is currently active.";
+      modeStatusHost.replaceChildren();
+    }
 
     permissionsList.replaceChildren();
     for (const [key, value] of permissionEntries) {

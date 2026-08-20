@@ -236,6 +236,7 @@
 .settings-provider-card,
 .settings-addon-card,
 .settings-routing-card,
+.settings-mode-status,
 .settings-note,
 .settings-health-card {
   display: grid;
@@ -314,6 +315,23 @@
 .settings-note[data-tone="warning"],
 .settings-health-card[data-tone="warning"] {
   border-color: rgba(255, 205, 120, 0.22);
+}
+
+.settings-mode-status {
+  gap: 10px;
+}
+
+.settings-mode-status > strong {
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.settings-mode-status > p {
+  margin: 0;
+  color: rgba(214, 229, 219, 0.76);
 }
 
 .settings-health-card[data-tone="success"] {
@@ -1207,6 +1225,18 @@
 
 .settings-control-row[data-disabled="true"] {
   opacity: 0.62;
+}
+
+.settings-mode-status-list .settings-control-row[data-state="allowed"] {
+  border-color: rgba(36, 209, 143, 0.24);
+}
+
+.settings-mode-status-list .settings-control-row[data-state="requires-review"] {
+  border-color: rgba(255, 205, 120, 0.24);
+}
+
+.settings-mode-status-list .settings-control-row[data-state="blocked"] {
+  border-color: rgba(255, 121, 121, 0.22);
 }
 
 .settings-control-row span {

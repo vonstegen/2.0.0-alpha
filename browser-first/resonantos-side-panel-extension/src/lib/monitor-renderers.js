@@ -10,6 +10,7 @@ import {
   sitePermissionDescription,
 } from "./monitor-progress.js";
 import { renderStepList } from "./step-list.js";
+import { formatModeStatusLine } from "./settings/mode-status-section.js";
 
 export {
   controlActionStateLabel,
@@ -49,6 +50,12 @@ function preflightDecisionLabel(decision) {
     decision.siteKey,
     decision.reason
   ].filter(Boolean).join(" · ");
+}
+
+function activeDelegatedConsentForSite(consents, siteKey) {
+  return Object.values(consents)
+    .filter((consent) => consent?.siteKey === siteKey && ["allow-safe", "allow-once"].includes(consent?.mode))
+    .sort((left, right) => Number(right.grantedAt ?? 0) - Number(left.grantedAt ?? 0))[0] ?? null;
 }
 
 function jobNextHumanAction(job) {
@@ -478,10 +485,12 @@ export function createMonitorRenderers({
       return;
     }
     const mode = await permissionForUrl(current.url);
+    const siteKey = siteKeyForUrl(current.url);
+    const activeConsent = activeDelegatedConsentForSite(await getTaskConsents().catch(() => ({})), siteKey);
     sitePermissionPanel.hidden = false;
-    sitePermissionHost.textContent = siteKeyForUrl(current.url);
+    sitePermissionHost.textContent = siteKey;
     sitePermissionMode.value = mode;
-    sitePermissionNote.textContent = sitePermissionDescription(mode);
+    sitePermissionNote.textContent = `${formatModeStatusLine({ permissionMode: mode, siteKey, consent: activeConsent })}. ${sitePermissionDescription(mode)}`;
     updateContextDockVisibility();
   }
 

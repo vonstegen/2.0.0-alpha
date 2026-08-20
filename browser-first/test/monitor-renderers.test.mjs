@@ -595,6 +595,7 @@ test("monitor renderers show and hide site permission panel", async () => {
   assert.equal(harness.dom.window.document.querySelector("#site").hidden, false);
   assert.equal(harness.dom.window.document.querySelector("#host").textContent, "example.com");
   assert.equal(harness.dom.window.document.querySelector("#mode").value, "read-only");
+  assert.match(harness.dom.window.document.querySelector("#note").textContent, /Mode: Q&A only · Permission: Read only · read-only page context/);
   assert.match(harness.dom.window.document.querySelector("#note").textContent, /Can see\/do now: page text/);
   assert.match(harness.dom.window.document.querySelector("#note").textContent, /Cannot click/);
 
