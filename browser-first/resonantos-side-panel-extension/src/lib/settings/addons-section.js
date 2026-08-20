@@ -1,5 +1,5 @@
 import { noteCard, safeErrorMessage, setStatus, settingsHeader } from "./settings-common.js";
-import { capabilityReviewElement, capabilityReviewState } from "../addon-capability-review.js";
+import { capabilityContractState, capabilityReviewElement } from "../addon-capability-review.js";
 
 function addonTone(addon) {
   if (addon.available || addon.enabled) return "success";
@@ -21,11 +21,14 @@ function addonBoundary(addon) {
 }
 
 function addonCapabilitySummary(addon) {
-  const state = capabilityReviewState(addon);
+  const state = capabilityContractState(addon);
   const parts = [];
-  if (state.granted.length) parts.push(`${state.granted.length} granted`);
+  if (state.granted.length) parts.push(`${state.granted.length} declared`);
   if (state.pending.length) parts.push(`${state.pending.length} needs review`);
-  if (state.denied.length) parts.push(`${state.denied.length} denied`);
+  for (const live of state.live) {
+    if (live.capabilities.length) parts.push(`${live.capabilities.length} ${live.label.toLowerCase()}`);
+  }
+  if (state.denied.length) parts.push(`${state.denied.length} denied by policy`);
   return parts.length ? parts.join(" · ") : "Explicit grants required";
 }
 
@@ -86,9 +89,9 @@ function addonCard(addon, actions = {}) {
   }
 
   const capabilities = addonDisclosure(
-    "Capabilities and grants",
-    "Review exactly what this add-on can request, what is granted, and what remains denied or pending.",
-    [capabilityReviewElement(addon)]
+    "Capability contract",
+    "Review what this add-on declares, what still needs review, and what policy blocks.",
+    [capabilityReviewElement(addon, { heading: false })]
   );
 
   card.append(header, boundary, summary, capabilities);

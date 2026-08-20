@@ -76,7 +76,25 @@ a security issue** — that is a boundary regression, not a feature.
 | Provider won't route / "no available route" | no credential or model disabled → *Settings › Providers* / *Routing* (the error message names the fix) |
 | WebSocket `code 1006` in chat/model panel | Caddy TLS ALPN not pinned to `http/1.1` → bridge setup runbook, Bug 3 |
 
-## 6. Recording evidence
+## 6. Add-ons: what "disable" does and does not do
+
+The Add-ons workspace ships a fixed, locally bundled catalog — there is no
+install path for third-party add-ons in this build, and no uninstall flow
+(tracked for beta.2 in #180). Know the semantics before testing:
+
+- **Disable is not uninstall.** Disabling an add-on (or turning off its local
+  CLI execution) stops future execution but retains its configuration and any
+  delegation artifacts on disk. Re-enabling restores the prior state without a
+  fresh consent prompt.
+- **Manual cleanup**, if you want an add-on's residue gone after testing:
+  delete its entry from `BrowserFirst/Settings/addon-execution.json` and
+  remove its folder under `DelegationArtifacts/` (both live in the bridge's
+  data directory). Restart the bridge afterwards.
+- **Capability chips describe the add-on's declared contract**, enforced at
+  the bridge by per-route capability tokens — they are not per-chip toggles.
+  The one live control is each add-on's local CLI execution switch.
+
+## 7. Recording evidence
 
 For each proof, capture: the check, expected vs. observed, and the build/commit.
 Redact tokens, endpoints, and private paths. Cite the canonical issue from the

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { spawn } from "node:child_process";
@@ -399,6 +399,10 @@ export function createAddonDelegationService(dependencies) {
     return path.join(browserFirstRoot(), "Settings", "addon-execution.json");
   }
 
+  function addonGovernanceAuditPath() {
+    return path.join(browserFirstRoot(), "Settings", "addon-governance-audit.jsonl");
+  }
+
   function defaultAddonExecutionSettings() {
     return {
       hermes: { localCliExecution: false },
@@ -431,6 +435,13 @@ export function createAddonDelegationService(dependencies) {
     await writeFile(filePath, `${JSON.stringify(normalized, null, 2)}\n`, { mode: 0o600 });
     await chmod(filePath, 0o600).catch(() => undefined);
     return normalized;
+  }
+
+  async function appendAddonGovernanceAuditEntry(entry) {
+    const filePath = addonGovernanceAuditPath();
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await appendFile(filePath, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+    await chmod(filePath, 0o600).catch(() => undefined);
   }
 
   function addonLocalCliExecutionEnabled(addon, payload = {}, settings = defaultAddonExecutionSettings()) {
@@ -1794,11 +1805,22 @@ except BaseException as exc:
       throw new Error("Execution settings can only be updated for Hermes or OpenCode.");
     }
     const next = normalizeAddonExecutionSettings(current);
+    const previousLocalCliExecution = Boolean(next[addon].localCliExecution);
+    const nextLocalCliExecution = Boolean(payload.localCliExecution);
     next[addon] = {
       ...next[addon],
-      localCliExecution: Boolean(payload.localCliExecution),
+      localCliExecution: nextLocalCliExecution,
     };
     const settings = await writeAddonExecutionSettings(next);
+    if (previousLocalCliExecution !== nextLocalCliExecution) {
+      await appendAddonGovernanceAuditEntry({
+        at: new Date().toISOString(),
+        addonId: addon,
+        field: "localCliExecution",
+        from: previousLocalCliExecution,
+        to: nextLocalCliExecution,
+      });
+    }
     return {
       addon,
       settings,

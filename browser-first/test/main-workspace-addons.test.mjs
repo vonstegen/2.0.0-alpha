@@ -234,9 +234,12 @@ test("add-ons workspace renders registry status and governed open actions", asyn
   assert.match(container.textContent, /not trusted core agents/i);
   assert.match(container.textContent, /Direct trusted wiki writes remain blocked/);
   assert.match(container.textContent, /Sending and scheduling remain human-approval gated/);
-  assert.match(container.textContent, /Grantedagent-delegation/);
+  assert.match(container.textContent, /Capability contract/);
+  assert.match(container.textContent, /Capability enforcement happens at the bridge via per-route tokens; these chips describe the add-on contract\./);
+  assert.match(container.textContent, /Declaredagent-delegation/);
   assert.match(container.textContent, /Needs reviewnotifications/);
-  assert.match(container.textContent, /Deniednetwork/);
+  assert.match(container.textContent, /Denied by policynetwork/);
+  assert.match(container.textContent, /Disabledshell/);
   assert.match(container.textContent, /archive-knowledge-write/);
   assert.match(container.textContent, /Local CLI execution disabled/);
   assert.match(container.textContent, /Draft approval/);

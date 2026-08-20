@@ -2191,6 +2191,9 @@ test("settings workspace renders add-on status and capability boundaries", async
             available: false,
             mode: "coding-addon",
             trust: "add-on agent",
+            requestedCapabilities: ["agent-delegation", "filesystem-scoped", "shell", "providers"],
+            grantedCapabilities: ["agent-delegation"],
+            deniedCapabilities: ["shell"],
             execution: { localCliExecution: false }
           }
         ]
@@ -2220,22 +2223,24 @@ test("settings workspace renders add-on status and capability boundaries", async
     assert.match(container.textContent, /Hermes/);
     assert.match(container.textContent, /Living Archive/);
     assert.match(container.textContent, /OpenCode/);
-    assert.match(container.textContent, /2 granted · 1 denied/);
-    assert.match(container.textContent, /2 granted · 1 denied/);
-    assert.match(container.textContent, /Explicit grants required/);
+    assert.match(container.textContent, /2 declared · 1 denied by policy/);
+    assert.match(container.textContent, /2 declared · 1 denied by policy/);
+    assert.match(container.textContent, /1 declared · 2 needs review · 1 disabled/);
     assert.deepEqual(
       [...container.querySelectorAll(".settings-addon-disclosure")].map((details) => details.open),
       [false, false, false, false, false]
     );
-    assert.match(container.textContent, /Granted/);
+    assert.match(container.textContent, /Capability contract/);
+    assert.match(container.textContent, /Capability enforcement happens at the bridge via per-route tokens; these chips describe the add-on contract\./);
+    assert.match(container.textContent, /Declared/);
     assert.match(container.textContent, /agent-delegation/);
     assert.match(container.textContent, /notifications/);
-    assert.match(container.textContent, /Denied/);
+    assert.match(container.textContent, /Denied by policy/);
     assert.match(container.textContent, /network/);
     assert.match(container.textContent, /archive-read/);
     assert.match(container.textContent, /archive-intake-write/);
     assert.match(container.textContent, /archive-knowledge-write/);
-    assert.match(container.textContent, /Capability state/);
+    assert.match(container.textContent, /Disabledshell/);
     assert.match(container.textContent, /Direct trusted wiki writes remain blocked/);
     assert.match(container.textContent, /Coding add-ons receive bounded delegation packets/);
     assert.match(container.textContent, /Local CLI execution disabled/);

@@ -8,6 +8,8 @@ function uniqueCapabilities(values) {
   return [...new Set(values)];
 }
 
+export const CAPABILITY_CONTRACT_NOTE = "Capability enforcement happens at the bridge via per-route tokens; these chips describe the add-on contract.";
+
 export function capabilityReviewState(addon = {}) {
   const granted = uniqueCapabilities(capabilityList(addon.grantedCapabilities ?? addon.grants));
   const denied = uniqueCapabilities(capabilityList(addon.deniedCapabilities ?? addon.denials));
@@ -17,6 +19,28 @@ export function capabilityReviewState(addon = {}) {
     ...requested.filter((capability) => !granted.includes(capability) && !denied.includes(capability))
   ]);
   return { denied, granted, pending, requested };
+}
+
+export function capabilityContractState(addon = {}) {
+  const state = capabilityReviewState(addon);
+  const shellRequested = state.requested.includes("shell") || state.granted.includes("shell") || state.denied.includes("shell");
+  const hasLiveOpenCodeShell = addon.id === "addon.opencode" && shellRequested;
+  if (!hasLiveOpenCodeShell) {
+    return { ...state, live: [] };
+  }
+  const withoutShell = (capabilities) => capabilities.filter((capability) => capability !== "shell");
+  const enabled = Boolean(addon.execution?.localCliExecution);
+  return {
+    denied: withoutShell(state.denied),
+    granted: withoutShell(state.granted),
+    pending: withoutShell(state.pending),
+    requested: state.requested,
+    live: [{
+      label: enabled ? "Enabled by you" : "Disabled",
+      state: enabled ? "enabled-by-user" : "disabled",
+      capabilities: ["shell"],
+    }],
+  };
 }
 
 export function capabilityGroup(label, state, capabilities) {
@@ -34,21 +58,33 @@ export function capabilityGroup(label, state, capabilities) {
   return group;
 }
 
-export function capabilityReviewElement(addon = {}) {
-  const state = capabilityReviewState(addon);
+export function capabilityReviewElement(addon = {}, options = {}) {
+  const state = capabilityContractState(addon);
   const wrapper = document.createElement("div");
   wrapper.className = "settings-addon-capabilities";
+  if (options.heading !== false) {
+    const heading = document.createElement("strong");
+    heading.textContent = "Capability contract";
+    wrapper.append(heading);
+  }
   const groups = [
-    ["Granted", "granted", state.granted],
+    ["Declared", "declared", state.granted],
     ["Needs review", "pending", state.pending],
-    ["Denied", "denied", state.denied]
+    ["Denied by policy", "denied", state.denied],
+    ...state.live.map((entry) => [entry.label, entry.state, entry.capabilities])
   ].filter(([, , capabilities]) => capabilities.length);
   if (!groups.length) {
-    wrapper.append(capabilityGroup("Capability state", "empty", ["explicit grants required"]));
+    wrapper.append(capabilityGroup("Declared", "empty", ["explicit grants required"]));
+    const note = document.createElement("small");
+    note.textContent = CAPABILITY_CONTRACT_NOTE;
+    wrapper.append(note);
     return wrapper;
   }
   for (const [label, status, capabilities] of groups) {
     wrapper.append(capabilityGroup(label, status, capabilities));
   }
+  const note = document.createElement("small");
+  note.textContent = CAPABILITY_CONTRACT_NOTE;
+  wrapper.append(note);
   return wrapper;
 }
