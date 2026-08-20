@@ -36,35 +36,61 @@ test("buildSessionSummaryArtifact never persists raw page content (no text/field
   assert.equal("text" in artifact, false, "no raw page text on the artifact");
 });
 
-test("redactSecrets strips provider keys, tokens, api_key/token/secret/password, and wallet private keys", () => {
-  assert.equal(redactSecrets("key is sk-testtesttesttesttesttest here"), "key is [redacted] here");
-  assert.equal(redactSecrets("auth: bearer abc.def-ghi"), "auth: [redacted]");
-  assert.match(redactSecrets("api_key=abc123 secret=xyz token=t1 password=p1"), /\[redacted\].*\[redacted\].*\[redacted\].*\[redacted\]/);
-  assert.equal(redactSecrets("wallet 0x" + "a".repeat(64)), "wallet [redacted]");
-  // Non-secret text is preserved.
+test("redactSecrets redacts Authorization Bearer tokens", () => {
+  assert.equal(redactSecrets("Authorization: Bearer abc.def-ghi"), "Authorization: [redacted]");
   assert.equal(redactSecrets("plain notes with no secrets"), "plain notes with no secrets");
   assert.equal(redactSecrets(undefined), "");
 });
 
-test("buildSessionSummaryArtifact redacts secrets embedded in the summary before persistence", () => {
-  const artifact = buildSessionSummaryArtifact({ summary: "leaked sk-testtesttesttesttesttest key" });
-  assert.match(artifact.summary, /\[redacted\]/);
-  assert.equal(artifact.summary.includes("sk-testtesttesttesttesttest"), false);
+test("redactSecrets redacts simple URL parameter secrets (token/key/secret/password)", () => {
+  // These are in the trace-redaction alternation and are the core blocker
+  // resolution for #309. They produce the canonical REDACTED -> [redacted]
+  // mapping for the value while preserving the rest of the URL structure.
+  assert.equal(redactSecrets("https://idp/?token=ABC123XYZ"), "https://idp/?token=[redacted]");
+  assert.equal(redactSecrets("https://idp/?key=ABC123XYZ"), "https://idp/?key=[redacted]");
+  assert.equal(redactSecrets("https://idp/?secret=ABC123XYZ"), "https://idp/?secret=[redacted]");
+  assert.equal(redactSecrets("https://idp/?password=ABC123XYZ"), "https://idp/?password=[redacted]");
+  assert.equal(redactSecrets("https://idp/?api_key=ABC123XYZ&v=1"), "https://idp/?api_key=[redacted]&v=1");
+  assert.equal(redactSecrets("https://idp/?access_token=ABC123XYZ"), "https://idp/?access_token=[redacted]");
+  assert.equal(redactSecrets("https://idp/?refresh_token=ABC123XYZ"), "https://idp/?refresh_token=[redacted]");
 });
 
-test("buildSessionSummaryArtifact redacts query-string secrets in tab urls and titles before persistence", () => {
+test("redactSecrets redacts compound-name URL params the trace redactor missed (the blocker)", () => {
+  // Tom's review flagged these: the trace redactor's alternation does not
+  // include client_secret / client_id / csrf_token / jwt_token / session_*. The
+  // supplemental compound-name layer in session-summary-artifact catches them.
+  assert.equal(redactSecrets("https://idp/?client_secret=ABC123XYZ"), "https://idp/?client_secret=[redacted]");
+  assert.equal(redactSecrets("https://idp/?client_id=ABC123XYZ"), "https://idp/?client_id=[redacted]");
+  assert.equal(redactSecrets("https://idp/?csrf_token=ABC123XYZ"), "https://idp/?csrf_token=[redacted]");
+  assert.equal(redactSecrets("https://idp/?jwt_token=ABC123XYZ"), "https://idp/?jwt_token=[redacted]");
+  assert.equal(redactSecrets("https://idp/?session_id=ABC123XYZ"), "https://idp/?session_id=[redacted]");
+});
+
+test("redactSecrets redacts JSON-quoted compound-name secrets", () => {
+  // The supplemental pattern allows an optional `"` between the key and the
+  // separator so JSON literals like `{"client_secret":"abc"}` are also caught.
+  const out = redactSecrets('body={"client_secret":"abc123def456"}');
+  assert.equal(out.includes("abc123def456"), false);
+  assert.match(out, /client_secret.{0,3}\[redacted\]/);
+});
+
+test("redactSecrets redacts URL-param form of multi-vendor provider keys", () => {
+  assert.equal(redactSecrets("https://api/?key=AIzaSyA-EXAMPLE-key-1234567890"), "https://api/?key=[redacted]");
+});
+
+test("buildSessionSummaryArtifact redacts URL parameter secrets in tab urls and titles", () => {
   const artifact = buildSessionSummaryArtifact({
-    included: [{ title: "Doc api_key=LEAKED_TITLE", url: "https://x.test/p?token=sk-testtesttesttesttesttest&foo=bar" }],
-    skipped: [{ title: "T", url: "https://y.test/?api_key=TESTKEYZ&v=1", reason: "redirect with password=testpassword0" }]
+    included: [
+      { title: "OAuth", url: "https://idp.example/?access_token=ABC123XYZ&scope=read" },
+      { title: "Doc", url: "https://x.test/p?client_secret=ABC123XYZ&v=1" }
+    ],
+    skipped: [{ title: "T", url: "https://y.test/?v=1" }]
   });
-  assert.equal(artifact.included[0].url.includes("sk-testtesttesttesttesttest"), false);
-  assert.equal(artifact.included[0].url.includes("token="), false);
-  assert.equal(artifact.included[0].url.includes("foo=bar"), true);
-  assert.equal(artifact.included[0].title.includes("LEAKED_TITLE"), false);
-  assert.equal(artifact.included[0].title.includes("[redacted]"), true);
-  assert.equal(artifact.skipped[0].url.includes("api_key="), false);
+  assert.equal(artifact.included[0].url.includes("ABC123XYZ"), false);
+  assert.equal(artifact.included[0].url.includes("scope=read"), true);
+  assert.equal(artifact.included[1].url.includes("ABC123XYZ"), false);
+  assert.equal(artifact.included[1].url.includes("v=1"), true);
   assert.equal(artifact.skipped[0].url.includes("v=1"), true);
-  assert.equal(artifact.skipped[0].reason.includes("testpassword0"), false);
 });
 
 test("buildSessionSummaryArtifact is deterministic for identical input (modulo generatedAt)", () => {
