@@ -32,6 +32,7 @@ export function createOpenCodeSession({
   scope = "",
   subscribe = () => () => {},
   sendPrompt = async () => {},
+  onAbort = async () => {},
   replyPermission = async () => {},
   revert = async () => {}
 } = {}) {
@@ -46,6 +47,7 @@ export function createOpenCodeSession({
     <div class="oc-top">
       <span class="module-eyebrow">OpenCode</span>
       <span class="oc-status-pill" data-status="idle"></span>
+      <span class="oc-context-pill" hidden></span>
       <span class="oc-agent-pill"></span>
       <span class="oc-model-pill"></span>
       <span class="oc-spacer"></span>
@@ -62,12 +64,15 @@ export function createOpenCodeSession({
     </div>
     <form class="oc-composer">
       <textarea rows="2" placeholder="Message OpenCode — refine the task or ask for a diff…"></textarea>
-      <button type="submit">Send</button>
+      <span class="oc-busy-hint" hidden>OpenCode is working</span>
+      <button type="button" class="oc-stop" hidden>Stop</button>
+      <button type="submit" class="oc-send">Send</button>
     </form>`;
   container.append(section);
 
   const el = (sel) => section.querySelector(sel);
   const statusPill = el(".oc-status-pill");
+  const contextPill = el(".oc-context-pill");
   const agentPill = el(".oc-agent-pill");
   const modelPill = el(".oc-model-pill");
   const scopeEl = el(".oc-scope");
@@ -78,14 +83,35 @@ export function createOpenCodeSession({
   const fileListEl = el(".oc-file-list");
   const form = el(".oc-composer");
   const input = el(".oc-composer textarea");
+  const busyHint = el(".oc-busy-hint");
+  const stopButton = el(".oc-stop");
+  const sendButton = el(".oc-send");
 
   scopeEl.textContent = scope ? `scope: ${scope}` : "";
 
+  function formatContext(context) {
+    const tokens = Number(context?.tokens ?? 0);
+    const cost = Number(context?.cost ?? 0);
+    if (!tokens && !cost) return "";
+    const parts = [];
+    if (tokens) parts.push(`${tokens.toLocaleString("en-US")} tokens`);
+    if (cost) parts.push(`$${cost.toFixed(4)}`);
+    return parts.join(" · ");
+  }
+
   function render() {
+    const running = state.status === "running";
     statusPill.dataset.status = state.status;
     statusPill.textContent = STATUS_TEXT[state.status] ?? state.status;
+    const contextText = formatContext(state.context);
+    contextPill.hidden = !contextText;
+    contextPill.textContent = contextText;
     agentPill.textContent = state.agent || "";
     modelPill.textContent = state.model || "";
+    input.disabled = running;
+    sendButton.disabled = running;
+    stopButton.hidden = !running;
+    busyHint.hidden = !running;
     renderTodoChecklist(todoEl, state.todos, { document: d });
     renderApprovals(approvalsEl, state.approvals, {
       document: d,
@@ -109,12 +135,26 @@ export function createOpenCodeSession({
     render();
   });
 
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
+  async function submitPrompt() {
     const text = input.value.trim();
-    if (!text) return;
+    if (!text || state.status === "running") return;
     input.value = "";
     await sendPrompt(text);
+  }
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void submitPrompt();
+  });
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    event.preventDefault();
+    void submitPrompt();
+  });
+
+  stopButton.addEventListener("click", () => {
+    void onAbort();
   });
 
   render();

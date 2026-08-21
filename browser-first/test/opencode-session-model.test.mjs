@@ -127,6 +127,39 @@ test("v1.18 schema: message.part.delta streams assistant text into the thread", 
   assert.equal(s.status, "running");
 });
 
+test("v1.18 schema: message.updated captures assistant token and cost usage", () => {
+  const s = applyOpenCodeEvent(createOpenCodeSessionState(), normalizeOpenCodeEvent({
+    type: "message.updated",
+    properties: {
+      info: {
+        id: "msg_a",
+        role: "assistant",
+        tokens: { input: 1200, output: 300, reasoning: 50, cache: { read: 25, write: 5 } },
+        cost: 0.0142
+      }
+    }
+  }));
+
+  assert.equal(s.roles.msg_a, "assistant");
+  assert.deepEqual(s.context, { tokens: 1580, cost: 0.0142 });
+});
+
+test("v1.18 schema: session.updated captures session token and cost usage", () => {
+  const s = applyOpenCodeEvent(createOpenCodeSessionState(), normalizeOpenCodeEvent({
+    type: "session.updated",
+    properties: {
+      info: {
+        title: "Usage proof",
+        tokens: { input: 2, output: 3, reasoning: 5, cache: { read: 7, write: 11 } },
+        cost: 0.123
+      }
+    }
+  }));
+
+  assert.equal(s.title, "Usage proof");
+  assert.deepEqual(s.context, { tokens: 28, cost: 0.123 });
+});
+
 test("v1.18 schema: message.part.updated snapshot replaces (idempotent with deltas)", () => {
   let s = applyOpenCodeEvent(createOpenCodeSessionState(),
     normalizeOpenCodeEvent({ type: "message.part.delta", properties: { messageID: "msg_a", partID: "prt_1", field: "text", delta: "OPEN" } }));

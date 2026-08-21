@@ -8,13 +8,14 @@ function mount(overrides = {}) {
   const dom = new JSDOM(`<!doctype html><div id="host"></div>`);
   const d = dom.window.document;
   let emit = () => {};
-  const calls = { prompts: [], replies: [], reverts: [] };
+  const calls = { prompts: [], replies: [], reverts: [], aborts: 0 };
   const session = createOpenCodeSession({
     document: d,
     container: d.getElementById("host"),
     scope: "~/proj/api/auth",
     subscribe: (handler) => { emit = handler; return () => { emit = () => {}; }; },
     sendPrompt: async (t) => calls.prompts.push(t),
+    onAbort: async () => { calls.aborts += 1; },
     replyPermission: async (id, decision) => calls.replies.push([id, decision]),
     revert: async (p) => calls.reverts.push(p),
     ...overrides
@@ -34,6 +35,7 @@ test("the session element streams events into the transcript and rolling diff pa
 
   assert.equal(d.querySelector(".oc-status-pill").dataset.status, "running");
   assert.equal(d.querySelector(".oc-model-pill").textContent, "claude-sonnet");
+  assert.equal(d.querySelector(".oc-context-pill").hidden, true);
   assert.equal(d.querySelector(".oc-thread .oc-msg").textContent, "Adding JWT rotation.");
   const tool = d.querySelector(".oc-thread .oc-tool");
   assert.equal(tool.dataset.state, "completed");
@@ -42,6 +44,25 @@ test("the session element streams events into the transcript and rolling diff pa
   const row = d.querySelector(".oc-file-list .oc-file");
   assert.equal(row.dataset.path, "jwt.ts");
   assert.equal(row.dataset.touched, "true");
+});
+
+test("the session element shows context usage when events carry tokens and cost", () => {
+  const { d, emit } = mount();
+  emit({
+    type: "message.updated",
+    properties: {
+      info: {
+        id: "msg_a",
+        role: "assistant",
+        tokens: { input: 1000, output: 200, reasoning: 30, cache: { read: 40, write: 5 } },
+        cost: 0.019
+      }
+    }
+  });
+
+  const pill = d.querySelector(".oc-context-pill");
+  assert.equal(pill.hidden, false);
+  assert.equal(pill.textContent, "1,275 tokens · $0.0190");
 });
 
 test("a permission event surfaces an approval card and gates the session", () => {
@@ -65,6 +86,34 @@ test("the composer sends a prompt and clears", () => {
   d.querySelector(".oc-composer").dispatchEvent(new d.defaultView.Event("submit"));
   assert.deepEqual(calls.prompts, ["run the tests"]);
   assert.equal(input.value, "");
+});
+
+test("Enter sends, Shift+Enter keeps a newline in the composer", () => {
+  const { d, calls } = mount();
+  const input = d.querySelector(".oc-composer textarea");
+
+  input.value = "line one";
+  input.dispatchEvent(new d.defaultView.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  assert.deepEqual(calls.prompts, ["line one"]);
+  assert.equal(input.value, "");
+
+  input.value = "line two";
+  input.dispatchEvent(new d.defaultView.KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true }));
+  assert.deepEqual(calls.prompts, ["line one"]);
+  assert.equal(input.value, "line two");
+});
+
+test("running sessions disable the composer and expose Stop", () => {
+  const { d, emit, calls } = mount();
+  emit({ type: "session.status", properties: { status: { type: "busy" } } });
+
+  assert.equal(d.querySelector(".oc-composer textarea").disabled, true);
+  assert.equal(d.querySelector(".oc-send").disabled, true);
+  assert.equal(d.querySelector(".oc-busy-hint").hidden, false);
+  const stop = d.querySelector(".oc-stop");
+  assert.equal(stop.hidden, false);
+  stop.dispatchEvent(new d.defaultView.Event("click"));
+  assert.equal(calls.aborts, 1);
 });
 
 test("destroy unsubscribes and removes the element", () => {
