@@ -112,8 +112,20 @@ export function assertSafeMoveSource(sourcePath, memoryRoot) {
   }
   const protectedNames = new Set(["Applications", "Library", "System", "Volumes", "bin", "dev", "etc", "private", "sbin", "usr", "var"]);
   const parts = source.split(path.sep).filter(Boolean);
-  if (process.platform === "darwin" && parts.length === 1 && protectedNames.has(parts[0])) {
-    throw new Error("Move import cannot target a protected system folder.");
+  // The OS temp directory legitimately resolves under a protected root on macOS
+  // (e.g. /var/folders/...) yet holds only scratch data, so it must stay importable.
+  const insideTempDir = isSameOrInside(source, path.resolve(os.tmpdir()));
+  if (process.platform === "darwin" && !insideTempDir) {
+    // Reject any source whose first path component is a protected system root,
+    // regardless of depth — /private/etc and /usr/local are as dangerous as /private.
+    if (protectedNames.has(parts[0])) {
+      throw new Error("Move import cannot target a protected system folder.");
+    }
+    // The macOS user Library sits under the home folder (first component "Users"),
+    // so the protected-root check above never sees it; reject it and its subtree.
+    if (isSameOrInside(source, path.join(home, "Library"))) {
+      throw new Error("Move import cannot target the macOS user Library folder.");
+    }
   }
   const relativeToHome = path.relative(home, source);
   if (!relativeToHome.startsWith("..") && !path.isAbsolute(relativeToHome) && relativeToHome.split(path.sep).filter(Boolean).length < 1) {
