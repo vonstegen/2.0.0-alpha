@@ -342,3 +342,83 @@
 }
 .ocb-session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ocb-empty { color: rgba(143, 159, 149, 0.7); font-size: 0.66rem; margin: 6px 2px; }
+
+/* Task 3 shell wiring: rail actions, picker strip, and live patch content. */
+.ocb-error {
+  border: 1px solid rgba(255, 121, 91, 0.28);
+  border-radius: 9px;
+  background: rgba(255, 121, 91, 0.08);
+  color: #ffb3a6;
+  font-size: 0.64rem;
+  line-height: 1.4;
+  margin: 4px 0;
+  padding: 8px 9px;
+}
+.ocb-session-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px;
+  align-items: center;
+}
+.ocb-session-row .ocb-session { min-width: 0; }
+.ocb-actions {
+  display: flex;
+  gap: 3px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.ocb-session-row:hover .ocb-actions,
+.ocb-session-row:focus-within .ocb-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.ocb-actions button,
+.ocb-rename button {
+  border: 1px solid rgba(148, 255, 198, 0.15);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(207, 219, 210, 0.82);
+  cursor: pointer;
+  font-size: 0.52rem;
+  font-weight: 800;
+  padding: 5px 6px;
+}
+.ocb-actions button[data-action="delete"] { border-color: rgba(255, 121, 91, 0.24); color: #ffcec5; }
+.ocb-rename {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 4px;
+}
+.ocb-rename-input {
+  min-width: 0;
+  border: 1px solid rgba(36, 209, 143, 0.35);
+  border-radius: 8px;
+  background: rgba(5, 8, 7, 0.72);
+  color: #eef7f0;
+  font: inherit;
+  font-size: 0.64rem;
+  padding: 6px 7px;
+}
+.oc-picker-strip {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) minmax(150px, 220px);
+  gap: 6px;
+  align-self: stretch;
+}
+.oc-agent-picker,
+.oc-model-picker {
+  min-width: 0;
+  border: 1px solid rgba(148, 255, 198, 0.15);
+  border-radius: 9px;
+  background: rgba(5, 8, 7, 0.68);
+  color: #eef7f0;
+  font: inherit;
+  font-size: 0.62rem;
+  padding: 8px 9px;
+}
+.oc-patch-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
