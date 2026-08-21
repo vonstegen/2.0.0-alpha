@@ -63,6 +63,16 @@ approval boundaries, or human-only action limits.
 | `/dao <goal>` | Prepare read-only DAO workflow guidance. |
 | `/dao audit <goal>` | Save DAO evidence and a review request. |
 
+## Session Context
+
+| Command | Purpose |
+| --- | --- |
+| `/session [summary|clear]` | Save the current window's open readable tabs as a bounded, reviewable session summary that survives an extension reload. `/session clear` deletes the persisted summary. The summary never contains raw page content; tab titles, URLs, and skip reasons are redacted and length-bounded before persistence. |
+
+The summary is hosted in `chrome.storage.local` so the artifact is the source
+of truth across reloads. On hydrate the Augmentor posts a short context line
+naming the captured tab count so the user can review or delete it.
+
 ## Delegation And Draft Handoffs
 
 | Command | Purpose |
