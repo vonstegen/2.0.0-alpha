@@ -94,6 +94,12 @@ install path for third-party add-ons in this build, and no uninstall flow
   the bridge by per-route capability tokens — they are not per-chip toggles.
   The one live control is each add-on's local CLI execution switch.
 
+OpenCode's full cockpit opens the native OpenCode UI in a separate browser tab.
+It is local and ungoverned: actions there bypass ResonantOS approvals, audit,
+and redaction, and the tab carries no ResonantOS banner. ResonantOS logs only
+that it issued the URL as `webCockpitUrlIssued`; cockpit actions themselves are
+not observable or audited by ResonantOS. Never expose the URL off-machine.
+
 ## 7. Recording evidence
 
 For each proof, capture: the check, expected vs. observed, and the build/commit.

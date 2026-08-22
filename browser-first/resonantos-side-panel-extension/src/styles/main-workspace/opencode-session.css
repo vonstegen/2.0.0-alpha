@@ -268,6 +268,68 @@
 .opencode-start-session[hidden] { display: none; }
 .opencode-session-area:not(:empty) { min-height: 480px; margin-top: 10px; }
 
+.opencode-cockpit-button {
+  margin-top: 10px;
+  border: 1px solid rgba(255, 190, 90, 0.44);
+  border-radius: 10px;
+  background: rgba(255, 190, 90, 0.12);
+  color: #ffde9a;
+  font-weight: 800;
+  font-size: 0.7rem;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+.opencode-cockpit-button[hidden],
+.opencode-cockpit-confirm[hidden] {
+  display: none;
+}
+.opencode-cockpit-confirm {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  border: 1px solid rgba(255, 190, 90, 0.34);
+  border-radius: 10px;
+  background: rgba(70, 50, 10, 0.24);
+  color: rgba(255, 236, 198, 0.94);
+  padding: 10px 12px;
+}
+.opencode-cockpit-confirm strong {
+  color: #fff6df;
+  font-size: 0.72rem;
+}
+.opencode-cockpit-confirm p {
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+.opencode-cockpit-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.opencode-cockpit-actions button {
+  border: 1px solid rgba(255, 231, 178, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff6df;
+  cursor: pointer;
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 6px 10px;
+}
+.opencode-cockpit-actions button:last-child {
+  border-color: rgba(255, 190, 90, 0.55);
+  background: rgba(255, 190, 90, 0.16);
+}
+.opencode-cockpit-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+.opencode-cockpit-status {
+  color: rgba(255, 236, 198, 0.8);
+  font-family: ui-monospace, Menlo, monospace;
+}
+
 /* Desktop-app-style live workspace shell: session-browser rail + session pane */
 .opencode-ide {
   display: grid;

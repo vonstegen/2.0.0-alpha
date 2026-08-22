@@ -6,6 +6,43 @@
 // /event bus; that streaming glue is bridge-server-specific and is registered
 // alongside these request/response routes.
 
+import { opencodeServeBaseUrl } from "./opencode-client.mjs";
+
+export function createOpenCodeWebUrlError(message) {
+  const error = new Error(message);
+  error.code = "opencode_web_url_execution_disabled";
+  error.addonId = "opencode";
+  error.event = "webCockpitUrlIssued";
+  return error;
+}
+
+export function createOpenCodeWebUrlHandler({ executionEnabled, ensureServer, appendAuditEntry } = {}) {
+  if (typeof executionEnabled !== "function") {
+    throw new Error("OpenCode web URL handler missing executionEnabled.");
+  }
+  if (typeof ensureServer !== "function") {
+    throw new Error("OpenCode web URL handler missing ensureServer.");
+  }
+  if (typeof appendAuditEntry !== "function") {
+    throw new Error("OpenCode web URL handler missing appendAuditEntry.");
+  }
+  return async function executeOpenCodeWebUrl(req) {
+    const payload = req?.body ?? req ?? {};
+    if (!(await executionEnabled(payload))) {
+      throw createOpenCodeWebUrlError("OpenCode web cockpit URL issuance requires explicit OpenCode execution enablement.");
+    }
+    const serverInfo = await ensureServer();
+    const url = opencodeServeBaseUrl(serverInfo);
+    await appendAuditEntry({
+      at: new Date().toISOString(),
+      addonId: "opencode",
+      event: "webCockpitUrlIssued",
+      url,
+    });
+    return { url };
+  };
+}
+
 export function createOpencodeSessionHostService(handlers = {}) {
   function required(name) {
     if (typeof handlers[name] !== "function") {

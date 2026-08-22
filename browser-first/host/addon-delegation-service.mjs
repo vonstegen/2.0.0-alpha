@@ -9,6 +9,8 @@ import {
   parseDraftPacketMarkdown,
 } from "./addon-draft-connectors.mjs";
 import { dashboardProxyUrl } from "./bridge-server.mjs";
+import { ensureOpencodeServer } from "./opencode-client.mjs";
+import { createOpenCodeWebUrlHandler } from "./opencode-session-host-service.mjs";
 
 const DEFAULT_OPENCODE_MODEL = "openai/gpt-5.4-mini";
 const MINIMAX_OPENCODE_MODEL = "minimax/MiniMax-M3";
@@ -173,6 +175,7 @@ export function createAddonDelegationService(dependencies) {
     memoryRoot,
     opencodeCommand,
     opencodeRuntimeDiagnostics,
+    ensureOpenCodeServer = ensureOpencodeServer,
     platform = process.platform,
     redactPathForDiagnostics,
     readProviderSecrets = async () => ({}),
@@ -1240,6 +1243,22 @@ except BaseException as exc:
     };
   }
 
+  const executeOpenCodeWebUrl = createOpenCodeWebUrlHandler({
+    executionEnabled: async (payload = {}) => {
+      const executionSettings = await readAddonExecutionSettings();
+      return addonLocalCliExecutionEnabled("opencode", payload, executionSettings);
+    },
+    ensureServer: () => ensureOpenCodeServer({
+      fetchImpl: (...args) => fetch(...args),
+      spawnImpl: (cmd, args, opts) => spawnProcess(cmd, args, opts),
+      command: opencodeCommand(),
+      hostname: "127.0.0.1",
+      port: Number(process.env.RESONANTOS_OPENCODE_PORT ?? 4231),
+      env: process.env,
+    }),
+    appendAuditEntry: appendAddonGovernanceAuditEntry,
+  });
+
   function resolveOpenCodeWorkspacePath(payload = {}) {
     const workspacePath = payload.workspacePath
       ? expandUserPath(payload.workspacePath)
@@ -1931,6 +1950,7 @@ except BaseException as exc:
     executeOpenCodeDelegationStatus,
     executeOpenCodeDelegationArtifact,
     executeOpenCodeDelegationCancel,
+    executeOpenCodeWebUrl,
     executeAddonDraftRead,
     executeAddonDraftTransition,
     executeAddonDraftProviderHandoff,

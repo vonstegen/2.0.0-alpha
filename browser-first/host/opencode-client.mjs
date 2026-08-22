@@ -17,6 +17,22 @@ export function opencodeBaseUrl({ hostname = DEFAULT_HOST, port = DEFAULT_PORT }
   return `http://${hostname}:${port}`;
 }
 
+export function opencodeServeBaseUrl(serverInfo = {}) {
+  const raw = typeof serverInfo === "string" ? serverInfo : serverInfo?.baseUrl;
+  const url = new URL(String(raw ?? ""));
+  if (url.protocol !== "http:") {
+    throw new Error("OpenCode serve URL must use http on a loopback literal.");
+  }
+  if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost") {
+    throw new Error("OpenCode serve URL must use the 127.0.0.1 loopback literal.");
+  }
+  url.hostname = "127.0.0.1";
+  url.pathname = "/";
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
 // Is a server already answering at baseUrl? Probes the OpenAPI doc (always
 // present, needs no provider) with a short timeout.
 export async function opencodeServerHealthy({ fetchImpl, baseUrl, timeoutMs = 1500 } = {}) {

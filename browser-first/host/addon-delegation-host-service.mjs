@@ -91,6 +91,12 @@ export function createAddonDelegationHostService(handlers = {}) {
       },
       {
         method: "POST",
+        path: "/opencode/web/url",
+        requiredCapability: "addon-runtime-control",
+        handler: required("executeOpenCodeWebUrl"),
+      },
+      {
+        method: "POST",
         path: "/addons/draft",
         requiredCapability: "addon-record-write",
         handler: required("executeAddonDraftRecord"),

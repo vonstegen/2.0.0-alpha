@@ -65,6 +65,7 @@ const addonHandlers = [
   "executeOpenCodeDelegationStatus",
   "executeOpenCodeDelegationArtifact",
   "executeOpenCodeDelegationCancel",
+  "executeOpenCodeWebUrl",
   "executeAddonDraftRecord",
   "executeAddonDraftList",
   "executeAddonDraftRead",

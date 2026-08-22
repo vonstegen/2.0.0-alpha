@@ -39,6 +39,7 @@ function createService(root, overrides = {}) {
     memoryRoot: () => path.join(root, "Memory"),
     opencodeCommand: overrides.opencodeCommand ?? (() => null),
     opencodeRuntimeDiagnostics: overrides.opencodeRuntimeDiagnostics ?? (() => ({ installed: false, command: null })),
+    ensureOpenCodeServer: overrides.ensureOpenCodeServer,
     redactPathForDiagnostics: (value) => String(value ?? "").replace(root, "<root>"),
     readProviderSecrets: overrides.readProviderSecrets ?? (async () => ({})),
     repoRoot: root,
@@ -165,6 +166,57 @@ test("add-on execution setting updates append an operator audit trail only for r
     ]);
     assert.deepEqual(entries.map((entry) => entry.addonId), ["opencode", "opencode", "opencode"]);
     assert.ok(entries.every((entry) => entry.field === "localCliExecution"));
+  });
+});
+
+test("OpenCode web cockpit URL refuses with a structured error when execution is disabled", async () => {
+  await withTempService(async (service) => {
+    await assert.rejects(
+      () => service.executeOpenCodeWebUrl({}),
+      (error) => {
+        assert.equal(error.code, "opencode_web_url_execution_disabled");
+        assert.equal(error.addonId, "opencode");
+        assert.match(error.message, /explicit OpenCode execution/);
+        return true;
+      },
+    );
+  });
+});
+
+test("OpenCode web cockpit URL issuance is execution-gated, loopback-only, and intent-audited", async () => {
+  await withTempService(async (_service, root) => {
+    let ensured = 0;
+    const service = createService(root, {
+      opencodeCommand: () => "/usr/local/bin/opencode",
+      opencodeRuntimeDiagnostics: () => ({
+        installed: true,
+        command: "/usr/local/bin/opencode",
+        commandRedacted: "<opencode>",
+      }),
+      ensureOpenCodeServer: async () => {
+        ensured += 1;
+        return { baseUrl: "http://127.0.0.1:4231/session?directory=%2Frepo" };
+      },
+    });
+    const auditPath = path.join(root, "BrowserFirst", "Settings", "addon-governance-audit.jsonl");
+
+    const first = await service.executeOpenCodeWebUrl({ enableOpenCodeExecution: true });
+    const second = await service.executeOpenCodeWebUrl({ enableOpenCodeExecution: true });
+
+    assert.equal(ensured, 2);
+    assert.equal(new URL(first.url).hostname, "127.0.0.1");
+    assert.deepEqual(first, { url: "http://127.0.0.1:4231/" });
+    assert.deepEqual(second, { url: "http://127.0.0.1:4231/" });
+    assert.equal((await stat(auditPath)).mode & 0o777, 0o600);
+    const entries = (await readFile(auditPath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.equal(entries.length, 2);
+    assert.ok(entries.every((entry) => entry.addonId === "opencode"));
+    assert.ok(entries.every((entry) => entry.event === "webCockpitUrlIssued"));
+    assert.ok(entries.every((entry) => entry.url === "http://127.0.0.1:4231/"));
+    assert.ok(entries.every((entry) => new URL(entry.url).hostname === "127.0.0.1"));
   });
 });
 

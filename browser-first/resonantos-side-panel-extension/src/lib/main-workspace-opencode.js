@@ -131,7 +131,31 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
   startSessionButton.className = "opencode-start-session";
   startSessionButton.textContent = "Start live session";
   startSessionButton.hidden = true;
-  statusCard.append(statusTitle, statusBody, statusMeta, refreshButton, startSessionButton);
+  const cockpitButton = document.createElement("button");
+  cockpitButton.type = "button";
+  cockpitButton.className = "opencode-cockpit-button";
+  cockpitButton.textContent = "Open full cockpit (external, ungoverned)";
+  cockpitButton.hidden = true;
+  const cockpitConfirm = document.createElement("div");
+  cockpitConfirm.className = "opencode-cockpit-confirm";
+  cockpitConfirm.hidden = true;
+  const cockpitWarningTitle = document.createElement("strong");
+  cockpitWarningTitle.textContent = "OpenCode cockpit handoff";
+  const cockpitWarning = document.createElement("p");
+  cockpitWarning.textContent = "This opens the full OpenCode cockpit in a separate browser tab. It is LOCAL and UNGOVERNED: actions there bypass ResonantOS approvals, redaction, and audit, and that tab carries no ResonantOS banner.";
+  const cockpitActions = document.createElement("div");
+  cockpitActions.className = "opencode-cockpit-actions";
+  const cockpitCancel = document.createElement("button");
+  cockpitCancel.type = "button";
+  cockpitCancel.textContent = "Cancel";
+  const cockpitOpen = document.createElement("button");
+  cockpitOpen.type = "button";
+  cockpitOpen.textContent = "Open in browser tab";
+  const cockpitStatus = document.createElement("p");
+  cockpitStatus.className = "opencode-cockpit-status";
+  cockpitActions.append(cockpitCancel, cockpitOpen);
+  cockpitConfirm.append(cockpitWarningTitle, cockpitWarning, cockpitActions, cockpitStatus);
+  statusCard.append(statusTitle, statusBody, statusMeta, refreshButton, startSessionButton, cockpitButton, cockpitConfirm);
 
   const boundaryCard = document.createElement("section");
   boundaryCard.className = "opencode-card";
@@ -174,6 +198,8 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
       statusMeta.textContent = openCodeStatusMeta(status);
       statusCard.dataset.ready = status.installed ? "true" : "false";
       startSessionButton.hidden = !status.installed;
+      cockpitButton.hidden = status.executionEnabled !== true;
+      if (cockpitButton.hidden) cockpitConfirm.hidden = true;
       if (!status.installed || !executionEnabled) {
         const guidance = statusCard.querySelector(".delegation-guidance") ?? document.createElement("pre");
         guidance.className = "delegation-guidance";
@@ -194,6 +220,8 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
       statusBody.textContent = opencodeStatusMessage(error);
       statusMeta.textContent = "Status unavailable";
       statusCard.dataset.ready = "false";
+      cockpitButton.hidden = true;
+      cockpitConfirm.hidden = true;
       const guidance = statusCard.querySelector(".delegation-guidance") ?? document.createElement("pre");
       guidance.className = "delegation-guidance";
       guidance.textContent = delegationGuidanceText({
@@ -209,6 +237,29 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
   };
 
   refreshButton.addEventListener("click", () => void loadStatus());
+  cockpitButton.addEventListener("click", () => {
+    cockpitStatus.textContent = "";
+    cockpitConfirm.hidden = false;
+  });
+  cockpitCancel.addEventListener("click", () => {
+    cockpitStatus.textContent = "";
+    cockpitConfirm.hidden = true;
+  });
+  cockpitOpen.addEventListener("click", async () => {
+    cockpitOpen.disabled = true;
+    cockpitStatus.textContent = "Issuing local OpenCode cockpit URL…";
+    try {
+      const result = await bridge()("/opencode/web/url", { method: "POST", body: {} });
+      const url = String(result?.url ?? "");
+      window.open(url, "_blank", "noopener,noreferrer");
+      cockpitConfirm.hidden = true;
+      cockpitStatus.textContent = "";
+    } catch (error) {
+      cockpitStatus.textContent = opencodeStatusMessage(error, "OpenCode cockpit URL unavailable");
+    } finally {
+      cockpitOpen.disabled = false;
+    }
+  });
 
   taskForm.addEventListener("submit", async (event) => {
     event.preventDefault();
