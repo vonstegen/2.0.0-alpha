@@ -733,6 +733,7 @@ const tabContextController = createTabContextController({
   sitePermissionStorageKey: STORAGE_KEYS.sitePermissions
 });
 const bindMentionedTab = tabContextController.bindMentionedTab;
+const resolveComparisonContext = tabContextController.resolveComparisonContext;
 
 const controlPlanningService = createControlPlanningService({
   bridgeRequest: currentBridgeRequest,
@@ -1128,6 +1129,7 @@ const summarizeActivePage = async () => {
 const commandRouter = createSidePanelCommandRouter({
   allowControlPreflightOnceForTaskClass,
   bindMentionedTab,
+  resolveComparisonContext,
   clickActivePageText,
   detectActivePageForms,
   explainStructuredPageEditBoundary,

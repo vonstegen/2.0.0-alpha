@@ -77,6 +77,16 @@ test("tab context controller parses tab mentions", () => {
   assert.equal(parseTabMention("no tab here"), null);
 });
 
+test("tab context controller leaves email/handle @ alone (Tom's regression)", () => {
+  // The previous parseTabMention started with a bare `@` which matched the
+  // `acme` segment of `bob@acme.com`. The boundary prefix now requires a
+  // word-boundary-style prefix so these collapse to null.
+  assert.equal(parseTabMention("bob@acme.com"), null);
+  assert.equal(parseTabMention("email bob@acme.com, sue@corp.io re: plan"), null);
+  assert.equal(parseTabMention("contact @someone on X"), "someone");
+  assert.equal(parseTabMention("plain @booking"), "booking");
+});
+
 test("tab context controller resolves mentions by tab index, title, and url", async () => {
   const harness = createHarness();
 
@@ -138,4 +148,53 @@ test("tab context controller hydrates initial context and pending draft", async 
   assert.ok(harness.events.some((event) => event[0] === "refresh"));
   assert.ok(harness.events.some((event) => event[0] === "storage-get" && event[1] === "augmentorInlineDraft"));
   assert.ok(harness.events.some((event) => event[0] === "message" && /Draft page/.test(event[2])));
+});
+
+test("tab context controller resolves a cross-tab comparison with provenance and a visible skip reason", async () => {
+  const harness = createHarness();
+  const result = await harness.controller.resolveComparisonContext("compare @ResonantOS, @Booking, and @Extension");
+
+  // Two readable tabs resolved with title/URL provenance; the internal tab skipped visibly.
+  assert.equal(result.items.length, 2);
+  assert.equal(result.items[0].title, "ResonantOS");
+  assert.equal(result.items[1].title, "Manolo Booking");
+  assert.equal(result.skipped.length, 1);
+  assert.match(result.skipped[0].reason, /not a readable web page/);
+  // The comparison summary (with per-tab provenance) and the skip reason are visible.
+  assert.ok(harness.events.some((event) =>
+    event[0] === "message" && /Comparing 2 tabs/.test(event[2]) && /ResonantOS/.test(event[2]) && /Manolo Booking/.test(event[2])
+  ));
+  assert.ok(harness.events.some((event) => event[0] === "message" && /not a readable web page/.test(event[2])));
+  // Comparison does NOT activate any tab (no focus-steal). The user must
+  // follow up with a single-mention bind to switch.
+  assert.equal(harness.getControlledTabId(), null);
+  assert.equal(harness.events.filter((event) => event[0] === "tab-update").length, 0);
+});
+
+test("tab context controller asks for clarification on an ambiguous @tab comparison", async () => {
+  const harness = createHarness({
+    tabs: [
+      { id: 1, title: "BBC News", url: "https://bbc.co.uk/news" },
+      { id: 2, title: "Reuters News", url: "https://reuters.com/news" }
+    ]
+  });
+  const result = await harness.controller.resolveComparisonContext("compare @news");
+
+  assert.equal(result.ambiguous.length, 1);
+  assert.equal(result.ambiguous[0].mention, "news");
+  assert.ok(harness.events.some((event) =>
+    event[0] === "message" && /@news matched 2 open tabs/.test(event[2]) && /BBC News/.test(event[2]) && /Reuters News/.test(event[2])
+  ));
+  // No tab is bound when the reference is ambiguous.
+  assert.equal(harness.getControlledTabId(), null);
+});
+
+test("tab context controller delegates a single unambiguous mention to the single-tab bind", async () => {
+  const harness = createHarness();
+  const result = await harness.controller.resolveComparisonContext("switch to @booking");
+
+  // Single unambiguous mention behaves like bindMentionedTab.
+  assert.equal(result?.id, 2);
+  assert.equal(harness.getControlledTabId(), 2);
+  assert.ok(harness.events.some((event) => event[0] === "message" && /Using @tab context:/.test(event[2])));
 });

@@ -12,6 +12,7 @@ function createHarness({ resumableControlRun = false } = {}) {
     hasResumableControlRun: () => resumableControlRun,
     allowControlPreflightOnceForTaskClass: handler("allow-control-once"),
     bindMentionedTab: handler("bind"),
+    resolveComparisonContext: handler("compare"),
     cancelBrowserJob: handler("cancel"),
     approveControlPreflight: handler("approve-control"),
     continueBrowserJob: handler("continue"),
@@ -289,4 +290,43 @@ test("side panel command router gates wallet terms and falls back to chat", asyn
   await harness.router.respondToCommand("hello");
 
   assert.deepEqual(harness.calls.filter((call) => call[0] !== "bind").map((call) => call[0]), ["wallet", "chat"]);
+});
+
+test("side panel command router routes two or more @tab mentions to cross-tab comparison", async () => {
+  const harness = createHarness();
+
+  await harness.router.respondToCommand("compare @Alpha, @Beta");
+
+  // Two @tab mentions route to cross-tab comparison, not the single-tab bind.
+  assert.ok(harness.calls.some((call) => call[0] === "compare" && call[1] === "compare @Alpha, @Beta"));
+  assert.equal(harness.calls.some((call) => call[0] === "bind" && call[1] === "compare @Alpha, @Beta"), false);
+});
+
+test("side panel command router routes ≥2 @tab mentions with a compare verb to cross-tab comparison", async () => {
+  const harness = createHarness();
+
+  await harness.router.respondToCommand("compare @Alpha, @Beta");
+  // Two @tab mentions + an explicit compare verb route to cross-tab comparison.
+  assert.ok(harness.calls.some((call) => call[0] === "compare" && call[1] === "compare @Alpha, @Beta"));
+});
+
+test("side panel command router falls back to bind when ≥2 mentions lack a compare verb", async () => {
+  const harness = createHarness();
+
+  // "and" alone is not a compare verb; the prior router counted two mentions
+  // and diverted into the comparison path. With the explicit compare-verb
+  // gate, this stays on the single-tab bind.
+  await harness.router.respondToCommand("use @Alpha and @Beta");
+  assert.equal(harness.calls.some((call) => call[0] === "compare"), false);
+  assert.ok(harness.calls.some((call) => call[0] === "bind" && call[1] === "use @Alpha and @Beta"));
+});
+
+test("side panel command router treats email-handled prose as not having @tab mentions", async () => {
+  const harness = createHarness();
+
+  // bob@acme.com and sue@corp.io are not tab mentions; the parser returns
+  // an empty list, so the single-tab bind path is taken.
+  await harness.router.respondToCommand("email bob@acme.com, sue@corp.io re: plan");
+  assert.equal(harness.calls.some((call) => call[0] === "compare"), false);
+  assert.ok(harness.calls.some((call) => call[0] === "bind"));
 });
