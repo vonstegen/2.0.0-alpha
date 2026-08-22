@@ -138,8 +138,16 @@ export function createOpenCodeSession({
   async function submitPrompt() {
     const text = input.value.trim();
     if (!text || state.status === "running") return;
+    const priorStatus = state.status;
     input.value = "";
-    await sendPrompt(text);
+    state = { ...state, status: "running" };
+    render();
+    try {
+      await sendPrompt(text);
+    } catch (error) {
+      state = { ...state, status: priorStatus };
+      render();
+    }
   }
 
   form.addEventListener("submit", (event) => {
@@ -149,6 +157,7 @@ export function createOpenCodeSession({
 
   input.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || event.shiftKey) return;
+    if (event.isComposing || event.keyCode === 229) return;
     event.preventDefault();
     void submitPrompt();
   });

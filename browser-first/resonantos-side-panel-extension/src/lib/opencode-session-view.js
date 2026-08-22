@@ -14,6 +14,16 @@ function appendText(parent, text, d) {
 function appendInlineMarkdown(parent, text, d) {
   const source = String(text ?? "");
   let i = 0;
+  const canOpenEmphasis = (at) => at === 0 || /\s/.test(source[at - 1]);
+  const findClosingEmphasis = (marker, from) => {
+    let end = source.indexOf(marker, from);
+    while (end >= 0) {
+      const after = source[end + 1] ?? "";
+      if (!after || /\s|[.,;:!?)]/.test(after)) return end;
+      end = source.indexOf(marker, end + 1);
+    }
+    return -1;
+  };
   while (i < source.length) {
     const rest = source.slice(i);
     const candidates = [
@@ -80,7 +90,12 @@ function appendInlineMarkdown(parent, text, d) {
       i += 2;
       continue;
     }
-    const end = source.indexOf(marker, i + 1);
+    if (!canOpenEmphasis(i) || !source[i + 1] || /\s/.test(source[i + 1])) {
+      appendText(parent, marker, d);
+      i += 1;
+      continue;
+    }
+    const end = findClosingEmphasis(marker, i + 1);
     if (end < 0) {
       appendText(parent, marker, d);
       i += 1;
@@ -131,13 +146,15 @@ function renderMarkdown(text, d) {
   let block = [];
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
-    const fence = line.match(/^\s*```/);
+    const fence = line.match(/^\s*(`{3,})/);
     if (fence) {
       appendMarkdownBlock(root, block, d);
       block = [];
+      const fenceLength = fence[1].length;
+      const closePattern = new RegExp(`^\\s*\`{${fenceLength},}\\s*$`);
       const codeLines = [];
       i += 1;
-      while (i < lines.length && !/^\s*```/.test(lines[i])) {
+      while (i < lines.length && !closePattern.test(lines[i])) {
         codeLines.push(lines[i]);
         i += 1;
       }

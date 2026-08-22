@@ -103,6 +103,58 @@ test("Enter sends, Shift+Enter keeps a newline in the composer", () => {
   assert.equal(input.value, "line two");
 });
 
+test("Enter is ignored while an IME composition is active", () => {
+  const { d, calls } = mount();
+  const input = d.querySelector(".oc-composer textarea");
+
+  input.value = "kanji";
+  input.dispatchEvent(new d.defaultView.KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }));
+  assert.deepEqual(calls.prompts, []);
+  assert.equal(input.value, "kanji");
+
+  input.dispatchEvent(new d.defaultView.KeyboardEvent("keydown", { key: "Enter", keyCode: 229, bubbles: true }));
+  assert.deepEqual(calls.prompts, []);
+  assert.equal(input.value, "kanji");
+});
+
+test("submitPrompt marks the session running immediately and blocks a fast double Enter", () => {
+  const prompts = [];
+  const { d } = mount({
+    sendPrompt: async (text) => {
+      prompts.push(text);
+      await new Promise(() => {});
+    }
+  });
+  const input = d.querySelector(".oc-composer textarea");
+
+  input.value = "run once";
+  input.dispatchEvent(new d.defaultView.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  input.value = "run twice";
+  input.dispatchEvent(new d.defaultView.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+  assert.deepEqual(prompts, ["run once"]);
+  assert.equal(d.querySelector(".oc-status-pill").dataset.status, "running");
+  assert.equal(d.querySelector(".oc-composer textarea").disabled, true);
+});
+
+test("submitPrompt restores the prior status when sending fails", async () => {
+  const { d } = mount({
+    sendPrompt: async () => {
+      throw new Error("bridge down");
+    }
+  });
+  const input = d.querySelector(".oc-composer textarea");
+
+  input.value = "try once";
+  d.querySelector(".oc-composer").dispatchEvent(new d.defaultView.Event("submit", { bubbles: true, cancelable: true }));
+  assert.equal(d.querySelector(".oc-status-pill").dataset.status, "running");
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(d.querySelector(".oc-status-pill").dataset.status, "idle");
+  assert.equal(d.querySelector(".oc-composer textarea").disabled, false);
+});
+
 test("running sessions disable the composer and expose Stop", () => {
   const { d, emit, calls } = mount();
   emit({ type: "session.status", properties: { status: { type: "busy" } } });

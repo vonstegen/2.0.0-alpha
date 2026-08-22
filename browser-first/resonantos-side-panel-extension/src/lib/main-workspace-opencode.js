@@ -83,7 +83,14 @@ function agentsFromPayload(payload = {}) {
   return uniqueValues((Array.isArray(payload.agents) ? payload.agents : []).map(agentValue));
 }
 
-function eventTriggersDiff(raw) {
+function eventSessionId(raw) {
+  const p = raw?.properties ?? raw?.payload ?? raw ?? {};
+  return p.sessionID ?? p.sessionId ?? p.session?.id ?? raw?.sessionID ?? raw?.sessionId ?? "";
+}
+
+function eventTriggersDiff(raw, mountedSessionId = "") {
+  const eventId = eventSessionId(raw);
+  if (eventId && mountedSessionId && eventId !== mountedSessionId) return false;
   const type = String(raw?.type ?? raw?.kind ?? "").toLowerCase();
   return type.includes("file.edited") || type.includes("file-edited") || type.includes("session.diff") || type.includes("session-diff");
 }
@@ -353,11 +360,13 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
     let patchMount = null;
     let diffTimer = null;
     const refreshDiff = async () => {
+      const target = patchMount;
+      if (!target?.isConnected) return;
       try {
         const diff = await source.diff();
-        if (patchMount) renderDiffContent(patchMount, diff, { document });
+        if (patchMount === target && target.isConnected) renderDiffContent(target, diff, { document });
       } catch {
-        if (patchMount) renderDiffContent(patchMount, [], { document });
+        if (patchMount === target && target.isConnected) renderDiffContent(target, [], { document });
       }
     };
     const scheduleDiff = () => {
@@ -367,14 +376,14 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
     const subscribe = (onEvent) => {
       for (const event of seeds) {
         onEvent(event);
-        if (eventTriggersDiff(event)) scheduleDiff();
+        if (eventTriggersDiff(event, sessionId)) scheduleDiff();
       }
       return source.subscribe((event) => {
         onEvent(event);
-        if (eventTriggersDiff(event)) scheduleDiff();
+        if (eventTriggersDiff(event, sessionId)) scheduleDiff();
       });
     };
-    activeSession = createOpenCodeSession({
+    const session = createOpenCodeSession({
       document,
       container: sessionArea,
       scope: "",
@@ -384,6 +393,15 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
       replyPermission: source.replyPermission,
       revert: async () => {}
     });
+    activeSession = {
+      ...session,
+      destroy: () => {
+        if (diffTimer) clearTimeout(diffTimer);
+        diffTimer = null;
+        patchMount = null;
+        session.destroy?.();
+      }
+    };
     attachPickers(sessionId);
     const diffPane = sessionArea.querySelector(".oc-diffpane");
     if (diffPane) {

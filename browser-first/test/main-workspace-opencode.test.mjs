@@ -265,6 +265,102 @@ test("opencode workspace wires abort, live diff refresh, and picker prompt paylo
   }
 });
 
+test("opencode workspace ignores diff-triggering events for other sessions", async () => {
+  const { container, cleanup } = setupDom();
+  const calls = [];
+  globalThis.fetch = async () => ({
+    body: {
+      getReader() {
+        const frames = [new TextEncoder().encode('data: {"type":"file.edited","properties":{"sessionID":"ses_other","path":"src/app.js","added":1,"removed":0}}\n\n')];
+        let i = 0;
+        return {
+          read: async () => (i < frames.length ? { value: frames[i++], done: false } : { value: undefined, done: true }),
+          cancel() {}
+        };
+      }
+    }
+  });
+  const bridgeRequest = async (route, options = {}) => {
+    calls.push([route, options]);
+    if (route === "/opencode/status") return { installed: true, command: "/usr/local/bin/opencode", model: "openai/gpt-5.4-mini", detail: "Ready" };
+    if (route === "/opencode/session/start") return { sessionId: "ses_live", eventUrl: "http://127.0.0.1:4096/event" };
+    if (route === "/opencode/sessions/list") return { eventUrl: "http://127.0.0.1:4096/event", sessions: [{ id: "ses_live", title: "Live", created: Date.now(), updated: Date.now() }] };
+    if (route === "/opencode/agents/list") return { agents: [] };
+    if (route === "/opencode/session/diff") return { ok: true, diff: [{ path: "src/app.js", patch: "+new" }] };
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  try {
+    renderOpenCodeWorkspace({ container, bridgeRequest });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    container.querySelector(".opencode-start-session").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+
+    assert.equal(calls.filter(([route]) => route === "/opencode/session/diff").length, 0);
+    assert.equal(container.querySelector(".oc-patch-file"), null);
+  } finally {
+    cleanup();
+  }
+});
+
+test("opencode workspace clears pending diff timers when switching sessions", async () => {
+  const { container, cleanup } = setupDom();
+  const calls = [];
+  let startCount = 0;
+  let streamCount = 0;
+  globalThis.fetch = async () => ({
+    body: {
+      getReader() {
+        const frames = streamCount++ === 0
+          ? [new TextEncoder().encode('data: {"type":"file.edited","properties":{"sessionID":"ses_one","path":"one.js","added":1,"removed":0}}\n\n')]
+          : [];
+        let i = 0;
+        return {
+          read: async () => (i < frames.length ? { value: frames[i++], done: false } : { value: undefined, done: true }),
+          cancel() {}
+        };
+      }
+    }
+  });
+  const bridgeRequest = async (route, options = {}) => {
+    calls.push([route, options]);
+    if (route === "/opencode/status") return { installed: true, command: "/usr/local/bin/opencode", model: "openai/gpt-5.4-mini", detail: "Ready" };
+    if (route === "/opencode/session/start") {
+      startCount += 1;
+      return { sessionId: startCount === 1 ? "ses_one" : "ses_two", eventUrl: "http://127.0.0.1:4096/event" };
+    }
+    if (route === "/opencode/sessions/list") return {
+      eventUrl: "http://127.0.0.1:4096/event",
+      sessions: [
+        { id: "ses_one", title: "One", created: Date.now(), updated: Date.now() },
+        { id: "ses_two", title: "Two", created: Date.now(), updated: Date.now() }
+      ]
+    };
+    if (route === "/opencode/agents/list") return { agents: [] };
+    if (route === "/opencode/session/diff") return { ok: true, diff: [{ path: `${options.body.sessionId}.js`, patch: "+new" }] };
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  try {
+    renderOpenCodeWorkspace({ container, bridgeRequest });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    container.querySelector(".opencode-start-session").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    container.querySelector(".ocb-new").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+
+    assert.deepEqual(
+      calls.filter(([route]) => route === "/opencode/session/diff").map(([, options]) => options.body.sessionId),
+      []
+    );
+  } finally {
+    cleanup();
+  }
+});
+
 test("opencode workspace routes rail rename and delete actions through the bridge", async () => {
   const { container, cleanup, window } = setupDom();
   const calls = [];

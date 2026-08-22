@@ -99,6 +99,37 @@ test("the http client uses OpenAPI-derived async prompt and exact permission sha
   });
 });
 
+test("the http client converts provider/model picker values into the OpenCode model object", async () => {
+  const calls = [];
+  const client = createOpencodeHttpClient({
+    fetchImpl: async (url, init) => {
+      calls.push({ url, method: init.method, body: init.body ? JSON.parse(init.body) : null });
+      return okRes("{}");
+    },
+    baseUrl: "http://127.0.0.1:4096",
+    directory: "",
+    apiDoc: sessionDoc
+  });
+
+  await client.prompt("s1", "use structured model", { model: "anthropic/claude-sonnet-4.5", agent: "build" });
+  await client.prompt("s1", "drop malformed model", { model: "claude-sonnet-4.5", agent: "build" });
+
+  assert.deepEqual(calls[0], {
+    url: "http://127.0.0.1:4096/session/s1/prompt_async",
+    method: "POST",
+    body: {
+      parts: [{ type: "text", text: "use structured model" }],
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4.5" },
+      agent: "build"
+    }
+  });
+  assert.deepEqual(calls[1], {
+    url: "http://127.0.0.1:4096/session/s1/prompt_async",
+    method: "POST",
+    body: { parts: [{ type: "text", text: "drop malformed model" }], agent: "build" }
+  });
+});
+
 test("the http client falls back to sync prompt when prompt_async is absent from the doc", async () => {
   const calls = [];
   const client = createOpencodeHttpClient({
@@ -159,4 +190,115 @@ test("the http client shapes parity endpoints and pins directory query params", 
 test("the http client rejects on a non-ok response", async () => {
   const client = createOpencodeHttpClient({ fetchImpl: async () => errRes(500, "boom"), baseUrl: "http://x", directory: "" });
   await assert.rejects(() => client.createSession(), /failed: 500/);
+});
+
+test("management calls use a 20s AbortController timeout and name the timed out call", async () => {
+  const client = createOpencodeHttpClient({
+    fetchImpl: async (_url, init = {}) => {
+      if (!init.signal) throw new Error("missing abort signal");
+      return new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        });
+      });
+    },
+    baseUrl: "http://127.0.0.1:4096",
+    directory: "",
+    requestTimeoutMs: 1
+  });
+
+  await assert.rejects(() => client.listSessions(), /opencode listSessions timed out after 1ms/);
+});
+
+test("prompt_async uses the management timeout while sync prompt fallback gets ten minutes", async () => {
+  const timers = [];
+  const clientAsync = createOpencodeHttpClient({
+    fetchImpl: async () => okRes("{}"),
+    baseUrl: "http://127.0.0.1:4096",
+    directory: "",
+    apiDoc: sessionDoc,
+    setTimeoutImpl: (fn, ms) => {
+      timers.push(ms);
+      return { fn, ms };
+    },
+    clearTimeoutImpl: () => {}
+  });
+  await clientAsync.prompt("s1", "fast");
+
+  const clientFallback = createOpencodeHttpClient({
+    fetchImpl: async () => okRes("{}"),
+    baseUrl: "http://127.0.0.1:4096",
+    directory: "",
+    apiDoc: opencodeDoc({ "/session/{sessionID}/message": { post: {} } }),
+    setTimeoutImpl: (fn, ms) => {
+      timers.push(ms);
+      return { fn, ms };
+    },
+    clearTimeoutImpl: () => {}
+  });
+  await clientFallback.prompt("s1", "slow");
+
+  assert.deepEqual(timers, [20_000, 600_000]);
+});
+
+test("failed API doc loads are retried so prompt_async is used after a later successful doc fetch", async () => {
+  const calls = [];
+  let docCalls = 0;
+  const client = createOpencodeHttpClient({
+    fetchImpl: async (url, init) => {
+      calls.push({ url, method: init.method });
+      if (url.endsWith("/doc")) {
+        docCalls += 1;
+        return docCalls === 1 ? errRes(503, "not ready") : okRes(JSON.stringify(sessionDoc));
+      }
+      return okRes("{}");
+    },
+    baseUrl: "http://127.0.0.1:4096",
+    directory: ""
+  });
+
+  await client.prompt("s1", "first");
+  await client.prompt("s1", "second");
+
+  assert.equal(docCalls, 2);
+  assert.deepEqual(calls.map((call) => call.url), [
+    "http://127.0.0.1:4096/doc",
+    "http://127.0.0.1:4096/session/s1/message",
+    "http://127.0.0.1:4096/doc",
+    "http://127.0.0.1:4096/session/s1/prompt_async"
+  ]);
+});
+
+test("concurrent first API doc callers share one in-flight fetch before using prompt_async", async () => {
+  let resolveDoc;
+  let docCalls = 0;
+  const promptUrls = [];
+  const docPromise = new Promise((resolve) => { resolveDoc = resolve; });
+  const client = createOpencodeHttpClient({
+    fetchImpl: async (url) => {
+      if (url.endsWith("/doc")) {
+        docCalls += 1;
+        await docPromise;
+        return okRes(JSON.stringify(sessionDoc));
+      }
+      promptUrls.push(url);
+      return okRes("{}");
+    },
+    baseUrl: "http://127.0.0.1:4096",
+    directory: ""
+  });
+
+  const first = client.prompt("s1", "one");
+  const second = client.prompt("s1", "two");
+  await Promise.resolve();
+  assert.equal(docCalls, 1);
+  resolveDoc();
+  await Promise.all([first, second]);
+
+  assert.deepEqual(promptUrls, [
+    "http://127.0.0.1:4096/session/s1/prompt_async",
+    "http://127.0.0.1:4096/session/s1/prompt_async"
+  ]);
 });

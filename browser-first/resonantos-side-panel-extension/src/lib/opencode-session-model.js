@@ -202,7 +202,17 @@ export function applyOpenCodeEvent(state, event) {
       return next;
     }
     case "tool-called": {
-      next.entries = [...state.entries, { type: "tool", id: event.id || `tool-${next.seq}`, tool: event.tool, input: event.input, state: "running" }];
+      const id = event.id || `tool-${next.seq}`;
+      const idx = state.entries.findIndex((entry) => entry.type === "tool" && entry.id === id);
+      if (idx >= 0) {
+        next.entries = state.entries.map((entry, entryIdx) =>
+          entryIdx === idx
+            ? { ...entry, tool: event.tool, input: event.input, state: "running", output: "", error: "" }
+            : entry
+        );
+      } else {
+        next.entries = [...state.entries, { type: "tool", id, tool: event.tool, input: event.input, state: "running" }];
+      }
       next.status = state.approvals.length ? "waiting-approval" : "running";
       return next;
     }

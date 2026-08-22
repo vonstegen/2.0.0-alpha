@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 
 const DEFAULT_PORT = 4096;
 const DEFAULT_HOST = "127.0.0.1";
+const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
+const PROMPT_FALLBACK_TIMEOUT_MS = 600_000;
 const BRIDGE_REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 export function opencodeBaseUrl({ hostname = DEFAULT_HOST, port = DEFAULT_PORT } = {}) {
@@ -47,6 +49,8 @@ export async function ensureOpencodeServer({
 } = {}) {
   const baseUrl = opencodeBaseUrl({ hostname, port });
   const directory = resolveOpencodeCwd({ cwd, env });
+  // Healthy-server reuse assumes the Alpha's single-project deployment: cwd is
+  // pinned only when we spawn; a pre-existing server for another directory wins.
   if (await opencodeServerHealthy({ fetchImpl, baseUrl })) {
     return { baseUrl, spawned: false, process: null, directory };
   }
@@ -85,6 +89,16 @@ function textParts(parts) {
   return Array.isArray(parts) ? parts : [{ type: "text", text: String(parts ?? "") }];
 }
 
+function modelPayload(model) {
+  const raw = String(model ?? "").trim();
+  const slash = raw.indexOf("/");
+  if (slash <= 0 || slash === raw.length - 1) return null;
+  return {
+    providerID: raw.slice(0, slash),
+    modelID: raw.slice(slash + 1)
+  };
+}
+
 function appendQuery(path, params = {}) {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -97,23 +111,58 @@ function appendQuery(path, params = {}) {
 
 // Minimal typed wrapper over the server's session endpoints.
 export function createOpencodeHttpClient(options = {}) {
-  const { fetchImpl, baseUrl, headers = {}, directory, workspace, apiDoc } = options;
+  const {
+    fetchImpl,
+    baseUrl,
+    headers = {},
+    directory,
+    workspace,
+    apiDoc,
+    requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+    promptFallbackTimeoutMs = PROMPT_FALLBACK_TIMEOUT_MS,
+    setTimeoutImpl = globalThis.setTimeout,
+    clearTimeoutImpl = globalThis.clearTimeout
+  } = options;
   const pinnedDirectory = Object.hasOwn(options, "directory") ? directory : resolveOpencodeCwd({ env: process.env });
   let cachedDoc = apiDoc ?? null;
   let docLoaded = Boolean(apiDoc);
+  let docPromise = null;
+
+  const fetchWithTimeout = async (callName, url, init = {}, timeoutMs = requestTimeoutMs) => {
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    const timer = controller && typeof setTimeoutImpl === "function"
+      ? setTimeoutImpl(() => controller.abort(), timeoutMs)
+      : null;
+    try {
+      return await fetchImpl(url, { ...init, signal: controller?.signal });
+    } catch (error) {
+      if (controller?.signal?.aborted || error?.name === "AbortError") {
+        throw new Error(`opencode ${callName} timed out after ${timeoutMs}ms`);
+      }
+      throw error;
+    } finally {
+      if (timer && typeof clearTimeoutImpl === "function") clearTimeoutImpl(timer);
+    }
+  };
 
   const loadApiDoc = async () => {
     if (docLoaded) return cachedDoc;
-    docLoaded = true;
-    try {
-      const res = await fetchImpl(`${baseUrl}/doc`, { method: "GET", headers: { ...headers } });
-      if (!res?.ok) return null;
-      const text = await res.text().catch(() => "");
-      cachedDoc = text ? JSON.parse(text) : null;
-    } catch {
-      cachedDoc = null;
-    }
-    return cachedDoc;
+    if (docPromise) return docPromise;
+    docPromise = (async () => {
+      try {
+        const res = await fetchWithTimeout("loadApiDoc", `${baseUrl}/doc`, { method: "GET", headers: { ...headers } });
+        if (!res?.ok) return null;
+        const text = await res.text().catch(() => "");
+        cachedDoc = text ? JSON.parse(text) : null;
+        docLoaded = true;
+      } catch {
+        cachedDoc = null;
+      } finally {
+        docPromise = null;
+      }
+      return cachedDoc;
+    })();
+    return docPromise;
   };
 
   const hasEndpoint = async (path, method) => {
@@ -127,13 +176,13 @@ export function createOpencodeHttpClient(options = {}) {
     ...extra
   });
 
-  const call = async (method, path, body, query) => {
+  const call = async (callName, method, path, body, query, { timeoutMs = requestTimeoutMs } = {}) => {
     const fullPath = appendQuery(path, query);
-    const res = await fetchImpl(`${baseUrl}${fullPath}`, {
+    const res = await fetchWithTimeout(callName, `${baseUrl}${fullPath}`, {
       method,
       headers: { "content-type": "application/json", ...headers },
       body: body === undefined ? undefined : JSON.stringify(body)
-    });
+    }, timeoutMs);
     const text = await res.text().catch(() => "");
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
@@ -144,32 +193,34 @@ export function createOpencodeHttpClient(options = {}) {
   };
 
   return {
-    createSession: (title = "ResonantOS session") => call("POST", "/session", { title }, routeQuery()),
+    createSession: (title = "ResonantOS session") => call("createSession", "POST", "/session", { title }, routeQuery()),
     prompt: async (sessionId, parts, { model, agent } = {}) => {
-      const path = await hasEndpoint("/session/{sessionID}/prompt_async", "POST")
+      const usesPromptAsync = await hasEndpoint("/session/{sessionID}/prompt_async", "POST");
+      const path = usesPromptAsync
         ? `/session/${encodePathSegment(sessionId)}/prompt_async`
         : `/session/${encodePathSegment(sessionId)}/message`;
-      return call("POST", path, {
+      const structuredModel = modelPayload(model);
+      return call("prompt", "POST", path, {
         parts: textParts(parts),
-        ...(model ? { model } : {}),
+        ...(structuredModel ? { model: structuredModel } : {}),
         ...(agent ? { agent } : {})
-      }, routeQuery());
+      }, routeQuery(), { timeoutMs: usesPromptAsync ? requestTimeoutMs : promptFallbackTimeoutMs });
     },
     replyPermission: (sessionId, permissionId, decision) =>
-      call("POST", `/session/${encodePathSegment(sessionId)}/permissions/${encodePathSegment(permissionId)}`, {
+      call("replyPermission", "POST", `/session/${encodePathSegment(sessionId)}/permissions/${encodePathSegment(permissionId)}`, {
         response: decision?.approved ? (decision?.remember ? "always" : "once") : "reject"
       }, routeQuery()),
-    abort: (sessionId) => call("POST", `/session/${encodePathSegment(sessionId)}/abort`, undefined, routeQuery()),
+    abort: (sessionId) => call("abort", "POST", `/session/${encodePathSegment(sessionId)}/abort`, undefined, routeQuery()),
     sessionDiff: (sessionId, { messageID } = {}) =>
-      call("GET", `/session/${encodePathSegment(sessionId)}/diff`, undefined, routeQuery({ ...(messageID ? { messageID } : {}) })),
+      call("sessionDiff", "GET", `/session/${encodePathSegment(sessionId)}/diff`, undefined, routeQuery({ ...(messageID ? { messageID } : {}) })),
     rename: (sessionId, title) =>
-      call("PATCH", `/session/${encodePathSegment(sessionId)}`, { title }, routeQuery()),
-    remove: (sessionId) => call("DELETE", `/session/${encodePathSegment(sessionId)}`, undefined, routeQuery()),
+      call("rename", "PATCH", `/session/${encodePathSegment(sessionId)}`, { title }, routeQuery()),
+    remove: (sessionId) => call("delete", "DELETE", `/session/${encodePathSegment(sessionId)}`, undefined, routeQuery()),
     archive: (sessionId, archived = Date.now()) =>
-      call("PATCH", `/session/${encodePathSegment(sessionId)}`, { time: { archived } }, routeQuery()),
-    listAgents: () => call("GET", "/agent", undefined, routeQuery()),
-    listSessions: () => call("GET", "/session", undefined, routeQuery()),
-    messages: (sessionId) => call("GET", `/session/${encodePathSegment(sessionId)}/message`, undefined, routeQuery()),
+      call("archive", "PATCH", `/session/${encodePathSegment(sessionId)}`, { time: { archived } }, routeQuery()),
+    listAgents: () => call("listAgents", "GET", "/agent", undefined, routeQuery()),
+    listSessions: () => call("listSessions", "GET", "/session", undefined, routeQuery()),
+    messages: (sessionId) => call("messages", "GET", `/session/${encodePathSegment(sessionId)}/message`, undefined, routeQuery()),
     eventUrl: () => `${baseUrl}/event`
   };
 }

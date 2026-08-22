@@ -57,6 +57,18 @@ test("tool lifecycle: called -> running, then success -> completed on the same c
   assert.equal(state.entries.filter((e) => e.type === "tool").length, 1, "completion updates the card, not a new one");
 });
 
+test("repeated tool.called events upsert by id instead of duplicating cards", () => {
+  const state = run([
+    { type: "tool.called", properties: { callID: "t1", tool: "shell", input: "npm test" } },
+    { type: "tool.called", properties: { callID: "t1", tool: "shell", input: "npm run test:browser-first" } }
+  ]);
+
+  const tools = state.entries.filter((e) => e.type === "tool" && e.id === "t1");
+  assert.equal(tools.length, 1);
+  assert.equal(tools[0].input, "npm run test:browser-first");
+  assert.equal(tools[0].state, "running");
+});
+
 test("tool failure marks the card errored", () => {
   const state = run([
     { type: "tool.called", properties: { callID: "t1", tool: "shell" } },

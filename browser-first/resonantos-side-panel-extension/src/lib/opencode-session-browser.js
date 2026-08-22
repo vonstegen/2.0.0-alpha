@@ -77,7 +77,6 @@ export function createOpenCodeSessionBrowser({
       error.className = "ocb-error";
       error.textContent = errorMessage;
       list.append(error);
-      return;
     }
     const visible = filterSessions(sessions, search.value);
     const { today, older } = groupSessions(visible);
@@ -117,11 +116,16 @@ export function createOpenCodeSessionBrowser({
             s.title = title;
             renamingId = "";
             renderList();
-            void Promise.resolve(renameSession?.(s.id, title)).catch((error) => {
-              s.title = previous;
-              errorMessage = error instanceof Error && error.message ? error.message : "Could not rename session.";
-              renderList();
-            });
+            void Promise.resolve(renameSession?.(s.id, title))
+              .then(() => {
+                errorMessage = "";
+                renderList();
+              })
+              .catch((error) => {
+                s.title = previous;
+                errorMessage = error instanceof Error && error.message ? error.message : "Could not rename session.";
+                renderList();
+              });
           });
           wrap.append(form);
           list.append(wrap);
@@ -170,17 +174,14 @@ export function createOpenCodeSessionBrowser({
         }
         if (typeof archiveSession === "function") {
           actions.append(action("archive", "Archive", () => {
-            void Promise.resolve(archiveSession(s.id)).catch((error) => {
-              errorMessage = error instanceof Error && error.message ? error.message : "Could not archive session.";
-              renderList();
-            });
+            void archiveOne(s);
           }));
         }
         wrap.append(row, actions);
         list.append(wrap);
       }
     }
-    if (!visible.length) {
+    if (!visible.length && !errorMessage) {
       const empty = doc.createElement("p");
       empty.className = "ocb-empty";
       empty.textContent = "No sessions yet — start one.";
@@ -202,7 +203,6 @@ export function createOpenCodeSessionBrowser({
       sessions = Array.isArray(result?.sessions) ? result.sessions : [];
     } catch (error) {
       errorMessage = error instanceof Error && error.message ? error.message : "Could not load OpenCode sessions.";
-      sessions = [];
     }
     renderList();
   }
@@ -212,17 +212,33 @@ export function createOpenCodeSessionBrowser({
       ? await confirmDelete(session)
       : (typeof window !== "undefined" && window.confirm ? window.confirm(`Delete ${sessionLabel(session)}?`) : true);
     if (!ok) return;
+    const previousSessions = sessions;
     sessions = sessions.filter((candidate) => candidate.id !== session.id);
     const wasActive = activeId === session.id;
-    if (wasActive) {
-      activeId = "";
-      onActiveDeleted?.(session.id);
-    }
     renderList();
     try {
       await deleteSession?.(session.id);
+      errorMessage = "";
+      if (wasActive) {
+        activeId = "";
+        onActiveDeleted?.(session.id);
+      }
+      renderList();
     } catch (error) {
+      sessions = previousSessions;
       errorMessage = error instanceof Error && error.message ? error.message : "Could not delete session.";
+      renderList();
+    }
+  }
+
+  async function archiveOne(session) {
+    try {
+      await archiveSession?.(session.id);
+      errorMessage = "";
+      sessions = sessions.filter((candidate) => candidate.id !== session.id);
+      renderList();
+    } catch (error) {
+      errorMessage = error instanceof Error && error.message ? error.message : "Could not archive session.";
       renderList();
     }
   }

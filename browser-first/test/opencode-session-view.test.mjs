@@ -91,6 +91,28 @@ test("renderTranscript renders assistant markdown fences as pre/code DOM nodes",
   assert.match(message.textContent, /docs \(https:\/\/example\.test\/docs\)/);
 });
 
+test("renderTranscript closes code fences only with a fence at least as long as the opener", () => {
+  const d = dom(`<div id="t"></div>`);
+  renderTranscript(d.querySelector("#t"), [
+    { type: "text", id: "m1", text: "````\nconst inner = `ok`;\n```\nstill code\n````\n\nafter" }
+  ], { document: d });
+
+  const message = d.querySelector("#t .oc-msg");
+  assert.equal(message.querySelector("pre code").textContent, "const inner = `ok`;\n```\nstill code");
+  assert.equal(message.querySelector("p").textContent, "after");
+});
+
+test("renderTranscript keeps snake_case identifiers literal while allowing delimited underscore emphasis", () => {
+  const d = dom(`<div id="t"></div>`);
+  renderTranscript(d.querySelector("#t"), [
+    { type: "text", id: "m1", text: "Keep snake_case_identifier literal, but _emphasize this_ here." }
+  ], { document: d });
+
+  const message = d.querySelector("#t .oc-msg");
+  assert.equal(message.textContent, "Keep snake_case_identifier literal, but emphasize this here.");
+  assert.deepEqual([...message.querySelectorAll("em")].map((node) => node.textContent), ["emphasize this"]);
+});
+
 test("renderTranscript renders bold italic lists and raw html as safe text", () => {
   const d = dom(`<div id="t"></div>`);
   renderTranscript(d.querySelector("#t"), [
