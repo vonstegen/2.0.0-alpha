@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createOpenCodeWebUrlHandler,
   createOpencodeSessionHandlers,
   createOpencodeSessionHostService
 } from "../host/opencode-session-host-service.mjs";
@@ -174,4 +175,48 @@ test("session messages requires an id and passes history through", async () => {
   const result = await handlers.executeOpenCodeSessionMessages({ body: { sessionId: "ses_9" } });
   assert.equal(result.ok, true);
   assert.equal(result.messages[0].forSession, "ses_9");
+});
+
+test("web url handler refuses before ensuring the OpenCode serve process when execution is disabled", async () => {
+  let ensured = 0;
+  let audited = 0;
+  const executeOpenCodeWebUrl = createOpenCodeWebUrlHandler({
+    executionEnabled: async () => false,
+    ensureServer: async () => {
+      ensured += 1;
+      return { baseUrl: "http://127.0.0.1:4231" };
+    },
+    appendAuditEntry: async () => {
+      audited += 1;
+    }
+  });
+
+  await assert.rejects(
+    () => executeOpenCodeWebUrl({ body: {} }),
+    (error) => {
+      assert.equal(error.code, "opencode_web_url_execution_disabled");
+      assert.match(error.message, /explicit OpenCode execution/);
+      return true;
+    },
+  );
+  assert.equal(ensured, 0);
+  assert.equal(audited, 0);
+});
+
+test("web url handler ensures serve, returns a 127.0.0.1 root url, and appends an intent audit entry", async () => {
+  const audit = [];
+  const executeOpenCodeWebUrl = createOpenCodeWebUrlHandler({
+    executionEnabled: async () => true,
+    ensureServer: async () => ({ baseUrl: "http://127.0.0.1:4231/session" }),
+    appendAuditEntry: async (entry) => audit.push(entry),
+  });
+
+  const result = await executeOpenCodeWebUrl({ body: { enableOpenCodeExecution: true } });
+
+  assert.deepEqual(result, { url: "http://127.0.0.1:4231/" });
+  assert.equal(audit.length, 1);
+  assert.equal(audit[0].addonId, "opencode");
+  assert.equal(audit[0].event, "webCockpitUrlIssued");
+  assert.equal(audit[0].url, "http://127.0.0.1:4231/");
+  assert.doesNotThrow(() => new Date(audit[0].at).toISOString());
 });

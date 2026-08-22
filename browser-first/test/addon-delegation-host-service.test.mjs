@@ -19,6 +19,7 @@ const requiredHandlers = [
   "executeOpenCodeDelegationStatus",
   "executeOpenCodeDelegationArtifact",
   "executeOpenCodeDelegationCancel",
+  "executeOpenCodeWebUrl",
   "executeAddonDraftRecord",
   "executeAddonDraftList",
   "executeAddonDraftRead",
@@ -54,6 +55,7 @@ test("add-on delegation host service owns add-on, delegation, draft, and goal ro
     "POST /opencode/delegation/status",
     "POST /opencode/delegation/artifact",
     "POST /opencode/delegation/cancel",
+    "POST /opencode/web/url",
     "POST /addons/draft",
     "POST /addons/draft/list",
     "POST /addons/draft/read",
@@ -76,6 +78,7 @@ test("add-on delegation host service owns add-on, delegation, draft, and goal ro
   assert.equal(routes.get("POST /opencode/delegation/status").requiredCapability, "addon-runtime-read");
   assert.equal(routes.get("POST /opencode/delegation/artifact").requiredCapability, "addon-runtime-read");
   assert.equal(routes.get("POST /opencode/delegation/cancel").requiredCapability, "addon-runtime-control");
+  assert.equal(routes.get("POST /opencode/web/url").requiredCapability, "addon-runtime-control");
   assert.equal(routes.get("POST /addons/draft").requiredCapability, "addon-record-write");
   assert.equal(routes.get("POST /addons/draft/list").requiredCapability, "addon-record-read");
   assert.equal(routes.get("POST /addons/draft/read").requiredCapability, "addon-record-read");

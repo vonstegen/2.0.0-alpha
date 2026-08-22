@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createOpencodeHttpClient,
   ensureOpencodeServer,
+  opencodeServeBaseUrl,
   opencodeServerHealthy
 } from "../host/opencode-client.mjs";
 
@@ -63,6 +64,21 @@ test("ensureOpencodeServer refuses to start without a resolved command", async (
   await assert.rejects(
     () => ensureOpencodeServer({ fetchImpl: async () => errRes(503), command: "", spawnImpl: () => ({}) }),
     /not available to start/
+  );
+});
+
+test("opencodeServeBaseUrl returns only a 127.0.0.1 root URL", () => {
+  assert.equal(
+    opencodeServeBaseUrl({ baseUrl: "http://127.0.0.1:4231/session?directory=%2Frepo" }),
+    "http://127.0.0.1:4231/",
+  );
+  assert.equal(
+    opencodeServeBaseUrl({ baseUrl: "http://localhost:4231" }),
+    "http://127.0.0.1:4231/",
+  );
+  assert.throws(
+    () => opencodeServeBaseUrl({ baseUrl: "http://192.168.1.2:4231" }),
+    /loopback literal/,
   );
 });
 

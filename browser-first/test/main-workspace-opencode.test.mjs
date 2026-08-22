@@ -7,7 +7,9 @@ import { renderOpenCodeWorkspace } from "../resonantos-side-panel-extension/src/
 function setupDom() {
   const dom = new JSDOM("<!doctype html><main id=\"root\"></main>", { url: "https://resonantos.local/" });
   const previousFetch = globalThis.fetch;
+  const previousWindow = globalThis.window;
   globalThis.document = dom.window.document;
+  globalThis.window = dom.window;
   globalThis.HTMLElement = dom.window.HTMLElement;
   globalThis.Event = dom.window.Event;
   return {
@@ -18,6 +20,11 @@ function setupDom() {
         delete globalThis.fetch;
       } else {
         globalThis.fetch = previousFetch;
+      }
+      if (previousWindow === undefined) {
+        delete globalThis.window;
+      } else {
+        globalThis.window = previousWindow;
       }
       delete globalThis.document;
       delete globalThis.HTMLElement;
@@ -412,6 +419,95 @@ test("opencode workspace routes rail rename and delete actions through the bridg
       options.body.sessionId === "ses_live"
     ));
     assert.equal(container.querySelector(".opencode-session-area").textContent, "");
+  } finally {
+    cleanup();
+  }
+});
+
+test("opencode external cockpit button is hidden unless execution is enabled", async () => {
+  const { container, cleanup } = setupDom();
+  const bridgeRequest = async (route) => {
+    if (route === "/opencode/status") {
+      return {
+        installed: true,
+        executionEnabled: false,
+        command: "/usr/local/bin/opencode",
+        detail: "OpenCode runtime was detected but execution is disabled.",
+      };
+    }
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  try {
+    renderOpenCodeWorkspace({ container, bridgeRequest });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const cockpitButton = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Open full cockpit (external, ungoverned)");
+    assert.ok(cockpitButton);
+    assert.equal(cockpitButton.hidden, true);
+    assert.equal(container.querySelector("iframe"), null);
+  } finally {
+    cleanup();
+  }
+});
+
+test("opencode external cockpit interstitial gates URL issuance and opens with noopener noreferrer", async () => {
+  const { container, cleanup, window } = setupDom();
+  const calls = [];
+  const openCalls = [];
+  window.open = (...args) => {
+    openCalls.push(args);
+    return null;
+  };
+  const bridgeRequest = async (route, options = {}) => {
+    calls.push([route, options]);
+    if (route === "/opencode/status") {
+      return {
+        installed: true,
+        executionEnabled: true,
+        command: "/usr/local/bin/opencode",
+        model: "openai/gpt-5.4-mini",
+        detail: "OpenCode runtime was detected.",
+      };
+    }
+    if (route === "/opencode/web/url") {
+      return { url: "http://127.0.0.1:4231/" };
+    }
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  try {
+    renderOpenCodeWorkspace({ container, bridgeRequest });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const cockpitButton = [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Open full cockpit (external, ungoverned)");
+    assert.ok(cockpitButton);
+    assert.equal(cockpitButton.hidden, false);
+    cockpitButton.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.match(container.textContent, /LOCAL and UNGOVERNED/);
+    assert.match(container.textContent, /bypass ResonantOS approvals, redaction, and audit/);
+    assert.equal(openCalls.length, 0);
+    assert.equal(calls.filter(([route]) => route === "/opencode/web/url").length, 0);
+
+    const cancel = [...container.querySelectorAll("button")].find((button) => button.textContent === "Cancel");
+    cancel.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(openCalls.length, 0);
+    assert.equal(calls.filter(([route]) => route === "/opencode/web/url").length, 0);
+
+    cockpitButton.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const confirm = [...container.querySelectorAll("button")].find((button) => button.textContent === "Open in browser tab");
+    confirm.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assert.ok(calls.some(([route, options]) => route === "/opencode/web/url" && options.method === "POST"));
+    assert.deepEqual(openCalls, [["http://127.0.0.1:4231/", "_blank", "noopener,noreferrer"]]);
+    assert.equal(container.querySelector("iframe"), null);
   } finally {
     cleanup();
   }
