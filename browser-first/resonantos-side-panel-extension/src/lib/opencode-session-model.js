@@ -30,6 +30,30 @@ export function createOpenCodeSessionState() {
 }
 
 const has = (type, needle) => String(type ?? "").toLowerCase().includes(needle);
+const num = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
+
+function tokenTotal(tokens) {
+  if (Number.isFinite(Number(tokens))) return Number(tokens);
+  if (!tokens || typeof tokens !== "object") return 0;
+  if (Number.isFinite(Number(tokens.total))) return Number(tokens.total);
+  return num(tokens.input)
+    + num(tokens.output)
+    + num(tokens.reasoning)
+    + num(tokens.cache?.read)
+    + num(tokens.cache?.write);
+}
+
+function usageFrom(info) {
+  const tokens = tokenTotal(info?.tokens ?? info?.usage?.tokens);
+  const cost = num(info?.cost ?? info?.usage?.cost);
+  return tokens || cost ? { tokens, cost } : null;
+}
+
+function modelLabel(model) {
+  if (!model) return undefined;
+  if (typeof model === "string") return model;
+  return model.id ?? model.modelID ?? model.name ?? undefined;
+}
 
 // Map a raw OpenCode event to a normalized { kind, ... } this reducer handles,
 // or null to ignore it. Tolerant of dot/dash/version variation in the type.
@@ -56,7 +80,7 @@ export function normalizeOpenCodeEvent(raw) {
     return { kind: "file-edited", path: p.path ?? p.file ?? "", added: Number(p.added ?? p.additions ?? 0), removed: Number(p.removed ?? p.deletions ?? 0) };
   }
   if (has(type, "session.diff") || has(type, "session-diff")) {
-    const files = Array.isArray(p.files) ? p.files : (Array.isArray(p) ? p : []);
+    const files = Array.isArray(p.files) ? p.files : (Array.isArray(p.diff) ? p.diff : (Array.isArray(p) ? p : []));
     return { kind: "session-diff", files: files.map((f) => ({ path: f.path ?? f.file ?? "", added: Number(f.added ?? f.additions ?? 0), removed: Number(f.removed ?? f.deletions ?? 0) })) };
   }
   if (has(type, "permission") && (has(type, "asked") || has(type, "ask"))) {
@@ -75,7 +99,7 @@ export function normalizeOpenCodeEvent(raw) {
   // the older names above so both server generations render.
   if (has(type, "message.updated") || has(type, "message-updated")) {
     const info = p.info ?? p;
-    if (info?.id && info?.role) return { kind: "message-info", id: info.id, role: info.role };
+    if (info?.id && info?.role) return { kind: "message-info", id: info.id, role: info.role, context: usageFrom(info) };
     return null;
   }
   if (has(type, "part.delta")) {
@@ -95,9 +119,9 @@ export function normalizeOpenCodeEvent(raw) {
     }
     if (part.type === "tool") {
       const st = part.state ?? {};
-      if (st.status === "completed") return { kind: "tool-completed", id: part.callID ?? part.id ?? "", ok: true, output: st.title ?? st.output ?? "" };
+      if (st.status === "completed") return { kind: "tool-completed", id: part.callID ?? part.id ?? "", ok: true, output: st.output ?? st.title ?? "" };
       if (st.status === "error") return { kind: "tool-completed", id: part.callID ?? part.id ?? "", ok: false, error: st.error ?? "failed" };
-      return { kind: "tool-called", id: part.callID ?? part.id ?? "", tool: part.tool ?? "tool", input: st.title ?? "" };
+      return { kind: "tool-called", id: part.callID ?? part.id ?? "", tool: part.tool ?? "tool", input: st.title ?? st.raw ?? st.input ?? "" };
     }
     return null; // step-start / step-finish / snapshot parts carry no transcript content
   }
@@ -109,7 +133,14 @@ export function normalizeOpenCodeEvent(raw) {
     const raw = p.status;
     const status = typeof raw === "string" ? raw : (raw && typeof raw === "object" ? (raw.type === "busy" ? "running" : raw.type) : undefined);
     const info = p.info ?? {};
-    return { kind: "session-meta", title: p.title ?? info.title, agent: p.agent, model: p.model, status };
+    return {
+      kind: "session-meta",
+      title: p.title ?? info.title,
+      agent: p.agent ?? info.agent,
+      model: modelLabel(p.model ?? info.model ?? info.modelID),
+      status,
+      context: usageFrom(p) ?? usageFrom(info)
+    };
   }
   return null;
 }
@@ -130,6 +161,7 @@ export function applyOpenCodeEvent(state, event) {
   switch (event.kind) {
     case "message-info": {
       next.roles = { ...state.roles, [event.id]: event.role };
+      if (event.context) next.context = event.context;
       return next;
     }
     case "text-delta":
@@ -170,7 +202,17 @@ export function applyOpenCodeEvent(state, event) {
       return next;
     }
     case "tool-called": {
-      next.entries = [...state.entries, { type: "tool", id: event.id || `tool-${next.seq}`, tool: event.tool, input: event.input, state: "running" }];
+      const id = event.id || `tool-${next.seq}`;
+      const idx = state.entries.findIndex((entry) => entry.type === "tool" && entry.id === id);
+      if (idx >= 0) {
+        next.entries = state.entries.map((entry, entryIdx) =>
+          entryIdx === idx
+            ? { ...entry, tool: event.tool, input: event.input, state: "running", output: "", error: "" }
+            : entry
+        );
+      } else {
+        next.entries = [...state.entries, { type: "tool", id, tool: event.tool, input: event.input, state: "running" }];
+      }
       next.status = state.approvals.length ? "waiting-approval" : "running";
       return next;
     }
@@ -230,6 +272,7 @@ export function applyOpenCodeEvent(state, event) {
       if (event.agent !== undefined) next.agent = event.agent;
       if (event.model !== undefined) next.model = event.model;
       if (event.status !== undefined) next.status = event.status;
+      if (event.context) next.context = event.context;
       return next;
     }
     default:

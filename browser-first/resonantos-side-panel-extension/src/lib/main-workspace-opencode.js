@@ -5,6 +5,7 @@ import { delegationGuidanceText } from "./delegation-guidance.js";
 import { createOpenCodeSession } from "./main-workspace-opencode-session.js";
 import { createOpenCodeBridgeSource } from "./opencode-bridge-source.js";
 import { createOpenCodeSessionBrowser, seedEventsFromMessages } from "./opencode-session-browser.js";
+import { renderDiffContent } from "./opencode-session-view.js";
 import { opencodeStatusMessage } from "./runtime-error-messages.js";
 
 function setStatus(node, text, tone = "neutral") {
@@ -51,7 +52,50 @@ function openCodeStatusMeta(status = {}) {
   return [command, status.model ? `model ${status.model}` : ""].filter(Boolean).join(" · ");
 }
 
-export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeRequest, initialMission = "" }) {
+function uniqueValues(values = []) {
+  return [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))];
+}
+
+function modelValue(entry) {
+  if (typeof entry === "string") return entry;
+  if (!entry || typeof entry !== "object") return "";
+  return entry.model ?? entry.id ?? entry.name ?? entry.label ?? "";
+}
+
+function modelsFromStatus(status = {}) {
+  const raw = [
+    status.model,
+    ...(Array.isArray(status.models) ? status.models.map(modelValue) : []),
+    ...(Array.isArray(status.catalog?.models) ? status.catalog.models.map(modelValue) : []),
+    ...(Array.isArray(status.modelCatalog) ? status.modelCatalog.map(modelValue) : []),
+    ...(Array.isArray(status.catalog) ? status.catalog.map(modelValue) : [])
+  ];
+  return uniqueValues(raw);
+}
+
+function agentValue(entry) {
+  if (typeof entry === "string") return entry;
+  if (!entry || typeof entry !== "object") return "";
+  return entry.name ?? entry.id ?? entry.agent ?? entry.label ?? "";
+}
+
+function agentsFromPayload(payload = {}) {
+  return uniqueValues((Array.isArray(payload.agents) ? payload.agents : []).map(agentValue));
+}
+
+function eventSessionId(raw) {
+  const p = raw?.properties ?? raw?.payload ?? raw ?? {};
+  return p.sessionID ?? p.sessionId ?? p.session?.id ?? raw?.sessionID ?? raw?.sessionId ?? "";
+}
+
+function eventTriggersDiff(raw, mountedSessionId = "") {
+  const eventId = eventSessionId(raw);
+  if (eventId && mountedSessionId && eventId !== mountedSessionId) return false;
+  const type = String(raw?.type ?? raw?.kind ?? "").toLowerCase();
+  return type.includes("file.edited") || type.includes("file-edited") || type.includes("session.diff") || type.includes("session-diff");
+}
+
+export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeRequest, initialMission = "", confirmSessionDelete } = {}) {
   // Resolve at call time. The module-level `bridgeRequest` may be
   // null at construction (rebind still in flight); the getter lets
   // us re-read the current value on every call.
@@ -118,11 +162,13 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
 
   section.append(header, statusCard, boundaryCard, taskForm);
   container.append(section);
+  let latestStatus = {};
 
   const loadStatus = async () => {
     refreshButton.disabled = true;
     try {
       const status = await bridge()("/opencode/status", { method: "GET" });
+      latestStatus = status;
       const executionEnabled = status.executionEnabled !== false;
       statusBody.textContent = status.detail;
       statusMeta.textContent = openCodeStatusMeta(status);
@@ -223,31 +269,148 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
   section.append(ide);
   let activeSession = null;
   let browserRail = null;
+  const sessionSelections = new Map();
+  let pickerOptions = { agents: [], models: [] };
 
-  function mountSession(info, seedMessages = []) {
+  async function loadPickerOptions() {
+    const models = modelsFromStatus(latestStatus);
+    let agents = [];
+    try {
+      agents = agentsFromPayload(await bridge()("/opencode/agents/list", { method: "POST", body: {} }));
+    } catch {
+      agents = [];
+    }
+    pickerOptions = {
+      agents: agents.length ? agents : ["build"],
+      models: models.length ? models : [latestStatus.model].filter(Boolean)
+    };
+    return pickerOptions;
+  }
+
+  function selectionFor(sessionId) {
+    const current = sessionSelections.get(sessionId) ?? {};
+    const next = {
+      agent: current.agent || pickerOptions.agents[0] || "build",
+      model: current.model || pickerOptions.models[0] || ""
+    };
+    sessionSelections.set(sessionId, next);
+    return next;
+  }
+
+  function rememberSelection(sessionId, patch) {
+    sessionSelections.set(sessionId, { ...selectionFor(sessionId), ...patch });
+  }
+
+  function attachPickers(sessionId) {
+    const composer = sessionArea.querySelector(".oc-composer");
+    if (!composer || composer.querySelector(".oc-picker-strip")) return;
+    const selected = selectionFor(sessionId);
+    const strip = document.createElement("div");
+    strip.className = "oc-picker-strip";
+
+    const agent = document.createElement("select");
+    agent.className = "oc-agent-picker";
+    agent.setAttribute("aria-label", "OpenCode agent");
+    for (const value of pickerOptions.agents) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      agent.append(option);
+    }
+    agent.value = selected.agent;
+    agent.addEventListener("change", () => rememberSelection(sessionId, { agent: agent.value }));
+
+    const modelId = `oc-model-options-${sessionId.replace(/[^a-z0-9_-]/gi, "-")}`;
+    const model = document.createElement("input");
+    model.className = "oc-model-picker";
+    model.setAttribute("aria-label", "OpenCode model");
+    model.setAttribute("list", modelId);
+    model.placeholder = "model";
+    model.value = selected.model;
+    model.addEventListener("input", () => rememberSelection(sessionId, { model: model.value.trim() }));
+    const modelList = document.createElement("datalist");
+    modelList.id = modelId;
+    for (const value of pickerOptions.models) {
+      const option = document.createElement("option");
+      option.value = value;
+      modelList.append(option);
+    }
+    strip.append(agent, model, modelList);
+    composer.prepend(strip);
+  }
+
+  function clearActiveSession(sessionId = "") {
+    activeSession?.destroy?.();
+    activeSession = null;
+    sessionArea.replaceChildren();
+    if (sessionId) browserRail?.setActive?.("");
+  }
+
+  function mountSession(info, seedMessages = [], { loadDiffOnMount = false } = {}) {
     activeSession?.destroy?.();
     sessionArea.replaceChildren();
+    const sessionId = info.sessionId;
     const source = createOpenCodeBridgeSource({
       // Idempotent: return the already-known session so subscribe + prompt share it.
-      startSession: async () => ({ sessionId: info.sessionId, eventUrl: info.eventUrl }),
+      startSession: async () => ({ sessionId, eventUrl: info.eventUrl }),
       openEventStream: (eventUrl) => fetch(eventUrl),
       postJson: (path, body) => bridge()(path, { method: "POST", body })
     });
     const seeds = seedEventsFromMessages(seedMessages);
-    const subscribe = (onEvent) => {
-      for (const event of seeds) onEvent(event);
-      return source.subscribe(onEvent);
+    let patchMount = null;
+    let diffTimer = null;
+    const refreshDiff = async () => {
+      const target = patchMount;
+      if (!target?.isConnected) return;
+      try {
+        const diff = await source.diff();
+        if (patchMount === target && target.isConnected) renderDiffContent(target, diff, { document });
+      } catch {
+        if (patchMount === target && target.isConnected) renderDiffContent(target, [], { document });
+      }
     };
-    activeSession = createOpenCodeSession({
+    const scheduleDiff = () => {
+      if (diffTimer) clearTimeout(diffTimer);
+      diffTimer = setTimeout(() => void refreshDiff(), 1000);
+    };
+    const subscribe = (onEvent) => {
+      for (const event of seeds) {
+        onEvent(event);
+        if (eventTriggersDiff(event, sessionId)) scheduleDiff();
+      }
+      return source.subscribe((event) => {
+        onEvent(event);
+        if (eventTriggersDiff(event, sessionId)) scheduleDiff();
+      });
+    };
+    const session = createOpenCodeSession({
       document,
       container: sessionArea,
       scope: "",
       subscribe,
-      sendPrompt: source.sendPrompt,
+      sendPrompt: (text) => source.sendPrompt(text, selectionFor(sessionId)),
+      onAbort: () => source.abort(),
       replyPermission: source.replyPermission,
       revert: async () => {}
     });
-    browserRail?.setActive?.(info.sessionId);
+    activeSession = {
+      ...session,
+      destroy: () => {
+        if (diffTimer) clearTimeout(diffTimer);
+        diffTimer = null;
+        patchMount = null;
+        session.destroy?.();
+      }
+    };
+    attachPickers(sessionId);
+    const diffPane = sessionArea.querySelector(".oc-diffpane");
+    if (diffPane) {
+      patchMount = document.createElement("div");
+      patchMount.className = "oc-patch-list";
+      diffPane.append(patchMount);
+    }
+    if (loadDiffOnMount) void refreshDiff();
+    browserRail?.setActive?.(sessionId);
   }
 
   function openWorkspaceShell() {
@@ -261,6 +424,11 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
         container: railMount,
         projectName: "2.0.0-alpha",
         listSessions: () => bridge()("/opencode/sessions/list", { method: "POST", body: {} }),
+        renameSession: (sessionId, title) => bridge()("/opencode/session/rename", { method: "POST", body: { sessionId, title } }),
+        deleteSession: (sessionId) => bridge()("/opencode/session/delete", { method: "POST", body: { sessionId } }),
+        archiveSession: (sessionId) => bridge()("/opencode/session/archive", { method: "POST", body: { sessionId, archived: Date.now() } }),
+        confirmDelete: confirmSessionDelete,
+        onActiveDeleted: (sessionId) => clearActiveSession(sessionId),
         onNewSession: () => void newSession(),
         onOpenSession: (sessionId) => void resumeSession(sessionId)
       });
@@ -274,6 +442,7 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
       const info = await bridge()("/opencode/session/start", { method: "POST", body: {} });
       if (!info?.sessionId) throw new Error("No session id returned.");
       openWorkspaceShell();
+      await loadPickerOptions();
       mountSession(info, []);
       await browserRail.refresh();
       browserRail.setActive(info.sessionId);
@@ -288,7 +457,8 @@ export function renderOpenCodeWorkspace({ container, bridgeRequest, getBridgeReq
     try {
       const list = await bridge()("/opencode/sessions/list", { method: "POST", body: {} });
       const history = await bridge()("/opencode/session/messages", { method: "POST", body: { sessionId } });
-      mountSession({ sessionId, eventUrl: list.eventUrl, baseUrl: list.baseUrl }, history.messages ?? []);
+      await loadPickerOptions();
+      mountSession({ sessionId, eventUrl: list.eventUrl, baseUrl: list.baseUrl }, history.messages ?? [], { loadDiffOnMount: true });
       setStatus(taskStatus, "");
     } catch (error) {
       setStatus(taskStatus, opencodeStatusMessage(error, "Could not resume OpenCode session"), "error");

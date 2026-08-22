@@ -21,6 +21,7 @@
 .oc-scope { color: rgba(207, 219, 210, 0.6); font-size: 0.6rem; font-variant-numeric: tabular-nums; }
 
 .oc-status-pill,
+.oc-context-pill,
 .oc-agent-pill,
 .oc-model-pill {
   border: 1px solid rgba(148, 255, 198, 0.15);
@@ -37,6 +38,8 @@
 .oc-status-pill[data-status="waiting-approval"] { border-color: rgba(255, 190, 90, 0.5); color: #ffce78; }
 .oc-status-pill[data-status="waiting-approval"]::before { color: #ffbe6a; }
 .oc-status-pill[data-status="error"] { border-color: rgba(255, 121, 91, 0.5); color: #ffb3a6; }
+.oc-context-pill { border-color: rgba(125, 180, 255, 0.25); color: rgba(214, 226, 255, 0.9); font-variant-numeric: tabular-nums; }
+.oc-context-pill[hidden] { display: none; }
 .oc-agent-pill { border-color: rgba(36, 209, 143, 0.4); background: rgba(36, 209, 143, 0.12); color: #eef7f0; text-transform: capitalize; }
 
 .oc-todo[hidden], .oc-approvals[hidden] { display: none; }
@@ -56,8 +59,54 @@
   overflow: auto;
   padding-right: 4px;
 }
-.oc-msg { font-size: 0.76rem; color: rgba(238, 247, 240, 0.9); line-height: 1.5; overflow-wrap: anywhere; }
+.oc-msg { position: relative; font-size: 0.76rem; color: rgba(238, 247, 240, 0.9); line-height: 1.5; overflow-wrap: anywhere; }
 .oc-reasoning { color: rgba(207, 219, 210, 0.6); font-style: italic; }
+.oc-msg-content { padding-right: 42px; }
+.oc-msg-copy {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  width: 30px;
+  height: 24px;
+  border: 1px solid rgba(148, 255, 198, 0.14);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(207, 219, 210, 0.74);
+  cursor: pointer;
+}
+.oc-msg-copy::before { content: "Copy"; font-size: 0.5rem; font-weight: 900; }
+.oc-msg-copy:hover { border-color: rgba(36, 209, 143, 0.45); color: #eef7f0; }
+.oc-markdown { display: grid; gap: 7px; }
+.oc-markdown :is(p, pre, ul, ol, h1, h2, h3) { margin: 0; }
+.oc-markdown h1 { font-size: 1rem; line-height: 1.2; color: #f7fff9; }
+.oc-markdown h2 { font-size: 0.9rem; line-height: 1.25; color: #f7fff9; }
+.oc-markdown h3 { font-size: 0.82rem; line-height: 1.3; color: #f7fff9; }
+.oc-markdown ul,
+.oc-markdown ol { padding-left: 18px; display: grid; gap: 3px; }
+.oc-markdown code {
+  border: 1px solid rgba(148, 255, 198, 0.12);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #e9fff1;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.68rem;
+  padding: 1px 4px;
+}
+.oc-markdown pre {
+  overflow: auto;
+  border: 1px solid rgba(148, 255, 198, 0.12);
+  border-radius: 8px;
+  background: rgba(3, 6, 5, 0.62);
+  padding: 9px;
+}
+.oc-markdown pre code {
+  display: block;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  white-space: pre;
+}
 
 .oc-tool {
   display: grid;
@@ -85,6 +134,33 @@
 .oc-tool-name { font-weight: 800; color: #eef7f0; text-transform: capitalize; }
 .oc-tool-meta { color: rgba(207, 219, 210, 0.72); font-family: ui-monospace, Menlo, monospace; font-size: 0.6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .oc-tool-sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); }
+.oc-tool-output {
+  grid-column: 1 / -1;
+  border-top: 1px solid rgba(148, 255, 198, 0.1);
+  padding-top: 7px;
+}
+.oc-tool-output summary {
+  color: rgba(207, 219, 210, 0.72);
+  cursor: pointer;
+  font-size: 0.58rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.oc-tool-output pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 7px 0 0;
+  border-radius: 7px;
+  background: rgba(2, 5, 4, 0.68);
+  color: rgba(235, 246, 238, 0.86);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.6rem;
+  line-height: 1.45;
+  padding: 8px;
+  white-space: pre-wrap;
+}
+.oc-tool-output[data-kind="error"] summary,
+.oc-tool-output[data-kind="error"] pre { color: #ffb3a6; }
 @keyframes oc-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .oc-tool-glyph { animation: none !important; } }
 
@@ -118,6 +194,39 @@
 .oc-revert { border: 1px solid rgba(148, 255, 198, 0.18); border-radius: 7px; background: rgba(255, 255, 255, 0.04); color: rgba(207, 219, 210, 0.85); font-size: 0.54rem; font-weight: 800; padding: 3px 7px; cursor: pointer; }
 .oc-revert:hover { border-color: rgba(255, 121, 91, 0.4); color: #ffb3a6; }
 
+.oc-patch-file {
+  border: 1px solid rgba(148, 255, 198, 0.13);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.oc-patch-file summary {
+  padding: 7px 9px;
+  color: #eef7f0;
+  cursor: pointer;
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+.oc-patch {
+  margin: 0;
+  overflow: auto;
+  border-top: 1px solid rgba(148, 255, 198, 0.1);
+  background: rgba(2, 5, 4, 0.58);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.6rem;
+  line-height: 1.45;
+  padding: 8px 0;
+}
+.oc-patch-line {
+  display: block;
+  min-height: 1.45em;
+  padding: 0 9px;
+  white-space: pre;
+}
+.oc-patch-meta { color: rgba(173, 188, 178, 0.72); }
+.oc-patch-add { background: rgba(36, 209, 143, 0.12); color: #9ff4c9; }
+.oc-patch-remove { background: rgba(255, 121, 91, 0.11); color: #ffb3a6; }
+.oc-patch-context { color: rgba(238, 247, 240, 0.82); }
+
 /* Inline approvals — the governance boundary */
 .oc-approvals { display: grid; gap: 8px; }
 .oc-approve { border: 1px solid rgba(255, 190, 90, 0.4); background: rgba(70, 50, 10, 0.32); border-radius: 12px; padding: 10px 12px; }
@@ -133,6 +242,16 @@
 .oc-composer { display: flex; gap: 8px; align-items: flex-end; }
 .oc-composer textarea { flex: 1; resize: none; border: 1px solid rgba(148, 255, 198, 0.15); border-radius: 11px; background: rgba(5, 8, 7, 0.6); color: #eef7f0; font: inherit; font-size: 0.72rem; padding: 9px 11px; }
 .oc-composer button { border: 1px solid rgba(36, 209, 143, 0.5); border-radius: 11px; background: rgba(36, 209, 143, 0.16); color: #eef7f0; font-weight: 800; font-size: 0.7rem; padding: 9px 16px; cursor: pointer; }
+.oc-composer textarea:disabled,
+.oc-composer button:disabled { opacity: 0.58; cursor: not-allowed; }
+.oc-busy-hint { align-self: center; color: rgba(207, 219, 210, 0.58); font-size: 0.6rem; font-weight: 700; }
+.oc-busy-hint[hidden],
+.oc-stop[hidden] { display: none; }
+.oc-composer .oc-stop {
+  border-color: rgba(255, 121, 91, 0.45);
+  background: rgba(255, 121, 91, 0.12);
+  color: #ffcec5;
+}
 
 /* Entry point + mount area in the OpenCode workspace panel */
 .opencode-start-session {
@@ -223,3 +342,83 @@
 }
 .ocb-session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ocb-empty { color: rgba(143, 159, 149, 0.7); font-size: 0.66rem; margin: 6px 2px; }
+
+/* Task 3 shell wiring: rail actions, picker strip, and live patch content. */
+.ocb-error {
+  border: 1px solid rgba(255, 121, 91, 0.28);
+  border-radius: 9px;
+  background: rgba(255, 121, 91, 0.08);
+  color: #ffb3a6;
+  font-size: 0.64rem;
+  line-height: 1.4;
+  margin: 4px 0;
+  padding: 8px 9px;
+}
+.ocb-session-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px;
+  align-items: center;
+}
+.ocb-session-row .ocb-session { min-width: 0; }
+.ocb-actions {
+  display: flex;
+  gap: 3px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.ocb-session-row:hover .ocb-actions,
+.ocb-session-row:focus-within .ocb-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.ocb-actions button,
+.ocb-rename button {
+  border: 1px solid rgba(148, 255, 198, 0.15);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(207, 219, 210, 0.82);
+  cursor: pointer;
+  font-size: 0.52rem;
+  font-weight: 800;
+  padding: 5px 6px;
+}
+.ocb-actions button[data-action="delete"] { border-color: rgba(255, 121, 91, 0.24); color: #ffcec5; }
+.ocb-rename {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 4px;
+}
+.ocb-rename-input {
+  min-width: 0;
+  border: 1px solid rgba(36, 209, 143, 0.35);
+  border-radius: 8px;
+  background: rgba(5, 8, 7, 0.72);
+  color: #eef7f0;
+  font: inherit;
+  font-size: 0.64rem;
+  padding: 6px 7px;
+}
+.oc-picker-strip {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) minmax(150px, 220px);
+  gap: 6px;
+  align-self: stretch;
+}
+.oc-agent-picker,
+.oc-model-picker {
+  min-width: 0;
+  border: 1px solid rgba(148, 255, 198, 0.15);
+  border-radius: 9px;
+  background: rgba(5, 8, 7, 0.68);
+  color: #eef7f0;
+  font: inherit;
+  font-size: 0.62rem;
+  padding: 8px 9px;
+}
+.oc-patch-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}

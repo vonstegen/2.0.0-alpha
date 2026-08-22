@@ -37,8 +37,17 @@ export function createSSEParser(onEvent) {
 export function createOpenCodeBridgeSource({ startSession, openEventStream, postJson } = {}) {
   let sessionId = "";
 
+  async function ensureSessionId() {
+    if (sessionId) return sessionId;
+    if (typeof startSession !== "function") return "";
+    const info = await startSession();
+    sessionId = info?.sessionId ?? "";
+    return sessionId;
+  }
+
   return {
     async start() {
+      if (typeof startSession !== "function") return null;
       const info = await startSession();
       sessionId = info?.sessionId ?? "";
       return info;
@@ -71,14 +80,34 @@ export function createOpenCodeBridgeSource({ startSession, openEventStream, post
       };
     },
 
-    async sendPrompt(text) {
-      if (!sessionId) return;
-      await postJson("/opencode/session/prompt", { sessionId, text });
+    async sendPrompt(text, { model, agent } = {}) {
+      const id = await ensureSessionId();
+      if (!id) return;
+      await postJson("/opencode/session/prompt", {
+        sessionId: id,
+        text,
+        ...(model ? { model } : {}),
+        ...(agent ? { agent } : {})
+      });
     },
 
     async replyPermission(permissionId, decision) {
-      if (!sessionId) return;
-      await postJson("/opencode/session/permission", { sessionId, permissionId, decision });
+      const id = await ensureSessionId();
+      if (!id) return;
+      await postJson("/opencode/session/permission", { sessionId: id, permissionId, decision });
+    },
+
+    async abort() {
+      const id = await ensureSessionId();
+      if (!id) return;
+      await postJson("/opencode/session/abort", { sessionId: id });
+    },
+
+    async diff() {
+      const id = await ensureSessionId();
+      if (!id) return [];
+      const payload = await postJson("/opencode/session/diff", { sessionId: id });
+      return Array.isArray(payload?.diff) ? payload.diff : (Array.isArray(payload) ? payload : []);
     }
   };
 }

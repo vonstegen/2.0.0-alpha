@@ -68,3 +68,28 @@ test("bridge source starts a session, streams its events, and posts prompts/perm
     ["/opencode/session/permission", { sessionId: "s1", permissionId: "p1", decision: { approved: true } }]
   ]);
 });
+
+test("bridge source passes model and agent selections through prompt bodies and exposes abort/diff", async () => {
+  const posts = [];
+  const source = createOpenCodeBridgeSource({
+    startSession: async () => ({ sessionId: "s1", eventUrl: "" }),
+    openEventStream: async () => ({ body: null }),
+    postJson: async (path, body) => {
+      posts.push([path, body]);
+      if (path === "/opencode/session/diff") return { ok: true, diff: [{ path: "a.ts", patch: "+new" }] };
+      return { ok: true };
+    }
+  });
+
+  await source.start();
+  await source.sendPrompt("ship it", { model: "openai/gpt-5.4-mini", agent: "plan" });
+  await source.abort();
+  const diff = await source.diff();
+
+  assert.deepEqual(posts, [
+    ["/opencode/session/prompt", { sessionId: "s1", text: "ship it", model: "openai/gpt-5.4-mini", agent: "plan" }],
+    ["/opencode/session/abort", { sessionId: "s1" }],
+    ["/opencode/session/diff", { sessionId: "s1" }]
+  ]);
+  assert.deepEqual(diff, [{ path: "a.ts", patch: "+new" }]);
+});

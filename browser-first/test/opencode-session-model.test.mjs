@@ -57,6 +57,18 @@ test("tool lifecycle: called -> running, then success -> completed on the same c
   assert.equal(state.entries.filter((e) => e.type === "tool").length, 1, "completion updates the card, not a new one");
 });
 
+test("repeated tool.called events upsert by id instead of duplicating cards", () => {
+  const state = run([
+    { type: "tool.called", properties: { callID: "t1", tool: "shell", input: "npm test" } },
+    { type: "tool.called", properties: { callID: "t1", tool: "shell", input: "npm run test:browser-first" } }
+  ]);
+
+  const tools = state.entries.filter((e) => e.type === "tool" && e.id === "t1");
+  assert.equal(tools.length, 1);
+  assert.equal(tools[0].input, "npm run test:browser-first");
+  assert.equal(tools[0].state, "running");
+});
+
 test("tool failure marks the card errored", () => {
   const state = run([
     { type: "tool.called", properties: { callID: "t1", tool: "shell" } },
@@ -125,6 +137,39 @@ test("v1.18 schema: message.part.delta streams assistant text into the thread", 
   assert.equal(s.entries[0].type, "text");
   assert.equal(s.entries[0].text, "OPENCODE LIVE");
   assert.equal(s.status, "running");
+});
+
+test("v1.18 schema: message.updated captures assistant token and cost usage", () => {
+  const s = applyOpenCodeEvent(createOpenCodeSessionState(), normalizeOpenCodeEvent({
+    type: "message.updated",
+    properties: {
+      info: {
+        id: "msg_a",
+        role: "assistant",
+        tokens: { input: 1200, output: 300, reasoning: 50, cache: { read: 25, write: 5 } },
+        cost: 0.0142
+      }
+    }
+  }));
+
+  assert.equal(s.roles.msg_a, "assistant");
+  assert.deepEqual(s.context, { tokens: 1580, cost: 0.0142 });
+});
+
+test("v1.18 schema: session.updated captures session token and cost usage", () => {
+  const s = applyOpenCodeEvent(createOpenCodeSessionState(), normalizeOpenCodeEvent({
+    type: "session.updated",
+    properties: {
+      info: {
+        title: "Usage proof",
+        tokens: { input: 2, output: 3, reasoning: 5, cache: { read: 7, write: 11 } },
+        cost: 0.123
+      }
+    }
+  }));
+
+  assert.equal(s.title, "Usage proof");
+  assert.deepEqual(s.context, { tokens: 28, cost: 0.123 });
 });
 
 test("v1.18 schema: message.part.updated snapshot replaces (idempotent with deltas)", () => {

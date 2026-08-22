@@ -42,14 +42,50 @@ export function createOpencodeSessionHostService(handlers = {}) {
       {
         method: "POST",
         path: "/opencode/sessions/list",
-        requiredCapability: "addon-runtime-control",
+        requiredCapability: "addon-runtime-read",
         handler: required("executeOpenCodeSessionsList"),
       },
       {
         method: "POST",
         path: "/opencode/session/messages",
-        requiredCapability: "addon-runtime-control",
+        requiredCapability: "addon-runtime-read",
         handler: required("executeOpenCodeSessionMessages"),
+      },
+      {
+        method: "POST",
+        path: "/opencode/session/abort",
+        requiredCapability: "addon-runtime-control",
+        handler: required("executeOpenCodeSessionAbort"),
+      },
+      {
+        method: "POST",
+        path: "/opencode/session/diff",
+        requiredCapability: "addon-runtime-read",
+        handler: required("executeOpenCodeSessionDiff"),
+      },
+      {
+        method: "POST",
+        path: "/opencode/session/rename",
+        requiredCapability: "addon-runtime-control",
+        handler: required("executeOpenCodeSessionRename"),
+      },
+      {
+        method: "POST",
+        path: "/opencode/session/delete",
+        requiredCapability: "addon-runtime-control",
+        handler: required("executeOpenCodeSessionDelete"),
+      },
+      {
+        method: "POST",
+        path: "/opencode/session/archive",
+        requiredCapability: "addon-runtime-control",
+        handler: required("executeOpenCodeSessionArchive"),
+      },
+      {
+        method: "POST",
+        path: "/opencode/agents/list",
+        requiredCapability: "addon-runtime-read",
+        handler: required("executeOpenCodeAgentsList"),
       },
     ],
   };
@@ -65,7 +101,7 @@ export function createOpencodeSessionHandlers({ ensureServer, createClient }) {
   async function ensureClient() {
     if (client) return client;
     serverInfo = await ensureServer();
-    client = createClient(serverInfo.baseUrl);
+    client = createClient(serverInfo.baseUrl, { directory: serverInfo.directory });
     return client;
   }
 
@@ -114,6 +150,46 @@ export function createOpencodeSessionHandlers({ ensureServer, createClient }) {
       const c = await ensureClient();
       const messages = await c.messages(sessionId);
       return { ok: true, messages: Array.isArray(messages) ? messages : [] };
+    },
+    executeOpenCodeSessionAbort: async (req) => {
+      const { sessionId } = bodyOf(req);
+      if (!sessionId) throw new Error("abort requires sessionId.");
+      const c = await ensureClient();
+      await c.abort(sessionId);
+      return { ok: true };
+    },
+    executeOpenCodeSessionDiff: async (req) => {
+      const { sessionId, messageID } = bodyOf(req);
+      if (!sessionId) throw new Error("diff requires sessionId.");
+      const c = await ensureClient();
+      const diff = await c.sessionDiff(sessionId, { messageID });
+      return { ok: true, diff: Array.isArray(diff) ? diff : [] };
+    },
+    executeOpenCodeSessionRename: async (req) => {
+      const { sessionId, title } = bodyOf(req);
+      if (!sessionId || !String(title ?? "").trim()) throw new Error("rename requires sessionId and title.");
+      const c = await ensureClient();
+      const session = await c.rename(sessionId, String(title).trim());
+      return { ok: true, session };
+    },
+    executeOpenCodeSessionDelete: async (req) => {
+      const { sessionId } = bodyOf(req);
+      if (!sessionId) throw new Error("delete requires sessionId.");
+      const c = await ensureClient();
+      const deleted = await c.remove(sessionId);
+      return { ok: true, deleted };
+    },
+    executeOpenCodeSessionArchive: async (req) => {
+      const { sessionId, archived } = bodyOf(req);
+      if (!sessionId) throw new Error("archive requires sessionId.");
+      const c = await ensureClient();
+      const session = await c.archive(sessionId, typeof archived === "number" ? archived : Date.now());
+      return { ok: true, session };
+    },
+    executeOpenCodeAgentsList: async () => {
+      const c = await ensureClient();
+      const agents = await c.listAgents();
+      return { ok: true, agents: Array.isArray(agents) ? agents : [] };
     },
     executeOpenCodeSessionStop: async () => {
       try { serverInfo?.process?.kill?.(); } catch { /* noop */ }
