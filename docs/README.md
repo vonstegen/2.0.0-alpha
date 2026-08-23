@@ -102,6 +102,7 @@ Related contributor references:
 
 Use [Alpha Distribution](release/ALPHA_DISTRIBUTION.md),
 [Status](STATUS.md), the [Changelog](../CHANGELOG.md),
+[Beta.1 Release Notes](RELEASE_NOTES_BETA1.md),
 [Security Policy](../SECURITY.md), and Project 2. Release evidence must identify
 the exact commands and live Chrome checks performed.
 
