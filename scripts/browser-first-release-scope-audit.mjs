@@ -26,6 +26,7 @@ const includeDocs = new Set([
   "docs/STATUS.md",
   "docs/ROADMAP.md",
   "docs/PROJECT_GOVERNANCE.md",
+  "docs/RELEASE_NOTES_BETA1.md",
   "docs/architecture/README.md",
   "docs/architecture/ALPHA_RUNTIME_BOUNDARY.md",
   "docs/architecture/MODULE_MAP.md",

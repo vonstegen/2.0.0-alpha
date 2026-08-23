@@ -8,13 +8,13 @@ it only from the current worktree, deterministic checks, GitHub issues, and
 
 | Fact | Verified value | Evidence |
 | --- | --- | --- |
-| Package | `resonantos-vnext` `2.0.0-alpha.0` | `package.json` |
+| Package | `resonantos-vnext` `2.0.0-beta.1` | `package.json` |
 | Extension | Manifest V3 `0.1.14`; Chrome 116 minimum | `browser-first/resonantos-side-panel-extension/manifest.json` |
 | Node.js | `>=22.13.0` | `package.json` and `.nvmrc` |
 | Alpha runtime | Chrome extension plus local Node.js bridge | `browser-first/resonantos-side-panel-extension/`, `browser-first/host/`, `run-bridge-minimal.mjs` |
 | Development branch | `dev`; changes use a feature branch and a PR into `dev` | `AGENTS.md` |
 | Release planning | GitHub issues organized in Project 2 | [Project 2](https://github.com/orgs/ResonantOS/projects/2) |
-| Release gate | Alpha stabilization met; beta.1 in progress | [#209](https://github.com/ResonantOS/2.0.0-alpha/issues/209) closed; beta.1 gate is governed Agent Control [#211](https://github.com/ResonantOS/2.0.0-alpha/issues/211) |
+| Release gate | Alpha stabilization met; beta.1 prepared | [#209](https://github.com/ResonantOS/2.0.0-alpha/issues/209) closed; beta.1 epics [#210](https://github.com/ResonantOS/2.0.0-alpha/issues/210) through [#215](https://github.com/ResonantOS/2.0.0-alpha/issues/215) closed |
 
 ## Runtime Components
 
@@ -100,13 +100,13 @@ issues are closed:
 - [#207](https://github.com/ResonantOS/2.0.0-alpha/issues/207): a newly added
   provider not propagating into Provider Fabric routing — closed.
 
-The current gate is **beta.1** — see the beta.1 epics
+The **beta.1** gate is prepared for release. The beta.1 epics
 [#210](https://github.com/ResonantOS/2.0.0-alpha/issues/210) through
-[#215](https://github.com/ResonantOS/2.0.0-alpha/issues/215). Governed Agent
-Control safety ([#211](https://github.com/ResonantOS/2.0.0-alpha/issues/211)) is
-the P0 gate for community testing; its live-browser safety harness
-([#267](https://github.com/ResonantOS/2.0.0-alpha/issues/267)) must be green
-before Agent Control community testing opens.
+[#215](https://github.com/ResonantOS/2.0.0-alpha/issues/215) are closed.
+Governed Agent Control safety
+([#211](https://github.com/ResonantOS/2.0.0-alpha/issues/211)) remains the P0
+community-testing boundary, with live-browser safety harness evidence tracked in
+[#267](https://github.com/ResonantOS/2.0.0-alpha/issues/267).
 
 An open issue is not proof that every deterministic check currently fails. It
 is unresolved release evidence until the issue is closed or explicitly
