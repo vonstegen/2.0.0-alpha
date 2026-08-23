@@ -29,6 +29,25 @@ test("move import preflight rejects broad user root and existing memory root", a
   }
 });
 
+test("move import rejects protected system folders and the user Library at any depth", async () => {
+  const root = await fixtureRoot("move-protected-depth");
+  const memoryRoot = path.join(root, "ResonantOS_User", "Memory");
+  await mkdir(memoryRoot, { recursive: true });
+  try {
+    if (process.platform === "darwin") {
+      // Multi-level system paths must be blocked even though the protected root is not their only component.
+      assert.throws(() => assertSafeMoveSource("/private/etc", memoryRoot), /protected system folder/);
+      assert.throws(() => assertSafeMoveSource("/usr/local", memoryRoot), /protected system folder/);
+      // The macOS user Library is a top-level home folder that still holds sensitive application state.
+      assert.throws(() => assertSafeMoveSource(path.join(os.homedir(), "Library"), memoryRoot), /Library/);
+    }
+    // A specific deep folder under the user's home must remain importable on every platform.
+    assert.doesNotThrow(() => assertSafeMoveSource(path.join(os.homedir(), "projects", "knowledge-vault"), memoryRoot));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("move rollback deregistration requires zero skipped files", () => {
   assert.equal(shouldDeregisterMovedSourceAfterRollback({ restoredCount: 2, skippedCount: 0, skippedDirectoryCount: 0, sourceRootRestored: true, skippedRootCleanupCount: 0 }), true);
   assert.equal(shouldDeregisterMovedSourceAfterRollback({ restoredCount: 1, skippedCount: 1, skippedDirectoryCount: 0, sourceRootRestored: true, skippedRootCleanupCount: 0 }), false);
