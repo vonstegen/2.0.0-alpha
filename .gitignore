@@ -34,6 +34,10 @@ public/addons/*.local-test-backup-*
 *.mobileprovision
 *.keystore
 
+# Local docker compose overrides carry provider credentials etc.
+docker-compose.*.local.yml
+docker-compose.bench.local.yml
+
 # Logs and caches
 logs/
 *.log
