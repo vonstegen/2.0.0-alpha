@@ -19,11 +19,18 @@
     .addon .row .v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
     .trigger { color: var(--ok); }
     .no-trigger { color: var(--muted); }
-    .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
-    code { background: rgba(110, 118, 129, 0.4); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
     .err { color: var(--fail); margin: 4px 0; font-size: 12px; }
+    .badges { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 4px 0; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; border: 1px solid var(--border); }
+    .badge.tier-personal   { background: rgba(210,153,34,0.18); color: var(--na);  border-color: rgba(210,153,34,0.45); }
+    .badge.tier-verified   { background: rgba(63,185,80,0.18); color: var(--ok);  border-color: rgba(63,185,80,0.45); }
+    .badge.tier-approved   { background: rgba(63,185,80,0.22); color: var(--ok);  border-color: rgba(63,185,80,0.55); }
+    .badge.tier-system     { background: rgba(110,118,129,0.30); color: var(--fg); border-color: rgba(110,118,129,0.55); }
+    .badge.host-mediate    { background: rgba(63,185,80,0.18); color: var(--ok); border-color: rgba(63,185,80,0.45); }
+    .badge.host-inline     { background: rgba(110,118,129,0.20); color: var(--muted); border-color: var(--border); }
+    .worker-key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--muted); word-break: break-all; border-left: 2px solid var(--border); padding-left: 8px; margin-top: 4px; }
+    .worker-key .label { color: var(--muted); font-weight: 600; margin-right: 4px; }
   </style>
-</head>
 <body>
   <h1>External Agent Runtimes</h1>
   <p class="subtitle">Dev-only panel. Enumerates <code>examples/addons/*.json</code> as discovered by the running bridge. Run <code>npm run deepseek-harness:smoke</code> for F1–F10 boundary-contract verdicts.</p>
@@ -64,18 +71,38 @@
       }
 
       const rows = [
-        ["id", addon.id],
+         ["id", addon.id],
+        ["publisher", (addon.publisher || "(missing)") + (addon.publisherNote ? " (" + addon.publisherNote + ")" : "")],
+        ["trust tier (ADR-042)", null],
         ["runtimeType", addon.runtimeType],
         ["service.entrypoint", addon.serviceEntrypoint || "(none)"],
+        ["isolation.boundary (ADR-041)", addon.isolationBoundary || "(none)"],
         ["§3 trigger", addon.hasTrigger ? "providers + agent-delegation" : "—"],
         ["tools", (addon.tools || []).join(", ") || "—"],
       ];
       for (const [k, v] of rows) {
         const row = document.createElement("div");
         row.className = "row";
-        row.innerHTML = `<span class="k">${esc(k)}</span><span class="v">${esc(v)}</span>`;
+        if (v === null && k === "trust tier (ADR-042)") {
+          const tier = addon.trustTier || "(unknown)";
+          row.innerHTML = `<span class="k">${esc(k)}</span><span class="v"><span class="badge tier-${esc(tier)}">${esc(tier)}</span></span>`;
+        } else {
+          row.innerHTML = `<span class="k">${esc(k)}</span><span class="v">${esc(v)}</span>`;
+        }
         card.appendChild(row);
       }
+      // Host-mediate badge + worker-key chip block below the rows.
+      const badges = document.createElement("div");
+      badges.className = "badges";
+      const hostBadge = document.createElement("span");
+      hostBadge.className = "badge " + (addon.hostMediated ? "host-mediate" : "host-inline");
+      hostBadge.textContent = addon.hostMediated ? "host-mediated" : "in-process";
+      badges.appendChild(hostBadge);
+      card.appendChild(badges);
+      const wk = document.createElement("div");
+      wk.className = "worker-key";
+      wk.innerHTML = `<span class="label">workerKey</span>${esc(addon.workerKey || "(n/a)")}`;
+      card.appendChild(wk);
 
       if (addon.validationNote) {
         const note = document.createElement("div");
