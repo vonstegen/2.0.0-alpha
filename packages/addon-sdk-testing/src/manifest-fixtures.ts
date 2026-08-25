@@ -124,8 +124,8 @@ let validatedFixture: AddOnManifest | undefined;
 
 function buildBase(): AddOnManifest {
   return {
-    sdkVersion: "0.1.0",
     id: FIXTURE_ID,
+    publisher: "resonantos-testing",
     name: "Testing External Agent Runtime",
     version: "0.1.0",
     author: "Resonant Extension Framework Tests",

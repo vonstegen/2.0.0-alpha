@@ -2,6 +2,7 @@
   "id": "addon.telegram-channel",
   "name": "Telegram Channel",
   "version": "0.1.0",
+  "publisher": "local",
   "author": "Resonant Alpha",
   "category": "channel",
   "description": "Connects one or more Telegram bots to Augmentor as trusted conversation channels with local transcript mirroring.",
