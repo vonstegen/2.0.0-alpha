@@ -104,7 +104,7 @@ The HTTP JSON service contract uses `POST /memory/{operation}` with JSON request
 - `decide-review`
 - `promote-review-artifact`
 
-The reference implementation lives at `examples/reference-memory-service.mjs` with a sideloadable manifest at `examples/addons/reference-memory.json`. It exists to prove ResonantOS can run with a non-Living Archive memory provider.
+The reference implementation lives at `examples/reference-memory-service.mjs` with a sideloadable manifest at `examples/addons/addon.reference-memory.json`. It exists to prove ResonantOS can run with a non-Living Archive memory provider.
 
 `background-cycle` is the preferred V1 automation primitive. It must scan connected source roots, queue new/changed source files, run the provider-backed maintenance cycle, refresh navigation, and return a transparent summary of queued, skipped, processed, and promoted work.
 
