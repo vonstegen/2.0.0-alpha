@@ -74,11 +74,15 @@ export function createBridgeGrantsStore({
   // Mint a fresh caller-attributed capability token. The token binds the
   // callerId inside the signed payload; the caller-supplied header
   // (X-ResonantOS-Bridge-Caller-Id) is ignored on the per-caller path.
-  function mintGrant(callerId, capability) {
+  // If `token` is supplied, use it verbatim instead of minting. Useful for
+  // launchers that want a known capability token (e.g. matching the bridge's
+  // own capability-tokens map for a dev caller) so a request can hit either
+  // the HMAC-verified per-caller path or the legacy static-token path.
+  function mintGrant(callerId, capability, token = null) {
     if (!isCallerAllowed(callerId)) {
       throw new Error(`mintGrant: callerId "${callerId}" is not in the allowlist`);
     }
-    const token = mintCallerAttributedToken({
+    const finalToken = token ?? mintCallerAttributedToken({
       callerId,
       capability,
       tokenKey,
@@ -86,10 +90,10 @@ export function createBridgeGrantsStore({
     });
     const bucket = getBucket(callerId);
     const expiresAt = new Date(Date.now() + expiresInMs).toISOString();
-    bucket.capabilities.set(capability, token);
+    bucket.capabilities.set(capability, finalToken);
     bucket.mintedAt.set(capability, new Date().toISOString());
     bucket.expiresAt.set(capability, expiresAt);
-    return token;
+    return finalToken;
   }
 
   // Returns the issued token for the given (callerId, capability), or null

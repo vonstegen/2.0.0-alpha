@@ -221,6 +221,65 @@ export function createAppCommandHandlers({
     await addMessage("system", `Delegation queued for ${delegationTargetLabel(result.target)}: ${result.id}\n${result.path}${lifecycle}`);
   }
 
+  // Synchronous addon tool dispatch through /external-agent-runtime/delegate.
+  // Body shape: "toolName [free-form user content]" — the toolName is the
+  // `tools[*].name` declared by the addon's manifest. The free-form content
+  // becomes the user message in the OpenAI-compatible wire format. The
+  // bridge dispatcher routes this to the addon's service entrypoint,
+  // enforces the per-caller grant for every capability the tool requires,
+  // and records the outcome in the audit ledger.
+  async function runAddonToolCommand(addonId, body) {
+    const trimmedAddonId = String(addonId ?? "").trim();
+    if (!trimmedAddonId.startsWith("addon.")) {
+      await addMessage(
+        "system",
+        "Add-on id must start with `addon.`. Example: `/tool addon.weather weather.current London`."
+      );
+      return;
+    }
+    const trimmedBody = String(body ?? "").trim();
+    if (!trimmedBody) {
+      await addMessage(
+        "system",
+        `Use \`/tool ${trimmedAddonId} <tool-name> [content]\`. The dev panel enumerates available tools at /dev/external-agent-runtimes/.`
+      );
+      return;
+    }
+    // First whitespace-separated token is the tool name; remainder is
+    // the user message payload. This matches the working wire format
+    // proven by bench/roundtrip.mjs.
+    const spaceIndex = trimmedBody.search(/\s/);
+    const toolName = spaceIndex === -1 ? trimmedBody : trimmedBody.slice(0, spaceIndex);
+    const userContent = spaceIndex === -1 ? "" : trimmedBody.slice(spaceIndex + 1).trim();
+    if (!toolName) {
+      await addMessage("system", `Tool name is required. Use \`/tool ${trimmedAddonId} <tool-name>\`.`);
+      return;
+    }
+    setActivity("tool-running", `Dispatching ${trimmedAddonId}/${toolName}`, userContent || "(no content)");
+    const result = await bridge()("/external-agent-runtime/delegate", {
+      method: "POST",
+      // capability hint: the dispatch route declares requiredCapability
+      // "agent-delegation"; we let capabilityForBridgeRoute resolve it
+      // from the route, so we don't need to pass capability here.
+      body: {
+        addonId: trimmedAddonId,
+        tool: toolName,
+        payload: userContent
+          ? { model: "stub", messages: [{ role: "user", content: userContent }] }
+          : { model: "stub", messages: [] }
+      }
+    });
+    const reply = result?.response?.choices?.[0]?.message?.content ?? "(no assistant reply)";
+    await addMessage(
+      "system",
+      [
+        `Add-on tool dispatched: ${trimmedAddonId}/${toolName}`,
+        "---",
+        reply
+      ].join("\n")
+    );
+  }
+
   async function runDelegationsCommand(body = "") {
     setActivity("retrieving", "Checking delegated work", body || "recent Hermes/OpenCode/Engineer packets");
     const message = await buildDelegationStatusMessage({ bridgeRequest, getBridgeRequest: () => bridgeRequest, filter: body, limit: 6 });
@@ -647,6 +706,7 @@ export function createAppCommandHandlers({
     runDraftAddonCommand,
     resumeBrowserJob,
     reportBrowserJob,
+    runAddonToolCommand,
     runCapabilitiesCommand,
     runDelegateCommand,
     runDelegationsCommand,
