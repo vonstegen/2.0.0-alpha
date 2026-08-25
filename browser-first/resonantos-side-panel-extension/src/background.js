@@ -29,6 +29,7 @@ async function loadBridgeConfig() {
 import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, resolveBridgeConfig, initCapabilityTokens, isUnauthorizedBridgeError } from "./lib/bridge-client.js";
 import { isTopFrameSender, sanitizeInlineAssistantBody, sanitizeResonantContextSnapshot } from "./lib/background-message-policy.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
+import { bootstrapProfileFromBridge } from "./lib/profile-bootstrap.js";
 
 const APPROVAL_REQUIRED_ACTIONS = new Set([
   "wallet_connect",
@@ -108,7 +109,10 @@ function rebindAndHydrate({ refreshGenerated = false } = {}) {
       // visible to the user via the Bridge Target settings card and
       // doesn't need to gate any other startup work.
       void prefsSync.hydrate().catch(() => undefined);
-      return { cfg, bridgeRequest: req, rawFetch: raw };
+      // Profile bootstrap is fire-and-forget — same posture as prefsSync.
+      // Pulls the workbench profile from the bridge into
+      // chrome.storage.local under augmentorUserProfile + augmentorConfig.
+      void bootstrapProfileFromBridge({ bridgeClient: req }).catch(() => undefined);
     })
     .catch(() => undefined);
 }
@@ -244,14 +248,15 @@ const rememberResonantContextSnapshot = (message, sender) => {
 // Tokens are NOT stored in the generated config; the endpoint requires the
 // bridge token plus a separate capability-bootstrap token.
 void initCapabilityTokens();
-
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => undefined);
   void initCapabilityTokens();
+  void bootstrapProfileFromBridge();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   void initCapabilityTokens();
+  void bootstrapProfileFromBridge();
 });
 
 chrome.action.onClicked.addListener(async (tab) => {
