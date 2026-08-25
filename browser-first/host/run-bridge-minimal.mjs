@@ -421,7 +421,7 @@ const minimalLauncherCallerGrants = (() => {
   grants.mintGrant("resonant-context", "archive-read");
   grants.mintGrant("dev-roundtrip", "network");
   grants.mintGrant("dev-roundtrip", "providers");
-  grants.mintGrant("dev-roundtrip", "agent-delegation");
+  grants.mintGrant("dev-roundtrip", "agent-delegation", bridgeCapabilityTokens["agent-delegation"]);
   grants.mintGrant("dev-roundtrip", "archive-intake-write");
   grants.mintGrant("dev-roundtrip", "memory-provider");
   grants.mintGrant("resonator", "memory-source-manage");
