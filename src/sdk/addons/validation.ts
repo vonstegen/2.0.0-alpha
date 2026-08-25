@@ -19,8 +19,8 @@ import {
   type AddOnManifestValidationResult,
   type AddOnValidationIssue,
 } from "./contracts";
-
 import { validateRuntimeIsolationForManifest } from "../../../packages/addon-sdk-testing/src/isolation.ts";
+import { classifyAddOnToolName } from "../../../packages/addon-sdk-testing/src/native-tool-prefixes.mjs";
 
 const runtimeTypes: readonly AddOnRuntimeType[] = ["ui-module", "embedded-module", "local-service", "agent-addon", "channel-addon"];
 const categories: readonly AddOnCategory[] = [
@@ -608,6 +608,28 @@ export const validateAddOnManifest = (
           pushIssue(issues, "error", "duplicate-tool", `${path}.name`, "Tool names must be unique.");
         }
         declaredToolNames.add(tool.name);
+        // ADR-050: forbid tool names that equal a native-tool
+        // capability (direct-shadow) or a reserved literal
+        // (reserved-literal). See
+        // packages/addon-sdk-testing/src/native-tool-prefixes.mjs.
+        const collision = classifyAddOnToolName(tool.name);
+        if (collision.kind === "direct-shadow") {
+          pushIssue(
+            issues,
+            "error",
+            "tool-name-collides-with-native",
+            `${path}.name`,
+            `Tool name "${tool.name}" collides with native capability "${collision.nativeCapability}". Native tool names are reserved for host-owned tools.`,
+          );
+        } else if (collision.kind === "reserved-literal") {
+          pushIssue(
+            issues,
+            "error",
+            "tool-name-reserved",
+            `${path}.name`,
+            `Tool name "${tool.name}" is a reserved literal. Reserved names (e.g. "fs", "shell", "exec", "wallet") cannot be aliased by addons.`,
+          );
+        }
       }
       if (!Array.isArray(tool.requiredCapabilities)) {
         pushIssue(issues, "error", "tool-capabilities-array", `${path}.requiredCapabilities`, "Tool requiredCapabilities must be an array.");
