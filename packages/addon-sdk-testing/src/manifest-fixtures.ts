@@ -7,7 +7,7 @@
 // so F1–F10 have a consistent target.
 //
 // This fixture mirrors the canonical local-service add-on shape from
-// `examples/addons/recursive-mas.json` (ADR-040 §8 names that addon as
+// `examples/addons/addon.recursive-mas.json` (ADR-040 §8 names that addon as
 // already satisfying this ADR). It is *not* a copy of recursive-mas:
 // recursive-mas is unverified-tier and out-of-tree; this fixture lives
 // in-tree, is verified, and declares a minimal tool surface that F1–F10
