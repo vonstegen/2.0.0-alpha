@@ -53,3 +53,11 @@ export {
   type TrustTier,
   type TrustTransitionDecision,
 } from "./trust-tier.ts";
+export {
+  buildWorkerKey,
+  shouldRebindWorker,
+  validateRuntimeIsolationForManifest,
+  type IsolationCheckError,
+  type IsolationCheckResult,
+  type WorkerKey,
+} from "./isolation.ts";

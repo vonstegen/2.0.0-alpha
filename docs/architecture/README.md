@@ -108,7 +108,9 @@ Add-on skill contracts:
 | [ADR-035](ADR-035-electron-host-rust-core-runtime.md) | Superseded | Not applicable | [ADR-037](ADR-037-browser-first-chromium-resonantos.md) | Browser architecture | Historical desktop-host direction; its components do not ship in Alpha. |
 | [ADR-036: Resonant Browser Host Architecture](ADR-036-wallet-capable-browser-host.md) | Superseded | Not applicable | [ADR-037](ADR-037-browser-first-chromium-resonantos.md) | Browser architecture | Historical external-browser sidecar direction; it is not the Alpha package. |
 | [ADR-037: Browser-First Chromium ResonantOS](ADR-037-browser-first-chromium-resonantos.md) | Accepted | Partial | - | Browser architecture | Browser-contained product direction applies; Alpha is the unpacked Chrome extension plus bridge, not a custom Chromium build. |
+| [ADR-038: Add-on Runtime Identity](ADR-038-addon-runtime-identity.md) | Accepted | Applies | - | Add-on SDK | `id@publisher` triple anchors caller attribution, update identity, and trust transitions. |
 | [ADR-039: New-Permission Review On Update](ADR-039-addon-permission-diff-on-update.md) | Accepted | Applies | - | Add-on SDK | Permission diff on update gates installs on a user prompt for added, widened, weakened, or trust-changing fields. |
+| [ADR-041: Add-on Isolation Boundary](ADR-041-addon-isolation-boundary.md) | Accepted | Applies | - | Add-on SDK | Worker key derived from id@publisher:version plus isolation boundary; bridge dispatcher evicts and rebinds on any of those four fields changing. |
 | [ADR-042: Add-on Trust-Tier Transitions](ADR-042-addon-trust-tier-transitions.md) | Accepted | Applies | - | Add-on SDK | Personal / Verified / Approved / System transition matrix gates install and update flows. |
 | [ADR-055: Resonant Extension Framework](ADR-055-resonant-extension-framework.md) | Deferred | Partial | - | Add-on SDK | Outline stage; extends ADR-006/018, records RESOLUTIONS_V0.1.md as the conflict-resolution input, and references the runtime hardening notes for the Phase 3.5 caller-attributed bridge work. |
 | [ADR-056: Provider Fabric Boundary for External Agent Runtimes](ADR-056-provider-fabric-boundary-external-agent-runtimes.md) | Deferred | Applies | - | Provider host / Delegation | Locks the credential-mediation and provider-routing boundary for external agent runtimes (DeepSeek Harness, Agent Zero) integrated as local-service add-ons. |
@@ -123,3 +125,4 @@ Add-on skill contracts:
   each decision applies now.
 - Historical diagrams, audits, and research do not become current authority by
   linking to an accepted ADR.
+
