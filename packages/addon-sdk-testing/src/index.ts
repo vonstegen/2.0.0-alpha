@@ -45,5 +45,11 @@ export {
   type AddOnPermissionDelta,
   type AddOnPermissionDeltaEntry,
   type AddOnPermissionDeltaKind,
-  type AddOnPermissionDeltaSeverity,
 } from "./permission-diff.ts";
+
+export {
+  canTransitionBetweenTiers,
+  getTrustTierFromManifest,
+  type TrustTier,
+  type TrustTransitionDecision,
+} from "./trust-tier.ts";
