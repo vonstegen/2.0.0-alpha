@@ -343,6 +343,11 @@ describe("add-on SDK manifest validation", () => {
     const result = validateAddOnManifest(
       validManifest({
         runtimeType: "ui-module",
+        runtimeIsolation: {
+          boundary: "shell-ui",
+          supportsDegradedMode: true,
+          requiresReviewedGrant: false,
+        },
         surfaces: [
           {
             id: "settings-panel",
