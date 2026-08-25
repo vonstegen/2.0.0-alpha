@@ -1127,6 +1127,8 @@ export async function evaluateBridgeRequestForSelfTest({
 export function createBridgeRequestHandler({
   bridgeToken,
   bridgeCapabilityTokens = {},
+  perCallerGrants,
+  auditSink,
   capabilityBootstrapToken,
   extensionOrigin,
   routes,
@@ -1196,6 +1198,8 @@ export function createBridgeRequestHandler({
         body,
         bridgeToken,
         bridgeCapabilityTokens,
+        perCallerGrants,
+        auditSink,
         capabilityBootstrapToken,
         routes: internalRoutes,
       });
@@ -1217,6 +1221,8 @@ export async function startBridgeServer({
   port,
   bridgeToken,
   bridgeCapabilityTokens = {},
+  perCallerGrants,
+  auditSink,
   capabilityBootstrapToken,
   extensionOrigin,
   routes,
@@ -1239,6 +1245,8 @@ export async function startBridgeServer({
   const handle = createBridgeRequestHandler({
     bridgeToken,
     bridgeCapabilityTokens,
+    perCallerGrants,
+    auditSink,
     capabilityBootstrapToken,
     extensionOrigin,
     routes,
