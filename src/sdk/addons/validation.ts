@@ -20,6 +20,8 @@ import {
   type AddOnValidationIssue,
 } from "./contracts";
 
+import { validateRuntimeIsolationForManifest } from "../../../packages/addon-sdk-testing/src/isolation.ts";
+
 const runtimeTypes: readonly AddOnRuntimeType[] = ["ui-module", "embedded-module", "local-service", "agent-addon", "channel-addon"];
 const categories: readonly AddOnCategory[] = [
   "agent",
@@ -1160,6 +1162,13 @@ export const validateAddOnManifest = (
       "provenance.tier",
       "Sideloaded add-ons are treated as sideloaded-unverified until host verification succeeds.",
     );
+  }
+
+  const isolation = validateRuntimeIsolationForManifest(candidate);
+  if (!isolation.valid) {
+    for (const err of isolation.errors) {
+      pushIssue(issues, "error", err.code, err.path, err.message);
+    }
   }
 
   return {
