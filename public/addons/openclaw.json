@@ -2,6 +2,7 @@
   "id": "addon.openclaw",
   "name": "OpenClaw",
   "version": "0.1.0",
+  "publisher": "local",
   "author": "Resonant Alpha",
   "category": "agent",
   "description": "Mount an OpenClaw runtime as a delegated agent add-on under ResonantOS supervision.",
