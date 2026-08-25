@@ -76,9 +76,7 @@ future product work. They are not additional required Alpha processes.
 | `src/modules/*/` | React domain workspaces and controllers from the broader product codebase | Feature reservoir/supporting source; not the MV3 Alpha UI unless explicitly imported by the extension |
 | `src/App.tsx` | React composition shell for the broader source tree | Not an Alpha entrypoint |
 | `public/addons/` | Bundled add-on manifests and catalog indexes | Read by add-on tooling and optional service discovery |
-| `addons/resonant-browser-host/` | Separate browser-host add-on package and tests | Optional/supporting; not a required Alpha host |
-| [`packages/addon-sdk-testing/`](../../packages/addon-sdk-testing/README.md) | In-process mock host + ADR-040 §7 F1–F10 negative-test harness for external-agent-runtime manifests | Optional test infrastructure; not a required Alpha host |
-| [`docs/addons/authoring.md`](../../docs/addons/authoring.md) | User-facing guide: how to author a new add-on (manifest, capabilities, service protocol) | Authoring documentation; not Alpha runtime |
+| [`packages/addon-sdk-testing/`](../../packages/addon-sdk-testing/README.md) | In-process mock host + ADR-040 §7 F1–F10 negative-test harness for external-agent-runtime manifests; `permission-diff.ts` exports `diffAddOnManifest` per ADR-039 | Optional test infrastructure; not a required Alpha host |
 | `examples/addons/` | Bundled example add-on manifests (addon.deepseek-harness, addon.recursive-mas, addon.reference-memory) | Discovered by the bridge at startup; required for the dev panel |
 | [`docs/architecture/RESONANT_VSCODE_VSCODIUM_EXTENSION_REFERENCE_MODEL.md`](RESONANT_VSCODE_VSCODIUM_EXTENSION_REFERENCE_MODEL.md) | Design-input reference mapping VS Code's extension model onto ResonantOS; §22 cross-checks each section against ADR-018/ADR-031/ADR-040 + this session's work; §23 extracts an ADR queue for open decisions | Architecture reference, not an ADR |
 | [`bench/`](../../bench/) | Docker test bench: single container with the bridge + addon stubs + round-trip script | Optional dev tooling; not part of the Alpha runtime |
