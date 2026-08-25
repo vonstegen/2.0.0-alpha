@@ -530,7 +530,7 @@ export interface AddOnDeterministicSmokeTest {
 
 export interface AddOnManifest {
   sdkVersion?: string;
-  id: string;
+  publisher: string;
   name: string;
   version: string;
   author: string;

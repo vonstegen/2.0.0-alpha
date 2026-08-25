@@ -2,6 +2,7 @@
   "id": "addon.obsidian",
   "name": "Resonant Notes",
   "version": "0.1.0",
+  "publisher": "local",
   "author": "Resonant Alpha",
   "category": "knowledge",
   "description": "Opens an Obsidian-compatible markdown vault inside ResonantOS as a native Resonant Notes workspace.",

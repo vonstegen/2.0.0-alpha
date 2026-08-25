@@ -2,6 +2,7 @@
   "id": "addon.coherence-gate",
   "name": "Coherence Gate",
   "version": "0.1.0",
+  "publisher": "local",
   "author": "Resonant Alpha",
   "category": "security",
   "description": "Task tracking and drift detection daemon. Intercepts tool calls to evaluate whether agent actions align with the active task, logging execution entries and flagging potential drift based on keyword and path overlap analysis. Supports advisory, gated, and strict enforcement modes.",

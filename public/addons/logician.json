@@ -2,6 +2,7 @@
   "id": "addon.logician",
   "name": "Logician",
   "version": "0.1.0",
+  "publisher": "local",
   "author": "Resonant Alpha",
   "category": "knowledge",
   "description": "Policy and reasoning rules engine redesigned as a modular add-on.",

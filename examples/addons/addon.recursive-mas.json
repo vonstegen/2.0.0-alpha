@@ -2,6 +2,7 @@
   "id": "addon.recursive-mas",
   "name": "RecursiveMAS",
   "version": "0.1.0",
+  "publisher": "local",
   "author": "Resonant Alpha",
   "category": "agent",
   "sdkVersion": "0.1.0",

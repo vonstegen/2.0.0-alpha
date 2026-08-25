@@ -31,6 +31,7 @@ async function withTempRepo(layout, fn) {
 const baseManifest = {
   name: "Test Addon",
   version: "0.1.0",
+  publisher: "local",
   author: "tester",
   category: "tool",
   sdkVersion: "0.1.0",
