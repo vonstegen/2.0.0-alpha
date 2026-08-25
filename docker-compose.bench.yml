@@ -1,0 +1,57 @@
+# ResonantOS addon SDK test bench.
+#
+# Single-container layout: the bridge + all three addon stubs share one
+# process tree, so the addon manifests' literal `127.0.0.1:<port>`
+# entrypoints resolve correctly without DNS overrides or env-var rewrites.
+# This matches what a developer would do locally with multiple terminals.
+#
+# The bridge binds to `0.0.0.0` inside the container (instead of its
+# loopback-only default) so Docker's standard port mapping can forward
+# host connections to it. The IP allowlist is widened to Docker's bridge
+# subnet so the bridge doesn't reject those connections. Production stays
+# loopback-only with the default settings.
+#
+# Port exposed to host:
+#   47773  browser-first bridge (loopback only) — open this in your desktop
+#          Chrome at http://127.0.0.1:47773/dev/external-agent-runtimes/
+#
+# Addon ports (3080/4891/4888) stay inside the container's loopback; the
+# bridge reaches them via 127.0.0.1.
+#
+# Usage:
+#   docker compose -f docker-compose.bench.yml up        # foreground
+#   docker compose -f docker-compose.bench.yml up -d     # detached
+#   docker compose -f docker-compose.bench.yml down      # stop + remove
+#   docker compose -f docker-compose.bench.yml logs -f   # stream all logs
+#   docker compose -f docker-compose.bench.yml exec bench \
+#     /app/bench/roundtrip.mjs                          # run the round-trip
+
+services:
+  bench:
+    build:
+      context: .
+      dockerfile: bench/bench.Dockerfile
+    image: resonant-bench/bench:latest
+    container_name: resonant-bench
+    environment:
+      RESONANTOS_REPO_ROOT: /app/repo
+      RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN: test-token
+      RESONANTOS_BROWSER_FIRST_AGENT_DELEGATION_TOKEN: cap-agent-delegation-bench
+      RESONANTOS_BROWSER_FIRST_USER_ROOT: /var/lib/resonant-bench
+      ADDON_STUB_LOG_DIR: /var/log/resonant-bench
+      RESONANTOS_BRIDGE_HOST: "0.0.0.0"
+      # Widen the IP allowlist beyond loopback so host connections (which
+      # arrive via Docker's bridge networking at 172.17-172.31.x) are
+      # accepted. Fine for a dev bench; production stays loopback-only.
+      RESONANTOS_BRIDGE_ALLOWED_IPS: "127.0.0.1,::1,172.16.0.0/12,192.168.0.0/16,10.0.0.0/8"
+    ports:
+      - "127.0.0.1:47773:47773"
+    volumes:
+      - ./examples/addons:/app/repo/examples/addons:ro
+      # Persist audit ledger across `down`/`up` so verdicts survive a
+      # bench restart. Wipe with `docker compose down --volumes`.
+      - bench-state:/var/lib/resonant-bench
+
+volumes:
+  bench-state:
+    name: resonant-bench-state
