@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { appendFile, chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { spawn } from "node:child_process";
@@ -34,6 +34,63 @@ const providerEnvKeyDefaults = Object.freeze({
   zai: ["ZAI_API_KEY", "GLM_API_KEY", "ZHIPUAI_API_KEY"],
   zhipuai: ["ZHIPUAI_API_KEY", "ZAI_API_KEY", "GLM_API_KEY"],
 });
+
+// Discover addon manifests under examples/addons/ and public/addons/.
+// Returns an array of { id, manifest, source } entries deduplicated by id.
+export async function discoverBundledAddonManifests(repoRoot) {
+  const dirs = ["examples/addons", "public/addons"];
+  const merged = new Map();
+  for (const relDir of dirs) {
+    const absDir = path.resolve(repoRoot, relDir);
+    let entries = [];
+    try {
+      entries = await readdir(absDir);
+    } catch {
+      continue;
+    }
+    for (const fileName of entries) {
+      if (!fileName.endsWith(".json")) continue;
+      const filePath = path.join(absDir, fileName);
+      let raw;
+      try {
+        raw = await readFile(filePath, "utf8");
+      } catch {
+        continue;
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      const id = typeof parsed?.id === "string" ? parsed.id : null;
+      if (!id) continue;
+      merged.set(id, { id, manifest: parsed, source: relDir });
+    }
+  }
+  return [...merged.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+// Map a discovered manifest to the `mode` value the extension's
+// main-workspace-addons.js expects.
+export function modeForManifest(manifest) {
+  const systemSlots = Array.isArray(manifest.systemSlots) ? manifest.systemSlots : [];
+  if (systemSlots.some((slot) => slot?.id === "memory-system")) return "memory-system";
+  if (manifest.runtimeType === "agent-addon") return "delegation-addon";
+  if (manifest.runtimeType === "embedded-module") return "coding-addon";
+  if (manifest.runtimeType === "local-service") {
+    return manifest.category === "memory" ? "memory-system" : "draft-only-communication-addon";
+  }
+  return "unknown";
+}
+
+export function trustLabelFor(manifest) {
+  if (manifest.runtimeType === "agent-addon") return "add-on agent";
+  if (manifest.runtimeType === "local-service" && manifest.category === "memory") {
+    return "host-mediated memory provider";
+  }
+  return "host-mediated service";
+}
 
 export const OPENCODE_EXPLICIT_PROVIDER_ENV_KEYS = Object.freeze([
   "ANTHROPIC_BASE_URL",
@@ -1740,6 +1797,26 @@ except BaseException as exc:
 
   async function executeAddonsStatus() {
     const executionSettings = await readAddonExecutionSettings();
+    const discovered = await discoverBundledAddonManifests(repoRoot);
+    const fromManifests = discovered.map((entry) => {
+      const { id, manifest, source } = entry;
+      const requestedCapabilities = Array.isArray(manifest.requestedCapabilities)
+        ? manifest.requestedCapabilities.map((e) => e?.capability).filter(Boolean)
+        : [];
+      return {
+        id,
+        name: typeof manifest.name === "string" ? manifest.name : id,
+        available: true,
+        mode: modeForManifest(manifest),
+        trust: trustLabelFor(manifest),
+        requestedCapabilities,
+        grantedCapabilities: requestedCapabilities,
+        runtime: manifest.runtimeType ?? null,
+        category: manifest.category ?? null,
+        source,
+        tools: Array.isArray(manifest.tools) ? manifest.tools.map((t) => t?.name).filter(Boolean) : [],
+      };
+    });
     return {
       addons: [
         {
@@ -1771,40 +1848,7 @@ except BaseException as exc:
             mode: opencodeCommand() ? "local-cli-detected" : "packet-only",
           },
         },
-        {
-          id: "addon.living-archive",
-          name: "Living Archive",
-          available: existsSync(memoryRoot()),
-          mode: "memory-system",
-          trust: "host-mediated memory provider",
-          requestedCapabilities: ["archive-read", "archive-intake-write", "archive-knowledge-write"],
-          grantedCapabilities: ["archive-read", "archive-intake-write"],
-          deniedCapabilities: ["archive-knowledge-write"],
-        },
-        {
-          id: "addon.email",
-          name: "Email",
-          available: true,
-          mode: "draft-only-communication-addon",
-          trust: "host-mediated draft provider",
-          providers: ["gmail"],
-          requestedCapabilities: ["communication-draft", "provider-handoff"],
-          grantedCapabilities: ["communication-draft", "provider-handoff"],
-          deniedCapabilities: ["external-send"],
-          boundary: "Draft packets only. Gmail handoff opens a compose draft for human review; ResonantOS does not send email.",
-        },
-        {
-          id: "addon.calendar",
-          name: "Calendar",
-          available: true,
-          mode: "draft-only-scheduling-addon",
-          trust: "host-mediated draft provider",
-          providers: ["google-calendar"],
-          requestedCapabilities: ["calendar-draft", "provider-handoff"],
-          grantedCapabilities: ["calendar-draft", "provider-handoff"],
-          deniedCapabilities: ["external-schedule"],
-          boundary: "Draft packets only. Google Calendar handoff opens an event template for human review; ResonantOS does not schedule events.",
-        },
+        ...fromManifests.filter((entry) => entry.id !== "addon.hermes" && entry.id !== "addon.opencode"),
       ],
     };
   }
