@@ -36,7 +36,7 @@ const moduleDir = dirname(fileURLToPath(import.meta.url));
 // browser-first/host/external-agent-runtime-dispatcher.mjs -> repo root is
 // three levels up. Manifests are looked up first in `examples/addons/` then
 // `public/addons/`.
-export const DEFAULT_REPO_ROOT = resolvePath(moduleDir, "..", "..", "..");
+export const DEFAULT_REPO_ROOT = resolvePath(moduleDir, "..", "..");
 
 /**
  * Find an addon manifest by id. Searches `examples/addons/*.json` then

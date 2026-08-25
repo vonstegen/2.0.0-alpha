@@ -409,7 +409,7 @@ const bridgeTokenKey = createBridgeTokenKey();
 // bundled add-ons this minimal launcher is willing to serve. The audit line
 // below records the allowlist at boot so a misconfigured launcher is
 // observable in the launcher log.
-const minimalLauncherCallerIds = ["hermes", "opencode", "resonant-context", "resonator"];
+const minimalLauncherCallerIds = ["hermes", "opencode", "resonant-context", "resonator", "dev-roundtrip"];
 const minimalLauncherCallerGrants = (() => {
   const grants = createBridgeGrantsStore({
     tokenKey: bridgeTokenKey,
@@ -419,6 +419,11 @@ const minimalLauncherCallerGrants = (() => {
   grants.mintGrant("hermes", "agent-control-plan");
   grants.mintGrant("opencode", "provider-model-invoke");
   grants.mintGrant("resonant-context", "archive-read");
+  grants.mintGrant("dev-roundtrip", "network");
+  grants.mintGrant("dev-roundtrip", "providers");
+  grants.mintGrant("dev-roundtrip", "agent-delegation");
+  grants.mintGrant("dev-roundtrip", "archive-intake-write");
+  grants.mintGrant("dev-roundtrip", "memory-provider");
   grants.mintGrant("resonator", "memory-source-manage");
   return grants;
 })();

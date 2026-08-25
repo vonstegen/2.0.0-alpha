@@ -21,6 +21,31 @@
 
 import { dispatchExternalAgentRuntime } from "./external-agent-runtime-dispatcher.mjs";
 
+// The dispatcher's checkToolGrants reads perCallerGrants as a Map:
+//   perCallerGrants.get(callerId).capabilities.get(capability)
+// but the bridge-server path puts a plain-object snapshot from
+// createBridgeGrantsStore().snapshot() in bridgeContext.perCallerGrants
+// (shape: { callerId: { capability: tokenString } }). Without this
+// adapter every legitimate addon call is denied for "missing per-caller
+// grants" because the dispatcher sees an empty Map.
+function asGrantsMap(perCallerGrants) {
+  if (perCallerGrants == null) return null;
+  if (typeof perCallerGrants.get === "function") return perCallerGrants;
+  if (typeof perCallerGrants !== "object") return null;
+  const buckets = new Map();
+  for (const [callerId, bucket] of Object.entries(perCallerGrants)) {
+    if (!bucket || typeof bucket !== "object") continue;
+    const caps = new Map();
+    for (const [cap, token] of Object.entries(bucket)) {
+      if (typeof token === "string" && token.length > 0) caps.set(cap, token);
+    }
+    buckets.set(callerId, { capabilities: caps });
+  }
+  return {
+    get(callerId) { return buckets.get(callerId) ?? null; },
+  };
+}
+
 export function createAddonDelegationHostService(handlers = {}) {
   function required(name) {
     if (typeof handlers[name] !== "function") {
@@ -141,15 +166,12 @@ export function createAddonDelegationHostService(handlers = {}) {
           const addonId = body?.addonId;
           const toolName = body?.tool;
           const payload = body?.payload ?? {};
-          if (typeof addonId !== "string" || typeof toolName !== "string") {
-            return { status: 400, body: { error: { message: "addonId and tool are required" } } };
-          }
           const result = await dispatchExternalAgentRuntime({
             addonId,
             toolName,
             payload,
             callerId: bridgeContext?.callerId ?? "__anonymous__",
-            perCallerGrants: bridgeContext?.perCallerGrants ?? null,
+            perCallerGrants: asGrantsMap(bridgeContext?.perCallerGrants),
             auditLedger: bridgeContext?.auditLedger ?? null,
           });
           if (result.outcome === "deny") {
