@@ -108,9 +108,8 @@ Add-on skill contracts:
 | [ADR-035](ADR-035-electron-host-rust-core-runtime.md) | Superseded | Not applicable | [ADR-037](ADR-037-browser-first-chromium-resonantos.md) | Browser architecture | Historical desktop-host direction; its components do not ship in Alpha. |
 | [ADR-036: Resonant Browser Host Architecture](ADR-036-wallet-capable-browser-host.md) | Superseded | Not applicable | [ADR-037](ADR-037-browser-first-chromium-resonantos.md) | Browser architecture | Historical external-browser sidecar direction; it is not the Alpha package. |
 | [ADR-037: Browser-First Chromium ResonantOS](ADR-037-browser-first-chromium-resonantos.md) | Accepted | Partial | - | Browser architecture | Browser-contained product direction applies; Alpha is the unpacked Chrome extension plus bridge, not a custom Chromium build. |
-
-## Authority Rules
-
+| [ADR-038: Add-on Runtime Identity](ADR-038-addon-runtime-identity.md) | Accepted | Applies | - | Add-on SDK | `id@publisher` triple anchors caller attribution, update identity, and trust transitions. |
+| [ADR-039: New-Permission Review On Update](ADR-039-addon-permission-diff-on-update.md) | Accepted | Applies | - | Add-on SDK | Permission diff on update gates installs on a user prompt for added, widened, weakened, or trust-changing fields. |
 - The Alpha boundary document wins for shipped components and privileged
   process flow.
 - The module ownership contract wins for current source ownership.

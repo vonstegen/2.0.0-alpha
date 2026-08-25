@@ -38,5 +38,12 @@ export {
   withTool,
   declaredToolNames,
   FIXTURE_CALLER_ID,
-  type ExternalAgentRuntimeManifest,
 } from "./manifest-fixtures.ts";
+
+export {
+  diffAddOnManifest,
+  type AddOnPermissionDelta,
+  type AddOnPermissionDeltaEntry,
+  type AddOnPermissionDeltaKind,
+  type AddOnPermissionDeltaSeverity,
+} from "./permission-diff.ts";
