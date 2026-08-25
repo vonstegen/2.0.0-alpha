@@ -52,8 +52,13 @@
     "supportsPrivateCredentials": false
   },
   "archiveIntegration": {
-    "readScopes": ["living-archive/context", "vault"],
-    "intakeWriteScopes": ["obsidian-vault-notes"],
+    "readScopes": [
+      "living-archive/context",
+      "vault"
+    ],
+    "intakeWriteScopes": [
+      "obsidian-vault-notes"
+    ],
     "canRequestIngest": true,
     "canWriteKnowledgePages": false
   },
@@ -64,34 +69,50 @@
     {
       "name": "obsidian.write_note",
       "description": "Write an existing markdown note through the host with stale-save protection, pre-write version snapshot, and audit record.",
-      "requiredCapabilities": ["filesystem"],
+      "requiredCapabilities": [
+        "filesystem"
+      ],
       "inputSchema": {},
       "outputSchema": {},
       "audit": {
         "logRequest": true,
         "logResult": true,
-        "artifactTypes": ["log"]
+        "artifactTypes": [
+          "log"
+        ]
       },
       "requiresHumanApproval": true
     },
     {
       "name": "obsidian.vault_index",
       "description": "Build a clean-room Obsidian-compatible index of markdown notes, tags, wikilinks, backlinks, and search matches.",
-      "requiredCapabilities": ["filesystem"],
+      "requiredCapabilities": [
+        "filesystem"
+      ],
       "inputSchema": {},
       "outputSchema": {},
       "audit": {
         "logRequest": true,
         "logResult": false,
-        "artifactTypes": ["log"]
+        "artifactTypes": [
+          "log"
+        ]
       },
       "requiresHumanApproval": false
     }
   ],
   "delegation": {
     "acceptsTasks": true,
-    "taskTypes": ["knowledge-organization", "archive-prep"],
-    "artifactReturnTypes": ["summary", "markdown", "file-list", "archive-intake-bundle"],
+    "taskTypes": [
+      "knowledge-organization",
+      "archive-prep"
+    ],
+    "artifactReturnTypes": [
+      "summary",
+      "markdown",
+      "file-list",
+      "archive-intake-bundle"
+    ],
     "defaultTargetRuntime": "embedded-workspace",
     "requiresHumanApprovalBeforeExecution": true,
     "notes": [
@@ -121,8 +142,15 @@
       "description": "Help the human organize markdown notes with tags, wikilinks, and source boundaries while preserving review gates.",
       "documentPath": "docs/architecture/addon-skills/obsidian/VAULT_ORGANIZATION_ASSIST.md",
       "invocation": "agent-suggested",
-      "requiredCapabilities": ["filesystem", "archive-read", "archive-intake-write"],
-      "requiredTools": ["obsidian.vault_index", "obsidian.write_note"]
+      "requiredCapabilities": [
+        "filesystem",
+        "archive-read",
+        "archive-intake-write"
+      ],
+      "requiredTools": [
+        "obsidian.vault_index",
+        "obsidian.write_note"
+      ]
     }
   ],
   "connectors": [
@@ -131,7 +159,9 @@
       "name": "Markdown vault",
       "type": "filesystem",
       "description": "Connects a user-selected markdown or Obsidian vault to ResonantOS through audited filesystem operations.",
-      "requiredCapabilities": ["filesystem"],
+      "requiredCapabilities": [
+        "filesystem"
+      ],
       "configScope": "user-config"
     }
   ],
@@ -143,8 +173,13 @@
       "commandRef": "obsidian.vault_index",
       "runPolicy": "preflight",
       "deterministic": true,
-      "requiredCapabilities": ["filesystem"],
-      "producesArtifacts": ["file-list", "diagnostic-report"],
+      "requiredCapabilities": [
+        "filesystem"
+      ],
+      "producesArtifacts": [
+        "file-list",
+        "diagnostic-report"
+      ],
       "requiresHumanApproval": false
     }
   ],
@@ -153,7 +188,9 @@
       "id": "after-vault-intake-index",
       "event": "after-archive-intake",
       "handlerRef": "vault-index-preflight",
-      "requiredCapabilities": ["filesystem"],
+      "requiredCapabilities": [
+        "filesystem"
+      ],
       "failurePolicy": "warn"
     }
   ],
@@ -162,6 +199,20 @@
   },
   "compatibility": {
     "shellVersion": "^0.1.0",
-    "platforms": ["macOS", "windows", "linux"]
+    "platforms": [
+      "macOS",
+      "windows",
+      "linux"
+    ]
+  },
+  "runtimeIsolation": {
+    "boundary": "shell-ui",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": true
+  },
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
   }
 }

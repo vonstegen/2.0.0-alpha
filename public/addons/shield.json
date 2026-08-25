@@ -61,7 +61,10 @@
       "description": "Explain capability, filesystem, and telemetry findings in human-actionable language.",
       "documentPath": "docs/architecture/addon-skills/shield/SECURITY_POSTURE_REVIEW.md",
       "invocation": "agent-suggested",
-      "requiredCapabilities": ["filesystem", "notifications"],
+      "requiredCapabilities": [
+        "filesystem",
+        "notifications"
+      ],
       "requiredTools": []
     }
   ],
@@ -71,7 +74,9 @@
       "name": "Filesystem guard",
       "type": "filesystem",
       "description": "Observes scoped filesystem paths and reports security-relevant events.",
-      "requiredCapabilities": ["filesystem"],
+      "requiredCapabilities": [
+        "filesystem"
+      ],
       "configScope": "user-config"
     }
   ],
@@ -83,8 +88,12 @@
       "commandRef": "shield.guard_preflight",
       "runPolicy": "preflight",
       "deterministic": true,
-      "requiredCapabilities": ["filesystem"],
-      "producesArtifacts": ["diagnostic-report"],
+      "requiredCapabilities": [
+        "filesystem"
+      ],
+      "producesArtifacts": [
+        "diagnostic-report"
+      ],
       "requiresHumanApproval": false
     }
   ],
@@ -93,7 +102,9 @@
       "id": "shield-enable-check",
       "event": "before-enable",
       "handlerRef": "shield-guard-preflight",
-      "requiredCapabilities": ["filesystem"],
+      "requiredCapabilities": [
+        "filesystem"
+      ],
       "failurePolicy": "block"
     }
   ],
@@ -105,6 +116,19 @@
   },
   "compatibility": {
     "shellVersion": "^0.1.0",
-    "platforms": ["macOS", "linux"]
+    "platforms": [
+      "macOS",
+      "linux"
+    ]
+  },
+  "runtimeIsolation": {
+    "boundary": "host-mediated-service",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": true
+  },
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
   }
 }
