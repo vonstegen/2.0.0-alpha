@@ -3,11 +3,11 @@
 import { describe, expect, it } from "vitest";
 import type { AddOnManifest } from "../../core/contracts";
 import { validateAddOnManifest } from "./validation";
-
 const validManifest = (overrides: Partial<AddOnManifest> = {}): AddOnManifest => ({
   id: "addon.browser",
   name: "Resonant Browser",
   version: "0.1.0",
+  publisher: "resonantos-testing",
   author: "Resonant Alpha",
   category: "tool",
   description: "Controlled browser add-on.",

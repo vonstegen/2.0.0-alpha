@@ -2,6 +2,7 @@
   "id": "addon.usage-tracker",
   "name": "Usage Tracker",
   "version": "0.1.0",
+  "publisher": "local",
   "author": "Resonant Alpha",
   "category": "integration",
   "description": "Persistent token and cost tracking across all agents. Listens for LLM output events and appends per-call usage entries (input tokens, output tokens, cache read/write, model, provider) to a JSONL ledger file for analysis and budgeting.",

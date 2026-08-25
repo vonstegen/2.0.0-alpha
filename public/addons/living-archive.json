@@ -2,6 +2,7 @@
   "id": "addon.living-archive",
   "name": "Living Archive",
   "version": "0.1.0",
+  "publisher": "local",
   "author": "Resonant Alpha",
   "category": "memory",
   "sdkVersion": "0.1.0",

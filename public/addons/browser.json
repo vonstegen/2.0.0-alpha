@@ -2,6 +2,7 @@
   "id": "addon.browser",
   "name": "Resonant Browser",
   "version": "0.1.0",
+  "publisher": "local",
   "author": "Resonant Alpha",
   "category": "tool",
   "sdkVersion": "0.1.0",
