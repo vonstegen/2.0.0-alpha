@@ -78,6 +78,9 @@ future product work. They are not additional required Alpha processes.
 | `public/addons/` | Bundled add-on manifests and catalog indexes | Read by add-on tooling and optional service discovery |
 | `addons/resonant-browser-host/` | Separate browser-host add-on package and tests | Optional/supporting; not a required Alpha host |
 | [`packages/addon-sdk-testing/`](../../packages/addon-sdk-testing/README.md) | In-process mock host + ADR-040 §7 F1–F10 negative-test harness for external-agent-runtime manifests | Optional test infrastructure; not a required Alpha host |
+| [`docs/addons/authoring.md`](../../docs/addons/authoring.md) | User-facing guide: how to author a new add-on (manifest, capabilities, service protocol) | Authoring documentation; not Alpha runtime |
+| `examples/addons/` | Bundled example add-on manifests (addon.deepseek-harness, addon.recursive-mas, addon.reference-memory) | Discovered by the bridge at startup; required for the dev panel |
+| [`bench/`](../../bench/) | Docker test bench: single container with the bridge + addon stubs + round-trip script | Optional dev tooling; not part of the Alpha runtime |
 | [`browser-first/dev/external-agent-runtimes-panel.html`](../../browser-first/dev/external-agent-runtimes-panel.html) | Dev-only HTML panel served by the bridge at `/dev/external-agent-runtimes/` for inspecting addon SDK work | Dev-only; not a user-facing surface |
 | `examples/` | MCP and service examples | Optional, never required Alpha runtime |
 | `scripts/` | Build, test, health, security, docs, and release validation | Development and verification only |
