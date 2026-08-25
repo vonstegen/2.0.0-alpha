@@ -3,13 +3,12 @@
 ## Decision Metadata
 
 - Decision status: Accepted
-- Alpha applicability: Applies (validator + worker-key)
+- Alpha applicability: Applies
 - Superseded by: None
 - Owner: Add-on SDK
 - Decision date: 2026-08-25
 - Alpha note: Alpha's worker-thread rebind for executable add-ons is
   shipped as a `workerKey` key derived from the
-  `id@publisher:version` triple plus the `runtimeIsolation.boundary`
   field. The bridge dispatcher holds a `Map<workerKey, Worker>` and
   routes every addon-attributed call through the worker for that key.
   When the registry changes a triple's boundary, the bridge evicts
