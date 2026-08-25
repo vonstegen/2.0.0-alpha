@@ -44,6 +44,7 @@ import { createOpencodeSessionHandlers, createOpencodeSessionHostService } from 
 import { createArchiveReviewHostService } from "./archive-review-host-service.mjs";
 import { createBrowserDiagnosticsHostService } from "./browser-diagnostics-host-service.mjs";
 import { createExtensionPrefsHostService } from "./extension-prefs-host-service.mjs";
+import { createProfileBootstrapHostService } from "./profile-bootstrap-host-service.mjs";
 import { createMemoryHostService } from "./memory-host-service.mjs";
 import { createMemorySourceIntakeHostService } from "./memory-source-intake-host-service.mjs";
 import { createMemorySourceSettingsService } from "./memory-source-settings-service.mjs";
@@ -375,7 +376,7 @@ const { agentControlRoutes } = createAgentControlHostService({
 });
 
 const { extensionPrefsRoutes, flushPendingExtensionPrefs } = createExtensionPrefsHostService({ userRoot });
-
+const { profileBootstrapRoutes } = createProfileBootstrapHostService({ userRoot });
 const bridgeRoutes = [
   ...browserDiagnosticsRoutes,
   ...providerBridgeRoutes,
@@ -385,6 +386,7 @@ const bridgeRoutes = [
   ...opencodeSessionRoutes,
   ...extensionPrefsRoutes,
   ...(devExternalAgentRuntimesPanel?.devPanelRoutes ?? []),
+  ...profileBootstrapRoutes,
 ];
 
 const bridgeToken = args.get("bridge-token") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? createBridgeToken();
