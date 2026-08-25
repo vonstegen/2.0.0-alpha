@@ -1,0 +1,23 @@
+# Bench image build context exclusions. Keep this list tight; everything
+# NOT listed here ships into the image and bloats it. The bench image
+# needs the manifests under examples/addons/ and the docs/ tree so the
+# bridge can resolve addon manifests at runtime; it does NOT need
+# node_modules (npm install will rebuild inside), .git, or .worktrees.
+
+node_modules
+.git
+.gitignore
+.github
+.worktrees
+*.log
+.DS_Store
+coverage
+dist
+build
+out
+.cache
+.parcel-cache
+.turbo
+.tsbuildinfo
+.idea
+.vscode
