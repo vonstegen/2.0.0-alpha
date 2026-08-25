@@ -90,7 +90,8 @@
     async function load() {
       root.innerHTML = '<p class="meta">Loading...</p>';
       try {
-        const res = await fetch("/dev/external-agent-runtimes", { headers: { "X-ResonantOS-Bridge-Token": window.__BRIDGE_TOKEN__ || "" } });
+        const headers = window.__BRIDGE_TOKEN__ ? { "X-ResonantOS-Bridge-Token": window.__BRIDGE_TOKEN__ } : {};
+        const res = await fetch("/dev/external-agent-runtimes", { headers });
         if (!res.ok) {
           const text = await res.text();
           root.innerHTML = `<div class="err">HTTP ${res.status}: ${esc(text)}</div>`;
@@ -98,13 +99,14 @@
           return;
         }
         const data = await res.json();
+        const addons = data?.body?.addons ?? [];
         root.innerHTML = "";
-        if (!data.addons || data.addons.length === 0) {
+        if (addons.length === 0) {
           root.innerHTML = '<p class="meta">No addon manifests under examples/addons/.</p>';
         } else {
-          for (const addon of data.addons) root.appendChild(renderAddon(addon));
+          for (const addon of addons) root.appendChild(renderAddon(addon));
         }
-        meta.textContent = `generated at ${data.generatedAt} · ${data.addons.length} addon(s)`;
+        meta.textContent = `generated at ${data?.body?.generatedAt ?? "?"} · ${addons.length} addon(s)`;
       } catch (err) {
         root.innerHTML = `<div class="err">Fetch failed: ${esc(err.message)}</div>`;
         meta.textContent = `last refresh failed`;
