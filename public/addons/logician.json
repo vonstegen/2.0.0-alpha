@@ -34,7 +34,10 @@
     "supportsPrivateCredentials": false
   },
   "archiveIntegration": {
-    "readScopes": ["constitution", "protocols"],
+    "readScopes": [
+      "constitution",
+      "protocols"
+    ],
     "intakeWriteScopes": [],
     "canRequestIngest": false,
     "canWriteKnowledgePages": false
@@ -61,7 +64,10 @@
       "description": "Define when a workflow needs deterministic checks, what evidence is required, and which failure policy applies.",
       "documentPath": "docs/architecture/addon-skills/logician/VERIFICATION_POLICY_DESIGN.md",
       "invocation": "agent-suggested",
-      "requiredCapabilities": ["filesystem", "archive-read"],
+      "requiredCapabilities": [
+        "filesystem",
+        "archive-read"
+      ],
       "requiredTools": []
     }
   ],
@@ -71,7 +77,10 @@
       "name": "Policy library",
       "type": "filesystem",
       "description": "Reads reviewed policy and protocol files used to evaluate deterministic checks.",
-      "requiredCapabilities": ["filesystem", "archive-read"],
+      "requiredCapabilities": [
+        "filesystem",
+        "archive-read"
+      ],
       "configScope": "none"
     }
   ],
@@ -83,8 +92,13 @@
       "commandRef": "logician.policy_check",
       "runPolicy": "on-demand",
       "deterministic": true,
-      "requiredCapabilities": ["filesystem", "archive-read"],
-      "producesArtifacts": ["verification-report"],
+      "requiredCapabilities": [
+        "filesystem",
+        "archive-read"
+      ],
+      "producesArtifacts": [
+        "verification-report"
+      ],
       "requiresHumanApproval": false
     }
   ],
@@ -93,7 +107,10 @@
       "id": "before-task-complete-policy-check",
       "event": "before-task-complete",
       "handlerRef": "logician-policy-check",
-      "requiredCapabilities": ["filesystem", "archive-read"],
+      "requiredCapabilities": [
+        "filesystem",
+        "archive-read"
+      ],
       "failurePolicy": "block"
     }
   ],
@@ -105,6 +122,20 @@
   },
   "compatibility": {
     "shellVersion": "^0.1.0",
-    "platforms": ["macOS", "linux", "windows"]
+    "platforms": [
+      "macOS",
+      "linux",
+      "windows"
+    ]
+  },
+  "runtimeIsolation": {
+    "boundary": "host-mediated-service",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": false
+  },
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
   }
 }
