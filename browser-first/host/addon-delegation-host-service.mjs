@@ -7,13 +7,17 @@
 // required capability to a handler function the caller supplies via
 // `createAddonDelegationHostService(handlers)`.
 //
+// Routes receive three arguments from the bridge dispatch loop:
+//   1. payload        - parsed JSON body (POST) or {} (GET)
+//   2. request        - the raw Node http.IncomingMessage
+//   3. bridgeContext  - { callerId, perCallerGrants, auditLedger }
+//
 // The newest route, `POST /external-agent-runtime/delegate`, is the
-// bridge-side surface for ADR-040 §4 wire-format dispatch. It expects
-// the request to include a per-caller grant in Phase 3.5's
-// `X-ResonantOS-Bridge-Caller-Id` header (handled by `bridge-server.mjs`
-// itself); the handler reads `callerId` from the request context and
-// passes it to `dispatchExternalAgentRuntime` along with the audit
-// ledger.
+// bridge-side surface for ADR-040 §4 wire-format dispatch. It pulls
+// `callerId` / `perCallerGrants` / `auditLedger` from `bridgeContext`
+// (wired by `bridge-server.mjs` from the request's
+// `X-ResonantOS-Bridge-Caller-Id` header and the Phase 3.5 grant
+// store) and forwards them to `dispatchExternalAgentRuntime`.
 
 import { dispatchExternalAgentRuntime } from "./external-agent-runtime-dispatcher.mjs";
 
@@ -82,73 +86,7 @@ export function createAddonDelegationHostService(handlers = {}) {
         method: "POST",
         path: "/hermes/delegation/list",
         requiredCapability: "addon-runtime-read",
-        handler: required("executeHermesDelegationList"),
-      },
-      {
-        method: "POST",
-        path: "/hermes/agent/event",
-        requiredCapability: "addon-runtime-read",
-        handler: required("executeHermesAgentEvent"),
-      },
-      {
-        method: "POST",
-        path: "/hermes/agent/decision",
-        requiredCapability: "addon-runtime-read",
-        handler: required("executeHermesAgentDecision"),
-      },
-      {
-        method: "POST",
-        path: "/hermes/artifact/ingest",
-        requiredCapability: "addon-runtime-write",
-        handler: required("executeHermesArtifactIngest"),
-      },
-      {
-        method: "POST",
-        path: "/hermes/memory/capture",
-        requiredCapability: "addon-runtime-write",
-        handler: required("executeHermesMemoryCapture"),
-      },
-      {
-        method: "POST",
-        path: "/hermes/prompt-queue/enqueue",
-        requiredCapability: "addon-runtime-write",
-        handler: required("executeHermesPromptQueueEnqueue"),
-      },
-      {
-        method: "POST",
-        path: "/hermes/prompt-queue/dequeue",
-        requiredCapability: "addon-runtime-read",
-        handler: required("executeHermesPromptQueueDequeue"),
-      },
-      {
-        method: "POST",
-        path: "/hermes/prompt-queue/inspect",
-        requiredCapability: "addon-runtime-read",
-        handler: required("executeHermesPromptQueueInspect"),
-      },
-      {
-        method: "POST",
-        path: "/hermes/prompt-queue/ack",
-        requiredCapability: "addon-runtime-read",
-        handler: required("executeHermesPromptQueueAck"),
-      },
-      {
-        method: "POST",
-        path: "/hermes/prompt-queue/nack",
-        requiredCapability: "addon-runtime-read",
-        handler: required("executeHermesPromptQueueNack"),
-      },
-      {
-        method: "POST",
-        path: "/hermes/prompt-queue/complete",
-        requiredCapability: "addon-runtime-write",
-        handler: required("executeHermesPromptQueueComplete"),
-      },
-      {
-        method: "POST",
-        path: "/hermes/prompt-queue/handoff",
-        requiredCapability: "addon-runtime-write",
-        handler: required("executeHermesPromptQueueHandoff"),
+        handler: required("executeDelegationList"),
       },
       {
         method: "GET",
@@ -191,15 +129,15 @@ export function createAddonDelegationHostService(handlers = {}) {
         handler: required("executeGoalRecord"),
       },
       // ADR-040 §4 wire-format dispatch (Phase 3.5-mediated). Caller
-      // MUST send X-ResonantOS-Bridge-Caller-Id (handled by
-      // bridge-server.mjs); the per-caller grant store is queried by
-      // `dispatchExternalAgentRuntime`. Audit is recorded to whatever
-      // ledger the host wires in.
+      // MUST send X-ResonantOS-Bridge-Caller-Id; bridge-server.mjs
+      // resolves it through the Phase 3.5 grant store and forwards
+      // `{ callerId, perCallerGrants, auditLedger }` to this handler
+      // as `bridgeContext`. The dispatcher reads them.
       {
         method: "POST",
         path: "/external-agent-runtime/delegate",
         requiredCapability: "agent-delegation",
-        handler: async ({ body, callerId, perCallerGrants, auditLedger, fetchImpl }) => {
+        handler: async (body, request, bridgeContext) => {
           const addonId = body?.addonId;
           const toolName = body?.tool;
           const payload = body?.payload ?? {};
@@ -210,10 +148,9 @@ export function createAddonDelegationHostService(handlers = {}) {
             addonId,
             toolName,
             payload,
-            callerId,
-            perCallerGrants,
-            auditLedger,
-            fetchImpl,
+            callerId: bridgeContext?.callerId ?? "__anonymous__",
+            perCallerGrants: bridgeContext?.perCallerGrants ?? null,
+            auditLedger: bridgeContext?.auditLedger ?? null,
           });
           if (result.outcome === "deny") {
             const status = result.reason === "addon-not-found"
@@ -228,6 +165,65 @@ export function createAddonDelegationHostService(handlers = {}) {
             };
           }
           return { status: 200, body: { response: result.response } };
+        },
+      },
+      // Dev-only: list addon manifests discovered under examples/addons/
+      // and per-F verdict. Returns JSON; the static panel at
+      // `/dev/external-agent-runtimes/` (served by
+      // dev-external-agent-runtimes-panel.mjs) consumes this.
+      {
+        method: "GET",
+        path: "/dev/external-agent-runtimes",
+        handler: async (_body, _request, bridgeContext) => {
+          const { readdirSync, readFileSync } = await import("node:fs");
+          const { join } = await import("node:path");
+
+          const repoRoot = bridgeContext?.repoRoot ?? process.env.RESONANTOS_REPO_ROOT;
+          if (typeof repoRoot !== "string") {
+            return { status: 503, body: { error: { message: "RESONANTOS_REPO_ROOT is not set; dev panel cannot enumerate addon manifests." } } };
+          }
+
+          const examplesDir = join(repoRoot, "examples", "addons");
+          let fileNames = [];
+          try {
+            fileNames = readdirSync(examplesDir).filter((n) => n.endsWith(".json"));
+          } catch (err) {
+            return { status: 500, body: { error: { message: `failed to read ${examplesDir}: ${err.message}` } } };
+          }
+
+          const addons = [];
+          for (const fileName of fileNames) {
+            const absPath = join(examplesDir, fileName);
+            let manifest;
+            try {
+              manifest = JSON.parse(readFileSync(absPath, "utf8"));
+            } catch (err) {
+              addons.push({ fileName, error: `parse failed: ${err.message}` });
+              continue;
+            }
+            const capabilities = new Set((manifest.requestedCapabilities ?? []).map((c) => c.capability));
+            const hasTrigger = capabilities.has("providers") && capabilities.has("agent-delegation");
+            const tools = (manifest.tools ?? []).map((t) => t.name);
+            addons.push({
+              fileName,
+              id: manifest.id,
+              name: manifest.name,
+              version: manifest.version,
+              runtimeType: manifest.runtimeType,
+              serviceEntrypoint: manifest.service?.entrypoint,
+              validationNote: "use npm run deepseek-harness:smoke for validation + F-cases (this panel only enumerates manifests; running .ts validators in the bridge requires a tsx loader)",
+              hasTrigger,
+              tools,
+            });
+          }
+          return {
+            status: 200,
+            body: {
+              addons,
+              panelPath: "/dev/external-agent-runtimes/",
+              generatedAt: new Date().toISOString(),
+            },
+          };
         },
       },
     ],

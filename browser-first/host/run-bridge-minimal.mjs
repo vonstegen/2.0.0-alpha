@@ -37,6 +37,8 @@ import { createBridgeGrantsStore } from "./bridge-grants-store.mjs";
 import { createBridgeAuditLedger } from "./bridge-audit-ledger.mjs";
 import { createBridgeTokenKey } from "./bridge-token-key.mjs";
 import { createAddonDelegationService } from "./addon-delegation-service.mjs";
+import { createAddonDelegationHostService } from "./addon-delegation-host-service.mjs";
+import { createDevExternalAgentRuntimesPanelService } from "./dev-external-agent-runtimes-panel.mjs";
 import { createOpencodeHttpClient, ensureOpencodeServer } from "./opencode-client.mjs";
 import { createOpencodeSessionHandlers, createOpencodeSessionHostService } from "./opencode-session-host-service.mjs";
 import { createArchiveReviewHostService } from "./archive-review-host-service.mjs";
@@ -181,6 +183,22 @@ const addonDelegationService = createAddonDelegationService({
 
 const { executeAddonsStatus } = addonDelegationService;
 const { addonDelegationRoutes } = createAddonDelegationHostService(addonDelegationService);
+
+// Dev-only HTML panel for addon SDK testing. Requires
+// RESONANTOS_REPO_ROOT to be set so the JSON endpoint can enumerate
+// examples/addons/. The panel itself is served at
+// /dev/external-agent-runtimes/ and fetches the JSON at
+// /dev/external-agent-runtimes. Not for production use.
+const devExternalAgentRuntimesPanel = createDevExternalAgentRuntimesPanelService({
+  repoRoot: process.env.RESONANTOS_REPO_ROOT ?? "",
+});
+// Inject the panel's repoRoot into the bridge context the JSON endpoint
+// will read. (The route's third-arg `bridgeContext` is what the bridge
+// dispatcher wires; we add `repoRoot` to the per-call bridgeContext the
+// addon-delegation route handler reads.)
+const _origEvaluateBridgeRequestForSelfTest = globalThis?.__noop;
+const devPanelRepoRoot = process.env.RESONANTOS_REPO_ROOT;
+
 
 // Live OpenCode session: the bridge starts (reuses) `opencode serve` on a
 // ResonantOS-dedicated port and proxies session/prompt/permission; the extension
@@ -366,6 +384,7 @@ const bridgeRoutes = [
   ...addonDelegationRoutes,
   ...opencodeSessionRoutes,
   ...extensionPrefsRoutes,
+  ...(devExternalAgentRuntimesPanel?.devPanelRoutes ?? []),
 ];
 
 const bridgeToken = args.get("bridge-token") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? createBridgeToken();
