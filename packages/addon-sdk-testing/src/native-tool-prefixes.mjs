@@ -1,28 +1,22 @@
 // Intent citation: docs/architecture/ADR-050-native-and-addon-tool-tiers.md
 //
-// Single source of truth for the native-tool reserved prefixes and
-// reserved literals that the addon manifest validator forbids when
-// declaring an `AddOnToolDefinition.name`. The bridge, the validator,
-// and any future tooling share this list.
+// Single source of truth for the native-tool reserved surface that the
+// addon manifest validator forbids when declaring an
+// `AddOnToolDefinition.name`. The bridge, the validator, and any
+// future tooling share this list.
 //
 // Categories of rejection (per ADR-050 §"Namespacing"):
-//   1. Direct shadow:      name === <native capability>
-//   2. Dotted-prefix shadow: name starts with <reserved prefix> + "."
-//   3. Forbidden literal:   name === one of the reserved literals
-
-/** Native-tool namespace prefixes (each implicitly followed by "."). */
-export const NATIVE_TOOL_PREFIXES = Object.freeze([
-  "research",
-  "browser",
-  "filesystem",
-  "process",
-  "provider",
-  "archive",
-  "delegation",
-  "addon",
-  "runner",
-  "compute",
-]);
+//   1. Direct shadow:  name === <native capability>
+//   2. Reserved literal: name === one of the short, too-dangerous
+//                        literals (e.g. "fs", "shell", "exec",
+//                        "wallet").
+//
+// Note: ADR-050 does NOT apply a dotted-prefix shadow rule today.
+// Addons may freely name tools `browser.start`, `memory.search`,
+// `obsidian.write_note`, etc., as long as those names don't equal a
+// native capability or a reserved literal. The risk of confusion
+// with future native tools is mitigated by the ADR-listed prefixes
+// in the docs and by future ADRs that grow the union.
 
 /**
  * Native-tool capabilities (closed union; mirrors
@@ -71,19 +65,17 @@ export const NATIVE_TOOL_CAPABILITIES = Object.freeze([
 ]);
 
 /**
- * Reserved literals — short names too dangerous to alias even though
- * they don't directly collide with a current native-tool name.
+ * Reserved literals — short, generic names too dangerous to alias,
+ * independent of the closed capability union above. An addon cannot
+ * declare a tool literally named any of these. Picked to reserve
+ * the obvious future-native leaf names without blocking
+ * dotted-prefix usage in the meantime.
  */
 export const NATIVE_TOOL_RESERVED_LITERALS = Object.freeze([
   "fs",
   "shell",
   "exec",
-  "browser",
   "wallet",
-  "filesystem",
-  "process",
-  "addon",
-  "runner",
 ]);
 
 /**
@@ -91,19 +83,14 @@ export const NATIVE_TOOL_RESERVED_LITERALS = Object.freeze([
  * reserved surface. Pure, no I/O.
  *
  * @param {string} toolName
- * @returns {{kind: string} & {toolName: string, nativeCapability?: string, prefix?: string}}
+ * @returns {{kind: string, toolName: string, nativeCapability?: string}}
  */
 export function classifyAddOnToolName(toolName) {
   if (typeof toolName !== "string" || toolName.length === 0) {
-    return { kind: "none", toolName };
+    return { kind: "none", toolName: "" };
   }
   if (NATIVE_TOOL_CAPABILITIES.includes(toolName)) {
     return { kind: "direct-shadow", toolName, nativeCapability: toolName };
-  }
-  for (const prefix of NATIVE_TOOL_PREFIXES) {
-    if (toolName === prefix || toolName.startsWith(`${prefix}.`)) {
-      return { kind: "prefix-shadow", toolName, prefix };
-    }
   }
   if (NATIVE_TOOL_RESERVED_LITERALS.includes(toolName)) {
     return { kind: "reserved-literal", toolName };
