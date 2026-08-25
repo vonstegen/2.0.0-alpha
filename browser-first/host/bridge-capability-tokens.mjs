@@ -44,9 +44,9 @@ export const BRIDGE_CAPABILITY_TOKEN_SPECS = Object.freeze([
   { capability: "addon-record-read", arg: "addon-record-read-token", env: "RESONANTOS_BROWSER_FIRST_ADDON_RECORD_READ_TOKEN" },
   { capability: "addon-record-write", arg: "addon-record-write-token", env: "RESONANTOS_BROWSER_FIRST_ADDON_RECORD_WRITE_TOKEN" },
   { capability: "extension-prefs-write", arg: "extension-prefs-write-token", env: "RESONANTOS_BROWSER_FIRST_EXTENSION_PREFS_WRITE_TOKEN" },
+  { capability: "agent-delegation", arg: "agent-delegation-token", env: "RESONANTOS_BROWSER_FIRST_AGENT_DELEGATION_TOKEN" },
 ]);
 
-// The canonical capability names, in declaration order.
 export const BRIDGE_CAPABILITIES = Object.freeze(
   BRIDGE_CAPABILITY_TOKEN_SPECS.map((spec) => spec.capability),
 );
