@@ -28,7 +28,7 @@ export type IsolationCheckResult =
   | { valid: true; workerKey: WorkerKey }
   | { valid: false; errors: IsolationCheckError[] };
 
-const HOST_MEDIATED_BOUNDARIES: Record<RuntimeIsolationBoundary, true> = {
+const HOST_MEDIATED_BOUNDARIES: Record<RuntimeIsolationBoundary, boolean> = {
   "host-mediated-service": true,
   "host-mediated-agent": true,
   "host-mediated-channel": true,
@@ -36,7 +36,7 @@ const HOST_MEDIATED_BOUNDARIES: Record<RuntimeIsolationBoundary, true> = {
   "embedded-surface": false,
 };
 
-const NODE_ONLY_RUNTIME_TYPES: Record<AddOnRuntimeType, true> = {
+const NODE_ONLY_RUNTIME_TYPES: Record<AddOnRuntimeType, boolean> = {
   "agent-addon": true,
   "channel-addon": true,
   "local-service": true,
@@ -44,7 +44,7 @@ const NODE_ONLY_RUNTIME_TYPES: Record<AddOnRuntimeType, true> = {
   "embedded-module": false,
 };
 
-const UI_RUNTIME_TYPES: Record<AddOnRuntimeType, true> = {
+const UI_RUNTIME_TYPES: Record<AddOnRuntimeType, boolean> = {
   "ui-module": true,
   "embedded-module": true,
   "agent-addon": false,
