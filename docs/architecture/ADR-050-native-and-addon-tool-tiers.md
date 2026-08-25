@@ -86,30 +86,48 @@ landing an ADR. This is the same posture as `Capability`.
 
 Add-on tool names live in the addon's `tools: AddOnToolDefinition[]`
 array. Each name is a free-form `string` fielded by the addon author,
-but **collides with native names** in three documented cases:
+but **collides with the native surface** in two documented cases:
 
 1. **Direct shadow.** `addon.tools[*].name === <native capability>`.
-2. **Dotted-prefix shadow.** `addon.tools[*].name` starts with a
-   reserved native prefix followed by `.` (e.g. `"filesystem.delete"`
-   shadows the `filesystem.*` namespace).
-3. **Forbidden literals.** A small set of literal names that are too
+   Example: an addon declaring `tools[*].name = "filesystem.read"`
+   shadows the host-owned `filesystem.read` native capability and
+   would confuse both audit and capability scoping.
+2. **Reserved literals.** A small set of literal names that are too
    likely to be picked by accident and too dangerous to alias:
-   `"fs"`, `"shell"`, `"exec"`, `"browser"`, `"wallet"`,
-   `"filesystem"`, `"process"`, `"addon"` (literal), `"runner"`.
+   `"fs"`, `"shell"`, `"exec"`, `"wallet"`.
 
-The validator MUST reject categories 1 and 2 with error code
-`tool-name-collides-with-native` and category 3 with `tool-name-reserved`.
-This rule is **not implemented yet**; it is a follow-up to this ADR
-that the next validator PR carries.
+The validator MUST reject category 1 with error code
+`tool-name-collides-with-native` and category 2 with
+`tool-name-reserved`. This rule is implemented in
+`src/sdk/addons/validation.ts` and operates against the
+`packages/addon-sdk-testing/src/native-tool-prefixes.mjs` shared
+list. The validator integration test suite covers each branch
+(direct-shadow, reserved-literal, allowed-prefix-similar
+names).
+The list of native capabilities and reserved literals is exposed as
+a single module
+(`packages/addon-sdk-testing/src/native-tool-prefixes.mjs`) so the
+validator, the bridge, and any future tooling share one source of
+truth. Native-tool additions require the same union edit + ADR that
+adding a native tool does.
 
-The list of reserved native prefixes and reserved literals is
-exposed as a single module (`packages/addon-sdk-testing/src/native-tool-prefixes.mjs`
-or `.ts`) so the validator, the bridge, and any future tooling
-share one source of truth. Native-tool prefix additions require the
-same union edit + ADR that adding a native tool does.
+**Out of scope today:** a dotted-prefix shadow rule (e.g. forbidding
+`"browser.start"` because the future might add a `browser.start`
+native tool) is intentionally NOT enforced. The risk of future
+native tools growing into an addon's existing prefix is mitigated
+by:
+
+- The closed `NativeToolCapability` union being reviewed per ADR;
+- ADR-018 §"Capabilities" requiring every native capability to
+  appear with an explicit union edit, not silently; and
+- A future ADR may add a stricter prefix-shadow check if confusion
+  becomes a real problem in the field.
+
+Until then, addon tools that share a prefix with a future native
+tool need a follow-up rename when the native capability is
+introduced.
 
 ### Add-on workspace / surface names
-
 Surface names (`AddOnSurface.id`) and grant preset names
 (`AddOnGrantPreset.id`) follow the same collision rule today by
 virtue of unique-id checks; this ADR does not change them but
@@ -168,21 +186,27 @@ not by addon behavior.
 ## Validation
 
 - `NativeToolCapability` is unchanged; this ADR documents it.
-- `AddOnToolDefinition.name` collision check (categories 1 + 2 + 3
-  above) is a follow-up PR; until then, the validator accepts any
-  non-empty string. **Land a tracking issue.**
-- Audit ledger row format is documented but not yet enforced; the
-  `bridge-audit-ledger.mjs` already has the column shape.
-- vitest: every prior test stays green. A new
+- `AddOnToolDefinition.name` collision check (categories 1 + 2 above)
+  is **implemented** as of the same commit that lands this ADR's
+  validator integration. The shared list lives in
+  `packages/addon-sdk-testing/src/native-tool-prefixes.mjs`.
+- vitest: every prior test stays green (543/543). A new
   `packages/addon-sdk-testing/test/native-tool-prefixes.test.ts`
   exercises the reserved-prefix + reserved-literal list against
-  curated declarations.
+  curated declarations. A new
+  `packages/addon-sdk-testing/test/native-tool-validator-integration.test.ts`
+  walks every bundled addon manifest through the production
+  validator and asserts none of them trip the new error codes; an
+  additional case asserts a synthetic fixture that *does* use
+  `tools[*].name = "filesystem.read"` is rejected with the
+  `tool-name-collides-with-native` error code.
 
 ## Open work (delegated to follow-up)
 
-- **Reserved-prefix enforcement** in `validateAddOnManifest`. Two
-  new error codes: `tool-name-collides-with-native`,
-  `tool-name-reserved`. One validator PR; one test PR.
+- **DONE: Reserved-prefix / reserved-literal enforcement.** Two new
+  error codes (`tool-name-collides-with-native`,
+  `tool-name-reserved`) live in `validateAddOnManifest`. Both the
+  unit tests and the bundled-addon integration test pass.
 - **Native tool executor.** A separate ADR lands when the executor
   is wired into the bridge dispatcher (today: nothing; the slot is
   empty per ADR-015 §"Native Tool Fabric").
@@ -190,11 +214,13 @@ not by addon behavior.
   addon-delegation step; a follow-up confirms the
   `bridgedFrom` / `bridgedTo` fields land as separate columns once
   any native tool is actually invoked.
+- **Dotted-prefix shadow rule.** Out of scope today; a future ADR
+  may add it if confusion becomes a real problem in the field (see
+  "Namespacing" above).
 - **Native tool authorization surfaces.** When the executor lands,
   the host service contract that gates per-call authorization (which
   addons may call which native tools, with which scopes) lands in
   a separate ADR.
-
 ## Rules
 
 - Native tool names = the `NativeToolCapability` union; closed,

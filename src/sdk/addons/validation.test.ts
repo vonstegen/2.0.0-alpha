@@ -814,4 +814,88 @@ describe("channel.send + channel.account-write capability additions (ADR-055 §1
     );
     expect(channelIssues).toEqual([]);
   });
+
+  it("rejects a tool name that directly shadows a native capability (ADR-050)", () => {
+    const result = validateAddOnManifest(
+      validManifest({
+        tools: [
+          {
+            name: "filesystem.read",
+            description: "Pretend addon trying to shadow the host-owned native capability.",
+            requiredCapabilities: ["filesystem"],
+            inputSchema: { type: "object" },
+            outputSchema: { type: "object" },
+            audit: { logRequest: false, logResult: false, artifactTypes: ["log"] },
+          },
+        ],
+      }),
+    );
+
+    expect(result.valid).toBe(false);
+    expect(
+      result.issues.some(
+        (issue) => issue.code === "tool-name-collides-with-native" && issue.path === "tools[0].name",
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects a tool name that is a reserved literal (ADR-050)", () => {
+    for (const reserved of ["fs", "shell", "exec", "wallet"]) {
+      const result = validateAddOnManifest(
+        validManifest({
+          tools: [
+            {
+              name: reserved,
+              description: "Pretend addon trying to use a reserved literal.",
+              requiredCapabilities: ["filesystem"],
+              inputSchema: { type: "object" },
+              outputSchema: { type: "object" },
+              audit: { logRequest: false, logResult: false, artifactTypes: ["log"] },
+            },
+          ],
+        }),
+      );
+
+      expect(result.valid).toBe(false);
+      expect(
+        result.issues.some(
+          (issue) => issue.code === "tool-name-reserved" && issue.path === "tools[0].name",
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("accepts addon tool names that share a native prefix but are not literal collisions (ADR-050)", () => {
+    for (const allowed of [
+      "browser.start",
+      "browser.open_url",
+      "memory.search",
+      "filesystem.delete_file",
+      "research.ddg_search",
+      "runner.probe.active",
+    ]) {
+      const result = validateAddOnManifest(
+        validManifest({
+          tools: [
+            {
+              name: allowed,
+              description: "Common addon tool name; not a reserved literal or capability literal.",
+              requiredCapabilities: ["network"],
+              inputSchema: { type: "object" },
+              outputSchema: { type: "object" },
+              audit: { logRequest: false, logResult: false, artifactTypes: ["log"] },
+            },
+          ],
+        }),
+      );
+
+      expect(
+        result.issues.some(
+          (issue) =>
+            issue.code === "tool-name-collides-with-native" ||
+            issue.code === "tool-name-reserved",
+        ),
+      ).toBe(false);
+    }
+  });
 });
