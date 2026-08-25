@@ -1161,13 +1161,28 @@ export async function evaluateBridgeRequestForSelfTest({
     }
     if (!isAuthorizedBridgeRequest(request, bridgeToken)) {
       // Dev-panel bypass: requests to /dev/external-agent-runtimes* from
-      // loopback are accepted without a token so a developer can open
-      // the panel in a browser tab. The actual dispatcher route still
-      // requires its own capability token, so this does not weaken the
-      // bridge.
+      // any local client are accepted without a token so a developer can
+      // open the panel in a browser tab. The actual dispatcher route
+      // still requires its own capability token, so this does not weaken
+      // the bridge.
       const isDevPanelPath = (url ?? "").startsWith("/dev/external-agent-runtimes");
-      const isLoopback = remoteAddress === "127.0.0.1" || remoteAddress === "::1" || remoteAddress === "::ffff:127.0.0.1";
-      if (!(isDevPanelPath && isLoopback)) {
+      // Treat IPv4 loopback, IPv6 loopback, IPv4-mapped IPv6 loopback,
+      // and any private RFC1918 range (10/8, 172.16/12, 192.168/16) as
+      // local. This lets the panel load from a Chrome tab on the same
+      // machine regardless of how the OS resolves the hostname.
+      const isLocal = (() => {
+        if (remoteAddress === "127.0.0.1" || remoteAddress === "::1" || remoteAddress === "::ffff:127.0.0.1") return true;
+        const m = remoteAddress.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+        const v4 = m ? m[1] : remoteAddress;
+        if (!/^\d+\.\d+\.\d+\.\d+$/.test(v4)) return false;
+        const parts = v4.split(".").map(Number);
+        if (parts[0] === 127) return true;
+        if (parts[0] === 10) return true;
+        if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+        if (parts[0] === 192 && parts[1] === 168) return true;
+        return false;
+      })();
+      if (!(isDevPanelPath && isLocal)) {
         emitDenied("bridge-token", 401);
         return { status: 401, payload: { ok: false, error: "Unauthorized browser-first bridge request." } };
       }
