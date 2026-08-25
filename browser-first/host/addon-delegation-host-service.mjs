@@ -19,7 +19,10 @@
 // `X-ResonantOS-Bridge-Caller-Id` header and the Phase 3.5 grant
 // store) and forwards them to `dispatchExternalAgentRuntime`.
 
+
 import { dispatchExternalAgentRuntime } from "./external-agent-runtime-dispatcher.mjs";
+
+import { addonTrustAndIsolationSnapshot } from "./dev-panel-addon-snapshot.mjs";
 
 // The dispatcher's checkToolGrants reads perCallerGrants as a Map:
 //   perCallerGrants.get(callerId).capabilities.get(capability)
@@ -226,6 +229,7 @@ export function createAddonDelegationHostService(handlers = {}) {
             const capabilities = new Set((manifest.requestedCapabilities ?? []).map((c) => c.capability));
             const hasTrigger = capabilities.has("providers") && capabilities.has("agent-delegation");
             const tools = (manifest.tools ?? []).map((t) => t.name);
+            const snapshot = addonTrustAndIsolationSnapshot(manifest);
             addons.push({
               fileName,
               id: manifest.id,
@@ -233,6 +237,12 @@ export function createAddonDelegationHostService(handlers = {}) {
               version: manifest.version,
               runtimeType: manifest.runtimeType,
               serviceEntrypoint: manifest.service?.entrypoint,
+              trustTier: snapshot.trustTier,
+              publisher: snapshot.publisher,
+              publisherNote: snapshot.publisherNote,
+              workerKey: snapshot.workerKey,
+              isolationBoundary: snapshot.boundary,
+              hostMediated: snapshot.hostMediated,
               validationNote: "use npm run deepseek-harness:smoke for validation + F-cases (this panel only enumerates manifests; running .ts validators in the bridge requires a tsx loader)",
               hasTrigger,
               tools,
