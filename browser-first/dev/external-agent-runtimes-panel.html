@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>External Agent Runtimes — Dev Panel</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #0e1116; --fg: #e6edf3; --muted: #8b949e; --ok: #3fb950; --fail: #f85149; --na: #d29922; --card: #161b22; --border: #30363d; }
+    body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); margin: 0; padding: 24px; }
+    h1 { margin: 0 0 4px 0; font-size: 22px; }
+    .subtitle { color: var(--muted); margin: 0 0 24px 0; }
+    .controls { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+    button { font: inherit; padding: 6px 12px; background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+    button:hover { background: var(--border); }
+    .meta { color: var(--muted); font-size: 12px; }
+    .addon { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    .addon h2 { margin: 0 0 4px 0; font-size: 16px; }
+    .addon .row { display: grid; grid-template-columns: 160px 1fr; gap: 8px; margin: 4px 0; font-size: 13px; }
+    .addon .row .k { color: var(--muted); }
+    .addon .row .v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+    .trigger { color: var(--ok); }
+    .no-trigger { color: var(--muted); }
+    .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    code { background: rgba(110, 118, 129, 0.4); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+    .err { color: var(--fail); margin: 4px 0; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>External Agent Runtimes</h1>
+  <p class="subtitle">Dev-only panel. Enumerates <code>examples/addons/*.json</code> as discovered by the running bridge. Run <code>npm run deepseek-harness:smoke</code> for F1–F10 boundary-contract verdicts.</p>
+  <div class="controls">
+    <button id="refresh">Refresh</button>
+    <span class="meta" id="meta"></span>
+  </div>
+  <div id="root"></div>
+
+  <script>
+    const root = document.getElementById("root");
+    const meta = document.getElementById("meta");
+    const refresh = document.getElementById("refresh");
+
+    function esc(s) {
+      return String(s ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+    }
+
+    function renderAddon(addon) {
+      const card = document.createElement("div");
+      card.className = "addon";
+
+      const h2 = document.createElement("h2");
+      h2.textContent = addon.name || addon.id || addon.fileName;
+      card.appendChild(h2);
+
+      const fileMeta = document.createElement("div");
+      fileMeta.className = "meta";
+      fileMeta.textContent = `${addon.fileName}${addon.version ? " · v" + addon.version : ""}`;
+      card.appendChild(fileMeta);
+
+      if (addon.error) {
+        const err = document.createElement("div");
+        err.className = "err";
+        err.textContent = addon.error;
+        card.appendChild(err);
+        return card;
+      }
+
+      const rows = [
+        ["id", addon.id],
+        ["runtimeType", addon.runtimeType],
+        ["service.entrypoint", addon.serviceEntrypoint || "(none)"],
+        ["§3 trigger", addon.hasTrigger ? "providers + agent-delegation" : "—"],
+        ["tools", (addon.tools || []).join(", ") || "—"],
+      ];
+      for (const [k, v] of rows) {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.innerHTML = `<span class="k">${esc(k)}</span><span class="v">${esc(v)}</span>`;
+        card.appendChild(row);
+      }
+
+      if (addon.validationNote) {
+        const note = document.createElement("div");
+        note.className = "note";
+        note.textContent = addon.validationNote;
+        card.appendChild(note);
+      }
+
+      return card;
+    }
+
+    async function load() {
+      root.innerHTML = '<p class="meta">Loading...</p>';
+      try {
+        const res = await fetch("/dev/external-agent-runtimes", { headers: { "X-ResonantOS-Bridge-Token": window.__BRIDGE_TOKEN__ || "" } });
+        if (!res.ok) {
+          const text = await res.text();
+          root.innerHTML = `<div class="err">HTTP ${res.status}: ${esc(text)}</div>`;
+          meta.textContent = `last refresh failed`;
+          return;
+        }
+        const data = await res.json();
+        root.innerHTML = "";
+        if (!data.addons || data.addons.length === 0) {
+          root.innerHTML = '<p class="meta">No addon manifests under examples/addons/.</p>';
+        } else {
+          for (const addon of data.addons) root.appendChild(renderAddon(addon));
+        }
+        meta.textContent = `generated at ${data.generatedAt} · ${data.addons.length} addon(s)`;
+      } catch (err) {
+        root.innerHTML = `<div class="err">Fetch failed: ${esc(err.message)}</div>`;
+        meta.textContent = `last refresh failed`;
+      }
+    }
+
+    refresh.addEventListener("click", load);
+    load();
+    setInterval(load, 15000);
+  </script>
+</body>
+</html>
