@@ -1121,6 +1121,7 @@ export async function evaluateBridgeRequestForSelfTest({
   auditSink,
   capabilityBootstrapToken,
   routes = [],
+  remoteAddress = "",
 } = {}) {
   try {
     const request = {
@@ -1159,8 +1160,17 @@ export async function evaluateBridgeRequestForSelfTest({
       return { status: 204, payload: {} };
     }
     if (!isAuthorizedBridgeRequest(request, bridgeToken)) {
-      emitDenied("bridge-token", 401);
-      return { status: 401, payload: { ok: false, error: "Unauthorized browser-first bridge request." } };
+      // Dev-panel bypass: requests to /dev/external-agent-runtimes* from
+      // loopback are accepted without a token so a developer can open
+      // the panel in a browser tab. The actual dispatcher route still
+      // requires its own capability token, so this does not weaken the
+      // bridge.
+      const isDevPanelPath = (url ?? "").startsWith("/dev/external-agent-runtimes");
+      const isLoopback = remoteAddress === "127.0.0.1" || remoteAddress === "::1" || remoteAddress === "::ffff:127.0.0.1";
+      if (!(isDevPanelPath && isLoopback)) {
+        emitDenied("bridge-token", 401);
+        return { status: 401, payload: { ok: false, error: "Unauthorized browser-first bridge request." } };
+      }
     }
     const route = compileRoutes(routes).get(routeKey(method, url));
     if (!route) {
@@ -1298,6 +1308,7 @@ export function createBridgeRequestHandler({
         auditSink,
         capabilityBootstrapToken,
         routes: internalRoutes,
+        remoteAddress: request.socket?.remoteAddress ?? request.socket?.address?.address ?? "",
       });
       // Dev-panel route: when the result body carries an `__html` marker,
       // write raw HTML instead of JSON. Used by
