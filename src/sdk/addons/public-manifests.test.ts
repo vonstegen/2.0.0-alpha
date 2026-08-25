@@ -77,7 +77,7 @@ describe("bundled add-on manifests", () => {
 
   it("keeps the reference third-party memory add-on manifest sideloadable", () => {
     const manifest = JSON.parse(
-      readFileSync(resolve(process.cwd(), "examples", "addons", "reference-memory.json"), "utf8"),
+      readFileSync(resolve(process.cwd(), "examples", "addons", "addon.reference-memory.json"), "utf8"),
     ) as unknown;
 
     const validation = validateAddOnManifest(manifest, { source: "sideload" });
@@ -87,7 +87,7 @@ describe("bundled add-on manifests", () => {
 
   it("keeps the experimental RecursiveMAS add-on manifest sideloadable", () => {
     const manifest = JSON.parse(
-      readFileSync(resolve(process.cwd(), "examples", "addons", "recursive-mas.json"), "utf8"),
+      readFileSync(resolve(process.cwd(), "examples", "addons", "addon.recursive-mas.json"), "utf8"),
     ) as unknown;
 
     const validation = validateAddOnManifest(manifest, { source: "sideload" });
