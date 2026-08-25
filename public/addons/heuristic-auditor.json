@@ -2,6 +2,7 @@
   "id": "addon.heuristic-auditor",
   "name": "Heuristic Auditor",
   "version": "0.1.0",
+  "publisher": "local",
   "author": "Resonant Alpha",
   "category": "security",
   "description": "Post-response philosophical heuristic violation detector. After every agent response, sends the human message and AI reply to a secondary model for evaluation against 7 behavioral heuristics. Writes violations to HEURISTIC-AUDIT.md and sets an augmentor drift flag when relevant heuristics are breached.",

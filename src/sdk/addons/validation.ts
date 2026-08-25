@@ -108,6 +108,7 @@ const slotBackingCapability: Record<SystemSlotId, Capability> = {
 };
 
 const addonIdPattern = /^addon\.[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)*$/;
+const publisherPattern = /^[a-z0-9][a-z0-9._-]{0,62}$/;
 const semanticVersionPattern = /^\d+\.\d+\.\d+(?:[-+][a-z0-9.-]+)?$/i;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -246,7 +247,7 @@ export const validateAddOnManifest = (
     };
   }
 
-  for (const field of ["id", "name", "version", "author", "category", "description", "runtimeType"]) {
+  for (const field of ["id", "name", "version", "author", "publisher", "category", "description", "runtimeType"]) {
     validateString(issues, candidate, field);
   }
 
@@ -257,6 +258,11 @@ export const validateAddOnManifest = (
   if (isString(candidate.version) && !semanticVersionPattern.test(candidate.version)) {
     pushIssue(issues, "error", "invalid-version", "version", "Add-on version must be semantic version-like, for example 0.1.0.");
   }
+  const manifestPublisher = isString(candidate.publisher) ? candidate.publisher : undefined;
+  if (manifestPublisher && !publisherPattern.test(manifestPublisher)) {
+    pushIssue(issues, "error", "invalid-publisher", "publisher", "Add-on publisher must match /^[a-z0-9][a-z0-9._-]{0,62}$/.");
+  }
+
   validateEnum(issues, candidate.category, categories, "category");
   validateEnum(issues, candidate.runtimeType, runtimeTypes, "runtimeType");
 

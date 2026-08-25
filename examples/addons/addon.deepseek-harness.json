@@ -2,6 +2,7 @@
   "id": "addon.deepseek-harness",
   "name": "DeepSeek Harness",
   "version": "0.1.0",
+  "publisher": "local",
   "author": "DeepSeek Harness Working Group",
   "category": "agent",
   "sdkVersion": "0.1.0",
