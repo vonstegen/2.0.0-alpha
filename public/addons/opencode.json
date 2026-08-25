@@ -54,14 +54,26 @@
     }
   ],
   "providerRequirements": {
-    "sharedProfiles": ["gx10-local-llama", "shared-local", "shared-minimax"],
+    "sharedProfiles": [
+      "gx10-local-llama",
+      "shared-local",
+      "shared-minimax"
+    ],
     "supportsPrivateCredentials": true,
-    "preferredRuntimeKinds": ["local", "remote-user-owned", "cloud"],
+    "preferredRuntimeKinds": [
+      "local",
+      "remote-user-owned",
+      "cloud"
+    ],
     "fallbackPolicyId": "coding-default"
   },
   "archiveIntegration": {
-    "readScopes": ["living-archive/context"],
-    "intakeWriteScopes": ["LivingArchive/INTAKE/coding"],
+    "readScopes": [
+      "living-archive/context"
+    ],
+    "intakeWriteScopes": [
+      "LivingArchive/INTAKE/coding"
+    ],
     "canRequestIngest": true,
     "canWriteKnowledgePages": false
   },
@@ -77,8 +89,19 @@
   },
   "delegation": {
     "acceptsTasks": true,
-    "taskTypes": ["code-change", "bug-fix", "system-diagnosis"],
-    "artifactReturnTypes": ["summary", "diff", "file-list", "log", "diagnostic-report", "verification-report"],
+    "taskTypes": [
+      "code-change",
+      "bug-fix",
+      "system-diagnosis"
+    ],
+    "artifactReturnTypes": [
+      "summary",
+      "diff",
+      "file-list",
+      "log",
+      "diagnostic-report",
+      "verification-report"
+    ],
     "defaultTargetRuntime": "embedded-workspace",
     "requiresHumanApprovalBeforeExecution": true,
     "notes": [
@@ -108,16 +131,30 @@
       "description": "Prepare task scope, workspace path, verification expectations, and artifact return rules for OpenCode.",
       "documentPath": "docs/architecture/addon-skills/opencode/CODING_HANDOFF.md",
       "invocation": "agent-suggested",
-      "requiredCapabilities": ["filesystem", "shell", "providers", "archive-read"],
-      "requiredTools": ["opencode.launch_workspace"]
+      "requiredCapabilities": [
+        "filesystem",
+        "shell",
+        "providers",
+        "archive-read"
+      ],
+      "requiredTools": [
+        "opencode.launch_workspace"
+      ]
     }
   ],
   "augmentorSkills": [
     {
       "documentPath": "docs/architecture/addon-skills/opencode/CODING_HANDOFF.md",
       "objective": "Delegate bounded coding, debugging, refactor, and coding-workspace diagnosis tasks to OpenCode under ResonantOS governance.",
-      "requiredCapabilities": ["filesystem", "shell", "providers", "ui-embedding"],
-      "requiredTools": ["opencode.launch_workspace"],
+      "requiredCapabilities": [
+        "filesystem",
+        "shell",
+        "providers",
+        "ui-embedding"
+      ],
+      "requiredTools": [
+        "opencode.launch_workspace"
+      ],
       "workflowPhases": [
         "capture task scope",
         "create OpenCode delegation packet",
@@ -130,8 +167,18 @@
         "OpenCode must return changed files, commands run, verification evidence, and residual risks before completion.",
         "Augmentor must not claim opencode.launch_workspace executed unless ResonantOS returns a concrete host result."
       ],
-      "expectedInputs": ["human coding task", "workspace path or bounded files in scope"],
-      "expectedOutputs": ["delegation packet", "TASK.md", "diff", "file list", "command log", "verification report"],
+      "expectedInputs": [
+        "human coding task",
+        "workspace path or bounded files in scope"
+      ],
+      "expectedOutputs": [
+        "delegation packet",
+        "TASK.md",
+        "diff",
+        "file list",
+        "command log",
+        "verification report"
+      ],
       "producesDelegationPackets": true,
       "auditLogRequired": true
     }
@@ -142,7 +189,11 @@
       "name": "OpenCode local service",
       "type": "local-runtime",
       "description": "Starts and embeds an OpenCode service for a selected local workspace.",
-      "requiredCapabilities": ["filesystem", "shell", "ui-embedding"],
+      "requiredCapabilities": [
+        "filesystem",
+        "shell",
+        "ui-embedding"
+      ],
       "configScope": "user-config"
     }
   ],
@@ -154,8 +205,15 @@
       "commandRef": "opencode.launch_workspace",
       "runPolicy": "preflight",
       "deterministic": true,
-      "requiredCapabilities": ["filesystem", "shell", "ui-embedding"],
-      "producesArtifacts": ["diagnostic-report", "verification-report"],
+      "requiredCapabilities": [
+        "filesystem",
+        "shell",
+        "ui-embedding"
+      ],
+      "producesArtifacts": [
+        "diagnostic-report",
+        "verification-report"
+      ],
       "requiresHumanApproval": false
     }
   ],
@@ -164,7 +222,11 @@
       "id": "opencode-before-task-complete",
       "event": "before-task-complete",
       "handlerRef": "opencode-workspace-preflight",
-      "requiredCapabilities": ["filesystem", "shell", "ui-embedding"],
+      "requiredCapabilities": [
+        "filesystem",
+        "shell",
+        "ui-embedding"
+      ],
       "failurePolicy": "block"
     }
   ],
@@ -173,7 +235,11 @@
   },
   "compatibility": {
     "shellVersion": "^0.1.0",
-    "platforms": ["macOS", "linux", "windows"]
+    "platforms": [
+      "macOS",
+      "linux",
+      "windows"
+    ]
   },
   "agents": [
     {
@@ -187,15 +253,32 @@
     {
       "name": "opencode.launch_workspace",
       "description": "Start an OpenCode web/server session for a scoped workspace path.",
-      "requiredCapabilities": ["filesystem", "shell", "ui-embedding"],
+      "requiredCapabilities": [
+        "filesystem",
+        "shell",
+        "ui-embedding"
+      ],
       "inputSchema": {},
       "outputSchema": {},
       "audit": {
         "logRequest": true,
         "logResult": true,
-        "artifactTypes": ["log", "diagnostic-report"]
+        "artifactTypes": [
+          "log",
+          "diagnostic-report"
+        ]
       },
       "requiresHumanApproval": true
     }
-  ]
+  ],
+  "runtimeIsolation": {
+    "boundary": "shell-ui",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": true
+  },
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
+  }
 }

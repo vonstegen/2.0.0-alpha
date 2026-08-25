@@ -48,12 +48,18 @@
     }
   ],
   "providerRequirements": {
-    "sharedProfiles": ["shared-openai"],
+    "sharedProfiles": [
+      "shared-openai"
+    ],
     "supportsPrivateCredentials": true
   },
   "archiveIntegration": {
-    "readScopes": ["living-archive/context"],
-    "intakeWriteScopes": ["LivingArchive/INTAKE/external-agents"],
+    "readScopes": [
+      "living-archive/context"
+    ],
+    "intakeWriteScopes": [
+      "LivingArchive/INTAKE/external-agents"
+    ],
     "canRequestIngest": true,
     "canWriteKnowledgePages": false
   },
@@ -62,8 +68,24 @@
   },
   "delegation": {
     "acceptsTasks": true,
-    "taskTypes": ["code-change", "bug-fix", "research", "archive-prep", "routine-work", "system-diagnosis"],
-    "artifactReturnTypes": ["summary", "markdown", "diff", "file-list", "log", "citation-bundle", "diagnostic-report", "verification-report"],
+    "taskTypes": [
+      "code-change",
+      "bug-fix",
+      "research",
+      "archive-prep",
+      "routine-work",
+      "system-diagnosis"
+    ],
+    "artifactReturnTypes": [
+      "summary",
+      "markdown",
+      "diff",
+      "file-list",
+      "log",
+      "citation-bundle",
+      "diagnostic-report",
+      "verification-report"
+    ],
     "defaultTargetRuntime": "external-agent",
     "requiresHumanApprovalBeforeExecution": true,
     "notes": [
@@ -93,7 +115,12 @@
       "description": "Prepare bounded task handoffs, required artifacts, and verification expectations for OpenClaw.",
       "documentPath": "docs/architecture/addon-skills/openclaw/TASK_HANDOFF.md",
       "invocation": "agent-suggested",
-      "requiredCapabilities": ["providers", "archive-read", "archive-intake-write", "agent-delegation"],
+      "requiredCapabilities": [
+        "providers",
+        "archive-read",
+        "archive-intake-write",
+        "agent-delegation"
+      ],
       "requiredTools": []
     }
   ],
@@ -103,7 +130,10 @@
       "name": "OpenClaw runtime gateway",
       "type": "local-runtime",
       "description": "Connects ResonantOS to an OpenClaw runtime through scoped workspace and provider grants.",
-      "requiredCapabilities": ["shell", "agent-delegation"],
+      "requiredCapabilities": [
+        "shell",
+        "agent-delegation"
+      ],
       "configScope": "user-config"
     }
   ],
@@ -115,8 +145,14 @@
       "commandRef": "openclaw.gateway_preflight",
       "runPolicy": "preflight",
       "deterministic": true,
-      "requiredCapabilities": ["shell", "agent-delegation"],
-      "producesArtifacts": ["diagnostic-report", "verification-report"],
+      "requiredCapabilities": [
+        "shell",
+        "agent-delegation"
+      ],
+      "producesArtifacts": [
+        "diagnostic-report",
+        "verification-report"
+      ],
       "requiresHumanApproval": false
     }
   ],
@@ -125,7 +161,10 @@
       "id": "openclaw-before-task-complete",
       "event": "before-task-complete",
       "handlerRef": "openclaw-gateway-preflight",
-      "requiredCapabilities": ["shell", "agent-delegation"],
+      "requiredCapabilities": [
+        "shell",
+        "agent-delegation"
+      ],
       "failurePolicy": "degrade"
     }
   ],
@@ -134,7 +173,10 @@
   },
   "compatibility": {
     "shellVersion": "^0.1.0",
-    "platforms": ["macOS", "linux"]
+    "platforms": [
+      "macOS",
+      "linux"
+    ]
   },
   "agents": [
     {
@@ -143,5 +185,15 @@
       "trustTier": "addon",
       "workspaceBehavior": "delegated"
     }
-  ]
+  ],
+  "runtimeIsolation": {
+    "boundary": "host-mediated-agent",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": false
+  },
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
+  }
 }
