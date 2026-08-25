@@ -40,20 +40,88 @@ function createAddonCard(addon, actions = {}) {
   const card = document.createElement("article");
   card.className = "addon-card";
   card.dataset.tone = addonTone(addon);
+  card.dataset.state = addonState(addon);
 
   const header = document.createElement("div");
   header.className = "addon-card-header";
-  const title = document.createElement("strong");
-  title.textContent = addon.name || addon.id || "Unnamed add-on";
-  const status = document.createElement("span");
-  status.textContent = addon.available ? "Available" : "Missing";
-  status.dataset.tone = addonTone(addon);
-  header.append(title, status);
+  const title = document.createElement("div");
+  title.className = "addon-card-title";
+  const name = document.createElement("strong");
+  name.textContent = addon.name || addon.id || "Unnamed add-on";
+  const version = document.createElement("small");
+  version.textContent = addon.version ?? "";
+  title.append(name, version);
+  const stateBadge = document.createElement("span");
+  stateBadge.className = "addon-state-badge";
+  stateBadge.dataset.tone = addonState(addon) === "installed" ? "success" : "warning";
+  stateBadge.textContent = addonState(addon) === "installed" ? "Installed" : "Discoverable";
+  header.append(title, stateBadge);
 
   const meta = document.createElement("p");
-  meta.textContent = `${addon.mode || "unknown mode"} · ${addon.trust || "explicit grants required"}`;
+  meta.className = "addon-card-meta";
+  const metaParts = [
+    addon.id,
+    addon.runtime ?? addon.runtimeType ?? "unknown runtime",
+    addon.category ?? "",
+    addon.source ? `from ${addon.source}` : ""
+  ].filter(Boolean);
+  meta.textContent = metaParts.join(" · ");
+
+  // Capability chips — small pill-row showing what the manifest
+  // requested. The granted/denied split lives in capabilityReviewElement
+  // (added below); these chips are the high-signal "what is this
+  // addon asking for" view.
+  const capsRow = document.createElement("div");
+  capsRow.className = "addon-cap-chips";
+  const requested = Array.isArray(addon.requestedCapabilities) ? addon.requestedCapabilities : [];
+  for (const cap of requested) {
+    const chip = document.createElement("span");
+    chip.className = "addon-cap-chip";
+    chip.dataset.tone = "neutral";
+    chip.textContent = cap;
+    capsRow.append(chip);
+  }
+
+  // Tool list — every tool the addon declares. Tool rows are
+  // copyable so a developer can paste the exact name into the
+  // side-panel /tool slash command.
+  const toolList = document.createElement("ul");
+  toolList.className = "addon-tool-list";
+  const tools = Array.isArray(addon.tools) ? addon.tools : [];
+  if (tools.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "addon-tool-empty";
+    empty.textContent = addon.runtime === "ui-module"
+      ? "UI surface add-on — no bridge-dispatched tools."
+      : "No tools declared in the manifest.";
+    toolList.append(empty);
+  } else {
+    for (const toolName of tools) {
+      const li = document.createElement("li");
+      li.className = "addon-tool-row";
+      const code = document.createElement("code");
+      code.textContent = toolName;
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "addon-tool-copy";
+      copy.textContent = "Copy";
+      copy.title = "Copy tool name for /tool slash command";
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard?.writeText(toolName);
+          copy.textContent = "Copied";
+          setTimeout(() => { copy.textContent = "Copy"; }, 1200);
+        } catch {
+          copy.textContent = "Copy failed";
+        }
+      });
+      li.append(code, copy);
+      toolList.append(li);
+    }
+  }
 
   const boundary = document.createElement("small");
+  boundary.className = "addon-boundary";
   boundary.textContent = addonBoundary(addon);
 
   const execution = document.createElement("div");
@@ -84,10 +152,84 @@ function createAddonCard(addon, actions = {}) {
     cardActions.append(open);
   }
 
-  card.append(header, meta, boundary, capabilityReviewElement(addon));
+  card.append(header, meta);
+  if (capsRow.childNodes.length) card.append(capsRow);
+  card.append(toolList);
+  card.append(boundary, capabilityReviewElement(addon));
   if (execution.childNodes.length) card.append(execution);
   card.append(cardActions);
   return card;
+}
+
+// Categorize an addon into one of three states, mirroring VSCode's
+// Extensions view: installed = the runtime is detectable; discoverable
+// = the manifest exists but no tools OR runtime is detected;
+// unavailable would be reserved for addons that failed validation
+// (none today — the SDK validator rejects malformed manifests at
+// install time).
+function addonState(addon) {
+  const runtime = addon.runtime ?? addon.runtimeType ?? null;
+  const hasTools = Array.isArray(addon.tools) && addon.tools.length > 0;
+  if (["agent-addon", "local-service", "embedded-module"].includes(runtime) && hasTools) {
+    return "installed";
+  }
+  if (["agent-addon", "local-service", "embedded-module", "channel-addon"].includes(runtime)) {
+    return "discoverable";
+  }
+  if (runtime === "ui-module") return "discoverable";
+  return "discoverable";
+}
+
+// Build the SDK tab content: external links to the manifest contract,
+// authoring guide, wire-format ADR, capability matrix, and bench
+// commands. Rendered once at workspace load; no async data needed.
+function buildSdkPanel(container) {
+  container.innerHTML = `
+    <div class="addons-sdk-hero">
+      <span class="hero-kicker">Build add-ons for ResonantOS</span>
+      <h2>ResonantOS Add-on SDK</h2>
+      <p>The manifest contract (ADR-018), the wire format for <code>agent-addon</code> / <code>local-service</code> runtimes, and the bench used to verify end-to-end round-trips.</p>
+    </div>
+    <div class="addons-sdk-grid">
+      <a class="addons-sdk-card" href="https://github.com/ResonantOS/2.0.0-alpha/tree/main/examples/addons" target="_blank" rel="noreferrer noopener">
+        <strong>Example add-on manifests</strong>
+        <small>examples/addons/ on GitHub — read the source of truth for addon.hermes.json, addon.deepseek-harness.json, and friends.</small>
+      </a>
+      <a class="addons-sdk-card" href="https://github.com/ResonantOS/2.0.0-alpha/blob/main/docs/addons/authoring.md" target="_blank" rel="noreferrer noopener">
+        <strong>Authoring guide</strong>
+        <small>docs/addons/authoring.md — worked example shipping a new addon, end to end.</small>
+      </a>
+      <a class="addons-sdk-card" href="https://github.com/ResonantOS/2.0.0-alpha/blob/main/bench/docs/authoring-a-new-addon.md" target="_blank" rel="noreferrer noopener">
+        <strong>Bench workflow</strong>
+        <small>bench/docs/authoring-a-new-addon.md — drop a manifest, optionally a stub, run <code>npm run bench:up</code>.</small>
+      </a>
+      <a class="addons-sdk-card" href="https://github.com/ResonantOS/2.0.0-alpha/blob/main/docs/architecture/ADR-018-addon-sdk-v0.md" target="_blank" rel="noreferrer noopener">
+        <strong>SDK contract (ADR-018)</strong>
+        <small>Formal V0 contract: capabilities, surfaces, runtimes, engineer-setup, augmentor-skills.</small>
+      </a>
+      <a class="addons-sdk-card" href="https://github.com/ResonantOS/2.0.0-alpha/blob/main/docs/architecture/ADR-031-agent-addon-sdk-lessons-from-hermes.md" target="_blank" rel="noreferrer noopener">
+        <strong>Agent add-on wire format (ADR-031)</strong>
+        <small>Lessons from Hermes; the OpenAI-compatible <code>/api/v1/chat/completions</code> contract the dispatcher speaks.</small>
+      </a>
+      <a class="addons-sdk-card" href="https://github.com/ResonantOS/2.0.0-alpha/blob/main/docs/architecture/CAPABILITY_MATRIX.md" target="_blank" rel="noreferrer noopener">
+        <strong>Capability matrix</strong>
+        <small>What each capability means, who can grant it, where it's used.</small>
+      </a>
+    </div>
+    <div class="addons-sdk-cli">
+      <span class="hero-kicker">Bench commands</span>
+      <pre><code>npm run bench:up          # build + start the bench
+npm run bench:roundtrip   # dispatch every discovered tool through the live dispatcher
+npm run bench:down        # stop + remove the container (volume retained)
+npm run bench:reset       # wipe volume + rebuild from scratch
+npm run bench:panel       # open http://127.0.0.1:47773/dev/external-agent-runtimes/</code></pre>
+    </div>
+  `;
+  // Open external links safely — target=_blank alone exposes window.opener
+  // unless we add noopener. GitHub links are safe but defensive is cheap.
+  for (const link of container.querySelectorAll('a[target="_blank"]')) {
+    link.relList.add("noopener");
+  }
 }
 
 function providerForDraft(draft) {
@@ -220,6 +362,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
   // null at construction (rebind still in flight); the getter lets
   // us re-read the current value on every call.
   const bridge = () => (typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest);
+
   const section = document.createElement("section");
   section.className = "addons-workspace";
   section.setAttribute("aria-label", "Add-ons workspace");
@@ -232,12 +375,71 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
     <p>Review the add-ons currently visible to the browser-first host. Add-ons are useful tools, not trusted core agents, and every privileged operation stays mediated by ResonantOS.</p>
   `;
 
+  // Tab bar modelled on VSCode's Extensions view: Installed / Discoverable / SDK.
+  // Three radios under the hood, styled as a tab strip; switching is
+  // instant because all data is fetched once per load.
+  const tabs = [
+    { id: "installed", label: "Installed" },
+    { id: "discoverable", label: "Discoverable" },
+    { id: "sdk", label: "SDK" },
+  ];
+  const tabBar = document.createElement("nav");
+  tabBar.className = "addons-tabbar";
+  tabBar.setAttribute("role", "tablist");
+  const tabButtons = [];
+  const panels = {};
+  for (const tab of tabs) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.role = "tab";
+    btn.dataset.tab = tab.id;
+    btn.textContent = tab.label;
+    btn.setAttribute("aria-selected", "false");
+    btn.addEventListener("click", () => selectTab(tab.id));
+    tabBar.append(btn);
+    tabButtons.push(btn);
+    const panel = document.createElement("section");
+    panel.className = `addons-tabpanel addons-tabpanel-${tab.id}`;
+    panel.dataset.tab = tab.id;
+    panel.hidden = true;
+    panels[tab.id] = panel;
+  }
+  const selectTab = (id) => {
+    for (const btn of tabButtons) {
+      const active = btn.dataset.tab === id;
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+      btn.dataset.active = active ? "true" : "false";
+    }
+    for (const [pid, panel] of Object.entries(panels)) {
+      panel.hidden = pid !== id;
+    }
+  };
+  selectTab("installed");
+
+  // Headline status under the hero — short summary across both tabs.
   const status = document.createElement("p");
   status.className = "addons-status";
   status.textContent = "Loading add-on registry...";
 
+  // Per-tab status + grid. The installed tab fills first; the
+  // discoverable tab shows manifests the bridge has loaded but that
+  // don't have a runtime-detectable, tool-bearing surface yet.
+  const installedStatus = document.createElement("p");
+  installedStatus.className = "addons-status";
+  installedStatus.textContent = "Loading installed add-ons...";
   const grid = document.createElement("div");
   grid.className = "addons-grid";
+  panels.installed.append(installedStatus, grid);
+
+  const discoverableStatus = document.createElement("p");
+  discoverableStatus.className = "addons-status";
+  discoverableStatus.textContent = "Loading discoverable add-ons...";
+  const discoverableGrid = document.createElement("div");
+  discoverableGrid.className = "addons-grid";
+  panels.discoverable.append(discoverableStatus, discoverableGrid);
+
+  // Append the headline status + per-tab content to the Installed panel.
+  panels.installed.prepend(status);
 
   const draftReview = document.createElement("section");
   draftReview.className = "addon-draft-review";
@@ -274,8 +476,11 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
   const delegationList = document.createElement("div");
   delegationList.className = "addon-draft-list addon-delegation-list";
   delegationReview.append(delegationHeader, delegationStatus, delegationList);
+  // Build the SDK tab once at render time — the content is static
+  // links, no async data needed.
+  buildSdkPanel(panels.sdk);
 
-  section.append(header, status, grid, delegationReview, draftReview);
+  section.append(header, tabBar, panels.installed, panels.discoverable, panels.sdk, delegationReview, draftReview);
   container.replaceChildren(section);
 
   const loadDrafts = async () => {
@@ -416,8 +621,9 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
     try {
       const result = await bridge()("/addons/status", { method: "GET" });
       const addons = Array.isArray(result.addons) ? result.addons : [];
-      grid.replaceChildren();
-      addons.forEach((addon) => grid.append(createAddonCard(addon, {
+      const installed = addons.filter((a) => addonState(a) === "installed");
+      const discoverable = addons.filter((a) => addonState(a) !== "installed");
+      const renderCard = (addon) => createAddonCard(addon, {
         onOpenWorkspace,
         onToggleExecution: async (selected, enabled) => {
           const addonKey = addonExecutionKey(selected);
@@ -434,14 +640,26 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
           });
           await loadAddons();
         }
-      })));
-      status.textContent = addons.length
-        ? `${addons.length} add-ons visible. Missing add-ons stay disabled until installed or configured.`
-        : "No add-ons are visible to this browser-first host yet.";
-      status.dataset.tone = addons.some((addon) => addon.available) ? "success" : "warning";
+      });
+      grid.replaceChildren(...installed.map(renderCard));
+      discoverableGrid.replaceChildren(...discoverable.map(renderCard));
+      // Per-tab status line above each grid.
+      installedStatus.textContent = installed.length
+        ? `${installed.length} installed add-on${installed.length === 1 ? "" : "s"} — runtime detected, tools declared.`
+        : "No add-ons are currently installed.";
+      installedStatus.dataset.tone = installed.length ? "success" : "warning";
+      discoverableStatus.textContent = discoverable.length
+        ? `${discoverable.length} discoverable add-on${discoverable.length === 1 ? "" : "s"} — manifest present, no tools or runtime not detected yet.`
+        : "No additional add-ons discovered.";
+      discoverableStatus.dataset.tone = discoverable.length ? "neutral" : "";
+      // Headline status under the hero (the legacy `status` line)
+      status.textContent = `${addons.length} add-on${addons.length === 1 ? "" : "s"} total — ${installed.length} installed, ${discoverable.length} discoverable.`;
+      status.dataset.tone = installed.length ? "success" : "warning";
     } catch (error) {
       status.textContent = addonWorkspaceMessage(error, "Add-on registry unavailable");
       status.dataset.tone = "error";
+      installedStatus.textContent = "Registry unavailable.";
+      installedStatus.dataset.tone = "error";
     }
   };
 
