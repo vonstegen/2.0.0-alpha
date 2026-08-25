@@ -66,14 +66,26 @@
     }
   ],
   "providerRequirements": {
-    "sharedProfiles": ["gx10-local-llama", "shared-local", "shared-minimax"],
+    "sharedProfiles": [
+      "gx10-local-llama",
+      "shared-local",
+      "shared-minimax"
+    ],
     "supportsPrivateCredentials": true,
-    "preferredRuntimeKinds": ["remote-user-owned", "local", "cloud"],
+    "preferredRuntimeKinds": [
+      "remote-user-owned",
+      "local",
+      "cloud"
+    ],
     "fallbackPolicyId": "routine-default"
   },
   "archiveIntegration": {
-    "readScopes": ["living-archive/context"],
-    "intakeWriteScopes": ["LivingArchive/INTAKE/hermes"],
+    "readScopes": [
+      "living-archive/context"
+    ],
+    "intakeWriteScopes": [
+      "LivingArchive/INTAKE/hermes"
+    ],
     "canRequestIngest": true,
     "canWriteKnowledgePages": false
   },
@@ -84,80 +96,152 @@
     {
       "name": "hermes.audit",
       "description": "Run an executable audit of the local Hermes profile, command, config, identity, memory, skills, model metadata, and gateway state after shell access is granted. Passive profile inspection must not execute this tool.",
-      "requiredCapabilities": ["shell"],
-      "inputSchema": { "type": "object" },
-      "outputSchema": { "type": "object" },
+      "requiredCapabilities": [
+        "shell"
+      ],
+      "inputSchema": {
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object"
+      },
       "audit": {
         "logRequest": true,
         "logResult": true,
-        "artifactTypes": ["diagnostic-report", "log"]
+        "artifactTypes": [
+          "diagnostic-report",
+          "log"
+        ]
       }
     },
     {
       "name": "hermes.install",
       "description": "Install the official Nous Research Hermes Agent into the selected local Hermes profile path after explicit user approval.",
-      "requiredCapabilities": ["network", "shell"],
-      "inputSchema": { "type": "object" },
-      "outputSchema": { "type": "object" },
+      "requiredCapabilities": [
+        "network",
+        "shell"
+      ],
+      "inputSchema": {
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object"
+      },
       "audit": {
         "logRequest": true,
         "logResult": true,
-        "artifactTypes": ["diagnostic-report", "log"]
+        "artifactTypes": [
+          "diagnostic-report",
+          "log"
+        ]
       }
     },
     {
       "name": "hermes.chat",
       "description": "Send a direct prompt to the existing local Hermes profile through the ResonantOS chat bridge.",
-      "requiredCapabilities": ["shell", "providers"],
-      "inputSchema": { "type": "object" },
-      "outputSchema": { "type": "object" },
+      "requiredCapabilities": [
+        "shell",
+        "providers"
+      ],
+      "inputSchema": {
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object"
+      },
       "audit": {
         "logRequest": true,
         "logResult": true,
-        "artifactTypes": ["summary", "log", "citation-bundle"]
+        "artifactTypes": [
+          "summary",
+          "log",
+          "citation-bundle"
+        ]
       }
     },
     {
       "name": "hermes.create_delegation_workspace",
       "description": "Create an approval-gated Hermes delegation workspace for communication, coordination, routine research, or follow-up work.",
-      "requiredCapabilities": ["providers", "archive-read"],
-      "inputSchema": { "type": "object" },
-      "outputSchema": { "type": "object" },
+      "requiredCapabilities": [
+        "providers",
+        "archive-read"
+      ],
+      "inputSchema": {
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object"
+      },
       "audit": {
         "logRequest": true,
         "logResult": true,
-        "artifactTypes": ["markdown", "log"]
+        "artifactTypes": [
+          "markdown",
+          "log"
+        ]
       }
     },
     {
       "name": "hermes.start_delegation_task",
       "description": "Start a Hermes delegation task through the local Hermes profile and return reviewable artifacts without approving outbound sends.",
-      "requiredCapabilities": ["shell", "providers", "archive-read"],
-      "inputSchema": { "type": "object" },
-      "outputSchema": { "type": "object" },
+      "requiredCapabilities": [
+        "shell",
+        "providers",
+        "archive-read"
+      ],
+      "inputSchema": {
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object"
+      },
       "audit": {
         "logRequest": true,
         "logResult": true,
-        "artifactTypes": ["summary", "markdown", "log"]
+        "artifactTypes": [
+          "summary",
+          "markdown",
+          "log"
+        ]
       }
     },
     {
       "name": "hermes.dashboard",
       "description": "Start, stop, or inspect the embedded local Hermes dashboard workspace on loopback only.",
-      "requiredCapabilities": ["shell", "ui-embedding"],
-      "inputSchema": { "type": "object" },
-      "outputSchema": { "type": "object" },
+      "requiredCapabilities": [
+        "shell",
+        "ui-embedding"
+      ],
+      "inputSchema": {
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object"
+      },
       "audit": {
         "logRequest": true,
         "logResult": true,
-        "artifactTypes": ["diagnostic-report", "log"]
+        "artifactTypes": [
+          "diagnostic-report",
+          "log"
+        ]
       }
     }
   ],
   "delegation": {
     "acceptsTasks": true,
-    "taskTypes": ["communication", "routine-work", "research"],
-    "artifactReturnTypes": ["summary", "markdown", "log", "citation-bundle", "verification-report"],
+    "taskTypes": [
+      "communication",
+      "routine-work",
+      "research"
+    ],
+    "artifactReturnTypes": [
+      "summary",
+      "markdown",
+      "log",
+      "citation-bundle",
+      "verification-report"
+    ],
     "defaultTargetRuntime": "addon-agent",
     "requiresHumanApprovalBeforeExecution": true,
     "notes": [
@@ -187,8 +271,17 @@
       "description": "Package the repeatable method for routing communication work to Hermes with approval gates and artifact return.",
       "documentPath": "docs/architecture/addon-skills/hermes/AUGMENTOR_SKILL.md",
       "invocation": "agent-suggested",
-      "requiredCapabilities": ["shell", "providers", "archive-read"],
-      "requiredTools": ["hermes.audit", "hermes.chat", "hermes.create_delegation_workspace", "hermes.start_delegation_task"]
+      "requiredCapabilities": [
+        "shell",
+        "providers",
+        "archive-read"
+      ],
+      "requiredTools": [
+        "hermes.audit",
+        "hermes.chat",
+        "hermes.create_delegation_workspace",
+        "hermes.start_delegation_task"
+      ]
     }
   ],
   "connectors": [
@@ -197,7 +290,10 @@
       "name": "Hermes local profile",
       "type": "local-runtime",
       "description": "Connects ResonantOS to a locally installed Hermes profile through host-mediated shell and dashboard commands.",
-      "requiredCapabilities": ["shell", "ui-embedding"],
+      "requiredCapabilities": [
+        "shell",
+        "ui-embedding"
+      ],
       "configScope": "user-config"
     }
   ],
@@ -209,8 +305,14 @@
       "commandRef": "hermes.audit",
       "runPolicy": "preflight",
       "deterministic": true,
-      "requiredCapabilities": ["shell"],
-      "producesArtifacts": ["diagnostic-report", "log", "verification-report"],
+      "requiredCapabilities": [
+        "shell"
+      ],
+      "producesArtifacts": [
+        "diagnostic-report",
+        "log",
+        "verification-report"
+      ],
       "requiresHumanApproval": false
     }
   ],
@@ -219,7 +321,9 @@
       "id": "hermes-health-audit",
       "event": "health-check",
       "handlerRef": "hermes-audit-preflight",
-      "requiredCapabilities": ["shell"],
+      "requiredCapabilities": [
+        "shell"
+      ],
       "failurePolicy": "degrade"
     }
   ],
@@ -228,7 +332,11 @@
   },
   "compatibility": {
     "shellVersion": "^0.1.0",
-    "platforms": ["macOS", "linux", "windows"]
+    "platforms": [
+      "macOS",
+      "linux",
+      "windows"
+    ]
   },
   "agents": [
     {
@@ -242,12 +350,18 @@
     "mode": "detect-existing-or-install",
     "detectionTool": "hermes.audit",
     "installTool": "hermes.install",
-    "requiredCapabilities": ["network", "shell"],
+    "requiredCapabilities": [
+      "network",
+      "shell"
+    ],
     "requiresHumanApprovalBeforeInstall": true,
     "preservesExistingUserConfig": true,
     "credentialSetup": "user-guided",
     "auditLogRequired": true,
-    "expectedArtifacts": ["diagnostic-report", "log"]
+    "expectedArtifacts": [
+      "diagnostic-report",
+      "log"
+    ]
   },
   "audit": {
     "tool": "hermes.audit",
@@ -259,7 +373,9 @@
       "profile identity, skills, memory, and session inventory",
       "gateway and dashboard reachability"
     ],
-    "requiredCapabilities": ["shell"],
+    "requiredCapabilities": [
+      "shell"
+    ],
     "remediationPolicy": "approval-gated",
     "auditLogRequired": true
   },
@@ -269,7 +385,10 @@
     "autoStart": true,
     "settingsVisibility": "hidden-collapsible",
     "healthTool": "hermes.dashboard",
-    "requiredCapabilities": ["shell", "ui-embedding"]
+    "requiredCapabilities": [
+      "shell",
+      "ui-embedding"
+    ]
   },
   "memoryAccess": {
     "archiveReadMode": "retrieval-with-citations",
@@ -285,13 +404,18 @@
     "supportsCancellation": true,
     "supportsModelSelection": true,
     "outputFiltering": "assistant-reply-only",
-    "requiredCapabilities": ["shell", "providers"],
+    "requiredCapabilities": [
+      "shell",
+      "providers"
+    ],
     "modelSelection": {
       "source": "runtime-audit",
       "currentModelField": "currentModel",
       "selectable": true,
       "changeTool": "hermes.chat",
-      "requiredCapabilities": ["providers"]
+      "requiredCapabilities": [
+        "providers"
+      ]
     }
   },
   "smokeTests": [
@@ -303,14 +427,24 @@
       },
       "expectedOutputPattern": "^HERMES_ONBOARDING_CHECK$",
       "timeoutMs": 120000,
-      "requiredCapabilities": ["shell", "providers"]
+      "requiredCapabilities": [
+        "shell",
+        "providers"
+      ]
     }
   ],
   "augmentorSkills": [
     {
       "documentPath": "docs/architecture/addon-skills/hermes/AUGMENTOR_SKILL.md",
       "objective": "Use Hermes as a delegated communication, coordination, routine research, follow-up, and channel-workflow agent while preserving ResonantOS approval gates and Living Archive boundaries.",
-      "requiredCapabilities": ["network", "shell", "ui-embedding", "providers", "archive-read", "archive-intake-write"],
+      "requiredCapabilities": [
+        "network",
+        "shell",
+        "ui-embedding",
+        "providers",
+        "archive-read",
+        "archive-intake-write"
+      ],
       "requiredTools": [
         "hermes.audit",
         "hermes.install",
@@ -354,5 +488,15 @@
       "producesDelegationPackets": true,
       "auditLogRequired": true
     }
-  ]
+  ],
+  "runtimeIsolation": {
+    "boundary": "host-mediated-agent",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": false
+  },
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
+  }
 }

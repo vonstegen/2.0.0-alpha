@@ -48,13 +48,20 @@
     }
   ],
   "providerRequirements": {
-    "sharedProfiles": ["shared-minimax", "gx10-local-llama", "shared-openai", "shared-local"],
+    "sharedProfiles": [
+      "shared-minimax",
+      "gx10-local-llama",
+      "shared-openai",
+      "shared-local"
+    ],
     "supportsPrivateCredentials": false,
     "recommendedPrimaryModel": "MiniMax-M3",
     "recommendedFallbackModel": "gpt-5.5"
   },
   "archiveIntegration": {
-    "readScopes": ["living-archive/context"],
+    "readScopes": [
+      "living-archive/context"
+    ],
     "intakeWriteScopes": [],
     "canRequestIngest": false,
     "canWriteKnowledgePages": false
@@ -81,7 +88,11 @@
       "description": "Handle Telegram messages as channel sessions while preserving Strategist identity, memory scope, and provider policy.",
       "documentPath": "docs/architecture/addon-skills/telegram/REMOTE_CHANNEL_CONVERSATION.md",
       "invocation": "automatic",
-      "requiredCapabilities": ["network", "archive-read", "providers"],
+      "requiredCapabilities": [
+        "network",
+        "archive-read",
+        "providers"
+      ],
       "requiredTools": []
     }
   ],
@@ -91,7 +102,9 @@
       "name": "Telegram Bot API",
       "type": "api",
       "description": "Connects to Telegram through host-managed bot credentials and allowed chat/session mapping.",
-      "requiredCapabilities": ["network"],
+      "requiredCapabilities": [
+        "network"
+      ],
       "configScope": "host-vault"
     }
   ],
@@ -103,8 +116,12 @@
       "commandRef": "telegram_service_status",
       "runPolicy": "preflight",
       "deterministic": true,
-      "requiredCapabilities": ["network"],
-      "producesArtifacts": ["diagnostic-report"],
+      "requiredCapabilities": [
+        "network"
+      ],
+      "producesArtifacts": [
+        "diagnostic-report"
+      ],
       "requiresHumanApproval": false
     }
   ],
@@ -113,7 +130,9 @@
       "id": "telegram-enable-check",
       "event": "before-enable",
       "handlerRef": "telegram-connectivity-check",
-      "requiredCapabilities": ["network"],
+      "requiredCapabilities": [
+        "network"
+      ],
       "failurePolicy": "block"
     }
   ],
@@ -126,6 +145,20 @@
   },
   "compatibility": {
     "shellVersion": "^0.1.0",
-    "platforms": ["macOS", "linux", "windows"]
+    "platforms": [
+      "macOS",
+      "linux",
+      "windows"
+    ]
+  },
+  "runtimeIsolation": {
+    "boundary": "host-mediated-channel",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": true
+  },
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
   }
 }
