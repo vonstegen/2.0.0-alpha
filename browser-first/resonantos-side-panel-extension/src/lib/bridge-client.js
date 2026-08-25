@@ -281,6 +281,16 @@ export function createBridgeClient(config = globalThis.__RESONANTOS_BRIDGE_CONFI
     if (capability && effectiveCapabilityTokens[capability]) {
       headers["X-ResonantOS-Bridge-Capability-Token"] = effectiveCapabilityTokens[capability];
     }
+    // The addon dispatch route resolves per-caller grants from the
+    // Phase 3.5 grant store; without a caller id the dispatcher denies
+    // every call. The extension identifies as `dev-roundtrip` (already
+    // minted by the minimal launcher with network + providers +
+    // agent-delegation + archive-intake-write + memory-provider).
+    // Production launchers should mint their own `__extension__`
+    // caller id and switch this header accordingly.
+    if (route === "/external-agent-runtime/delegate") {
+      headers["X-ResonantOS-Bridge-Caller-Id"] = "dev-roundtrip";
+    }
     let response;
     try {
       response = await fetchImpl(`${bridgeUrl}${route}`, {
