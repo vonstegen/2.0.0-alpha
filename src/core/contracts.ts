@@ -534,7 +534,6 @@ export interface AddOnManifest {
   sdkVersion?: string;
   publisher: string;
   name: string;
-  version: string;
   author: string;
   category: AddOnCategory;
   description: string;
