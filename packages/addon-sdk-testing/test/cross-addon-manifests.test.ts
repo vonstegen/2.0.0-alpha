@@ -7,7 +7,7 @@
 // loads each such manifest from disk and runs the F1–F10 suite against
 // it.
 //
-// Per ADR-040 §8, `recursive-mas.json` pre-dates and satisfies this
+// Per ADR-040 §8, `addon.recursive-mas.json` pre-dates and satisfies this
 // ADR. This test guards that claim. Per ADR-040 §9,
 // `addon.deepseek-harness.json` is the canonical new external
 // runtime exemplar; this test guards that claim too.
@@ -47,7 +47,7 @@ const cases: readonly CrossAddonCase[] = [
     id: "addon.deepseek-harness",
   },
   {
-    path: "examples/addons/recursive-mas.json",
+    path: "examples/addons/addon.recursive-mas.json",
     id: "addon.recursive-mas",
   },
 ] as const;

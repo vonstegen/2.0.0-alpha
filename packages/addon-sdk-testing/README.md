@@ -51,7 +51,7 @@ Out of scope:
 - F11+ modes that Tom is expected to add in review. The mock host
   exposes the same audit/routing primitives those would need; adding
   more modes is a copy-and-extend exercise.
-- Live harness against `examples/addons/recursive-mas.json`. ADR-040
+- Live harness against `examples/addons/addon.recursive-mas.json`. ADR-040
   §8 names this addon as satisfying the rules; a follow-on test could
   invoke `runAddOnFailureMode("F1", recursiveMasManifest)` for
   cross-addon evidence.
