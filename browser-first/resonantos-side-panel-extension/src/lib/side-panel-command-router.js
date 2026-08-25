@@ -39,6 +39,12 @@ export function createSidePanelCommandRouter(handlers) {
       if (name === "email") return handlers.runDraftAddonCommand("email", body);
       if (name === "calendar") return handlers.runDraftAddonCommand("calendar", body);
       if (name === "delegate") return handlers.runDelegateCommand(body);
+      if (name === "tool" || name === "addon") {
+        const firstSpace = body.search(/\s/);
+        const addonId = firstSpace === -1 ? body : body.slice(0, firstSpace);
+        const toolBody = firstSpace === -1 ? "" : body.slice(firstSpace + 1);
+        return handlers.runAddonToolCommand(addonId, toolBody);
+      }
       if (name === "delegations" || name === "handoffs") return handlers.runDelegationsCommand(body);
       if (name === "status") return handlers.runStatusCommand();
       if (name === "site") return handlers.runSitePermissionCommand(body);
