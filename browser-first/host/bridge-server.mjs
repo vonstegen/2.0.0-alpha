@@ -234,6 +234,18 @@ function shouldDropUpstreamResponseHeader(headerName) {
   return HOP_BY_HOP_HEADERS.has(lower) || lower.startsWith("access-control-") || lower === "vary";
 }
 
+function writeHtml(response, status, html, contentType, extensionOrigin, requestHeaders, allowedOrigins) {
+  const allowOrigin = pickAllowedOrigin(requestHeaders, extensionOrigin, allowedOrigins);
+  const headers = {
+    "Content-Type": contentType,
+    "Cache-Control": "no-store",
+    "Access-Control-Allow-Origin": allowOrigin ?? "*",
+    "Vary": "Origin",
+  };
+  response.writeHead(status, headers);
+  response.end(html);
+}
+
 function writeJson(response, status, payload, extensionOrigin, requestHeaders, allowedOrigins) {
   const allowOrigin = pickAllowedOrigin(requestHeaders, extensionOrigin, allowedOrigins);
   const headers = {
@@ -1287,6 +1299,29 @@ export function createBridgeRequestHandler({
         capabilityBootstrapToken,
         routes: internalRoutes,
       });
+      // Dev-panel route: when the result body carries an `__html` marker,
+      // write raw HTML instead of JSON. Used by
+      // /dev/external-agent-runtimes/ (served by
+      // dev-external-agent-runtimes-panel.mjs).
+      const htmlMarker = (result.payload && typeof result.payload === "object")
+        ? (typeof result.payload.__html === "string"
+            ? result.payload
+            : (result.payload.body && typeof result.payload.body.__html === "string"
+                ? result.payload.body
+                : null))
+        : null;
+      if (htmlMarker) {
+        writeHtml(
+          response,
+          result.status,
+          htmlMarker.__html,
+          htmlMarker.contentType ?? "text/html; charset=utf-8",
+          extensionOrigin,
+          request.headers,
+          allowedOrigins,
+        );
+        return;
+      }
       writeJson(response, result.status, result.payload, extensionOrigin, request.headers, allowedOrigins);
     } catch (error) {
       writeJson(
@@ -1412,6 +1447,7 @@ export async function startBridgeServersWithTls({
 }) {
   const bindHost = host ?? getBridgeHost();
   const effectiveAllowedCidrs = allowedCidrs ?? getBridgeAllowedCidrs();
+  const effectiveOpenPathPrefixes = openPathPrefixes ?? getBridgeOpenProxyPrefixes({ host: bindHost, allowedCidrs: effectiveAllowedCidrs });
   const handle = createBridgeRequestHandler({
     bridgeToken,
     bridgeCapabilityTokens,
@@ -1508,6 +1544,7 @@ export async function startBridgeServerWithFallback({
   httpsPort,
   fallbackPorts = [0],
   openPathPrefixes,
+  dashboardProxyHandler = null,
 }) {
   const attempts = [port, ...fallbackPorts].filter((candidate, index, list) =>
     Number.isInteger(Number(candidate)) && list.indexOf(candidate) === index
