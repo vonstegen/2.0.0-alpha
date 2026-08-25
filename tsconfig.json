@@ -14,8 +14,8 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
-    "types": ["vitest/globals"]
   },
-  "include": ["src", "packages/addon-sdk/src", "vite.config.ts"]
+  "include": ["src", "packages/addon-sdk/src", "packages/addon-sdk-testing/src", "packages/addon-sdk-testing/test", "vite.config.ts"]
 }
