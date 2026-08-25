@@ -225,7 +225,7 @@ test("add-ons workspace renders registry status and governed open actions", asyn
 
   assert.deepEqual(calls.map((call) => call[0]), ["/addons/status", "/addons/delegate/list", "/addons/draft/list"]);
   assert.match(container.textContent, /Replaceable capabilities, explicit trust/);
-  assert.match(container.textContent, /5 add-ons visible/);
+  assert.match(container.textContent, /5 add-on[s]? total/);
   assert.match(container.textContent, /Hermes/);
   assert.match(container.textContent, /OpenCode/);
   assert.match(container.textContent, /Living Archive/);
