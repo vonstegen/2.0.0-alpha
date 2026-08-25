@@ -4,6 +4,8 @@ import {
   writePersonalizationSettings,
 } from "../personalization-settings.js";
 import { metricCard, noteCard, safeErrorMessage, setStatus, settingsHeader } from "./settings-common.js";
+import { bootstrapProfileFromBridge } from "../profile-bootstrap.js";
+import { createBridgeClient } from "../bridge-client.js";
 
 const AUGMENTOR_SKILLS = [
   {
@@ -210,14 +212,28 @@ export function renderPersonalizationSection(container, { bridgeRequest, getBrid
   );
 
   const hydrate = async () => {
-    const settings = await readPersonalizationSettings(storage, storageKeys);
+    let settings = await readPersonalizationSettings(storage, storageKeys);
+    // If storage is empty, try pulling from the workbench profile
+    // via the bridge. The SW also calls this on every boot, but the
+    // SW may have terminated before it could finish, leaving the
+    // form to render with placeholders. Doing it here makes the
+    // identity section self-healing.
+    if (!settings.profile.displayName || settings.profile.displayName === "ResonantOS User") {
+      const bridge = typeof getBridgeRequest === "function" ? getBridgeRequest() : null;
+      if (bridge) {
+        await bootstrapProfileFromBridge({ bridgeClient: bridge, storage }).catch(() => undefined);
+        settings = await readPersonalizationSettings(storage, storageKeys);
+      }
+    }
     displayName.value = settings.profile.displayName;
     subtitle.value = settings.profile.subtitle;
     email.value = settings.profile.email;
     augmentorName.value = settings.augmentor.displayName;
     systemPrompt.value = settings.augmentor.systemPrompt;
     setStatus(status, "Identity settings loaded.", "success");
+    onProfileUpdated?.(settings);
   };
+
 
   const hydrateMemory = async () => {
     if (!bridgeRequest) {
