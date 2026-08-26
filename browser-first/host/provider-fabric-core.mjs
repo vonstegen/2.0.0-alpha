@@ -25,6 +25,16 @@ export const providerProfiles = [
     models: ["gpt-5.5", "gpt-5.4-mini"],
     role: "High-reasoning fallback and archive-quality provider",
   },
+  {
+    id: "shared-deepseek",
+    label: "DeepSeek",
+    providerType: "openai-compatible",
+    templateId: "deepseek",
+    authType: "api-key",
+    apiBaseUrl: "https://api.deepseek.com/v1",
+    models: ["deepseek-chat", "deepseek-reasoner"],
+    role: "Delegated reasoning runtime for the DeepSeek Harness add-on",
+  },
 ];
 
 export const modelCatalog = [
@@ -63,6 +73,24 @@ export const modelCatalog = [
     runtime: "cloud",
     costTier: "paid-per-call",
     qualityTier: "lightweight high-reasoning fallback",
+  },
+  {
+    model: "deepseek-chat",
+    label: "DeepSeek Chat",
+    providerId: "shared-deepseek",
+    providerLabel: "DeepSeek",
+    runtime: "cloud",
+    costTier: "paid-per-call",
+    qualityTier: "general delegated reasoning",
+  },
+  {
+    model: "deepseek-reasoner",
+    label: "DeepSeek Reasoner",
+    providerId: "shared-deepseek",
+    providerLabel: "DeepSeek",
+    runtime: "cloud",
+    costTier: "paid-per-call",
+    qualityTier: "high-reasoning delegated analysis",
   },
   {
     model: "batiai/gemma4-e2b:q4",
@@ -128,6 +156,14 @@ export const defaultRoutingStrategies = [
   },
 ];
 
+export function inferProviderType(providerId) {
+  if (providerId === "shared-openai" || String(providerId ?? "").includes("openai")) return "openai";
+  if (providerId === "shared-zai-glm" || String(providerId ?? "").toLowerCase().includes("zai")) return "openai-compatible";
+  if (providerId === "shared-deepseek" || String(providerId ?? "").toLowerCase().includes("deepseek")) return "openai-compatible";
+  if (providerId === "desktop-local" || String(providerId ?? "").includes("local")) return "openai-compatible";
+  return "minimax";
+}
+
 export function providerProfileById(providerId) {
   return providerProfiles.find((profile) => profile.id === providerId) ?? null;
 }
@@ -136,12 +172,6 @@ export function modelById(model) {
   return modelCatalog.find((entry) => entry.model === model) ?? null;
 }
 
-export function inferProviderType(providerId) {
-  if (providerId === "shared-openai" || String(providerId ?? "").includes("openai")) return "openai";
-  if (providerId === "shared-zai-glm" || String(providerId ?? "").toLowerCase().includes("zai")) return "openai-compatible";
-  if (providerId === "desktop-local" || String(providerId ?? "").includes("local")) return "openai-compatible";
-  return "minimax";
-}
 
 export function modelCatalogEntriesForProvider(profile) {
   const providerId = String(profile?.id ?? "").trim();
