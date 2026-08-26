@@ -86,7 +86,7 @@ describe("add-on registry snapshot", () => {
 
     expect(entry.provenanceTier).toBe("curated-signed");
     expect(entry.verificationState).toBe("verified");
-    expect(entry.reviewState).toBe("reviewed");
+    expect(entry.reviewState).toBe("approved");
   });
 
   it("marks sideloaded add-ons as untrusted registry entries by default", () => {
