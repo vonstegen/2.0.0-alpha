@@ -16,7 +16,7 @@
       "description": "Configure sources, inspect intake, review memory operations, and manage the active memory provider.",
       "shellNavigation": {
         "sectionId": "memory",
-        "dockIcon": "archive",
+        "dockIcon": "memory",
         "eyebrow": "Living Archive",
         "order": 10
       }

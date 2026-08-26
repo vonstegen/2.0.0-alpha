@@ -13,9 +13,9 @@ import {
 } from "../resonantos-side-panel-extension/src/lib/main-workspace-tools-rail.js";
 
 const ROUTES = [
-  { addonId: "addon.living-archive", surfaceId: "living-archive-workspace", sectionId: "memory", label: "Memory Workspace", eyebrow: "Living Archive", dockIcon: "archive", order: 10 },
-  { addonId: "addon.hermes", surfaceId: "hermes-workspace", sectionId: "hermes", label: "Hermes Workspace", eyebrow: "Delegation agent", dockIcon: "hermes", order: 20 },
-  { addonId: "addon.deepseek-harness", surfaceId: "deepseek-harness-status", sectionId: "deepseek-harness", label: "DeepSeek Harness", eyebrow: "Agent runtime", dockIcon: "runtime", order: 40 },
+  { addonId: "addon.living-archive", surfaceId: "living-archive-workspace", sectionId: "memory", label: "Memory Workspace", eyebrow: "Living Archive", dockIcon: "memory", order: 10 },
+  { addonId: "addon.hermes", surfaceId: "hermes-workspace", sectionId: "hermes", label: "Hermes Workspace", eyebrow: "Delegation agent", dockIcon: "messaging", order: 20 },
+  { addonId: "addon.deepseek-harness", surfaceId: "deepseek-harness-status", sectionId: "deepseek-harness", label: "DeepSeek Harness", eyebrow: "Agent runtime", dockIcon: "harness", order: 40 },
 ];
 
 function withDom() {
@@ -25,10 +25,11 @@ function withDom() {
 }
 
 test("dockIconSvg resolves known icons and falls back for unknown", () => {
-  assert.match(dockIconSvg("archive"), /<svg /);
-  assert.match(dockIconSvg("runtime"), /<svg /);
+  assert.match(dockIconSvg("memory"), /<svg /);
+  assert.match(dockIconSvg("harness"), /<svg /);
+  assert.match(dockIconSvg("recursion"), /<svg /);
   assert.match(dockIconSvg("does-not-exist"), /<svg /); // fallback, not empty
-  assert.equal(dockIconSvg("archive"), dockIconSvg("archive")); // deterministic
+  assert.equal(dockIconSvg("memory"), dockIconSvg("memory")); // deterministic
 });
 
 test("renderToolsRailButtons renders one button per route with workspace + label", () => {

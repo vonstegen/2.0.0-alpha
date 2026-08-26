@@ -15,7 +15,7 @@
       "description": "Open a coding workspace inside the ResonantOS center surface.",
       "shellNavigation": {
         "sectionId": "opencode",
-        "dockIcon": "opencode",
+        "dockIcon": "workspace",
         "eyebrow": "Coding workspace",
         "order": 30
       }
