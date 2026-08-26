@@ -283,8 +283,9 @@
     "requiresReviewedGrant": true
   },
   "provenance": {
-    "tier": "sideloaded-unverified",
-    "verificationState": "unverified",
-    "signed": false
+    "tier": "bundled-core",
+    "verificationState": "verified",
+    "signed": true,
+    "signer": "ResonantOS bundled catalog"
   }
 }
