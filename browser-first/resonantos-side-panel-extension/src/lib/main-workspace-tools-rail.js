@@ -1,8 +1,9 @@
-// Dynamic Tools rail. Consumes `GET /addons/surface-routes` (the host-side
-// mirror of the SDK's createAddOnSurfaceDockRoutes) and renders dock items
-// into the rail's Tools section. Add-on-declared `shellNavigation` is the
-// single source of truth; built-ins and third-party add-ons flow through
-// the same path.
+// Dynamic rail. Consumes `GET /addons/surface-routes` (the host-side mirror
+// of the SDK's createAddOnRailMenus) and renders top-level rail menus:
+// harness add-ons (category `agent`) each get their own menu, memory
+// providers collapse into a "Memory" menu, and every other category collapses
+// into a "Tools" menu. A harness menu opens into a workspace whose sub-rail
+// lists the harness's own tools (from the manifest `tools` array).
 
 const DOCK_ICON_PATHS = {
   // Memory provider / knowledge store (database)
@@ -26,25 +27,25 @@ export function dockIconSvg(name) {
 
 export async function fetchSurfaceRoutes(getBridgeRequest) {
   const result = await getBridgeRequest()("/addons/surface-routes", { method: "GET" });
-  return Array.isArray(result?.routes) ? result.routes : [];
+  return Array.isArray(result?.menus) ? result.menus : [];
 }
 
-function toolButton(route, onOpenSection) {
+function menuButton(menu, onOpenMenu) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "rail-project";
-  button.dataset.workspace = route.sectionId;
-  button.innerHTML = `${dockIconSvg(route.dockIcon)}<span class="rail-text"></span>`;
-  button.querySelector(".rail-text").textContent = route.label;
-  button.title = route.eyebrow ? `${route.label} — ${route.eyebrow}` : route.label;
-  button.addEventListener("click", () => onOpenSection(route.sectionId));
+  button.dataset.workspace = menu.menuId;
+  button.innerHTML = `${dockIconSvg(menu.dockIcon)}<span class="rail-text"></span>`;
+  button.querySelector(".rail-text").textContent = menu.label;
+  button.title = menu.kind === "harness" ? `${menu.label} — harness` : menu.label;
+  button.addEventListener("click", () => onOpenMenu(menu.menuId));
   return button;
 }
 
-export function renderToolsRailButtons(container, routes, onOpenSection) {
+export function renderToolsRailButtons(container, menus, onOpenMenu) {
   container.replaceChildren();
-  for (const route of routes) {
-    container.append(toolButton(route, onOpenSection));
+  for (const menu of menus) {
+    container.append(menuButton(menu, onOpenMenu));
   }
 }
 
@@ -60,28 +61,115 @@ export function syncToolsRailActive(container, activeWorkspace) {
   }
 }
 
-// Generic fallback for add-on surfaces that declare a dock route but do not
-// yet ship a dedicated workspace renderer. Shows the surface identity so the
-// dock item is actionable without fabricating an unimplemented UI.
-export function renderAddonSurfaceWorkspace(container, route) {
+function menuEyebrow(kind) {
+  if (kind === "harness") return "Harness";
+  if (kind === "memory") return "Memory";
+  return "Tools";
+}
+
+function harnessToolRow(tool) {
+  const li = document.createElement("li");
+  li.className = "harness-tool-row";
+
+  const head = document.createElement("div");
+  head.className = "harness-tool-head";
+
+  const name = document.createElement("code");
+  name.textContent = tool.name;
+
+  const gate = document.createElement("span");
+  gate.className = "harness-tool-gate";
+  gate.dataset.tone = tool.requiresHumanApproval ? "gated" : "auto";
+  gate.textContent = tool.requiresHumanApproval ? "approval required" : "auto";
+
+  head.append(name, gate);
+  li.append(head);
+
+  if (tool.description) {
+    const desc = document.createElement("p");
+    desc.className = "harness-tool-desc";
+    desc.textContent = tool.description;
+    li.append(desc);
+  }
+
+  const caps = Array.isArray(tool.requiredCapabilities) ? tool.requiredCapabilities : [];
+  if (caps.length) {
+    const chips = document.createElement("div");
+    chips.className = "harness-tool-caps";
+    for (const cap of caps) {
+      const chip = document.createElement("span");
+      chip.className = "harness-tool-cap";
+      chip.textContent = cap;
+      chips.append(chip);
+    }
+    li.append(chips);
+  }
+
+  return li;
+}
+
+function renderHarnessToolSubRail(menu) {
+  const list = document.createElement("ul");
+  list.className = "harness-tool-list";
+  const tools = Array.isArray(menu.tools) ? menu.tools : [];
+  if (tools.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "harness-tool-empty";
+    empty.textContent = "No tools declared in the manifest.";
+    list.append(empty);
+  } else {
+    for (const tool of tools) {
+      list.append(harnessToolRow(tool));
+    }
+  }
+  return list;
+}
+
+function renderMenuRoutes(menu) {
+  const list = document.createElement("ul");
+  list.className = "menu-route-list";
+  for (const route of menu.routes) {
+    const li = document.createElement("li");
+    li.className = "menu-route-row";
+    li.innerHTML = `${dockIconSvg(route.dockIcon)}<span class="menu-route-copy"></span>`;
+    const copy = li.querySelector(".menu-route-copy");
+    const label = document.createElement("strong");
+    label.textContent = route.label;
+    const meta = document.createElement("small");
+    meta.textContent = [route.eyebrow, route.addonId].filter(Boolean).join(" · ");
+    copy.append(label, meta);
+    list.append(li);
+  }
+  return list;
+}
+
+// Top-level rail menu workspace. Harnesses render a sub-rail of their own
+// tools (the destination you're directed into); memory/tools menus list the
+// add-ons grouped under them.
+export function renderRailMenuWorkspace(container, menu) {
   container.replaceChildren();
   const section = document.createElement("section");
-  section.className = "module-workspace addon-surface-workspace";
+  section.className = "module-workspace addon-surface-workspace rail-menu-workspace";
 
   const copy = document.createElement("div");
   copy.className = "module-copy";
 
   const eyebrow = document.createElement("span");
   eyebrow.className = "eyebrow";
-  eyebrow.textContent = route.eyebrow || "Add-on surface";
+  eyebrow.textContent = menuEyebrow(menu.kind);
 
   const title = document.createElement("h1");
-  title.textContent = route.label;
+  title.textContent = menu.label;
 
   const body = document.createElement("p");
-  body.textContent = `This workspace is declared by ${route.addonId} (surface ${route.surfaceId}). Its dedicated UI is not implemented yet; the dock route and icon come from the add-on manifest's shellNavigation.`;
+  body.textContent = menu.kind === "harness"
+    ? "Tools provided by this harness. Each is capability-gated and audited by the bridge."
+    : menu.kind === "memory"
+      ? "Memory providers available in this workspace."
+      : "Single-purpose tools available in this workspace.";
 
   copy.append(eyebrow, title, body);
   section.append(copy);
+  section.append(menu.kind === "harness" ? renderHarnessToolSubRail(menu) : renderMenuRoutes(menu));
   container.append(section);
 }
