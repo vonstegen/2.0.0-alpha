@@ -1,13 +1,45 @@
 :root {
+  color-scheme: light;
+  --bg: #f5f2eb;
+  --bg-warm: #f7ebe6;
+  --panel-rgb: 252 250 246;
+  --panel-warm-rgb: 248 238 232;
+  --hover-rgb: 40 37 31;
+  --text-rgb: 35 33 27;
+  --text-2-rgb: 84 79 70;
+  --muted-rgb: 110 104 94;
+  --accent-rgb: 17 138 178;
+  --accent-strong-rgb: 12 98 127;
+  --text: #23211b;
+  --text-2: #544f46;
+  --muted: #6e685e;
+  --accent: #118ab2;
+  --accent-strong: #0c627f;
+  --panel: rgb(var(--panel-rgb) / 0.9);
+  --panel-soft: rgb(var(--hover-rgb) / 0.055);
+  --line: rgb(var(--accent-rgb) / 0.15);
+}
+
+[data-theme="dark"] {
   color-scheme: dark;
   --bg: #050807;
-  --panel: rgba(14, 24, 19, 0.9);
-  --panel-soft: rgba(255, 255, 255, 0.055);
-  --line: rgba(148, 255, 198, 0.15);
+  --bg-warm: #170806;
+  --panel-rgb: 14 24 19;
+  --panel-warm-rgb: 20 12 10;
+  --hover-rgb: 255 255 255;
+  --text-rgb: 238 247 240;
+  --text-2-rgb: 207 219 210;
+  --muted-rgb: 143 159 149;
+  --accent-rgb: 34 184 207;
+  --accent-strong-rgb: 14 165 180;
   --text: #eef7f0;
+  --text-2: #cfdbd2;
   --muted: #8f9f95;
-  --accent: #24d18f;
-  --accent-strong: #18bd7d;
+  --accent: #22b8cf;
+  --accent-strong: #0ea5b4;
+  --panel: rgb(var(--panel-rgb) / 0.9);
+  --panel-soft: rgb(var(--hover-rgb) / 0.055);
+  --line: rgb(var(--accent-rgb) / 0.15);
 }
 
 * {
@@ -18,8 +50,8 @@ body {
   margin: 0;
   min-width: 320px;
   background:
-    radial-gradient(circle at 10% -10%, rgba(36, 209, 143, 0.2), transparent 22rem),
-    linear-gradient(160deg, #07110d, var(--bg) 42%);
+    radial-gradient(circle at 10% -10%, rgb(var(--accent-rgb) / 0.2), transparent 22rem),
+    linear-gradient(160deg, var(--bg), var(--bg) 42%);
   color: var(--text);
   font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -34,8 +66,8 @@ textarea {
    default on Chrome/Windows 11 (#206). Pin an opaque dark surface + light text. */
 select option,
 select optgroup {
-  background-color: var(--bg, #0b120e);
-  color: var(--text, #eef7f0);
+  background-color: var(--bg, var(--bg));
+  color: var(--text, var(--text));
 }
 
 button {
@@ -82,8 +114,8 @@ textarea:disabled {
 .dock-tab {
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(207, 219, 210, 0.75);
+  background: rgb(var(--hover-rgb) / 0.03);
+  color: rgb(var(--text-2-rgb) / 0.75);
   font-size: 0.62rem;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -93,13 +125,13 @@ textarea:disabled {
 
 .dock-tab:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.07);
+  background: rgb(var(--hover-rgb) / 0.07);
 }
 
 .dock-tab.active {
   color: var(--text);
-  border-color: rgba(36, 209, 143, 0.5);
-  background: rgba(36, 209, 143, 0.14);
+  border-color: rgb(var(--accent-rgb) / 0.5);
+  background: rgb(var(--accent-rgb) / 0.14);
 }
 
 .dock-tab-dot {
@@ -108,8 +140,8 @@ textarea:disabled {
   height: 7px;
   margin-left: 6px;
   border-radius: 50%;
-  background: rgba(36, 209, 143, 0.95);
-  box-shadow: 0 0 8px rgba(36, 209, 143, 0.7);
+  background: rgb(var(--accent-rgb) / 0.95);
+  box-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.7);
   vertical-align: middle;
 }
 
@@ -142,15 +174,15 @@ textarea:disabled {
   height: 26px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(207, 219, 210, 0.8);
+  background: rgb(var(--hover-rgb) / 0.03);
+  color: rgb(var(--text-2-rgb) / 0.8);
   cursor: pointer;
 }
 
 .dock-new-chat:hover {
   color: var(--text);
-  background: rgba(36, 209, 143, 0.14);
-  border-color: rgba(36, 209, 143, 0.4);
+  background: rgb(var(--accent-rgb) / 0.14);
+  border-color: rgb(var(--accent-rgb) / 0.4);
 }
 
 .dock-new-chat svg {
@@ -205,7 +237,7 @@ textarea:disabled {
   height: 34px;
   border-radius: 999px;
   background: transparent;
-  color: #b5c2ba;
+  color: var(--muted);
   font-weight: 900;
 }
 
@@ -221,12 +253,12 @@ textarea:disabled {
 
 /* Workspace toggle: filled/accented when the Augmentor workspace is showing. */
 .workspace-toggle[aria-pressed="true"] {
-  background: rgba(36, 209, 143, 0.16);
+  background: rgb(var(--accent-rgb) / 0.16);
   color: var(--text);
 }
 
 .workspace-toggle[aria-pressed="true"]:hover {
-  background: rgba(36, 209, 143, 0.24);
+  background: rgb(var(--accent-rgb) / 0.24);
 }
 
 .transcript {

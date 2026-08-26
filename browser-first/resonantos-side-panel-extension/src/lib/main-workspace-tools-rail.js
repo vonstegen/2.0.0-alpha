@@ -1,9 +1,9 @@
-// Dynamic rail. Consumes `GET /addons/surface-routes` (the host-side mirror
-// of the SDK's createAddOnRailMenus) and renders top-level rail menus:
-// harness add-ons (category `agent`) each get their own menu, memory
-// providers collapse into a "Memory" menu, and every other category collapses
-// into a "Tools" menu. A harness menu opens into a workspace whose sub-rail
-// lists the harness's own tools (from the manifest `tools` array).
+// Add-on workspace renderer. Consumes `GET /addons/surface-routes` (the
+// host-side mirror of the SDK's rail menus) and renders an add-on's workspace
+// when opened from the Add-ons registry: harnesses list their own tool loop
+// (manifest `tools`), memory menus list the grouped providers, and every other
+// category lists its surface routes. The fused-core ROS Harness is a fixed
+// primary-nav item, not an add-on menu.
 
 const DOCK_ICON_PATHS = {
   // Memory provider / knowledge store (database)
@@ -30,46 +30,16 @@ export async function fetchSurfaceRoutes(getBridgeRequest) {
   return Array.isArray(result?.menus) ? result.menus : [];
 }
 
-function menuButton(menu, onOpenMenu) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "rail-project";
-  button.dataset.workspace = menu.menuId;
-  button.innerHTML = `${dockIconSvg(menu.dockIcon)}<span class="rail-text"></span>`;
-  button.querySelector(".rail-text").textContent = menu.label;
-  button.title = menu.kind === "harness" ? `${menu.label} — harness` : menu.label;
-  button.addEventListener("click", () => onOpenMenu(menu.menuId));
-  return button;
-}
-
-export function renderToolsRailButtons(container, menus, onOpenMenu) {
-  container.replaceChildren();
-  for (const menu of menus) {
-    container.append(menuButton(menu, onOpenMenu));
-  }
-}
-
-export function syncToolsRailActive(container, activeWorkspace) {
-  for (const button of container.querySelectorAll(".rail-project")) {
-    const active = button.dataset.workspace === activeWorkspace;
-    button.classList.toggle("active", active);
-    if (active) {
-      button.setAttribute("aria-current", "page");
-    } else {
-      button.removeAttribute("aria-current");
-    }
-  }
-}
-
 function menuEyebrow(kind) {
   if (kind === "harness") return "Harness";
   if (kind === "memory") return "Memory";
   return "Tools";
 }
 
-function harnessToolRow(tool) {
+function harnessToolRow(tool, { isNative = false } = {}) {
   const li = document.createElement("li");
   li.className = "harness-tool-row";
+  if (tool.supersededBy) li.classList.add("is-superseded");
 
   const head = document.createElement("div");
   head.className = "harness-tool-head";
@@ -79,8 +49,13 @@ function harnessToolRow(tool) {
 
   const gate = document.createElement("span");
   gate.className = "harness-tool-gate";
-  gate.dataset.tone = tool.requiresHumanApproval ? "gated" : "auto";
-  gate.textContent = tool.requiresHumanApproval ? "approval required" : "auto";
+  if (isNative) {
+    gate.dataset.tone = "core";
+    gate.textContent = "core";
+  } else {
+    gate.dataset.tone = tool.requiresHumanApproval ? "gated" : "auto";
+    gate.textContent = tool.requiresHumanApproval ? "approval required" : "auto";
+  }
 
   head.append(name, gate);
   li.append(head);
@@ -90,6 +65,13 @@ function harnessToolRow(tool) {
     desc.className = "harness-tool-desc";
     desc.textContent = tool.description;
     li.append(desc);
+  }
+
+  if (tool.supersededBy) {
+    const superseded = document.createElement("p");
+    superseded.className = "harness-tool-superseded";
+    superseded.textContent = `Superseded by ${tool.supersededBy.addonId} · ${tool.supersededBy.toolName}`;
+    li.append(superseded);
   }
 
   const caps = Array.isArray(tool.requiredCapabilities) ? tool.requiredCapabilities : [];
@@ -108,18 +90,19 @@ function harnessToolRow(tool) {
   return li;
 }
 
-function renderHarnessToolSubRail(menu) {
+export function renderHarnessToolSubRail(menu) {
   const list = document.createElement("ul");
   list.className = "harness-tool-list";
-  const tools = Array.isArray(menu.tools) ? menu.tools : [];
+  const nativeTools = Array.isArray(menu.nativeTools) ? menu.nativeTools : null;
+  const tools = nativeTools ?? (Array.isArray(menu.tools) ? menu.tools : []);
   if (tools.length === 0) {
     const empty = document.createElement("li");
     empty.className = "harness-tool-empty";
-    empty.textContent = "No tools declared in the manifest.";
+    empty.textContent = nativeTools ? "No G0 harness tools." : "No tools declared in the manifest.";
     list.append(empty);
   } else {
     for (const tool of tools) {
-      list.append(harnessToolRow(tool));
+      list.append(harnessToolRow(tool, { isNative: Boolean(nativeTools) }));
     }
   }
   return list;
@@ -162,11 +145,13 @@ export function renderRailMenuWorkspace(container, menu) {
   title.textContent = menu.label;
 
   const body = document.createElement("p");
-  body.textContent = menu.kind === "harness"
-    ? "Tools provided by this harness. Each is capability-gated and audited by the bridge."
-    : menu.kind === "memory"
-      ? "Memory providers available in this workspace."
-      : "Single-purpose tools available in this workspace.";
+  body.textContent = Array.isArray(menu.nativeTools)
+    ? "The tool loop G0-ROS ships with. Grayed tools are superseded by an installed add-on's equivalent."
+    : menu.kind === "harness"
+      ? "Tools provided by this harness. Each is capability-gated and audited by the bridge."
+      : menu.kind === "memory"
+        ? "Memory providers available in this workspace."
+        : "Single-purpose tools available in this workspace.";
 
   copy.append(eyebrow, title, body);
   section.append(copy);

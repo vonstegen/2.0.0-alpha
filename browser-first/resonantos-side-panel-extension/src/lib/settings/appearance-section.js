@@ -3,7 +3,8 @@ import { noteCard, setStatus, settingsHeader } from "./settings-common.js";
 const defaults = {
   density: "comfortable",
   fontScale: "standard",
-  motion: "full"
+  motion: "full",
+  theme: "light"
 };
 
 function option(value, text, selected) {
@@ -30,6 +31,7 @@ function applyAppearance(preferences = {}) {
   document.body.dataset.density = next.density;
   document.body.dataset.fontScale = next.fontScale;
   document.body.dataset.motion = next.motion;
+  document.documentElement.dataset.theme = next.theme;
   return next;
 }
 
@@ -70,6 +72,13 @@ export function renderAppearanceSection(container, { storage, storageKeys = {} }
     option("full", "Full motion", true),
     option("reduced", "Reduced motion", false)
   );
+  const theme = document.createElement("select");
+  theme.name = "theme";
+  theme.setAttribute("aria-label", "Color theme");
+  theme.append(
+    option("light", "Light", true),
+    option("dark", "Dark", false)
+  );
   const save = document.createElement("button");
   save.type = "submit";
   save.textContent = "Save Appearance";
@@ -77,6 +86,7 @@ export function renderAppearanceSection(container, { storage, storageKeys = {} }
     labelledControl("Density", "Choose compact desktop spacing or larger touch-friendly controls.", density),
     labelledControl("Text size", "Adjust chat, navigation, and settings text without changing workflows.", fontScale),
     labelledControl("Motion", "Reduce motion when animation should be calmer or less distracting.", motion),
+    labelledControl("Theme", "Choose a light or dark color scheme. Light is the default.", theme),
     save
   );
 
@@ -99,7 +109,8 @@ export function renderAppearanceSection(container, { storage, storageKeys = {} }
     density.value = preferences.density;
     fontScale.value = preferences.fontScale;
     motion.value = preferences.motion;
-    setStatus(statusNode, `Using ${preferences.density} density, ${preferences.fontScale} font scale, ${preferences.motion} motion.`, "success");
+    theme.value = preferences.theme;
+    setStatus(statusNode, `Using ${preferences.density} density, ${preferences.fontScale} font scale, ${preferences.motion} motion, ${preferences.theme} theme.`, "success");
   };
 
   form.addEventListener("submit", async (event) => {
@@ -108,7 +119,8 @@ export function renderAppearanceSection(container, { storage, storageKeys = {} }
     const preferences = applyAppearance({
       density: density.value,
       fontScale: fontScale.value,
-      motion: motion.value
+      motion: motion.value,
+      theme: theme.value
     });
     try {
       if (storage && key) {

@@ -1868,23 +1868,28 @@ test("settings appearance section loads, applies, and saves local UI preferences
     assert.match(container.textContent, /Density/);
     assert.match(container.textContent, /Text size/);
     assert.match(container.textContent, /Motion/);
+    assert.match(container.textContent, /Theme/);
     assert.equal(document.body.dataset.density, "compact");
     assert.equal(document.body.dataset.fontScale, "small");
     assert.equal(document.body.dataset.motion, "reduced");
+    assert.equal(document.documentElement.dataset.theme, "light");
 
     const form = container.querySelector(".settings-appearance-form");
     form.querySelector("select[name='density']").value = "touch";
     form.querySelector("select[name='fontScale']").value = "large";
     form.querySelector("select[name='motion']").value = "full";
+    form.querySelector("select[name='theme']").value = "dark";
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     assert.deepEqual(stored.augmentorAppearancePreferences, {
       density: "touch",
       fontScale: "large",
-      motion: "full"
+      motion: "full",
+      theme: "dark"
     });
     assert.equal(document.body.dataset.density, "touch");
+    assert.equal(document.documentElement.dataset.theme, "dark");
     assert.match(container.textContent, /Appearance settings saved/);
   } finally {
     cleanup();
