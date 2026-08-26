@@ -51,6 +51,7 @@ export function createBrowserDiagnosticsHostService({
         "shared-minimax": Boolean(secrets["shared-minimax"]),
         "shared-zai-glm": Boolean(secrets["shared-zai-glm"]),
         "shared-openai": Boolean(secrets["shared-openai"]),
+        "shared-deepseek": Boolean(secrets["shared-deepseek"]),
       },
       memory,
       addons: addons.addons,
