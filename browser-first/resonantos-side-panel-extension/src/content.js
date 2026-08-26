@@ -877,13 +877,13 @@ const scrollPage = ({ direction = "down", amount = 720 } = {}) => {
 
 const inlineStyles = `
   #${inlineButtonId}, #${inlineAssistantId} { all: initial; color-scheme: dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; z-index: 2147483647; }
-  #${inlineButtonId} { position: fixed; display: none; border: 1px solid rgba(36,209,143,.42); border-radius: 999px; background: rgba(5, 12, 9, .94); color: #eafff4; box-shadow: 0 16px 44px rgba(0,0,0,.32); padding: 8px 10px; font: 700 12px/1 ui-sans-serif, system-ui; cursor: pointer; }
-  #${inlineAssistantId} { position: fixed; display: none; width: min(390px, calc(100vw - 24px)); max-height: min(460px, calc(100vh - 24px)); overflow: auto; border: 1px solid rgba(36,209,143,.28); border-radius: 18px; background: linear-gradient(145deg, rgba(8,20,14,.98), rgba(4,8,7,.98)); color: #effaf2; box-shadow: 0 28px 90px rgba(0,0,0,.42); padding: 12px; }
+  #${inlineButtonId} { position: fixed; display: none; border: 1px solid rgba(34,184,207,.42); border-radius: 999px; background: rgba(5, 12, 9, .94); color: #e6fbff; box-shadow: 0 16px 44px rgba(0,0,0,.32); padding: 8px 10px; font: 700 12px/1 ui-sans-serif, system-ui; cursor: pointer; }
+  #${inlineAssistantId} { position: fixed; display: none; width: min(390px, calc(100vw - 24px)); max-height: min(460px, calc(100vh - 24px)); overflow: auto; border: 1px solid rgba(34,184,207,.28); border-radius: 18px; background: linear-gradient(145deg, rgba(8,20,14,.98), rgba(4,8,7,.98)); color: #eefbff; box-shadow: 0 28px 90px rgba(0,0,0,.42); padding: 12px; }
   #${inlineAssistantId} .ros-inline-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
-  #${inlineAssistantId} strong { font: 800 13px/1.2 ui-sans-serif, system-ui; color:#effaf2; }
-  #${inlineAssistantId} kbd { all: unset; border:1px solid rgba(255,255,255,.12); border-radius:5px; color:#85eec3; font: 800 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace; margin-left:5px; padding:2px 4px; }
-  #${inlineAssistantId} textarea { all: unset; display:block; box-sizing:border-box; width:100%; min-height:54px; margin: 0 0 9px; border:1px solid rgba(255,255,255,.09); border-radius:12px; background: rgba(255,255,255,.045); color:#effaf2; font: 12px/1.38 ui-sans-serif, system-ui; padding:9px; white-space:pre-wrap; }
-  #${inlineAssistantId} button { all: unset; border-radius: 999px; color: #b9cbc0; cursor: pointer; font: 800 11px/1 ui-sans-serif, system-ui; padding: 7px 9px; }
+  #${inlineAssistantId} strong { font: 800 13px/1.2 ui-sans-serif, system-ui; color:#eefbff; }
+  #${inlineAssistantId} kbd { all: unset; border:1px solid rgba(255,255,255,.12); border-radius:5px; color:#8fe8f5; font: 800 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace; margin-left:5px; padding:2px 4px; }
+  #${inlineAssistantId} textarea { all: unset; display:block; box-sizing:border-box; width:100%; min-height:54px; margin: 0 0 9px; border:1px solid rgba(255,255,255,.09); border-radius:12px; background: rgba(255,255,255,.045); color:#eefbff; font: 12px/1.38 ui-sans-serif, system-ui; padding:9px; white-space:pre-wrap; }
+  #${inlineAssistantId} button { all: unset; border-radius: 999px; color: #b6d0d6; cursor: pointer; font: 800 11px/1 ui-sans-serif, system-ui; padding: 7px 9px; }
   #${inlineAssistantId} button:hover { background: rgba(255,255,255,.08); color:#fff; }
   #${inlineAssistantId} .ros-inline-actions { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
   #${inlineAssistantId} .ros-inline-result { white-space: pre-wrap; color:#dce9df; font: 12px/1.45 ui-sans-serif, system-ui; background: rgba(255,255,255,.045); border-radius: 12px; padding: 10px; }

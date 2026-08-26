@@ -1,13 +1,45 @@
 :root {
+  color-scheme: light;
+  --bg: #f3f0e9;
+  --bg-warm: #f7ebe6;
+  --panel-rgb: 252 250 246;
+  --panel-warm-rgb: 248 238 232;
+  --hover-rgb: 40 37 31;
+  --text-rgb: 35 33 27;
+  --text-2-rgb: 84 79 70;
+  --muted-rgb: 110 104 94;
+  --accent-rgb: 17 138 178;
+  --accent-strong-rgb: 12 98 127;
+  --text: #23211b;
+  --text-2: #544f46;
+  --muted: #6e685e;
+  --accent: #118ab2;
+  --accent-strong: #0c627f;
+  --rail: rgb(var(--hover-rgb) / 0.045);
+  --panel: rgb(var(--panel-rgb) / 0.86);
+  --line: rgb(var(--accent-rgb) / 0.13);
+}
+
+[data-theme="dark"] {
   color-scheme: dark;
   --bg: #070a08;
-  --rail: rgba(255, 255, 255, 0.045);
-  --panel: rgba(17, 22, 19, 0.86);
-  --line: rgba(148, 255, 198, 0.13);
+  --bg-warm: #170806;
+  --panel-rgb: 17 22 19;
+  --panel-warm-rgb: 20 12 10;
+  --hover-rgb: 255 255 255;
+  --text-rgb: 238 247 240;
+  --text-2-rgb: 207 219 210;
+  --muted-rgb: 144 157 149;
+  --accent-rgb: 34 184 207;
+  --accent-strong-rgb: 14 165 180;
   --text: #eef7f0;
+  --text-2: #cfdbd2;
   --muted: #909d95;
-  --accent: #24d18f;
-  --accent-strong: #18bd7d;
+  --accent: #22b8cf;
+  --accent-strong: #0ea5b4;
+  --rail: rgb(var(--hover-rgb) / 0.045);
+  --panel: rgb(var(--panel-rgb) / 0.86);
+  --line: rgb(var(--accent-rgb) / 0.13);
 }
 
 * {
@@ -25,8 +57,8 @@ body {
   min-height: 100%;
   overflow: hidden;
   background:
-    radial-gradient(circle at 18% 0%, rgba(36, 209, 143, 0.15), transparent 24rem),
-    linear-gradient(160deg, #0b100d, var(--bg) 46%);
+    radial-gradient(circle at 18% 0%, rgb(var(--accent-rgb) / 0.15), transparent 24rem),
+    linear-gradient(160deg, var(--bg), var(--bg) 46%);
   color: var(--text);
   font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -80,8 +112,8 @@ textarea {
    text for readable contrast. */
 select option,
 select optgroup {
-  background-color: var(--bg, #0b120e);
-  color: var(--text, #eef7f0);
+  background-color: var(--bg, var(--bg));
+  color: var(--text, var(--text));
 }
 
 button {
@@ -104,8 +136,8 @@ button {
   min-height: 0;
   border-right: 1px solid var(--line);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 32%),
-    rgba(14, 18, 16, 0.92);
+    linear-gradient(180deg, rgb(var(--hover-rgb) / 0.05), transparent 32%),
+    rgb(var(--panel-rgb) / 0.92);
   padding: 14px 12px;
   overflow: hidden;
 }
@@ -130,7 +162,7 @@ button {
 
 .brand-lockup strong {
   overflow: hidden;
-  color: rgba(247, 255, 249, 0.9);
+  color: rgb(var(--text-rgb) / 0.9);
   font-size: 0.86rem;
   font-weight: 900;
   text-overflow: ellipsis;
@@ -142,10 +174,16 @@ button {
   place-items: center;
   width: 34px;
   height: 34px;
-  border: 1px solid rgba(36, 209, 143, 0.26);
+  border: 1px solid rgb(var(--accent-rgb) / 0.26);
   border-radius: 11px;
-  background: rgba(36, 209, 143, 0.1);
+  background: #ffffff;
   font-weight: 950;
+}
+
+.brand-mark svg {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
 }
 
 .rail-icon-button {
@@ -157,7 +195,7 @@ button {
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: rgba(207, 219, 210, 0.66);
+  color: rgb(var(--text-2-rgb) / 0.66);
 }
 
 .rail-action,
@@ -167,12 +205,12 @@ button {
 .topbar-tab {
   border: 0;
   background: transparent;
-  color: rgba(238, 247, 240, 0.72);
+  color: rgb(var(--text-rgb) / 0.72);
 }
 
 .rail-action {
   border-radius: 999px;
-  background: rgba(36, 209, 143, 0.1);
+  background: rgb(var(--accent-rgb) / 0.1);
   color: var(--text);
   font-weight: 900;
   font-size: 0.82rem;
@@ -184,28 +222,119 @@ button {
   display: grid;
   gap: 4px;
 }
+.rail-tabs {
+  display: grid;
+  gap: 6px;
+}
+
+.rail-tab-toggle,
+.rail-tab-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid rgb(var(--hover-rgb) / 0.09);
+  background: rgb(var(--hover-rgb) / 0.045);
+  color: rgb(var(--text-rgb) / 0.88);
+  font-size: 0.8rem;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  padding: 7px 10px;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.rail-tab-header {
+  cursor: default;
+}
+
+.rail-tab-toggle {
+  cursor: pointer;
+}
+
+.rail-tab-toggle:hover {
+  background: rgb(var(--hover-rgb) / 0.085);
+  border-color: rgb(var(--hover-rgb) / 0.16);
+  color: var(--text);
+}
+
+.rail-tab-toggle[aria-expanded="true"] {
+  background: rgb(var(--accent-rgb) / 0.14);
+  border-color: rgb(var(--accent-rgb) / 0.38);
+  color: var(--text);
+}
+
+.rail-tab-toggle svg,
+.rail-tab-header svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.rail-tab-toggle[aria-expanded="true"] > svg:first-child {
+  color: var(--accent);
+}
+
+.rail-tab-toggle .rail-tab-caret {
+  margin-left: auto;
+  width: 13px;
+  height: 13px;
+  color: rgb(var(--muted-rgb) / 0.7);
+  transition: transform 120ms ease;
+}
+
+.rail-tab-toggle[aria-expanded="false"] .rail-tab-caret {
+  transform: rotate(-90deg);
+}
+
+.rail-tab-items {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0 6px 9px;
+  padding-left: 9px;
+  border-left: 1px solid rgb(var(--accent-rgb) / 0.22);
+}
+
+/* `display: grid` would otherwise beat the `hidden` attribute's UA `display:
+   none`, leaving collapsed tab items visible. Reassert the hidden state. */
+.rail-tab-items[hidden] {
+  display: none;
+}
+
+/* Rail items carrying an activity dot (dock tabs) lay out in a row so the
+   dot sits at the end instead of wrapping to a second grid row. */
+.rail-item:has(.dock-tab-dot) {
+  display: flex;
+  grid-template-columns: none;
+}
+
+.rail-item:has(.dock-tab-dot) span:not(.dock-tab-dot) {
+  flex: 1;
+  min-width: 0;
+}
+
+.rail-item .dock-tab-dot {
+  flex-shrink: 0;
+}
 
 .rail-item {
   display: grid;
   grid-template-columns: 19px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
-  border-radius: 12px;
-  font-size: 0.82rem;
-  font-weight: 780;
-  min-height: 34px;
-  padding: 7px 9px;
+  border: 1px solid transparent;
+  background: rgb(var(--hover-rgb) / 0.03);
+  border-radius: 9px;
+  font-size: 0.8rem;
+  font-weight: 760;
+  min-height: 32px;
+  padding: 6px 9px;
   text-align: left;
-}
-
-.rail-section[aria-label="Tools"] .rail-project {
-  grid-template-columns: 20px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-}
-
-.rail-tools-list {
-  display: contents;
 }
 
 .rail-item svg,
@@ -227,22 +356,22 @@ button {
 .rail-project.drag-over,
 .rail-recents.drag-over,
 .rail-icon-button:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgb(var(--hover-rgb) / 0.06);
   color: var(--text);
 }
 
 .rail-project.drag-over,
 .rail-recents.drag-over {
-  outline: 1px solid rgba(36, 209, 143, 0.46);
+  outline: 1px solid rgb(var(--accent-rgb) / 0.46);
   outline-offset: 2px;
 }
 
 .rail-search-box input {
   width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgb(var(--hover-rgb) / 0.08);
   border-radius: 13px;
   background: rgba(0, 0, 0, 0.18);
-  color: rgba(247, 255, 249, 0.92);
+  color: rgb(var(--text-rgb) / 0.92);
   outline: none;
   padding: 9px 11px;
 }
@@ -255,7 +384,7 @@ button {
 
 .rail-section h2 {
   margin: 5px 8px 3px;
-  color: rgba(143, 159, 149, 0.76);
+  color: rgb(var(--muted-rgb) / 0.76);
   font-size: 0.76rem;
   font-weight: 780;
 }
@@ -267,7 +396,7 @@ button {
 .rail-section-row button {
   border: 0;
   background: transparent;
-  color: rgba(36, 209, 143, 0.8);
+  color: rgb(var(--accent-rgb) / 0.8);
   font-size: 0.72rem;
   font-weight: 850;
 }
@@ -279,7 +408,7 @@ button {
   gap: 1px;
   min-height: 29px;
   border-radius: 12px;
-  color: rgba(207, 219, 210, 0.72);
+  color: rgb(var(--text-2-rgb) / 0.72);
   font-size: 0.82rem;
   font-weight: 770;
   padding: 4px 8px;
@@ -299,8 +428,8 @@ button {
   display: grid;
   place-items: center;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(247, 255, 249, 0.86);
+  background: rgb(var(--hover-rgb) / 0.08);
+  color: rgb(var(--text-rgb) / 0.86);
   font-size: 0.7rem;
   font-weight: 950;
 }
@@ -322,8 +451,8 @@ button {
 .rail-project kbd {
   border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
-  color: rgba(207, 219, 210, 0.54);
+  background: rgb(var(--hover-rgb) / 0.07);
+  color: rgb(var(--text-2-rgb) / 0.54);
   font: 750 0.68rem/1 ui-sans-serif, system-ui, sans-serif;
   padding: 4px 7px;
 }
@@ -388,7 +517,7 @@ button {
   border: 0;
   border-radius: 11px;
   background: transparent;
-  color: rgba(238, 247, 240, 0.7);
+  color: rgb(var(--text-rgb) / 0.7);
   padding: 6px 8px;
   text-align: left;
   cursor: pointer;
@@ -406,12 +535,12 @@ button {
 
 .rail-folder:hover,
 .rail-folder.drag-over {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgb(var(--hover-rgb) / 0.06);
   color: var(--text);
 }
 
 .rail-folder.drag-over {
-  outline: 1px solid rgba(36, 209, 143, 0.46);
+  outline: 1px solid rgb(var(--accent-rgb) / 0.46);
   outline-offset: 2px;
 }
 
@@ -426,8 +555,8 @@ button {
 .rail-folder kbd {
   border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
-  color: rgba(207, 219, 210, 0.54);
+  background: rgb(var(--hover-rgb) / 0.07);
+  color: rgb(var(--text-2-rgb) / 0.54);
   font: 750 0.66rem/1 ui-sans-serif, system-ui, sans-serif;
   padding: 3px 6px;
 }
@@ -445,7 +574,7 @@ button {
 }
 
 .rail-folder-empty {
-  color: rgba(207, 219, 210, 0.4);
+  color: rgb(var(--text-2-rgb) / 0.4);
   font-size: 0.7rem;
   padding: 4px 8px;
 }
@@ -458,9 +587,9 @@ button {
   gap: 1px;
   min-width: 160px;
   max-width: 260px;
-  border: 1px solid rgba(36, 209, 143, 0.22);
+  border: 1px solid rgb(var(--accent-rgb) / 0.22);
   border-radius: 12px;
-  background: rgba(6, 12, 10, 0.98);
+  background: rgb(var(--panel-rgb) / 0.98);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
   padding: 5px;
 }
@@ -469,7 +598,7 @@ button {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: rgba(238, 247, 240, 0.85);
+  color: rgb(var(--text-rgb) / 0.85);
   font-size: 0.76rem;
   font-weight: 700;
   text-align: left;
@@ -481,12 +610,12 @@ button {
 }
 
 .rail-move-item:hover:not(:disabled) {
-  background: rgba(36, 209, 143, 0.16);
+  background: rgb(var(--accent-rgb) / 0.16);
   color: var(--text);
 }
 
 .rail-move-item:disabled {
-  color: rgba(207, 219, 210, 0.4);
+  color: rgb(var(--text-2-rgb) / 0.4);
   cursor: default;
 }
 
@@ -500,7 +629,7 @@ button {
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: rgba(207, 219, 210, 0.72);
+  color: rgb(var(--text-2-rgb) / 0.72);
   font-size: 0.76rem;
   padding: 4px 8px;
   text-align: left;
@@ -521,7 +650,7 @@ button {
 }
 
 .rail-chat-button.pinned {
-  background: rgba(36, 209, 143, 0.045);
+  background: rgb(var(--accent-rgb) / 0.045);
 }
 
 .rail-chat-button[draggable="true"] {
@@ -534,15 +663,15 @@ button {
 
 .rail-chat-button:hover,
 .rail-chat-button.active {
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(247, 255, 249, 0.92);
+  background: rgb(var(--hover-rgb) / 0.055);
+  color: rgb(var(--text-rgb) / 0.92);
 }
 
 .rail-chat-meta {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: rgba(143, 159, 149, 0.58);
+  color: rgb(var(--muted-rgb) / 0.58);
   font-size: 0.67rem;
   font-weight: 750;
 }
@@ -550,7 +679,7 @@ button {
 .rail-chat-meta svg {
   width: 11px;
   height: 11px;
-  color: rgba(36, 209, 143, 0.9);
+  color: rgb(var(--accent-rgb) / 0.9);
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
@@ -563,7 +692,7 @@ button {
   place-items: center;
   width: 10px;
   height: 10px;
-  color: rgba(36, 209, 143, 0.95);
+  color: rgb(var(--accent-rgb) / 0.95);
 }
 
 .rail-unread-dot svg {
@@ -610,13 +739,13 @@ button {
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: rgba(207, 219, 210, 0.62);
+  color: rgb(var(--text-2-rgb) / 0.62);
   padding: 0;
 }
 
 .rail-chat-action:hover {
-  background: rgba(255, 255, 255, 0.075);
-  color: rgba(247, 255, 249, 0.94);
+  background: rgb(var(--hover-rgb) / 0.075);
+  color: rgb(var(--text-rgb) / 0.94);
 }
 
 .rail-chat-action svg {
@@ -630,7 +759,7 @@ button {
 }
 
 .rail-empty {
-  color: rgba(143, 159, 149, 0.62);
+  color: rgb(var(--muted-rgb) / 0.62);
   font-size: 0.75rem;
   padding: 7px 9px;
 }
@@ -651,21 +780,21 @@ button {
   border: 0;
   border-radius: 14px;
   background: transparent;
-  color: rgba(238, 247, 240, 0.8);
+  color: rgb(var(--text-rgb) / 0.8);
   padding: 7px;
   text-align: left;
 }
 
 .rail-user-card:hover {
-  background: rgba(255, 255, 255, 0.055);
+  background: rgb(var(--hover-rgb) / 0.055);
 }
 
 .rail-avatar {
   width: 30px;
   height: 30px;
   background:
-    radial-gradient(circle at 30% 20%, rgba(36, 209, 143, 0.8), transparent 34%),
-    rgba(255, 255, 255, 0.08);
+    radial-gradient(circle at 30% 20%, rgb(var(--accent-rgb) / 0.8), transparent 34%),
+    rgb(var(--hover-rgb) / 0.08);
 }
 
 .rail-user-card span:last-child {
@@ -674,15 +803,15 @@ button {
 }
 
 .rail-user-card strong {
-  color: rgba(247, 255, 249, 0.88);
+  color: rgb(var(--text-rgb) / 0.88);
   font-size: 0.78rem;
 }
 
 .rail-user-card small {
-  color: rgba(143, 159, 149, 0.72);
+  color: rgb(var(--muted-rgb) / 0.72);
   font-size: 0.68rem;
 }
 
 .rail-settings {
-  color: rgba(238, 247, 240, 0.82);
+  color: rgb(var(--text-rgb) / 0.82);
 }

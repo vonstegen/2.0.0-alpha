@@ -61,6 +61,6 @@ button:not(.icon-button):not(.send-button):not(.connection-line):not(.context-me
   .approval-actions button,
   .toolbar-button
 ) {
-  background: rgba(36, 209, 143, 0.06) !important;
-  color: rgba(238, 247, 240, 0.82) !important;
+  background: rgb(var(--accent-rgb) / 0.06) !important;
+  color: rgb(var(--text-rgb) / 0.82) !important;
 }

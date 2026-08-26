@@ -41,7 +41,7 @@ body[data-workspace="hermes"] .hermes-dashboard-workspace {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: #4d9c6e;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgb(var(--hover-rgb) / 0.05);
   background: rgba(0, 0, 0, 0.2);
 }
 
@@ -84,8 +84,8 @@ body[data-workspace="hermes"] .hermes-dashboard-workspace {
   padding: 8px 12px;
   font-size: 11px;
   font-family: monospace;
-  color: rgba(255, 255, 255, 0.6);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: rgb(var(--hover-rgb) / 0.6);
+  border-bottom: 1px solid rgb(var(--hover-rgb) / 0.05);
   background: rgba(0, 0, 0, 0.3);
 }
 

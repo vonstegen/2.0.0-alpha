@@ -1301,7 +1301,14 @@ try {
   throw error;
 }
 
+async function applyStoredTheme() {
+  const prefs = await chrome.storage?.local?.get?.([STORAGE_KEYS.appearance]).catch(() => ({}));
+  const theme = prefs?.[STORAGE_KEYS.appearance]?.theme;
+  document.documentElement.dataset.theme = theme === "dark" ? "dark" : "light";
+}
+
 hydrateChatSettings().then(async () => {
+  await applyStoredTheme();
   await hydrateRegenerationModePreference();
   chatsTreeRenderer.render();
   await loadBrowserJobs();

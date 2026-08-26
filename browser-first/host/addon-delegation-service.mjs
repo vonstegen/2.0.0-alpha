@@ -135,10 +135,12 @@ export function createAddOnSurfaceDockRoutes(manifests, installations) {
     .sort((left, right) => left.order - right.order || left.label.localeCompare(right.label));
 }
 
-// Mirrors src/sdk/addons/surface-routing.ts `createAddOnRailMenus`. Harness
-// add-ons (category `agent`) get their own top-level rail menu; memory
-// providers collapse into a "Memory" menu; every other category collapses
-// into a "Tools" menu. Same shape, same semantics, same order.
+// Mirrors src/sdk/addons/architecture.ts (G0_HARNESS_TOOL_CATALOG +
+// railMenuKindForCategory) and src/sdk/addons/surface-routing.ts
+// (createShellRailMenus / createRosHarnessMenu / createAddOnRailMenus). The
+// shell always leads with the fused-core "ROS Harness" menu (its own minimal
+// tool loop), then agent add-ons each get their own menu, memory providers
+// collapse into "Memory", and every other category collapses into "Tools".
 const SHELL_RAIL_MENUS = Object.freeze({
   memory: { label: "Memory", dockIcon: "memory" },
   tools: { label: "Tools", dockIcon: "tool" },
@@ -189,6 +191,57 @@ export function createAddOnRailMenus(manifests, installations) {
       tools: group.tools,
     }))
     .sort(byOrderThenLabel);
+}
+
+// ---- ROS Harness (fused-core) rail menu -------------------------------------
+// Mirrors src/sdk/addons/surface-routing.ts createRosHarnessMenu. The G0
+// harness ships a minimal tool loop; an installed add-on whose tool declares
+// `coversNativeTool` supersedes (grays out) the equivalent G0 tool.
+const G0_HARNESS_TOOL_CATALOG = Object.freeze([
+  { name: "research.search_api", description: "Search the web for current information.", domain: "research" },
+  { name: "research.fetch_url", description: "Fetch and read a web page.", domain: "research" },
+  { name: "browser.session", description: "Drive a controlled browser session.", domain: "browser" },
+  { name: "filesystem.read", description: "Read a file within scope.", domain: "filesystem" },
+  { name: "filesystem.search", description: "Search code and text within scope.", domain: "filesystem" },
+  { name: "filesystem.patch", description: "Apply a reviewed, scoped patch.", domain: "filesystem" },
+  { name: "process.safe_command", description: "Run an allowlisted shell command.", domain: "process" },
+  { name: "provider.probe", description: "Probe a provider's health and credentials.", domain: "provider" },
+  { name: "provider.route_select", description: "Select a model route within policy.", domain: "provider" },
+  { name: "archive.search", description: "Search the trusted archive.", domain: "archive" },
+  { name: "archive.read", description: "Read a trusted archive page.", domain: "archive" },
+  { name: "archive.intake_write", description: "Write through the ingest path (Strategist-owned).", domain: "archive" },
+  { name: "delegation.create_packet", description: "Create a delegation packet for another agent.", domain: "delegation" },
+]);
+
+export function createRosHarnessMenu(manifests, installations) {
+  const supersedeByNativeTool = new Map();
+  for (const manifest of manifests) {
+    const installation = installations[manifest.id];
+    if (!installation?.installed || !installation.enabled) continue;
+    for (const tool of manifest.tools ?? []) {
+      if (tool.coversNativeTool && !supersedeByNativeTool.has(tool.coversNativeTool)) {
+        supersedeByNativeTool.set(tool.coversNativeTool, { addonId: manifest.id, toolName: tool.name });
+      }
+    }
+  }
+  return {
+    menuId: "ros-harness",
+    kind: "harness",
+    label: "ROS Harness",
+    dockIcon: "harness",
+    order: 0,
+    routes: [],
+    nativeTools: G0_HARNESS_TOOL_CATALOG.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      domain: tool.domain,
+      supersededBy: supersedeByNativeTool.get(tool.name),
+    })),
+  };
+}
+
+export function createShellRailMenus(manifests, installations) {
+  return [createRosHarnessMenu(manifests, installations), ...createAddOnRailMenus(manifests, installations)];
 }
 export const OPENCODE_EXPLICIT_PROVIDER_ENV_KEYS = Object.freeze([
   "ANTHROPIC_BASE_URL",
@@ -1971,7 +2024,7 @@ except BaseException as exc:
         grantedCapabilities: requestedCapabilities,
       };
     }
-    return { menus: createAddOnRailMenus(manifests, installations) };
+    return { menus: createShellRailMenus(manifests, installations) };
   }
 
   async function executeAddonExecutionSettingsGet() {
