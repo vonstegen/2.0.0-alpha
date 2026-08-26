@@ -60,6 +60,7 @@ export function createAddonDelegationHostService(handlers = {}) {
   return {
     addonDelegationRoutes: [
       { method: "GET", path: "/addons/status", handler: required("executeAddonsStatus") },
+      { method: "GET", path: "/addons/surface-routes", handler: required("executeAddonSurfaceRoutes") },
       { method: "GET", path: "/addons/execution-settings", handler: required("executeAddonExecutionSettingsGet") },
       {
         method: "POST",
