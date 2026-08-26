@@ -39,7 +39,7 @@ import { createMessageActionController } from "./lib/message-action-controller.j
 import { createSitePermissionStore } from "./lib/site-permission-store.js";
 import { createSidePanelRenderers } from "./lib/side-panel-renderers.js";
 import { createTaskConsentStore } from "./lib/task-consent-store.js";
-import { fetchSurfaceRoutes, renderAddonSurfaceWorkspace, renderToolsRailButtons, syncToolsRailActive } from "./lib/main-workspace-tools-rail.js";
+import { fetchSurfaceRoutes, renderRailMenuWorkspace, renderToolsRailButtons, syncToolsRailActive } from "./lib/main-workspace-tools-rail.js";
 
 const STORAGE_KEYS = {
   messages: "augmentorBrowserMessages",
@@ -70,7 +70,7 @@ const STORAGE_KEYS = {
 const transcript = document.querySelector("#transcript");
 const workspaceButtons = [...document.querySelectorAll("[data-workspace]")];
 const railToolsList = document.querySelector("#rail-tools-list");
-const addonSurfaceRoutesBySection = new Map();
+const railMenuByWorkspace = new Map();
 const newChatButton = document.querySelector("#new-chat");
 const mainBrowserJobs = document.querySelector("#main-browser-jobs");
 const railNewChatButton = document.querySelector("#rail-new-chat");
@@ -868,8 +868,8 @@ function renderMessages() {
     });
     return;
   }
-  if (addonSurfaceRoutesBySection.has(activeWorkspace)) {
-    renderAddonSurfaceWorkspace(transcript, addonSurfaceRoutesBySection.get(activeWorkspace));
+  if (railMenuByWorkspace.has(activeWorkspace)) {
+    renderRailMenuWorkspace(transcript, railMenuByWorkspace.get(activeWorkspace));
     return;
   }
   chatRenderers.renderMessages();
@@ -894,15 +894,15 @@ function renderAll() {
 }
 
 async function hydrateToolsRail() {
-  const routes = await fetchSurfaceRoutes(getBridgeRequest).catch(() => []);
-  for (const route of routes) {
-    allowedWorkspaces.add(route.sectionId);
-    addonSurfaceRoutesBySection.set(route.sectionId, route);
+  const menus = await fetchSurfaceRoutes(getBridgeRequest).catch(() => []);
+  for (const menu of menus) {
+    allowedWorkspaces.add(menu.menuId);
+    railMenuByWorkspace.set(menu.menuId, menu);
   }
   if (!railToolsList) return;
-  renderToolsRailButtons(railToolsList, routes, (sectionId) => {
-    setActiveWorkspace(sectionId, { persist: true });
-    updateWorkspaceDeepLink(sectionId);
+  renderToolsRailButtons(railToolsList, menus, (menuId) => {
+    setActiveWorkspace(menuId, { persist: true });
+    updateWorkspaceDeepLink(menuId);
     renderAll();
   });
   syncToolsRailActive(railToolsList, activeWorkspace);

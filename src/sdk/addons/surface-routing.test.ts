@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import type { AddOnInstallation, AddOnManifest, CapabilityGrant } from "../../core/contracts";
 import { createDefaultInstallation } from "../../core/defaults";
-import { createAddOnSurfaceDockRoutes } from "./surface-routing";
+import { createAddOnRailMenus, createAddOnSurfaceDockRoutes } from "./surface-routing";
 
 const grant = (capability: CapabilityGrant["capability"], granted = false): CapabilityGrant => ({
   capability,
@@ -80,5 +80,86 @@ describe("add-on surface dock routing", () => {
     });
 
     expect(routes).toEqual([]);
+  });
+});
+
+describe("add-on rail menus", () => {
+  const harnessManifest = (): AddOnManifest => ({
+    ...manifest(),
+    id: "addon.agent-harness",
+    name: "Agent Harness",
+    category: "agent",
+    tools: [
+      {
+        name: "agent_harness.run",
+        description: "Run a task.",
+        requiredCapabilities: ["filesystem"],
+        inputSchema: {},
+        outputSchema: {},
+        audit: { logRequest: true, logResult: true, artifactTypes: [] },
+        requiresHumanApproval: true,
+      },
+    ],
+    surfaces: [
+      {
+        id: "agent-harness-workspace",
+        type: "embedded-pane",
+        label: "Agent Harness Workspace",
+        description: "Harness workspace.",
+        shellNavigation: {
+          sectionId: "agent-harness",
+          dockIcon: "harness",
+          eyebrow: "Harness",
+          order: 10,
+          requiredCapabilities: ["filesystem"],
+        },
+      },
+    ],
+  });
+
+  const memoryManifest = (): AddOnManifest => ({
+    ...manifest(),
+    id: "addon.memory-store",
+    name: "Memory Store",
+    category: "memory",
+    surfaces: [
+      {
+        id: "memory-store-page",
+        type: "page",
+        label: "Memory Store",
+        description: "Memory.",
+        shellNavigation: { sectionId: "memory", dockIcon: "memory", eyebrow: "Memory", order: 20 },
+      },
+    ],
+  });
+
+  it("groups agents into harness menus, memory into Memory, tools into Tools", () => {
+    const harness = harnessManifest();
+    const memory = memoryManifest();
+    const tool = manifest();
+
+    const menus = createAddOnRailMenus([harness, memory, tool], {
+      [harness.id]: installed(harness, [grant("filesystem", true), grant("archive-read", true)]),
+      [memory.id]: installed(memory, [grant("filesystem", true), grant("archive-read", true)]),
+      [tool.id]: installed(tool, [grant("filesystem", true), grant("archive-read", true)]),
+    });
+
+    expect(menus.map(({ menuId, kind, label, tools }) => ({
+      menuId, kind, label, toolCount: tools?.length,
+    }))).toEqual([
+      { menuId: "agent-harness", kind: "harness", label: "Agent Harness", toolCount: 1 },
+      { menuId: "memory", kind: "memory", label: "Memory", toolCount: undefined },
+      { menuId: "tools", kind: "tools", label: "Tools", toolCount: undefined },
+    ]);
+  });
+
+  it("omits a harness menu entirely when its surface capability is not granted", () => {
+    const harness = harnessManifest();
+
+    const menus = createAddOnRailMenus([harness], {
+      [harness.id]: installed(harness, [grant("filesystem", false), grant("archive-read", true)]),
+    });
+
+    expect(menus).toEqual([]);
   });
 });
