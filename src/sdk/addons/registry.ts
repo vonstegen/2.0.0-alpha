@@ -66,7 +66,7 @@ const sourceDefaults = (
   return {
     provenanceTier: manifest.provenance.tier ?? "curated-signed",
     verificationState: manifest.provenance.verificationState ?? "verified",
-    reviewState: "reviewed",
+    reviewState: "approved",
   };
 };
 
