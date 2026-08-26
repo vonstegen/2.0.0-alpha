@@ -42,7 +42,7 @@
     }
   ],
   "provenance": {
-    "tier": "curated-signed",
+    "tier": "bundled-core",
     "verificationState": "verified",
     "signed": true,
     "signer": "ResonantOS bundled catalog"
