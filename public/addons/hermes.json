@@ -21,7 +21,7 @@
       "description": "Embed the local Hermes dashboard, Kanban board, profiles, curator, and long-running goal controls in the central workspace.",
       "shellNavigation": {
         "sectionId": "hermes",
-        "dockIcon": "hermes",
+        "dockIcon": "messaging",
         "eyebrow": "Delegation agent",
         "order": 20
       }

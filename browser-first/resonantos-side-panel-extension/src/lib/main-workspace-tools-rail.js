@@ -5,16 +5,16 @@
 // the same path.
 
 const DOCK_ICON_PATHS = {
-  // Living Archive (folder)
-  archive: `<path d="M4 6h6l2 2h8v10H4z"/>`,
-  // Hermes (document with lines)
-  hermes: `<path d="M4 6h16v12H4z"/><path d="M8 10h8"/><path d="M8 14h5"/>`,
-  // OpenCode (code brackets)
-  opencode: `<path d="m9 8-4 4 4 4"/><path d="m15 8 4 4-4 4"/>`,
-  // Agent runtime / local service (CPU)
-  runtime: `<rect x="7" y="7" width="10" height="10" rx="1"/><path d="M9 3v4"/><path d="M15 3v4"/><path d="M9 17v4"/><path d="M15 17v4"/><path d="M3 9h4"/><path d="M3 15h4"/><path d="M17 9h4"/><path d="M17 15h4"/>`,
-  // Memory provider (database)
+  // Memory provider / knowledge store (database)
   memory: `<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>`,
+  // Communication / delegation agent (paper plane)
+  messaging: `<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>`,
+  // Coding workspace (window with header + sidebar)
+  workspace: `<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M9 9v11"/>`,
+  // Runtime harness (electrical plug)
+  harness: `<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>`,
+  // Recursive reasoning (circular loop)
+  recursion: `<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>`,
   // Fallback for unknown dock icons
   tool: `<circle cx="12" cy="12" r="3"/><path d="M12 2v3"/><path d="M12 19v3"/><path d="M2 12h3"/><path d="M19 12h3"/>`,
 };

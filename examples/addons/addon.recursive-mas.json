@@ -16,7 +16,7 @@
       "description": "Configure and monitor the experimental RecursiveMAS reasoning runtime.",
       "shellNavigation": {
         "sectionId": "recursive-mas",
-        "dockIcon": "runtime",
+        "dockIcon": "recursion",
         "eyebrow": "Agent runtime",
         "order": 50
       }
