@@ -1,7 +1,6 @@
 // Intent citation: docs/architecture/ADR-018-addon-sdk-v0.md
 
 import type {
-  AddOnCategory,
   AddOnDockIconName,
   AddOnInstallation,
   AddOnManifest,
@@ -9,6 +8,8 @@ import type {
   Capability,
   ShellSectionId,
 } from "../../core/contracts";
+import { G0_HARNESS_TOOL_CATALOG, railMenuKindForCategory } from "./architecture";
+import type { AddOnRailMenuKind } from "./architecture";
 
 export interface AddOnSurfaceDockRoute {
   addonId: string;
@@ -61,14 +62,8 @@ export const createAddOnSurfaceDockRoutes = (
     })
     .sort((left, right) => left.order - right.order || left.label.localeCompare(right.label));
 
-// A rail menu is the top-level entry in the shell's left rail. Harness
-// add-ons (category `agent`) each get their own menu named after the add-on;
-// memory providers collapse into a single "Memory" menu; every other
-// category collapses into a single "Tools" menu. This is the shell's
-// category → destination mapping: plugging in a harness lands it as a
-// first-class rail destination you open into, rather than a row inside
-// "Tools".
-export type AddOnRailMenuKind = "harness" | "memory" | "tools";
+// The category → rail-destination mapping lives in architecture.ts
+// (ADDON_CATEGORY_BLUEPRINT / railMenuKindForCategory).
 
 export interface AddOnRailMenu {
   menuId: string;
@@ -80,15 +75,15 @@ export interface AddOnRailMenu {
   // Harness menus only: the add-on's bridge-dispatched tools, rendered as a
   // sub-rail inside the harness workspace.
   tools?: AddOnToolDefinition[];
+  // ROS Harness menu only: the fused core's own tool loop, with superseded
+  // markers when an installed add-on covers a native tool.
+  nativeTools?: NativeToolRailEntry[];
 }
 
 const SHELL_MENUS: Record<Exclude<AddOnRailMenuKind, "harness">, { label: string; dockIcon: AddOnDockIconName }> = {
   memory: { label: "Memory", dockIcon: "memory" },
   tools: { label: "Tools", dockIcon: "tool" },
 };
-
-const menuKindForCategory = (category: AddOnCategory): AddOnRailMenuKind =>
-  category === "agent" ? "harness" : category === "memory" ? "memory" : "tools";
 
 const byOrderThenLabel = <T extends { order: number; label: string }>(left: T, right: T): number =>
   left.order - right.order || left.label.localeCompare(right.label);
@@ -111,7 +106,7 @@ export const createAddOnRailMenus = (
 
   for (const route of routes) {
     const manifest = manifestById.get(route.addonId);
-    const kind = menuKindForCategory(manifest?.category ?? "tool");
+    const kind = railMenuKindForCategory(manifest?.category ?? "tool");
     const key = kind === "harness" ? route.addonId : kind;
     let group = groups.get(key);
     if (!group) {
@@ -141,3 +136,67 @@ export const createAddOnRailMenus = (
     }))
     .sort(byOrderThenLabel);
 };
+
+// ---- ROS Harness (fused-core) rail menu -------------------------------------
+// The G0 harness is the shell's own integrated harness (fused, non-removable),
+// not an add-on. It ships a minimal tool loop (G0_HARNESS_TOOL_CATALOG). When an
+// installed add-on declares a tool that `coversNativeTool` (an equivalent to a
+// G0 tool), that G0 tool is flagged `supersededBy` so the rail can gray it out.
+
+export const ROS_HARNESS_MENU_ID = "ros-harness";
+
+export interface NativeToolSupersede {
+  addonId: string;
+  toolName: string;
+}
+
+export interface NativeToolRailEntry {
+  name: string;
+  description: string;
+  domain: string;
+  supersededBy?: NativeToolSupersede;
+}
+
+export const createRosHarnessMenu = (
+  manifests: AddOnManifest[],
+  installations: Record<string, AddOnInstallation>,
+): AddOnRailMenu => {
+  const supersedeByNativeTool = new Map<string, NativeToolSupersede>();
+  for (const manifest of manifests) {
+    const installation = installations[manifest.id];
+    if (!installation?.installed || !installation.enabled) {
+      continue;
+    }
+    for (const tool of manifest.tools ?? []) {
+      if (tool.coversNativeTool && !supersedeByNativeTool.has(tool.coversNativeTool)) {
+        supersedeByNativeTool.set(tool.coversNativeTool, {
+          addonId: manifest.id,
+          toolName: tool.name,
+        });
+      }
+    }
+  }
+
+  return {
+    menuId: ROS_HARNESS_MENU_ID,
+    kind: "harness",
+    label: "ROS Harness",
+    dockIcon: "harness",
+    order: 0,
+    routes: [],
+    nativeTools: G0_HARNESS_TOOL_CATALOG.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      domain: tool.domain,
+      supersededBy: supersedeByNativeTool.get(tool.name),
+    })),
+  };
+};
+
+export const createShellRailMenus = (
+  manifests: AddOnManifest[],
+  installations: Record<string, AddOnInstallation>,
+): AddOnRailMenu[] => [
+  createRosHarnessMenu(manifests, installations),
+  ...createAddOnRailMenus(manifests, installations),
+];

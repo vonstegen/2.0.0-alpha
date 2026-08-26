@@ -26,7 +26,10 @@ function addonBoundary(addon) {
 function workspaceForAddon(addon) {
   if (addon.id === "addon.hermes") return "hermes";
   if (addon.id === "addon.opencode") return "opencode";
+  if (addon.id === "addon.deepseek-harness") return "deepseek-harness";
+  if (addon.id === "addon.recursive-mas") return "recursive-mas";
   if (addon.id === "addon.living-archive") return "memory";
+  if (addon.id === "addon.reference-memory") return "memory";
   return "";
 }
 

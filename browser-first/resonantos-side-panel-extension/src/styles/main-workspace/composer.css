@@ -4,7 +4,7 @@
   margin-bottom: 20px;
   border: 1px solid var(--line);
   border-radius: 22px;
-  background: rgba(17, 22, 19, 0.94);
+  background: rgb(var(--panel-rgb) / 0.94);
   box-shadow: 0 20px 70px rgba(0, 0, 0, 0.34);
   padding: 12px;
 }
@@ -44,7 +44,7 @@ textarea {
   gap: 6px;
   height: 34px;
   border-radius: 999px;
-  color: rgba(207, 219, 210, 0.72);
+  color: rgb(var(--text-2-rgb) / 0.72);
   cursor: pointer;
   font-size: 0.72rem;
   font-weight: 900;
@@ -59,8 +59,8 @@ textarea {
 
 .composer-tools-menu summary:hover,
 .composer-tools-menu[open] summary {
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(247, 255, 249, 0.9);
+  background: rgb(var(--hover-rgb) / 0.055);
+  color: rgb(var(--text-rgb) / 0.9);
 }
 
 .composer-tools-menu svg {
@@ -80,9 +80,9 @@ textarea {
   left: 0;
   z-index: 30;
   gap: 5px;
-  border: 1px solid rgba(36, 209, 143, 0.18);
+  border: 1px solid rgb(var(--accent-rgb) / 0.18);
   border-radius: 18px;
-  background: rgba(11, 17, 13, 0.98);
+  background: rgb(var(--panel-rgb) / 0.98);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
   padding: 7px;
 }
@@ -111,7 +111,7 @@ textarea {
   width: 34px;
   height: 34px;
   background: transparent;
-  color: rgba(207, 219, 210, 0.75);
+  color: rgb(var(--text-2-rgb) / 0.75);
   font-weight: 950;
 }
 
@@ -123,8 +123,8 @@ textarea {
   max-width: 240px;
   border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(238, 247, 240, 0.82);
+  background: rgb(var(--hover-rgb) / 0.055);
+  color: rgb(var(--text-rgb) / 0.82);
   font-size: 0.78rem;
   font-weight: 850;
   outline: none;
@@ -156,31 +156,31 @@ textarea {
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: rgba(143, 159, 149, 0.72);
+  color: rgb(var(--muted-rgb) / 0.72);
 }
 
 .connection-line svg {
   width: 15px;
   height: 15px;
   fill: none;
-  stroke: rgba(36, 209, 143, 0.85);
+  stroke: rgb(var(--accent-rgb) / 0.85);
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 2;
 }
 
 .connection-line:hover {
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(247, 255, 249, 0.92);
+  background: rgb(var(--hover-rgb) / 0.055);
+  color: rgb(var(--text-rgb) / 0.92);
 }
 
 .composer-notice {
   margin-top: 10px;
   padding: 10px 12px;
-  border: 1px solid rgba(36, 209, 143, 0.18);
+  border: 1px solid rgb(var(--accent-rgb) / 0.18);
   border-radius: 14px;
-  background: rgba(36, 209, 143, 0.08);
-  color: rgba(228, 241, 232, 0.82);
+  background: rgb(var(--accent-rgb) / 0.08);
+  color: rgb(var(--text-rgb) / 0.82);
   font-size: 0.78rem;
   line-height: 1.35;
 }
@@ -198,21 +198,21 @@ textarea {
 }
 
 .composer-notice[data-kind="review-queue"] strong {
-  color: rgba(247, 255, 249, 0.94);
+  color: rgb(var(--text-rgb) / 0.94);
   font-size: 0.78rem;
 }
 
 .composer-notice[data-kind="review-queue"] small {
-  color: rgba(175, 191, 181, 0.86);
+  color: rgb(var(--muted-rgb) / 0.86);
   font-size: 0.72rem;
 }
 
 .composer-notice[data-kind="review-queue"] button {
   flex: 0 0 auto;
-  border: 1px solid rgba(36, 209, 143, 0.24);
+  border: 1px solid rgb(var(--accent-rgb) / 0.24);
   border-radius: 999px;
-  background: rgba(36, 209, 143, 0.1);
-  color: rgba(247, 255, 249, 0.94);
+  background: rgb(var(--accent-rgb) / 0.1);
+  color: rgb(var(--text-rgb) / 0.94);
   font-size: 0.72rem;
   font-weight: 950;
   padding: 7px 10px;
@@ -232,9 +232,9 @@ textarea {
   border: 0;
   border-radius: 999px;
   background:
-    radial-gradient(circle at center, rgba(17, 22, 19, 0.98) 58%, transparent 60%),
-    conic-gradient(var(--accent) var(--context-used, 0%), rgba(255, 255, 255, 0.1) 0);
-  color: rgba(36, 209, 143, 0.96);
+    radial-gradient(circle at center, rgb(var(--panel-rgb) / 0.98) 58%, transparent 60%),
+    conic-gradient(var(--accent) var(--context-used, 0%), rgb(var(--hover-rgb) / 0.1) 0);
+  color: rgb(var(--accent-rgb) / 0.96);
   font-size: 0.68rem;
   font-weight: 950;
   padding: 0;
@@ -246,7 +246,7 @@ textarea {
   min-width: 28px;
   height: 28px;
   border-radius: 999px;
-  background: rgba(17, 22, 19, 0.96);
+  background: rgb(var(--panel-rgb) / 0.96);
 }
 
 .send-button {
@@ -255,14 +255,14 @@ textarea {
   width: 38px;
   height: 38px;
   background: var(--accent);
-  color: #06110d;
+  color: var(--bg);
   font-size: 1.08rem;
   font-weight: 950;
 }
 
 .send-button.is-stop {
   background: rgba(255, 112, 112, 0.92);
-  color: #180506;
+  color: var(--bg-warm);
 }
 
 .send-button.is-stop svg {
@@ -272,18 +272,18 @@ textarea {
 
 .icon-button.is-live {
   color: var(--accent);
-  background: rgba(36, 209, 143, 0.12);
-  box-shadow: 0 0 0 1px rgba(36, 209, 143, 0.28), 0 0 18px rgba(36, 209, 143, 0.16);
+  background: rgb(var(--accent-rgb) / 0.12);
+  box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.28), 0 0 18px rgb(var(--accent-rgb) / 0.16);
 }
 
 .context-memory-popover {
   margin: 12px 0 0;
-  border: 1px solid rgba(36, 209, 143, 0.24);
+  border: 1px solid rgb(var(--accent-rgb) / 0.24);
   border-radius: 20px;
   background:
-    radial-gradient(circle at 18% 0%, rgba(36, 209, 143, 0.13), transparent 32%),
-    rgba(5, 15, 11, 0.98);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.34), inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+    radial-gradient(circle at 18% 0%, rgb(var(--accent-rgb) / 0.13), transparent 32%),
+    rgb(var(--panel-rgb) / 0.98);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.34), inset 0 0 0 1px rgb(var(--hover-rgb) / 0.035);
   padding: 14px;
 }
 
@@ -304,7 +304,7 @@ textarea {
 .context-memory-head span,
 .context-memory-card span {
   display: block;
-  color: rgba(238, 247, 240, 0.54);
+  color: rgb(var(--text-rgb) / 0.54);
   font-size: 0.62rem;
   font-weight: 900;
   letter-spacing: 0.12em;
@@ -317,10 +317,10 @@ textarea {
 }
 
 .context-memory-actions button {
-  border: 1px solid rgba(36, 209, 143, 0.24);
+  border: 1px solid rgb(var(--accent-rgb) / 0.24);
   border-radius: 999px;
-  background: rgba(36, 209, 143, 0.08);
-  color: rgba(238, 247, 240, 0.82);
+  background: rgb(var(--accent-rgb) / 0.08);
+  color: rgb(var(--text-rgb) / 0.82);
   font-size: 0.68rem;
   font-weight: 900;
   padding: 7px 10px;
@@ -328,7 +328,7 @@ textarea {
 
 .context-memory-location,
 .context-memory-foot {
-  color: rgba(238, 247, 240, 0.58);
+  color: rgb(var(--text-rgb) / 0.58);
   font-size: 0.7rem;
   line-height: 1.35;
 }
@@ -342,14 +342,14 @@ textarea {
   height: 10px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgb(var(--hover-rgb) / 0.08);
 }
 
 .context-memory-meter-used {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, rgba(36, 209, 143, 0.9), rgba(153, 255, 214, 0.9));
+  background: linear-gradient(90deg, rgb(var(--accent-rgb) / 0.9), rgb(var(--accent-rgb) / 0.9));
 }
 
 .context-memory-meter-threshold {
@@ -357,7 +357,7 @@ textarea {
   top: -3px;
   width: 2px;
   height: 16px;
-  background: rgba(255, 255, 255, 0.38);
+  background: rgb(var(--hover-rgb) / 0.38);
 }
 
 .context-memory-meter-threshold.hard {
@@ -366,7 +366,7 @@ textarea {
 
 .context-memory-meter-labels {
   margin-top: 7px;
-  color: rgba(238, 247, 240, 0.52);
+  color: rgb(var(--text-rgb) / 0.52);
   font-size: 0.66rem;
 }
 
@@ -378,18 +378,18 @@ textarea {
 }
 
 .context-memory-flow span {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgb(var(--hover-rgb) / 0.08);
   border-radius: 999px;
-  color: rgba(238, 247, 240, 0.48);
+  color: rgb(var(--text-rgb) / 0.48);
   font-size: 0.62rem;
   font-weight: 800;
   padding: 5px 8px;
 }
 
 .context-memory-flow span.active {
-  border-color: rgba(36, 209, 143, 0.3);
-  color: rgba(204, 255, 232, 0.86);
-  background: rgba(36, 209, 143, 0.08);
+  border-color: rgb(var(--accent-rgb) / 0.3);
+  color: rgb(var(--accent-rgb) / 0.86);
+  background: rgb(var(--accent-rgb) / 0.08);
 }
 
 .context-memory-grid {
@@ -400,9 +400,9 @@ textarea {
 
 .context-memory-card {
   min-width: 0;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgb(var(--hover-rgb) / 0.08);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgb(var(--hover-rgb) / 0.04);
   padding: 9px;
 }
 
@@ -410,13 +410,13 @@ textarea {
   display: block;
   margin-top: 5px;
   overflow-wrap: anywhere;
-  color: rgba(238, 247, 240, 0.86);
+  color: rgb(var(--text-rgb) / 0.86);
   font-size: 0.72rem;
 }
 
 .context-memory-card.primary {
-  border-color: rgba(36, 209, 143, 0.26);
-  background: rgba(36, 209, 143, 0.065);
+  border-color: rgb(var(--accent-rgb) / 0.26);
+  background: rgb(var(--accent-rgb) / 0.065);
 }
 
 .attachment-strip {
@@ -432,10 +432,10 @@ textarea {
   gap: 6px;
   min-width: 0;
   max-width: 100%;
-  border: 1px solid rgba(36, 209, 143, 0.18);
+  border: 1px solid rgb(var(--accent-rgb) / 0.18);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(238, 247, 240, 0.82);
+  background: rgb(var(--hover-rgb) / 0.055);
+  color: rgb(var(--text-rgb) / 0.82);
   font-size: 0.72rem;
   padding: 5px 8px;
 }
@@ -453,8 +453,8 @@ textarea {
   height: 17px;
   border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(238, 247, 240, 0.72);
+  background: rgb(var(--hover-rgb) / 0.08);
+  color: rgb(var(--text-rgb) / 0.72);
   font-size: 0.7rem;
   font-weight: 900;
   padding: 0;
@@ -483,7 +483,7 @@ textarea {
 
 .module-copy h1 {
   margin: 0;
-  color: rgba(247, 255, 249, 0.98);
+  color: rgb(var(--text-rgb) / 0.98);
   font-size: clamp(2rem, 4vw, 4rem);
   letter-spacing: -0.06em;
   line-height: 0.96;
@@ -492,16 +492,16 @@ textarea {
 .module-copy p {
   max-width: 640px;
   margin: 0;
-  color: rgba(214, 229, 219, 0.78);
+  color: rgb(var(--text-2-rgb) / 0.78);
 }
 
 .module-card,
 .module-form,
 .dashboard-frame-card {
-  border: 1px solid rgba(36, 209, 143, 0.16);
+  border: 1px solid rgb(var(--accent-rgb) / 0.16);
   border-radius: 22px;
-  background: rgba(17, 22, 19, 0.72);
-  color: rgba(238, 247, 240, 0.86);
+  background: rgb(var(--panel-rgb) / 0.72);
+  color: rgb(var(--text-rgb) / 0.86);
   padding: 18px;
 }
 
@@ -512,7 +512,7 @@ textarea {
 
 .module-form textarea {
   min-height: 120px;
-  border: 1px solid rgba(36, 209, 143, 0.13);
+  border: 1px solid rgb(var(--accent-rgb) / 0.13);
   border-radius: 16px;
   background: rgba(0, 0, 0, 0.18);
   padding: 14px;
@@ -523,7 +523,7 @@ textarea {
   border: 0;
   border-radius: 999px;
   background: var(--accent);
-  color: #06110d;
+  color: var(--bg);
   font-weight: 950;
   padding: 10px 14px;
 }
@@ -535,7 +535,7 @@ textarea {
 
 .module-result {
   min-height: 1.2em;
-  color: rgba(214, 229, 219, 0.78);
+  color: rgb(var(--text-2-rgb) / 0.78);
 }
 
 .dashboard-frame-card {
@@ -561,7 +561,7 @@ textarea {
   min-height: 0;
   border: 0;
   border-radius: 0;
-  background: #0b0f0d;
+  background: var(--bg);
 }
 
 .dashboard-frame-card iframe {
@@ -569,7 +569,7 @@ textarea {
   height: 100%;
   min-height: 58vh;
   border: 0;
-  background: #0b0f0d;
+  background: var(--bg);
 }
 
 .hermes-dashboard-workspace .dashboard-frame-card iframe,
@@ -586,10 +586,10 @@ textarea {
   z-index: 2;
   max-width: min(720px, calc(100% - 48px));
   transform: translateX(-50%);
-  border: 1px solid rgba(36, 209, 143, 0.18);
+  border: 1px solid rgb(var(--accent-rgb) / 0.18);
   border-radius: 999px;
-  background: rgba(4, 9, 7, 0.74);
-  color: rgba(214, 229, 219, 0.76);
+  background: rgb(var(--panel-rgb) / 0.74);
+  color: rgb(var(--text-2-rgb) / 0.76);
   font-size: 0.72rem;
   overflow: hidden;
   padding: 6px 10px;
@@ -629,14 +629,14 @@ textarea {
 }
 
 .dashboard-placeholder strong {
-  color: rgba(247, 255, 249, 0.96);
+  color: rgb(var(--text-rgb) / 0.96);
   font-size: 1.1rem;
 }
 
 .dashboard-placeholder p {
   max-width: 520px;
   margin: 0;
-  color: rgba(214, 229, 219, 0.72);
+  color: rgb(var(--text-2-rgb) / 0.72);
 }
 
 .module-action-row {
@@ -647,10 +647,10 @@ textarea {
 }
 
 .module-action-row button {
-  border: 1px solid rgba(36, 209, 143, 0.18);
+  border: 1px solid rgb(var(--accent-rgb) / 0.18);
   border-radius: 999px;
-  background: rgba(36, 209, 143, 0.08);
-  color: rgba(247, 255, 249, 0.92);
+  background: rgb(var(--accent-rgb) / 0.08);
+  color: rgb(var(--text-rgb) / 0.92);
   font-weight: 900;
   padding: 9px 12px;
 }

@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createAddOnRailMenus, discoverBundledAddonManifests } from "../host/addon-delegation-service.mjs";
+import { createAddOnRailMenus, createRosHarnessMenu, createShellRailMenus, discoverBundledAddonManifests } from "../host/addon-delegation-service.mjs";
 
 function installationsFor(discovered) {
   const installations = {};
@@ -84,4 +84,53 @@ test("hides a rail menu when a required surface capability is not granted", () =
 
   assert.equal(createAddOnRailMenus([manifest], { "addon.gated": granted }).length, 1);
   assert.equal(createAddOnRailMenus([manifest], { "addon.gated": denied }).length, 0);
+});
+
+test("leads with the fused-core ROS Harness menu (minimal tool loop, no superseding from bundled add-ons)", async () => {
+  const discovered = await discoverBundledAddonManifests(process.cwd());
+  const manifests = discovered.map((entry) => entry.manifest);
+  const installations = installationsFor(discovered);
+
+  const ros = createRosHarnessMenu(manifests, installations);
+  assert.equal(ros.menuId, "ros-harness");
+  assert.equal(ros.kind, "harness");
+  assert.equal(ros.label, "ROS Harness");
+  assert.equal(ros.nativeTools.length, 13);
+  assert.ok(ros.nativeTools.every((tool) => tool.supersededBy === undefined));
+  assert.ok(ros.nativeTools.some((tool) => tool.name === "filesystem.patch"));
+  assert.ok(!ros.nativeTools.some((tool) => tool.name === "runner.job.submit"));
+
+  const menus = createShellRailMenus(manifests, installations);
+  assert.equal(menus[0].menuId, "ros-harness");
+  assert.equal(menus[1].menuId, "memory");
+});
+
+test("createRosHarnessMenu grays a native tool covered by an installed add-on", () => {
+  const covering = {
+    id: "addon.editor",
+    name: "Editor",
+    category: "agent",
+    tools: [
+      {
+        name: "editor.patch",
+        description: "Scoped edits.",
+        requiredCapabilities: ["filesystem"],
+        inputSchema: {},
+        outputSchema: {},
+        audit: { logRequest: false, logResult: false, artifactTypes: [] },
+        coversNativeTool: "filesystem.patch",
+      },
+    ],
+    surfaces: [{
+      id: "editor-workspace",
+      label: "Editor",
+      shellNavigation: { sectionId: "editor", dockIcon: "workspace", eyebrow: "Editor" },
+    }],
+  };
+  const installation = { installed: true, enabled: true, grantedCapabilities: [{ capability: "filesystem", granted: true }] };
+
+  const ros = createRosHarnessMenu([covering], { "addon.editor": installation });
+  const patched = ros.nativeTools.find((tool) => tool.name === "filesystem.patch");
+  assert.deepEqual(patched.supersededBy, { addonId: "addon.editor", toolName: "editor.patch" });
+  assert.equal(ros.nativeTools.find((tool) => tool.name === "filesystem.read").supersededBy, undefined);
 });

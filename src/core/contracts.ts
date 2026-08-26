@@ -303,6 +303,7 @@ export interface AddOnToolDefinition {
     artifactTypes: DelegationArtifactType[];
   };
   requiresHumanApproval?: boolean;
+  coversNativeTool?: NativeToolCapability;
 }
 
 export interface AddOnLocalServiceDefinition {

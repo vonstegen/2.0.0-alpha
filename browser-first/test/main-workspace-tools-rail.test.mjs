@@ -9,8 +9,6 @@ import { JSDOM } from "jsdom";
 import {
   dockIconSvg,
   renderRailMenuWorkspace,
-  renderToolsRailButtons,
-  syncToolsRailActive,
 } from "../resonantos-side-panel-extension/src/lib/main-workspace-tools-rail.js";
 
 const MENUS = [
@@ -67,34 +65,6 @@ test("dockIconSvg resolves known icons and falls back for unknown", () => {
   assert.equal(dockIconSvg("memory"), dockIconSvg("memory")); // deterministic
 });
 
-test("renderToolsRailButtons renders one button per menu with menuId + label", () => {
-  const container = withDom();
-  const opened = [];
-  renderToolsRailButtons(container, MENUS, (menuId) => opened.push(menuId));
-
-  const buttons = [...container.querySelectorAll("button.rail-project")];
-  assert.equal(buttons.length, MENUS.length);
-  assert.equal(buttons[0].dataset.workspace, "memory");
-  assert.equal(buttons[0].querySelector(".rail-text").textContent, "Memory");
-  assert.equal(buttons[2].dataset.workspace, "deepseek-harness");
-  assert.ok(buttons[2].querySelector("svg"));
-
-  buttons[2].click();
-  assert.deepEqual(opened, ["deepseek-harness"]);
-});
-
-test("syncToolsRailActive toggles active + aria-current", () => {
-  const container = withDom();
-  renderToolsRailButtons(container, MENUS, () => {});
-  syncToolsRailActive(container, "hermes");
-
-  const buttons = [...container.querySelectorAll("button.rail-project")];
-  assert.equal(buttons.filter((b) => b.classList.contains("active")).length, 1);
-  assert.equal(buttons[1].classList.contains("active"), true);
-  assert.equal(buttons[1].getAttribute("aria-current"), "page");
-  assert.equal(buttons[0].getAttribute("aria-current"), null);
-});
-
 test("renderRailMenuWorkspace renders a harness sub-tool-rail with gates + caps", () => {
   const container = withDom();
   renderRailMenuWorkspace(container, MENUS[1]); // Hermes harness
@@ -125,4 +95,34 @@ test("renderRailMenuWorkspace renders a grouped route list for memory", () => {
   assert.equal(rows[0].querySelector("strong").textContent, "Memory Workspace");
   assert.match(rows[0].querySelector("small").textContent, /Living Archive/);
   assert.match(rows[0].querySelector("small").textContent, /addon\.living-archive/);
+});
+
+test("renderRailMenuWorkspace renders the ROS Harness menu with core chips + grayed superseded tools", () => {
+  const container = withDom();
+  renderRailMenuWorkspace(container, {
+    menuId: "ros-harness",
+    kind: "harness",
+    label: "ROS Harness",
+    dockIcon: "harness",
+    order: 0,
+    routes: [],
+    nativeTools: [
+      { name: "filesystem.read", description: "Read a file within scope.", domain: "filesystem" },
+      { name: "filesystem.patch", description: "Apply a reviewed, scoped patch.", domain: "filesystem", supersededBy: { addonId: "addon.editor", toolName: "editor.patch" } },
+    ],
+  });
+
+  assert.match(container.textContent, /ROS Harness/);
+
+  const rows = [...container.querySelectorAll(".harness-tool-row")];
+  assert.equal(rows.length, 2);
+
+  // Native rows carry the "core" gate tone.
+  assert.equal(rows[0].querySelector(".harness-tool-gate").textContent, "core");
+  assert.equal(rows[0].querySelector(".harness-tool-gate").dataset.tone, "core");
+  assert.ok(!rows[0].classList.contains("is-superseded"));
+
+  // Superseded native tool is grayed and annotated with its replacement.
+  assert.ok(rows[1].classList.contains("is-superseded"));
+  assert.match(rows[1].querySelector(".harness-tool-superseded").textContent, /Superseded by addon\.editor · editor\.patch/);
 });
