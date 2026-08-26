@@ -16,7 +16,7 @@
       "description": "Configure and monitor the local DeepSeek Harness service and the wrapped deepseek-chat / deepseek-reasoner models.",
       "shellNavigation": {
         "sectionId": "deepseek-harness",
-        "dockIcon": "runtime",
+        "dockIcon": "harness",
         "eyebrow": "Agent runtime",
         "order": 40
       }
