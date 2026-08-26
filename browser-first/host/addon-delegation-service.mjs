@@ -134,6 +134,62 @@ export function createAddOnSurfaceDockRoutes(manifests, installations) {
     })
     .sort((left, right) => left.order - right.order || left.label.localeCompare(right.label));
 }
+
+// Mirrors src/sdk/addons/surface-routing.ts `createAddOnRailMenus`. Harness
+// add-ons (category `agent`) get their own top-level rail menu; memory
+// providers collapse into a "Memory" menu; every other category collapses
+// into a "Tools" menu. Same shape, same semantics, same order.
+const SHELL_RAIL_MENUS = Object.freeze({
+  memory: { label: "Memory", dockIcon: "memory" },
+  tools: { label: "Tools", dockIcon: "tool" },
+});
+
+function menuKindForCategory(category) {
+  if (category === "agent") return "harness";
+  if (category === "memory") return "memory";
+  return "tools";
+}
+
+const byOrderThenLabel = (left, right) =>
+  left.order - right.order || String(left.label).localeCompare(String(right.label));
+
+export function createAddOnRailMenus(manifests, installations) {
+  const manifestById = new Map(manifests.map((manifest) => [manifest.id, manifest]));
+  const routes = createAddOnSurfaceDockRoutes(manifests, installations);
+
+  const groups = new Map();
+  for (const route of routes) {
+    const manifest = manifestById.get(route.addonId);
+    const kind = menuKindForCategory(manifest?.category ?? "tool");
+    const key = kind === "harness" ? route.addonId : kind;
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        kind,
+        label: kind === "harness" ? (manifest?.name ?? route.label) : SHELL_RAIL_MENUS[kind].label,
+        dockIcon: kind === "harness" ? route.dockIcon : SHELL_RAIL_MENUS[kind].dockIcon,
+        order: route.order,
+        routes: [],
+        tools: kind === "harness" ? manifest?.tools : undefined,
+      };
+      groups.set(key, group);
+    }
+    group.order = Math.min(group.order, route.order);
+    group.routes.push(route);
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      menuId: group.kind === "harness" ? group.routes[0].sectionId : group.kind,
+      kind: group.kind,
+      label: group.label,
+      dockIcon: group.dockIcon,
+      order: group.order,
+      routes: group.routes.sort(byOrderThenLabel),
+      tools: group.tools,
+    }))
+    .sort(byOrderThenLabel);
+}
 export const OPENCODE_EXPLICIT_PROVIDER_ENV_KEYS = Object.freeze([
   "ANTHROPIC_BASE_URL",
   "DEEPSEEK_BASE_URL",
@@ -1915,7 +1971,7 @@ except BaseException as exc:
         grantedCapabilities: requestedCapabilities,
       };
     }
-    return { routes: createAddOnSurfaceDockRoutes(manifests, installations) };
+    return { menus: createAddOnRailMenus(manifests, installations) };
   }
 
   async function executeAddonExecutionSettingsGet() {

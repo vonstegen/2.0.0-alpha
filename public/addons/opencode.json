@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "publisher": "local",
   "author": "Resonant Alpha",
-  "category": "tool",
+  "category": "agent",
   "description": "Open-source coding workspace add-on. ResonantOS launches OpenCode as an optional scoped local service, embeds OpenCode's own web UI, and uses the server/API layer for governance and audit.",
   "runtimeType": "embedded-module",
   "surfaces": [
