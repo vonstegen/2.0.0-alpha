@@ -47,8 +47,8 @@ test("bundled manifests resolve to the expected shell dock routes", async () => 
   assert.equal(bySection.hermes.addonId, "addon.hermes");
   assert.equal(bySection.opencode.addonId, "addon.opencode");
   assert.equal(bySection["deepseek-harness"].addonId, "addon.deepseek-harness");
-  assert.equal(bySection.memory.dockIcon, "archive");
-  assert.equal(bySection["deepseek-harness"].dockIcon, "runtime");
+  assert.equal(bySection.memory.dockIcon, "memory");
+  assert.equal(bySection["deepseek-harness"].dockIcon, "harness");
 
   // Order is ascending and stable.
   assert.deepEqual(routes.map((route) => route.order), [10, 20, 30, 40, 50, 60]);
@@ -63,7 +63,7 @@ test("hides a dock route when a required capability is not granted", () => {
       label: "Gated",
       shellNavigation: {
         sectionId: "gated",
-        dockIcon: "runtime",
+        dockIcon: "harness",
         eyebrow: "Gated",
         requiredCapabilities: ["agent-delegation"],
       },
