@@ -13,7 +13,13 @@
       "id": "recursive-mas-status",
       "type": "panel",
       "label": "RecursiveMAS",
-      "description": "Configure and monitor the experimental RecursiveMAS reasoning runtime."
+      "description": "Configure and monitor the experimental RecursiveMAS reasoning runtime.",
+      "shellNavigation": {
+        "sectionId": "recursive-mas",
+        "dockIcon": "runtime",
+        "eyebrow": "Agent runtime",
+        "order": 50
+      }
     },
     {
       "id": "recursive-mas-runs",

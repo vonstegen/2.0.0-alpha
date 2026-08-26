@@ -13,7 +13,13 @@
       "id": "living-archive-workspace",
       "type": "page",
       "label": "Memory Workspace",
-      "description": "Configure sources, inspect intake, review memory operations, and manage the active memory provider."
+      "description": "Configure sources, inspect intake, review memory operations, and manage the active memory provider.",
+      "shellNavigation": {
+        "sectionId": "memory",
+        "dockIcon": "archive",
+        "eyebrow": "Living Archive",
+        "order": 10
+      }
     },
     {
       "id": "living-archive-review",

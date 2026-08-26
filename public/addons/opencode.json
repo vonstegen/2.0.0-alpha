@@ -12,7 +12,13 @@
       "id": "opencode-workspace",
       "type": "embedded-pane",
       "label": "OpenCode Workspace",
-      "description": "Open a coding workspace inside the ResonantOS center surface."
+      "description": "Open a coding workspace inside the ResonantOS center surface.",
+      "shellNavigation": {
+        "sectionId": "opencode",
+        "dockIcon": "opencode",
+        "eyebrow": "Coding workspace",
+        "order": 30
+      }
     }
   ],
   "requestedCapabilities": [

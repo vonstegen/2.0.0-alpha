@@ -13,7 +13,13 @@
       "id": "reference-memory-panel",
       "type": "panel",
       "label": "Reference Memory",
-      "description": "Configure the local Reference Memory HTTP JSON service endpoint."
+      "description": "Configure the local Reference Memory HTTP JSON service endpoint.",
+      "shellNavigation": {
+        "sectionId": "reference-memory",
+        "dockIcon": "memory",
+        "eyebrow": "Memory",
+        "order": 60
+      }
     }
   ],
   "requestedCapabilities": [
