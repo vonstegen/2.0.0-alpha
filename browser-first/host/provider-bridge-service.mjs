@@ -51,6 +51,7 @@ export function createProviderBridgeService({
     "shared-minimax": ["MINIMAX_API_KEY"],
     "shared-openai": ["OPENAI_API_KEY"],
     "shared-zai-glm": ["ZAI_API_KEY", "GLM_API_KEY", "ZHIPUAI_API_KEY"],
+    "shared-deepseek": ["DEEPSEEK_API_KEY"],
   });
   const providerTimeoutDefaults = Object.freeze({
     archiveSemantic: 60_000,
