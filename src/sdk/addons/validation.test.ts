@@ -1,7 +1,7 @@
 // Intent citation: docs/architecture/ADR-018-addon-sdk-v0.md
 
 import { describe, expect, it } from "vitest";
-import type { AddOnManifest } from "../../core/contracts";
+import type { AddOnManifest, NativeToolCapability } from "../../core/contracts";
 import { validateAddOnManifest } from "./validation";
 const validManifest = (overrides: Partial<AddOnManifest> = {}): AddOnManifest => ({
   id: "addon.browser",
@@ -861,5 +861,51 @@ describe("add-on SDK manifest validation", () => {
         ),
       ).toBe(false);
     }
+  });
+  it("rejects a coversNativeTool that is not a native tool capability", () => {
+    const result = validateAddOnManifest(
+      validManifest({
+        tools: [
+          {
+            name: "editor.patch",
+            description: "Apply a scoped edit.",
+            requiredCapabilities: ["filesystem"],
+            inputSchema: { type: "object" },
+            outputSchema: { type: "object" },
+            audit: { logRequest: false, logResult: false, artifactTypes: ["log"] },
+            coversNativeTool: "bogus.tool" as NativeToolCapability,
+          },
+        ],
+      }),
+    );
+
+    expect(result.valid).toBe(false);
+    expect(
+      result.issues.some(
+        (issue) => issue.code === "tool-covers-native-invalid" && issue.path === "tools[0].coversNativeTool",
+      ),
+    ).toBe(true);
+  });
+
+  it("accepts a coversNativeTool that names a real native tool capability", () => {
+    const result = validateAddOnManifest(
+      validManifest({
+        tools: [
+          {
+            name: "editor.patch",
+            description: "Apply a scoped edit.",
+            requiredCapabilities: ["filesystem"],
+            inputSchema: { type: "object" },
+            outputSchema: { type: "object" },
+            audit: { logRequest: false, logResult: false, artifactTypes: ["log"] },
+            coversNativeTool: "filesystem.patch",
+          },
+        ],
+      }),
+    );
+
+    expect(
+      result.issues.some((issue) => issue.code === "tool-covers-native-invalid"),
+    ).toBe(false);
   });
 });

@@ -3,7 +3,8 @@
 import { describe, expect, it } from "vitest";
 import type { AddOnInstallation, AddOnManifest, CapabilityGrant } from "../../core/contracts";
 import { createDefaultInstallation } from "../../core/defaults";
-import { createAddOnRailMenus, createAddOnSurfaceDockRoutes } from "./surface-routing";
+import { createAddOnRailMenus, createAddOnSurfaceDockRoutes, createRosHarnessMenu, createShellRailMenus } from "./surface-routing";
+import { railMenuKindForCategory } from "./architecture";
 
 const grant = (capability: CapabilityGrant["capability"], granted = false): CapabilityGrant => ({
   capability,
@@ -161,5 +162,89 @@ describe("add-on rail menus", () => {
     });
 
     expect(menus).toEqual([]);
+  });
+});
+
+describe("ros architecture blueprint", () => {
+  it("maps category to rail destination via the blueprint", () => {
+    expect(railMenuKindForCategory("agent")).toBe("harness");
+    expect(railMenuKindForCategory("memory")).toBe("memory");
+    expect(railMenuKindForCategory("tool")).toBe("tools");
+    expect(railMenuKindForCategory("integration")).toBe("tools");
+    expect(railMenuKindForCategory("orchestration")).toBe("tools");
+  });
+});
+
+describe("ros harness menu (fused core)", () => {
+  const coveringManifest = (): AddOnManifest => ({
+    ...manifest(),
+    id: "addon.third-party-editor",
+    name: "Third-Party Editor",
+    category: "agent",
+    tools: [
+      {
+        name: "editor.patch",
+        description: "Apply a scoped edit.",
+        requiredCapabilities: ["filesystem"],
+        inputSchema: {},
+        outputSchema: {},
+        audit: { logRequest: true, logResult: true, artifactTypes: [] },
+        coversNativeTool: "filesystem.patch",
+      },
+    ],
+    surfaces: [
+      {
+        id: "third-party-editor-workspace",
+        type: "embedded-pane",
+        label: "Third-Party Editor",
+        description: "Editor workspace.",
+        shellNavigation: {
+          sectionId: "third-party-editor",
+          dockIcon: "workspace",
+          eyebrow: "Editor",
+          order: 10,
+          requiredCapabilities: ["filesystem"],
+        },
+      },
+    ],
+  });
+
+  it("always leads with the ROS Harness menu and its minimal tool loop", () => {
+    const menus = createShellRailMenus([], {});
+    expect(menus).toHaveLength(1);
+    const ros = menus[0];
+    expect(ros.menuId).toBe("ros-harness");
+    expect(ros.kind).toBe("harness");
+    expect(ros.label).toBe("ROS Harness");
+    expect(ros.nativeTools).toHaveLength(13);
+    expect(ros.nativeTools?.every((tool) => tool.supersededBy === undefined)).toBe(true);
+    expect(ros.nativeTools?.map((tool) => tool.name)).toContain("filesystem.patch");
+    expect(ros.nativeTools?.map((tool) => tool.name)).not.toContain("runner.job.submit");
+    expect(ros.nativeTools?.map((tool) => tool.name)).not.toContain("addon.health_check");
+  });
+
+  it("grays a G0 tool when an installed add-on covers it", () => {
+    const addon = coveringManifest();
+    const menus = createRosHarnessMenu([addon], {
+      [addon.id]: installed(addon, [grant("filesystem", true)]),
+    });
+    const patched = menus.nativeTools?.find((tool) => tool.name === "filesystem.patch");
+    expect(patched?.supersededBy).toEqual({ addonId: "addon.third-party-editor", toolName: "editor.patch" });
+    expect(menus.nativeTools?.find((tool) => tool.name === "filesystem.read")?.supersededBy).toBeUndefined();
+  });
+
+  it("ignores coversNativeTool from add-ons that are disabled", () => {
+    const addon = coveringManifest();
+    const disabled = { ...installed(addon, [grant("filesystem", true)]), enabled: false };
+    const menus = createRosHarnessMenu([addon], { [addon.id]: disabled });
+    expect(menus.nativeTools?.every((tool) => tool.supersededBy === undefined)).toBe(true);
+  });
+
+  it("createShellRailMenus leads with ROS Harness then add-on menus", () => {
+    const addon = coveringManifest();
+    const menus = createShellRailMenus([addon], {
+      [addon.id]: installed(addon, [grant("filesystem", true)]),
+    });
+    expect(menus.map((menu) => menu.menuId)).toEqual(["ros-harness", "third-party-editor"]);
   });
 });

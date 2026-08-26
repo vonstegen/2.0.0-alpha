@@ -11,6 +11,7 @@ import { renderPrivacySection } from "./settings/privacy-section.js";
 import { renderProvidersSection } from "./settings/providers-section.js";
 import { renderRoutingSection } from "./settings/routing-section.js";
 import { renderWorkSection } from "./settings/work-section.js";
+import { renderRosHarnessSection } from "./settings/ros-harness-section.js";
 
 const sections = [
   {
@@ -103,6 +104,13 @@ const sections = [
     hint: "Version and architecture",
     group: "Advanced",
     render: renderAboutSection
+  },
+  {
+    id: "ros-harness",
+    label: "ROS Harness",
+    hint: "Fused G0 tool loop",
+    group: "Advanced",
+    render: renderRosHarnessSection
   }
 ];
 
