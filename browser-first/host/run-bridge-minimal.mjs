@@ -492,6 +492,7 @@ const bridgeInfo = await startBridgeServerWithFallback({
   port: bridgePort,
   bridgeToken,
   bridgeCapabilityTokens,
+  capabilityBootstrapToken,
   perCallerGrants: minimalLauncherCallerGrants.snapshot(),
   tokenKey: bridgeTokenKey,
   callerGrantVerifier: minimalLauncherCallerGrants.verifyCallerGrant.bind(minimalLauncherCallerGrants),
