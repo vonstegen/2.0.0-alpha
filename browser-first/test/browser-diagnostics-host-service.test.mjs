@@ -165,6 +165,7 @@ test("browser diagnostics host service aggregates system status without exposing
     "shared-minimax": true,
     "shared-zai-glm": false,
     "shared-openai": false,
+    "shared-deepseek": false,
   });
   assert.deepEqual(status.memory, { exists: true });
   assert.deepEqual(status.addons, [{ id: "living-archive" }]);
