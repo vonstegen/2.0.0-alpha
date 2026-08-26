@@ -39,6 +39,7 @@ import { createMessageActionController } from "./lib/message-action-controller.j
 import { createSitePermissionStore } from "./lib/site-permission-store.js";
 import { createSidePanelRenderers } from "./lib/side-panel-renderers.js";
 import { createTaskConsentStore } from "./lib/task-consent-store.js";
+import { fetchSurfaceRoutes, renderAddonSurfaceWorkspace, renderToolsRailButtons, syncToolsRailActive } from "./lib/main-workspace-tools-rail.js";
 
 const STORAGE_KEYS = {
   messages: "augmentorBrowserMessages",
@@ -68,6 +69,8 @@ const STORAGE_KEYS = {
 
 const transcript = document.querySelector("#transcript");
 const workspaceButtons = [...document.querySelectorAll("[data-workspace]")];
+const railToolsList = document.querySelector("#rail-tools-list");
+const addonSurfaceRoutesBySection = new Map();
 const newChatButton = document.querySelector("#new-chat");
 const mainBrowserJobs = document.querySelector("#main-browser-jobs");
 const railNewChatButton = document.querySelector("#rail-new-chat");
@@ -865,6 +868,10 @@ function renderMessages() {
     });
     return;
   }
+  if (addonSurfaceRoutesBySection.has(activeWorkspace)) {
+    renderAddonSurfaceWorkspace(transcript, addonSurfaceRoutesBySection.get(activeWorkspace));
+    return;
+  }
   chatRenderers.renderMessages();
 }
 
@@ -880,9 +887,25 @@ function renderAll() {
   renderMessages();
   renderAttachments();
   renderRailNavigation();
+  if (railToolsList) syncToolsRailActive(railToolsList, activeWorkspace);
   void renderMainBrowserJobStatusFromStorage();
   updateContextMeter();
   updateConnectionLine();
+}
+
+async function hydrateToolsRail() {
+  const routes = await fetchSurfaceRoutes(getBridgeRequest).catch(() => []);
+  for (const route of routes) {
+    allowedWorkspaces.add(route.sectionId);
+    addonSurfaceRoutesBySection.set(route.sectionId, route);
+  }
+  if (!railToolsList) return;
+  renderToolsRailButtons(railToolsList, routes, (sectionId) => {
+    setActiveWorkspace(sectionId, { persist: true });
+    updateWorkspaceDeepLink(sectionId);
+    renderAll();
+  });
+  syncToolsRailActive(railToolsList, activeWorkspace);
 }
 
 function workspaceShell({ eyebrow, title, body }) {
@@ -1061,6 +1084,8 @@ workspaceButtons.forEach((button) => {
     }
   });
 });
+
+void hydrateToolsRail();
 attachFileButton.addEventListener("click", () => fileInput.click());
 fileInput.addEventListener("change", async () => {
   await messageActions?.attachFiles(fileInput.files);

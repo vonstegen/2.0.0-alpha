@@ -92,6 +92,48 @@ export function trustLabelFor(manifest) {
   return "host-mediated service";
 }
 
+// Mirrors src/sdk/addons/surface-routing.ts `createAddOnSurfaceDockRoutes`.
+// The SDK is TypeScript and not importable from this plain-`.mjs` host
+// runtime (the bench runs source directly, no tsc step), so the pure
+// resolver is mirrored here — same shape, same semantics, same order.
+function hasGrantedCapability(installation, capability) {
+  return Array.isArray(installation?.grantedCapabilities) &&
+    installation.grantedCapabilities.some((grant) => grant?.capability === capability && grant?.granted);
+}
+
+export function createAddOnSurfaceDockRoutes(manifests, installations) {
+  return manifests
+    .flatMap((manifest) => {
+      const installation = installations[manifest.id];
+      if (!installation?.installed || !installation.enabled) {
+        return [];
+      }
+      return (Array.isArray(manifest.surfaces) ? manifest.surfaces : []).flatMap((surface) => {
+        const navigation = surface?.shellNavigation;
+        if (!navigation) {
+          return [];
+        }
+        const missingCapability = (navigation.requiredCapabilities ?? []).find(
+          (capability) => !hasGrantedCapability(installation, capability),
+        );
+        if (missingCapability) {
+          return [];
+        }
+        return [
+          {
+            addonId: manifest.id,
+            surfaceId: surface.id,
+            sectionId: navigation.sectionId,
+            label: surface.label || manifest.name,
+            eyebrow: navigation.eyebrow,
+            dockIcon: navigation.dockIcon,
+            order: navigation.order ?? 1000,
+          },
+        ];
+      });
+    })
+    .sort((left, right) => left.order - right.order || left.label.localeCompare(right.label));
+}
 export const OPENCODE_EXPLICIT_PROVIDER_ENV_KEYS = Object.freeze([
   "ANTHROPIC_BASE_URL",
   "DEEPSEEK_BASE_URL",
@@ -1853,6 +1895,29 @@ except BaseException as exc:
     };
   }
 
+  async function executeAddonSurfaceRoutes() {
+    const discovered = await discoverBundledAddonManifests(repoRoot);
+    const manifests = discovered.map((entry) => entry.manifest);
+    const installations = {};
+    for (const { id, manifest } of discovered) {
+      const requestedCapabilities = Array.isArray(manifest.requestedCapabilities)
+        ? manifest.requestedCapabilities.map((entry) => ({
+            capability: entry?.capability,
+            granted: true,
+            scope: entry?.scope ?? "shared",
+            revocationBehavior: entry?.revocationBehavior ?? "hard-stop",
+          }))
+        : [];
+      installations[id] = {
+        installed: true,
+        enabled: true,
+        status: "enabled",
+        grantedCapabilities: requestedCapabilities,
+      };
+    }
+    return { routes: createAddOnSurfaceDockRoutes(manifests, installations) };
+  }
+
   async function executeAddonExecutionSettingsGet() {
     const settings = await readAddonExecutionSettings();
     return {
@@ -1999,6 +2064,7 @@ except BaseException as exc:
     executeAddonDraftTransition,
     executeAddonDraftProviderHandoff,
     executeAddonsStatus,
+    executeAddonSurfaceRoutes,
     executeAddonExecutionSettingsGet,
     executeAddonExecutionSettingsUpdate,
     executeHermesDashboardStatus,
