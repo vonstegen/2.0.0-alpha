@@ -13,7 +13,13 @@
       "id": "deepseek-harness-status",
       "type": "panel",
       "label": "DeepSeek Harness",
-      "description": "Configure and monitor the local DeepSeek Harness service and the wrapped deepseek-chat / deepseek-reasoner models."
+      "description": "Configure and monitor the local DeepSeek Harness service and the wrapped deepseek-chat / deepseek-reasoner models.",
+      "shellNavigation": {
+        "sectionId": "deepseek-harness",
+        "dockIcon": "runtime",
+        "eyebrow": "Agent runtime",
+        "order": 40
+      }
     },
     {
       "id": "deepseek-harness-runs",

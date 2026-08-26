@@ -18,7 +18,13 @@
       "id": "hermes-workspace",
       "type": "embedded-pane",
       "label": "Hermes Workspace",
-      "description": "Embed the local Hermes dashboard, Kanban board, profiles, curator, and long-running goal controls in the central workspace."
+      "description": "Embed the local Hermes dashboard, Kanban board, profiles, curator, and long-running goal controls in the central workspace.",
+      "shellNavigation": {
+        "sectionId": "hermes",
+        "dockIcon": "hermes",
+        "eyebrow": "Delegation agent",
+        "order": 20
+      }
     }
   ],
   "requestedCapabilities": [
