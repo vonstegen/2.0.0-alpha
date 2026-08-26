@@ -20,7 +20,7 @@ import {
   type AddOnValidationIssue,
 } from "./contracts";
 import { validateRuntimeIsolationForManifest } from "../../../packages/addon-sdk-testing/src/isolation.ts";
-import { classifyAddOnToolName } from "../../../packages/addon-sdk-testing/src/native-tool-prefixes.mjs";
+import { classifyAddOnToolName, NATIVE_TOOL_CAPABILITIES } from "../../../packages/addon-sdk-testing/src/native-tool-prefixes.mjs";
 
 const runtimeTypes: readonly AddOnRuntimeType[] = ["ui-module", "embedded-module", "local-service", "agent-addon", "channel-addon"];
 const categories: readonly AddOnCategory[] = [
@@ -630,6 +630,15 @@ export const validateAddOnManifest = (
             `Tool name "${tool.name}" is a reserved literal. Reserved names (e.g. "fs", "shell", "exec", "wallet") cannot be aliased by addons.`,
           );
         }
+      }
+      if (tool.coversNativeTool !== undefined && !NATIVE_TOOL_CAPABILITIES.includes(tool.coversNativeTool)) {
+        pushIssue(
+          issues,
+          "error",
+          "tool-covers-native-invalid",
+          `${path}.coversNativeTool`,
+          `coversNativeTool "${tool.coversNativeTool}" is not a recognized native tool capability.`,
+        );
       }
       if (!Array.isArray(tool.requiredCapabilities)) {
         pushIssue(issues, "error", "tool-capabilities-array", `${path}.requiredCapabilities`, "Tool requiredCapabilities must be an array.");

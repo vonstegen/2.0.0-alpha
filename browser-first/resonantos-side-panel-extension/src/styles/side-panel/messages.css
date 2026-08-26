@@ -1,5 +1,5 @@
 .message {
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid rgb(var(--hover-rgb) / 0.07);
   border-radius: 18px;
   max-width: 92%;
   padding: 11px 12px;
@@ -14,14 +14,14 @@
 
 .message time {
   flex: 0 0 auto;
-  color: rgba(143, 159, 149, 0.72);
+  color: rgb(var(--muted-rgb) / 0.72);
   font-size: 0.66rem;
   font-weight: 700;
 }
 
 .message-content {
   margin: 6px 0 0;
-  color: #cfdbd2;
+  color: var(--text-2);
   overflow-wrap: anywhere;
 }
 
@@ -40,9 +40,9 @@
 }
 
 .message-content code {
-  border: 1px solid rgba(36, 209, 143, 0.22);
+  border: 1px solid rgb(var(--accent-rgb) / 0.22);
   border-radius: 6px;
-  background: rgba(36, 209, 143, 0.09);
+  background: rgb(var(--accent-rgb) / 0.09);
   padding: 1px 5px;
 }
 
@@ -52,19 +52,19 @@
 
 .message.assistant {
   align-self: flex-start;
-  background: rgba(36, 209, 143, 0.1);
+  background: rgb(var(--accent-rgb) / 0.1);
 }
 
 .message.system {
   align-self: center;
-  background: rgba(255, 255, 255, 0.045);
+  background: rgb(var(--hover-rgb) / 0.045);
   border-style: dashed;
   color: var(--muted);
 }
 
 .message.user {
   align-self: flex-end;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgb(var(--hover-rgb) / 0.08);
 }
 
 .message-actions {
@@ -83,12 +83,12 @@
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: rgba(238, 247, 240, 0.68);
+  color: rgb(var(--text-rgb) / 0.68);
   padding: 0;
 }
 
 .message-action:hover {
-  background: rgba(36, 209, 143, 0.12);
+  background: rgb(var(--accent-rgb) / 0.12);
   color: var(--text);
 }
 

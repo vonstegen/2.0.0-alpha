@@ -39,7 +39,10 @@ import { createMessageActionController } from "./lib/message-action-controller.j
 import { createSitePermissionStore } from "./lib/site-permission-store.js";
 import { createSidePanelRenderers } from "./lib/side-panel-renderers.js";
 import { createTaskConsentStore } from "./lib/task-consent-store.js";
-import { fetchSurfaceRoutes, renderRailMenuWorkspace, renderToolsRailButtons, syncToolsRailActive } from "./lib/main-workspace-tools-rail.js";
+import {
+  fetchSurfaceRoutes,
+  renderRailMenuWorkspace,
+} from "./lib/main-workspace-tools-rail.js";
 
 const STORAGE_KEYS = {
   messages: "augmentorBrowserMessages",
@@ -69,13 +72,9 @@ const STORAGE_KEYS = {
 
 const transcript = document.querySelector("#transcript");
 const workspaceButtons = [...document.querySelectorAll("[data-workspace]")];
-const railToolsList = document.querySelector("#rail-tools-list");
 const railMenuByWorkspace = new Map();
-const newChatButton = document.querySelector("#new-chat");
 const mainBrowserJobs = document.querySelector("#main-browser-jobs");
 const railNewChatButton = document.querySelector("#rail-new-chat");
-const railSearchToggle = document.querySelector("#rail-search-toggle");
-const railSearchBox = document.querySelector("#rail-search-box");
 const railSearchInput = document.querySelector("#rail-search-input");
 const railClearSearch = document.querySelector("#rail-clear-search");
 const railChatList = document.querySelector("#rail-chat-list");
@@ -565,16 +564,14 @@ const dockTabs = createDockTabs({
   tabs: [
     { name: "control", button: document.querySelector("#dock-tab-control"), dot: document.querySelector("#dock-dot-control"), panel: document.querySelector("#dock-control-panel") },
     { name: "jobs", button: document.querySelector("#dock-tab-jobs"), dot: document.querySelector("#dock-dot-jobs"), panel: document.querySelector("#main-browser-jobs") },
-    { name: "chats", button: document.querySelector("#dock-tab-chats"), dot: document.querySelector("#dock-dot-chats"), panel: document.querySelector("#chats-panel") },
     { name: "permissions", button: document.querySelector("#dock-tab-permissions"), dot: document.querySelector("#dock-dot-permissions"), panel: document.querySelector("#permission-manager-panel") }
   ],
   popout: document.querySelector("#dock-popout"),
   popoutTitle: document.querySelector("#dock-popout-title"),
   closeButton: document.querySelector("#dock-popout-close"),
-  titles: { control: "Control", jobs: "Jobs", chats: "Chats", permissions: "Permissions" },
+  titles: { control: "Control", jobs: "Jobs", permissions: "Permissions" },
   onOpen: (name) => {
-    if (name === "chats") renderRailNavigation();
-    else if (name === "jobs") void renderMainBrowserJobStatusFromStorage();
+    if (name === "jobs") void renderMainBrowserJobStatusFromStorage();
     else if (name === "control") void refreshDockControl();
     else if (name === "permissions") void refreshDockPermissions();
   }
@@ -592,6 +589,17 @@ railToggle?.addEventListener("click", () => {
   railToggle.setAttribute("title", label);
   railToggle.setAttribute("aria-expanded", collapsed ? "true" : "false");
 });
+// Collapsible sections: Chat is a fixed always-open header (no toggle); the
+// other tabs toggle their own items independently.
+const railTabToggles = [...document.querySelectorAll(".rail-tab-toggle")];
+for (const toggle of railTabToggles) {
+  toggle.addEventListener("click", () => {
+    const expanded = toggle.getAttribute("aria-expanded") === "true";
+    toggle.setAttribute("aria-expanded", String(!expanded));
+    toggle.closest(".rail-tab").querySelector(".rail-tab-items").hidden = expanded;
+  });
+}
+
 
 // Draggable left-rail width (persisted). The handle rides the rail's right edge;
 // the shell reads --rail-width for its first grid column.
@@ -887,7 +895,6 @@ function renderAll() {
   renderMessages();
   renderAttachments();
   renderRailNavigation();
-  if (railToolsList) syncToolsRailActive(railToolsList, activeWorkspace);
   void renderMainBrowserJobStatusFromStorage();
   updateContextMeter();
   updateConnectionLine();
@@ -899,13 +906,6 @@ async function hydrateToolsRail() {
     allowedWorkspaces.add(menu.menuId);
     railMenuByWorkspace.set(menu.menuId, menu);
   }
-  if (!railToolsList) return;
-  renderToolsRailButtons(railToolsList, menus, (menuId) => {
-    setActiveWorkspace(menuId, { persist: true });
-    updateWorkspaceDeepLink(menuId);
-    renderAll();
-  });
-  syncToolsRailActive(railToolsList, activeWorkspace);
 }
 
 function workspaceShell({ eyebrow, title, body }) {
@@ -1018,15 +1018,7 @@ async function createNewChat() {
   commandInput.focus();
 }
 
-newChatButton?.addEventListener("click", createNewChat);
 railNewChatButton?.addEventListener("click", createNewChat);
-railSearchToggle?.addEventListener("click", () => {
-  railSearchBox.hidden = !railSearchBox.hidden;
-  if (!railSearchBox.hidden) {
-    railSearchInput.focus();
-    railSearchInput.select();
-  }
-});
 railSearchInput?.addEventListener("input", () => {
   railSearchQuery = railSearchInput.value.trim();
   renderRailNavigation();

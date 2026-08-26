@@ -21,7 +21,8 @@ export const SIDE_PANEL_STORAGE_KEYS = {
   controlPreflight: "augmentorControlPreflight",
   jobMonitorCollapsed: "augmentorJobMonitorCollapsed",
   contextDockExpanded: "augmentorContextDockExpanded",
-  userProfile: "augmentorUserProfile"
+  userProfile: "augmentorUserProfile",
+  appearance: "augmentorAppearancePreferences"
 };
 
 const sidePanelElementSelectors = {

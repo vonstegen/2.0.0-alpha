@@ -11,7 +11,7 @@
       <aside class="workspace-rail" aria-label="ResonantOS navigation">
         <header class="rail-header">
           <div class="brand-lockup">
-            <div class="brand-mark">R</div>
+            <div class="brand-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12c2-6 6-6 9 0c3 6 7 6 11 0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="17" cy="5" r="1.8" fill="currentColor"/></svg></div>
             <strong>ResonantOS</strong>
           </div>
           <button id="rail-toggle" type="button" class="rail-icon-button" title="Collapse sidebar" aria-label="Collapse sidebar">
@@ -19,41 +19,127 @@
           </button>
         </header>
 
-        <nav class="rail-primary" aria-label="Primary actions">
-          <button id="rail-new-chat" type="button" class="rail-item">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-            <span>New chat</span>
-          </button>
-          <button id="rail-search-toggle" type="button" class="rail-item">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4 4"/></svg>
-            <span>Search chats</span>
-          </button>
-          <button type="button" class="rail-item" data-workspace="addons">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg>
-            <span>Add-ons</span>
-          </button>
-          <button type="button" class="rail-item" data-workspace="artifacts">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v14H5z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>
-            <span>Artifacts</span>
-          </button>
+        <nav class="rail-tabs" aria-label="Main sections">
+          <section class="rail-tab" data-tab="chat">
+            <div class="rail-tab-header">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              <span>Chat</span>
+            </div>
+            <div id="rail-tab-chat-items" class="rail-tab-items">
+              <button id="rail-new-chat" type="button" class="rail-item">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                <span>New chat</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="rail-tab" data-tab="workspaces">
+            <button type="button" class="rail-tab-toggle" aria-expanded="false" aria-controls="rail-tab-workspaces-items">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              <span>Workspaces</span>
+              <svg class="rail-tab-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div id="rail-tab-workspaces-items" class="rail-tab-items" hidden>
+              <section class="rail-section" aria-label="Projects">
+                <div class="rail-section-row"><h2>Projects</h2><button id="rail-new-project" type="button">New</button></div>
+                <ol id="rail-project-list" class="rail-project-list"></ol>
+              </section>
+              <section class="rail-section rail-recents" aria-label="Recent chats" data-project-id="">
+                <div class="rail-section-row"><h2>Chats</h2><button id="rail-clear-search" type="button" hidden>Clear</button></div>
+                <ol id="rail-chat-list" class="rail-chat-list"></ol>
+              </section>
+            </div>
+          </section>
+
+          <section class="rail-tab" data-tab="search">
+            <button type="button" class="rail-tab-toggle" aria-expanded="false" aria-controls="rail-tab-search-items">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 4 4"/></svg>
+              <span>Search</span>
+              <svg class="rail-tab-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div id="rail-tab-search-items" class="rail-tab-items" hidden>
+              <div class="rail-search-box">
+                <input id="rail-search-input" type="search" placeholder="Search ResonantOS" aria-label="Search ResonantOS" />
+              </div>
+            </div>
+          </section>
+
+          <section class="rail-tab" data-tab="addons">
+            <button type="button" class="rail-tab-toggle" aria-expanded="false" aria-controls="rail-tab-addons-items">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+              <span>Add-ons</span>
+              <svg class="rail-tab-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div id="rail-tab-addons-items" class="rail-tab-items" hidden>
+              <button type="button" class="rail-item" data-workspace="addons">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+                <span>Registry</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="rail-tab" data-tab="controls">
+            <button type="button" class="rail-tab-toggle" aria-expanded="false" aria-controls="rail-tab-controls-items">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3"/><path d="M12 19v3"/><path d="M2 12h3"/><path d="M19 12h3"/></svg>
+              <span>Controls</span>
+              <svg class="rail-tab-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div id="rail-tab-controls-items" class="rail-tab-items" hidden>
+              <button id="dock-tab-control" type="button" class="rail-item" aria-expanded="false" aria-controls="dock-popout" aria-label="Agent Control">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.9 4.9l1.4 1.4"/><path d="M17.7 17.7l1.4 1.4"/></svg>
+                <span>Control</span>
+                <span id="dock-dot-control" class="dock-tab-dot" hidden aria-hidden="true"></span>
+              </button>
+              <button id="dock-tab-jobs" type="button" class="rail-item" aria-expanded="false" aria-controls="dock-popout">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6v2H9z"/><path d="M4 4h16v2H4z"/><path d="M5 6h14v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/></svg>
+                <span>Jobs</span>
+                <span id="dock-dot-jobs" class="dock-tab-dot" hidden aria-hidden="true"></span>
+              </button>
+              <button id="dock-tab-permissions" type="button" class="rail-item" aria-expanded="false" aria-controls="dock-popout">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/></svg>
+                <span>Permissions</span>
+                <span id="dock-dot-permissions" class="dock-tab-dot" hidden aria-hidden="true"></span>
+              </button>
+            </div>
+          </section>
+
+          <section class="rail-tab" data-tab="resources">
+            <button type="button" class="rail-tab-toggle" aria-expanded="false" aria-controls="rail-tab-resources-items">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+              <span>Resources</span>
+              <svg class="rail-tab-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div id="rail-tab-resources-items" class="rail-tab-items" hidden>
+              <button type="button" class="rail-item" data-workspace="artifacts">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v14H5z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>
+                <span>Artifacts</span>
+              </button>
+              <button type="button" class="rail-item" data-workspace="memory">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+                <span>Memory</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="rail-tab" data-tab="settings">
+            <button type="button" class="rail-tab-toggle" aria-expanded="false" aria-controls="rail-tab-settings-items">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+              <span>Settings</span>
+              <svg class="rail-tab-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div id="rail-tab-settings-items" class="rail-tab-items" hidden>
+              <button type="button" class="rail-item" data-workspace="settings" data-settings-section="overview">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                <span>Open settings</span>
+              </button>
+            </div>
+          </section>
         </nav>
 
-        <div id="rail-search-box" class="rail-search-box" hidden>
-          <input id="rail-search-input" type="search" placeholder="Search chats" aria-label="Search chats" />
-        </div>
-
-        <section class="rail-section" aria-label="Workspaces">
-          <h2>Workspaces</h2>
-          <div id="rail-tools-list" class="rail-tools-list"></div>
-        </section>
 
         <!-- Projects + Chats moved to the top-bar "Chats" tab (see #dock-popout). -->
 
         <footer class="rail-footer">
-          <button type="button" class="rail-item rail-settings" data-workspace="settings" data-settings-section="overview">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M4 12h2"/><path d="M18 12h2"/><path d="M12 4v2"/><path d="M12 18v2"/></svg>
-            <span>Settings</span>
-          </button>
           <button type="button" class="rail-user-card" data-workspace="settings" data-settings-section="profile">
             <span id="rail-avatar" class="rail-avatar">R</span>
             <span>
@@ -65,15 +151,6 @@
       </aside>
 
       <section class="answer-workspace" aria-label="Augmentor full-screen chat">
-        <nav id="dock-tabs" class="dock-tabs" aria-label="Browser panels">
-          <button id="dock-tab-control" class="dock-tab" type="button" aria-expanded="false" aria-controls="dock-popout" aria-label="Agent Control">Control<span id="dock-dot-control" class="dock-tab-dot" hidden aria-hidden="true"></span></button>
-          <button id="dock-tab-jobs" class="dock-tab" type="button" aria-expanded="false" aria-controls="dock-popout">Jobs<span id="dock-dot-jobs" class="dock-tab-dot" hidden aria-hidden="true"></span></button>
-          <button id="dock-tab-permissions" class="dock-tab" type="button" aria-expanded="false" aria-controls="dock-popout">Permissions<span id="dock-dot-permissions" class="dock-tab-dot" hidden aria-hidden="true"></span></button>
-          <button id="dock-tab-chats" class="dock-tab" type="button" aria-expanded="false" aria-controls="dock-popout">Chats<span id="dock-dot-chats" class="dock-tab-dot" hidden aria-hidden="true"></span></button>
-          <button id="new-chat" type="button" class="dock-new-chat" title="New chat" aria-label="New chat">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-          </button>
-        </nav>
 
         <div class="answer-body">
         <section id="transcript" class="answer-thread" aria-live="polite"></section>
@@ -91,16 +168,6 @@
               <div id="dock-control-step-list" class="control-step-list"></div>
             </section>
             <section id="main-browser-jobs" class="main-browser-jobs" aria-label="Agent Control browser jobs" hidden></section>
-            <section id="chats-panel" class="chats-panel" aria-label="Chats">
-              <section class="rail-section" aria-label="Projects">
-                <div class="rail-section-row"><h2>Projects</h2><button id="rail-new-project" type="button">New</button></div>
-                <ol id="rail-project-list" class="rail-project-list"></ol>
-              </section>
-              <section class="rail-section rail-recents" aria-label="Recent chats" data-project-id="">
-                <div class="rail-section-row"><h2>Chats</h2><button id="rail-clear-search" type="button" hidden>Clear</button></div>
-                <ol id="rail-chat-list" class="rail-chat-list"></ol>
-              </section>
-            </section>
             <section id="permission-manager-panel" class="permission-manager-panel" aria-label="Permission and consent manager" hidden>
               <div class="task-consent-header"><div><span class="eyebrow">Permissions</span><strong id="permission-manager-title">No stored browser grants</strong></div></div>
               <ol id="permission-manager-list" class="permission-manager-list"></ol>

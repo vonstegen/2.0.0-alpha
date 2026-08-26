@@ -27,7 +27,7 @@
   width: 16px;
   height: 16px;
   margin-top: 1px;
-  border: 1.5px solid rgba(207, 219, 210, 0.55);
+  border: 1.5px solid rgb(var(--text-2-rgb) / 0.55);
   border-radius: 50%;
   color: transparent;
   font-size: 0.6rem;
@@ -37,9 +37,9 @@
 /* pending → the bordered empty circle above (default) */
 
 .step-list-item[data-state="completed"] .step-list-glyph {
-  border-color: rgba(36, 209, 143, 0.9);
-  background: rgba(36, 209, 143, 0.9);
-  color: #04140d;
+  border-color: rgb(var(--accent-rgb) / 0.9);
+  background: rgb(var(--accent-rgb) / 0.9);
+  color: var(--bg);
 }
 .step-list-item[data-state="completed"] .step-list-glyph::after {
   content: "\2713"; /* ✓ */
@@ -64,8 +64,8 @@
 
 .step-list-item[data-state="active"] .step-list-glyph,
 .step-list-item[data-state="running"] .step-list-glyph {
-  border-color: rgba(36, 209, 143, 0.25);
-  border-top-color: rgba(36, 209, 143, 0.95);
+  border-color: rgb(var(--accent-rgb) / 0.25);
+  border-top-color: rgb(var(--accent-rgb) / 0.95);
   animation: step-list-spin 0.7s linear infinite;
 }
 
@@ -96,19 +96,19 @@
 }
 
 .step-list-num {
-  color: rgba(207, 219, 210, 0.62);
+  color: rgb(var(--text-2-rgb) / 0.62);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 
 .step-list-label {
-  color: rgba(238, 247, 240, 0.9);
+  color: rgb(var(--text-rgb) / 0.9);
   overflow-wrap: anywhere;
 }
 
 .step-list-item[data-state="completed"] .step-list-label,
 .step-list-item[data-state="completed"] .step-list-num {
-  color: rgba(207, 219, 210, 0.58);
+  color: rgb(var(--text-2-rgb) / 0.58);
   text-decoration: line-through;
 }
 
@@ -118,10 +118,10 @@
   gap: 7px;
   width: fit-content;
   margin: 8px auto 0; /* center under the list (justify-self doesn't apply here) */
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgb(var(--hover-rgb) / 0.12);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(238, 247, 240, 0.86);
+  background: rgb(var(--hover-rgb) / 0.05);
+  color: rgb(var(--text-rgb) / 0.86);
   font-size: 0.7rem;
   font-weight: 800;
   padding: 4px 12px;
@@ -131,13 +131,13 @@
   box-sizing: border-box;
   width: 12px;
   height: 12px;
-  border: 1.5px solid rgba(207, 219, 210, 0.4);
+  border: 1.5px solid rgb(var(--text-2-rgb) / 0.4);
   border-radius: 50%;
 }
 
 .step-list-pill[data-active="true"] .step-list-pill-glyph {
-  border-color: rgba(36, 209, 143, 0.25);
-  border-top-color: rgba(36, 209, 143, 0.95);
+  border-color: rgb(var(--accent-rgb) / 0.25);
+  border-top-color: rgb(var(--accent-rgb) / 0.95);
   animation: step-list-spin 0.7s linear infinite;
 }
 

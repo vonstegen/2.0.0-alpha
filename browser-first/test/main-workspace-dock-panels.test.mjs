@@ -11,37 +11,32 @@ function dom(html) {
   return d;
 }
 
-test("main-workspace.html exposes the top-bar dock and relocates Projects/Chats out of the rail", async () => {
+test("main-workspace.html surfaces dock panels + chat history from the main-tab rail", async () => {
   const html = await readFile(
     path.resolve(import.meta.dirname, "..", "resonantos-side-panel-extension", "src", "main-workspace.html"),
     "utf8"
   );
   const d = new JSDOM(html).window.document;
-  const required = [
-    "dock-tabs", "dock-tab-control", "dock-tab-jobs", "dock-tab-chats", "dock-tab-permissions",
-    "dock-popout", "dock-popout-title", "dock-popout-close",
-    "dock-control-panel", "dock-control-title", "dock-control-status", "dock-control-step-list",
-    "main-browser-jobs", "chats-panel", "rail-project-list", "rail-chat-list", "rail-new-project",
-    "permission-manager-panel", "permission-manager-list", "permission-manager-title"
-  ];
+  const required = ["rail-new-chat", "dock-tab-control", "dock-tab-jobs", "dock-tab-permissions", "rail-resize", "rail-tab-workspaces-items", "rail-tab-search-items"];
   for (const id of required) {
     assert.ok(d.getElementById(id), `main-workspace.html is missing #${id}`);
   }
-  // Projects/Chats now live inside the Chats tab, not the left rail.
-  assert.equal(d.querySelector(".workspace-rail .rail-project-list"), null, "Projects list must not remain in the rail");
-  assert.ok(d.querySelector("#chats-panel #rail-project-list"), "Projects list must live in the Chats panel");
-  assert.ok(d.querySelector("#chats-panel #rail-chat-list"), "Chats list must live in the Chats panel");
+  // Projects/Chats live inside the Workspaces tab; search lives in the Search tab.
+  assert.ok(d.querySelector("#rail-tab-workspaces-items #rail-project-list"), "Projects list must live in the Workspaces tab");
+  assert.ok(d.querySelector("#rail-tab-workspaces-items #rail-chat-list"), "Chats list must live in the Workspaces tab");
+  assert.ok(d.querySelector("#rail-tab-search-items #rail-search-input"), "Search input must live in the Search tab");
+  assert.equal(d.getElementById("chats-panel"), null, "the legacy Chats panel must be removed");
 
-  // The dead top header + Show-Augmentor-sidebar button are gone; new-chat "+"
-  // lives in the dock to the right of the Chats tab; the rail has a resize handle.
-  assert.equal(d.querySelector(".workspace-topbar"), null, "the dead top header must be removed");
-  assert.equal(d.getElementById("open-sidebar"), null, "the Show Augmentor sidebar button must be removed");
-  assert.ok(d.querySelector("#dock-tabs #new-chat"), "new-chat must live inside the dock");
+  // Dock tabs (control/jobs/permissions) are folded into the rail; the top-bar
+  // dock and the Chats dock tab are gone, and new-chat lives in the Chat tab.
+  assert.equal(d.getElementById("dock-tabs"), null, "the top-bar dock must be removed");
+  assert.equal(d.getElementById("new-chat"), null, "the dock new-chat button must be removed");
+  assert.ok(d.querySelector(".workspace-rail #dock-tab-control"), "Control must live in the rail");
+  assert.ok(d.querySelector(".workspace-rail #dock-tab-jobs"), "Jobs must live in the rail");
+  assert.ok(d.querySelector(".workspace-rail #dock-tab-permissions"), "Permissions must live in the rail");
+  assert.equal(d.getElementById("dock-tab-chats"), null, "the Chats dock tab must be removed (folded into Workspaces)");
+  assert.ok(d.querySelector(".workspace-rail #rail-new-chat"), "new-chat must live in the rail's Chat tab");
   assert.ok(d.getElementById("rail-resize"), "the rail must have a resize handle");
-  const dockButtons = [...d.querySelectorAll("#dock-tabs button")].map((b) => b.id);
-  assert.deepEqual(dockButtons, [
-    "dock-tab-control", "dock-tab-jobs", "dock-tab-permissions", "dock-tab-chats", "new-chat"
-  ], "Site removed from the main panel; Chats rightmost with new-chat to its right");
   assert.equal(d.getElementById("dock-tab-site"), null, "the Site tab is removed from the main panel");
   assert.equal(d.getElementById("site-permission-panel"), null, "the orphaned Site panel is removed");
 });
