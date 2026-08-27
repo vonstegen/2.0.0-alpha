@@ -631,7 +631,7 @@ export const validateAddOnManifest = (
           );
         }
       }
-      if (tool.coversNativeTool !== undefined && !NATIVE_TOOL_CAPABILITIES.includes(tool.coversNativeTool)) {
+      if (isString(tool.coversNativeTool) && !NATIVE_TOOL_CAPABILITIES.includes(tool.coversNativeTool)) {
         pushIssue(
           issues,
           "error",

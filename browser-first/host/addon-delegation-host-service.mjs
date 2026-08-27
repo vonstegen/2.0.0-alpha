@@ -68,6 +68,15 @@ export function createAddonDelegationHostService(handlers = {}) {
         requiredCapability: "addon-execution-settings-write",
         handler: required("executeAddonExecutionSettingsUpdate"),
       },
+      {
+        // Human-gated addon management reuses the same write capability as
+        // execution settings — both are the My Add-ons management surface,
+        // and a separate capability would cascade a new launcher arg/env.
+        method: "POST",
+        path: "/addons/uninstall",
+        requiredCapability: "addon-execution-settings-write",
+        handler: required("executeAddonUninstall"),
+      },
       { method: "GET", path: "/opencode/status", handler: required("executeOpenCodeStatus") },
       {
         method: "POST",
@@ -168,6 +177,12 @@ export function createAddonDelegationHostService(handlers = {}) {
         requiredCapability: "agent-delegation",
         handler: async (body, request, bridgeContext) => {
           const addonId = body?.addonId;
+          if (await handlers.isAddonDisabled?.(addonId)) {
+            return {
+              status: 403,
+              body: { error: { code: "addon-disabled", message: "This add-on is switched off in My Add-ons." } },
+            };
+          }
           const toolName = body?.tool;
           const payload = body?.payload ?? {};
           const result = await dispatchExternalAgentRuntime({
@@ -239,6 +254,8 @@ export function createAddonDelegationHostService(handlers = {}) {
               runtimeType: manifest.runtimeType,
               serviceEntrypoint: manifest.service?.entrypoint,
               trustTier: snapshot.trustTier,
+              untrusted: snapshot.untrusted,
+              trustNotice: snapshot.trustNotice,
               publisher: snapshot.publisher,
               publisherNote: snapshot.publisherNote,
               workerKey: snapshot.workerKey,

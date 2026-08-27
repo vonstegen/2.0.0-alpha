@@ -115,3 +115,21 @@ Add-on skill contracts:
 | [ADR-043: Blockchain Provider Architecture (Stub)](ADR-043-blockchain-provider-architecture.md) | Accepted | Not applicable | - | Add-on SDK + Security + Governance review | Stub ADR; the substantive architecture lives in RESONANT_BLOCKCHAIN_DAO_EXTENSION_INTERFACE_ARCHITECTURE.md and is queued as ADR-044–049. |
 | [ADR-050: Native Tool Fabric and Add-on Tool Surfaces (Two-Tier Model)](ADR-050-native-and-addon-tool-tiers.md) | Accepted | Partial | - | Add-on SDK + Delegation | Pins namespacing (native prefixes + reserved literals), identity (host vs id@publisher), and isolation rules between the two tiers. Add-on tool surface is dispatched; native surface is a typed taxonomy with no executor yet. |
 | [ResonantOS Blockchain and DAO Extension Interface Architecture](RESONANT_BLOCKCHAIN_DAO_EXTENSION_INTERFACE_ARCHITECTURE.md) | Proposed | Not applicable | - | Add-on SDK + Security + Governance review | Future directive; 35-name capability vocabulary, broker contract, verification record, portability profile, GovernanceProvider abstraction. No code ships with this proposal. |
+| [ADR-051: ROS Architecture Blueprint (G0-ROS Core + Add-on Boundary)](ADR-051-ros-architecture-blueprint.md) | Accepted | Applies | - | Add-on SDK | Blueprint encoding, category → rail-destination mapping, and the G0 harness tool catalog govern Alpha manifest validation and rail layout. |
+| [ADR-052: Browser Architecture Package](ADR-052-browser-architecture-package.md) | Proposed | Deferred | - | Core architecture | Proposed target architecture documentation set; no runtime change until the checkpoint ADRs land. |
+
+## Proposed Target Architecture
+
+The [ResonantOS Browser Architecture Package](resonantos-browser-architecture/README.md)
+documents the proposed target: Augmentor as native orchestrator, harness
+providers, identity/delegation chains, task-scoped authority, resource
+governance, and Ground-0 recovery. It is adopted as documentation by ADR-052
+and implemented in checkpoints CP-0 … CP-9:
+
+- [Adoption roadmap and checkpoints](resonantos-browser-architecture/ROADMAP.md)
+- [Master phased implementation checklist](resonantos-browser-architecture/14-master-phased-implementation-checklist.md)
+- [Review checklists](resonantos-browser-architecture/CHECKLISTS.md)
+
+The two-channel workbench that hosts development against both the frozen
+stable SDK surface and the dev UI surface is documented in the
+[release channel README](../../browser-first/release/README.md).

@@ -17,6 +17,7 @@ const logicianManifest = (): AddOnManifest => ({
   id: "addon.logician",
   name: "Logician",
   version: "0.1.0",
+  publisher: "local",
   author: "test",
   category: "knowledge",
   description: "Policy and reasoning rules engine.",

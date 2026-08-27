@@ -191,6 +191,7 @@ const manifest = (overrides: Partial<AddOnManifest>): AddOnManifest => ({
   id: "addon.opencode",
   name: "OpenCode",
   version: "0.1.0",
+  publisher: "local",
   author: "test",
   category: "tool",
   description: "test",

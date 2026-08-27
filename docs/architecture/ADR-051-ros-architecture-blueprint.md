@@ -4,7 +4,7 @@
 
 - Decision status: Accepted
 - Alpha applicability: Applies
-- Supersedes: None (extends ADR-018 Add-on SDK V0 with the architecture model)
+- Superseded by: None
 - Owner: Add-on SDK
 - Decision date: 2026-08-26
 
@@ -13,6 +13,9 @@
 G0-ROS (Ground-0 ResonantOS) is a **fused core** plus **pluggable add-ons**. The
 fused core is shipped by the ROS dev team and cannot be separated or removed;
 add-ons plug in at the add-on boundary, which is the *only* separable boundary.
+
+This blueprint extends ADR-018 (Add-on SDK V0) with the architecture model
+that the SDK encodes.
 
 This blueprint is the single source of truth for what G0-ROS is, what an
 add-on is, and how the two relate. It is encoded, consumed, and validated in

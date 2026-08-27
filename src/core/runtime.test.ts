@@ -372,6 +372,7 @@ describe("runtime state migration", () => {
       id: "addon.browser",
       name: "Resonant Browser",
       version: "0.1.0",
+      publisher: "local",
       author: "test",
       category: "tool",
       description: "Browser",

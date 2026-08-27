@@ -88,21 +88,55 @@ if (fresh) {
 }
 console.log(`Channel: ${channel} (${stable ? "frozen SDK workbench" : "live UI workbench"})`);
 
-// Pin the extension to the toolbar so the pin is part of the saved profile
-// state. Chrome records toolbar pins in the profile's Preferences file and
-// rewrites that file on exit — so patch it BEFORE launching. `--unpin`
-// reverses it (icon goes back into the puzzle menu).
 const unpin = process.argv.includes("--unpin");
 const prefsPath = path.join(profileDir, "Default", "Preferences");
-try {
-  let prefs;
-  if (existsSync(prefsPath)) {
-    prefs = JSON.parse(await readFile(prefsPath, "utf8"));
-  } else {
-    // Fresh profile: seed a Preferences file so the pin applies on the
-    // very first launch instead of the second.
-    prefs = {};
+const workspaceUrl = `chrome-extension://${extensionId}/src/main-workspace.html`;
+const args = [
+  `--user-data-dir=${profileDir}`,
+  `--load-extension=${extensionPath}`,
+  `--disable-extensions-except=${extensionPath}`,
+  `--remote-debugging-port=${debugPort}`,
+  "--no-first-run",
+  "--no-default-browser-check",
+  "--no-pdf-header-footer",
+  workspaceUrl,
+];
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const cdpUp = async () => {
+  for (let i = 0; i < 60; i += 1) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${debugPort}/json/version`);
+      if (res.ok) return true;
+    } catch {
+      // not up yet
+    }
+    await sleep(500);
   }
+  return false;
+};
+
+// First-run bootstrap: Chrome drops toolbar pins for extensions it does not
+// know about at startup, so a pre-launch patch on a brand-new profile is
+// discarded. Boot once, let the extension register, quit gracefully (flushes
+// Preferences), then patch — the pin sticks on the real launch.
+if (!unpin && !existsSync(prefsPath)) {
+  console.log("First run on this profile — bootstrapping so the toolbar pin sticks…");
+  const boot = spawn(chromeBin, args, { stdio: "ignore", detached: false });
+  const up = await cdpUp();
+  if (up) await sleep(2500); // let the extension finish installing
+  boot.kill("SIGTERM");
+  await new Promise((resolve) => boot.once("exit", resolve));
+  await sleep(500);
+}
+
+// Pin the extension to the toolbar. Chrome records toolbar pins in the
+// profile's Preferences file and rewrites that file on exit — patch BEFORE
+// launching. `--unpin` reverses it (icon goes back into the puzzle menu).
+try {
+  const prefs = existsSync(prefsPath)
+    ? JSON.parse(await readFile(prefsPath, "utf8"))
+    : {};
   prefs.extensions ??= {};
   prefs.extensions.pinned_extensions ??= [];
   const set = new Set(prefs.extensions.pinned_extensions);
@@ -115,24 +149,19 @@ try {
   console.warn(`Could not update the extension pin: ${error.message}`);
 }
 
-const workspaceUrl = `chrome-extension://${extensionId}/src/main-workspace.html`;
-
-const args = [
-  `--user-data-dir=${profileDir}`,
-  `--load-extension=${extensionPath}`,
-  `--disable-extensions-except=${extensionPath}`,
-  `--remote-debugging-port=${debugPort}`,
-  "--no-first-run",
-  "--no-default-browser-check",
-  "--no-pdf-header-footer",
-  workspaceUrl,
-];
-
 const child = spawn(chromeBin, args, { stdio: "inherit", detached: false });
+const shutDown = () => {
+  console.log("");
+  console.log("Closing Chrome for Testing…");
+  child.kill("SIGTERM");
+};
+process.on("SIGINT", shutDown);
+process.on("SIGTERM", shutDown);
 child.on("exit", (code) => {
   console.log(`Chrome for Testing exited (${code ?? "signal"}).`);
   process.exit(code ?? 0);
 });
+
 
 console.log("");
 console.log(`Chrome for Testing — ${channel.toUpperCase()} channel (isolated profile; normal Chrome untouched):`);

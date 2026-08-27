@@ -60,6 +60,31 @@ export function classifyTrustTier(manifest) {
 }
 
 /**
+ * Human-readable trust verdict, keyed off the tier. Mirrors
+ * `trustNoticeForTier` in packages/addon-sdk-testing/src/trust-tier.ts.
+ * `untrusted` is true only for `personal` — a sideloaded or
+ * unprovenanced add-on that ResonantOS has not tested or approved.
+ */
+export function trustVerdict(manifest) {
+  const tier = classifyTrustTier(manifest);
+  switch (tier) {
+    case "system":
+      return { tier, untrusted: false, notice: "Bundled core add-on (system trust tier)." };
+    case "approved":
+      return { tier, untrusted: false, notice: "Enterprise-signed add-on (approved trust tier)." };
+    case "verified":
+      return { tier, untrusted: false, notice: "Curated-signed add-on (verified trust tier)." };
+    case "personal":
+    default:
+      return {
+        tier: "personal",
+        untrusted: true,
+        notice: "Not tested or approved — no verified or approved signature (personal trust tier).",
+      };
+  }
+}
+
+/**
  * Compute the canonical worker key for an addon manifest:
  *   `${id}@${publisher}:${version}|${boundary ?? "(none)"}`
  * Mirrors `buildWorkerKey` in isolation.ts.
@@ -77,14 +102,16 @@ export function buildWorkerKey(manifest) {
  * strings so they serialize cleanly into the bridge JSON.
  */
 export function addonTrustAndIsolationSnapshot(manifest) {
-  const trustTier = classifyTrustTier(manifest);
+  const verdict = trustVerdict(manifest);
   const boundary = manifest?.runtimeIsolation?.boundary ?? null;
   return {
-    trustTier,
+    trustTier: verdict.tier,
     publisher: manifest?.publisher ?? "(missing)",
     publisherNote: manifest?.publisher?.startsWith("enterprise.")
       ? "enterprise.* publisher"
       : "",
+    untrusted: verdict.untrusted,
+    trustNotice: verdict.notice,
     workerKey: buildWorkerKey(manifest),
     boundary: boundary ?? "(none)",
     hostMediated: boundary ? HOST_MEDIATED.has(boundary) : false,

@@ -1176,7 +1176,9 @@ export async function evaluateBridgeRequestForSelfTest({
       // open the panel in a browser tab. The actual dispatcher route
       // still requires its own capability token, so this does not weaken
       // the bridge.
-      const isDevPanelPath = (url ?? "").startsWith("/dev/external-agent-runtimes");
+      const isDevPanelPath =
+        (url ?? "").startsWith("/dev/external-agent-runtimes") ||
+        (url ?? "").startsWith("/dev/g0-ros");
       // Treat IPv4 loopback, IPv6 loopback, IPv4-mapped IPv6 loopback,
       // and any private RFC1918 range (10/8, 172.16/12, 192.168/16) as
       // local. This lets the panel load from a Chrome tab on the same

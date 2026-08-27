@@ -94,4 +94,24 @@ describe("bundled add-on manifests", () => {
 
     expect(validation.issues.filter((issue) => issue.severity === "error")).toEqual([]);
   });
+
+  it("keeps the Hello Resonant testing add-on manifest sideloadable", () => {
+    const manifest = JSON.parse(
+      readFileSync(resolve(process.cwd(), "examples", "addons", "addon.hello-resonant.json"), "utf8"),
+    ) as unknown;
+
+    const validation = validateAddOnManifest(manifest, { source: "sideload" });
+
+    expect(validation.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+  });
+
+  it("keeps the Testing Hello add-on manifest sideloadable", () => {
+    const manifest = JSON.parse(
+      readFileSync(resolve(process.cwd(), "examples", "addons", "addon.testing-hello.json"), "utf8"),
+    ) as unknown;
+
+    const validation = validateAddOnManifest(manifest, { source: "sideload" });
+
+    expect(validation.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+  });
 });

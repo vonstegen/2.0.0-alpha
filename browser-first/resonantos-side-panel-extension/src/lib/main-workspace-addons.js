@@ -156,6 +156,13 @@ function createAddonCard(addon, actions = {}) {
   }
 
   card.append(header, meta);
+  if (addon.untrusted) {
+    const trustNotice = document.createElement("p");
+    trustNotice.className = "addon-trust-notice";
+    trustNotice.dataset.tone = "warning";
+    trustNotice.textContent = addon.trustNotice || "Not tested or approved.";
+    card.append(trustNotice);
+  }
   if (capsRow.childNodes.length) card.append(capsRow);
   card.append(toolList);
   card.append(boundary, capabilityReviewElement(addon));
@@ -171,6 +178,9 @@ function createAddonCard(addon, actions = {}) {
 // (none today — the SDK validator rejects malformed manifests at
 // install time).
 function addonState(addon) {
+  // Add-ons with a host execution record (Hermes, OpenCode) are installed
+  // even though the status payload carries no runtime/tools fields.
+  if (addon.execution) return "installed";
   const runtime = addon.runtime ?? addon.runtimeType ?? null;
   const hasTools = Array.isArray(addon.tools) && addon.tools.length > 0;
   if (["agent-addon", "local-service", "embedded-module"].includes(runtime) && hasTools) {
@@ -183,16 +193,90 @@ function addonState(addon) {
   return "discoverable";
 }
 
+// Health state for the Installed view's compact rows: the colored icon is the
+// only status surface. Green = running clean; yellow = warning (something is
+// not running cleanly); red = an issue with the installed add-on.
+function installedHealth(addon) {
+  if (!addon.available) return "error";
+  if (addon.disabled) return "warning";
+  if (addon.untrusted) return "error";
+  const exec = addon.execution ?? null;
+  if (exec) {
+    if (exec.localCliExecution && exec.mode !== "local-cli-detected") return "error";
+    if (!exec.localCliExecution) return "warning";
+  }
+  if (Array.isArray(addon.deniedCapabilities) && addon.deniedCapabilities.length > 0) return "warning";
+  return "ok";
+}
+
+const INSTALLED_HEALTH_LABEL = {
+  ok: "Running clean",
+  warning: "Warning — not running cleanly",
+  error: "Issue detected"
+};
+
+// My Add-ons row: colored status icon + name + short description + management
+// actions (on/off switch, discard from list, uninstall for personal-tier
+// add-ons only). The Registry view keeps the full cards.
+function createInstalledRow(addon, actions = {}) {
+  const tone = installedHealth(addon);
+  const stateLabel = addon.disabled ? "Off — switched off in My Add-ons" : INSTALLED_HEALTH_LABEL[tone];
+  const row = document.createElement("li");
+  row.className = "addons-installed-row";
+  row.dataset.tone = tone;
+  row.title = stateLabel;
+  const icon = document.createElement("span");
+  icon.className = "addons-health-icon";
+  icon.setAttribute("aria-label", stateLabel);
+  icon.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="currentColor"/></svg>`;
+  const copy = document.createElement("div");
+  copy.className = "addons-installed-copy";
+  const name = document.createElement("strong");
+  name.textContent = addon.name || addon.id || "Unnamed add-on";
+  const detail = document.createElement("small");
+  detail.textContent = addon.description || "";
+  copy.append(name, detail);
+  const controls = document.createElement("div");
+  controls.className = "addons-installed-actions";
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "addons-switch";
+  toggle.dataset.on = addon.disabled ? "false" : "true";
+  toggle.textContent = addon.disabled ? "Off" : "On";
+  toggle.title = addon.disabled ? "Switch this add-on on" : "Switch this add-on off";
+  toggle.addEventListener("click", async () => {
+    toggle.disabled = true;
+    try {
+      await actions.onToggleDisabled?.(addon, !addon.disabled);
+    } catch {
+      toggle.disabled = false;
+    }
+  });
+  controls.append(toggle);
+  const discard = document.createElement("button");
+  discard.type = "button";
+  discard.textContent = "Discard";
+  discard.title = "Remove from My Add-ons list (reversible)";
+  discard.addEventListener("click", () => void actions.onDiscard?.(addon));
+  controls.append(discard);
+  if (addon.untrusted) {
+    const uninstall = document.createElement("button");
+    uninstall.type = "button";
+    uninstall.dataset.danger = "true";
+    uninstall.textContent = "Uninstall";
+    uninstall.title = "Remove this sideloaded add-on from the registry";
+    uninstall.addEventListener("click", () => void actions.onUninstall?.(addon));
+    controls.append(uninstall);
+  }
+  row.append(icon, copy, controls);
+  return row;
+}
+
 // Build the SDK tab content: external links to the manifest contract,
 // authoring guide, wire-format ADR, capability matrix, and bench
 // commands. Rendered once at workspace load; no async data needed.
 function buildSdkPanel(container) {
   container.innerHTML = `
-    <div class="addons-sdk-hero">
-      <span class="hero-kicker">Build add-ons for ResonantOS</span>
-      <h2>ResonantOS Add-on SDK</h2>
-      <p>The manifest contract (ADR-018), the wire format for <code>agent-addon</code> / <code>local-service</code> runtimes, and the bench used to verify end-to-end round-trips.</p>
-    </div>
     <div class="addons-sdk-grid">
       <a class="addons-sdk-card" href="https://github.com/ResonantOS/2.0.0-alpha/tree/main/examples/addons" target="_blank" rel="noreferrer noopener">
         <strong>Example add-on manifests</strong>
@@ -360,7 +444,7 @@ function createDelegationCard(delegation, actions = {}) {
   return card;
 }
 
-export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeRequest, onOpenProviderHandoff, onOpenWorkspace }) {
+export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeRequest, onOpenProviderHandoff, onOpenWorkspace, initialView = "registry", storage = null, storageKeys = {} }) {
   // Resolve at call time. The module-level `bridgeRequest` may be
   // null at construction (rebind still in flight); the getter lets
   // us re-read the current value on every call.
@@ -370,79 +454,147 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
   section.className = "addons-workspace";
   section.setAttribute("aria-label", "Add-ons workspace");
 
+  const heroCopy = {
+    registry: {
+      kicker: "Add-on registry",
+      title: "Replaceable capabilities, explicit trust.",
+      body: "Review the add-ons currently visible to the browser-first host. Add-ons are useful tools, not trusted core agents, and every privileged operation stays mediated by ResonantOS."
+    },
+    installed: {
+      kicker: "My Add-ons",
+      title: "Your add-ons, your switches.",
+      body: "Switch add-ons on or off, uninstall personal-tier add-ons, or discard them from this list. Bundled add-ons cannot be uninstalled."
+    },
+    discover: {
+      kicker: "Discover",
+      title: "Manifests known, surfaces not yet live.",
+      body: "Add-ons the host has loaded but whose runtime or tools are not detected yet. They stay discoverable until a runtime makes them detectable."
+    },
+    sdk: {
+      kicker: "Add-on SDK",
+      title: "Build add-ons for ResonantOS.",
+      body: "The manifest contract, the wire format, and the bench workflow for shipping your own add-on into the registry."
+    }
+  };
+  const activeHero = heroCopy[Object.hasOwn(heroCopy, initialView) ? initialView : "registry"];
   const header = document.createElement("header");
   header.className = "addons-hero";
   header.innerHTML = `
-    <span class="hero-kicker">Add-on registry</span>
-    <h1>Replaceable capabilities, explicit trust.</h1>
-    <p>Review the add-ons currently visible to the browser-first host. Add-ons are useful tools, not trusted core agents, and every privileged operation stays mediated by ResonantOS.</p>
+    <span class="hero-kicker">${activeHero.kicker}</span>
+    <h1>${activeHero.title}</h1>
+    <p>${activeHero.body}</p>
   `;
 
-  // Tab bar modelled on VSCode's Extensions view: Installed / Discoverable / SDK.
-  // Three radios under the hood, styled as a tab strip; switching is
-  // instant because all data is fetched once per load.
-  const tabs = [
-    { id: "installed", label: "Installed" },
-    { id: "discoverable", label: "Discoverable" },
-    { id: "sdk", label: "SDK" },
-  ];
-  const tabBar = document.createElement("nav");
-  tabBar.className = "addons-tabbar";
-  tabBar.setAttribute("role", "tablist");
-  const tabButtons = [];
-  const panels = {};
-  for (const tab of tabs) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.role = "tab";
-    btn.dataset.tab = tab.id;
-    btn.textContent = tab.label;
-    btn.setAttribute("aria-selected", "false");
-    btn.addEventListener("click", () => selectTab(tab.id));
-    tabBar.append(btn);
-    tabButtons.push(btn);
-    const panel = document.createElement("section");
-    panel.className = `addons-tabpanel addons-tabpanel-${tab.id}`;
-    panel.dataset.tab = tab.id;
-    panel.hidden = true;
-    panels[tab.id] = panel;
-  }
-  const selectTab = (id) => {
-    for (const btn of tabButtons) {
-      const active = btn.dataset.tab === id;
-      btn.setAttribute("aria-selected", active ? "true" : "false");
-      btn.dataset.active = active ? "true" : "false";
-    }
-    for (const [pid, panel] of Object.entries(panels)) {
-      panel.hidden = pid !== id;
-    }
-  };
-  selectTab("installed");
-
-  // Headline status under the hero — short summary across both tabs.
+  // The four Add-ons sub-views live under the rail's Add-ons tab; the rail
+  // sub-item click sets the view and re-renders this workspace, so only the
+  // requested view is mounted. All data is still fetched once per render.
   const status = document.createElement("p");
   status.className = "addons-status";
   status.textContent = "Loading add-on registry...";
 
-  // Per-tab status + grid. The installed tab fills first; the
-  // discoverable tab shows manifests the bridge has loaded but that
-  // don't have a runtime-detectable, tool-bearing surface yet.
+  // Registry view: every add-on the host knows about. Installed holds the
+  // runtime-detectable, tool-bearing subset; Discover shows manifests the
+  // bridge has loaded but that don't have a runtime-detectable surface yet.
+  const registryGrid = document.createElement("div");
+  registryGrid.className = "addons-grid";
+  const registryView = document.createElement("div");
+  registryView.className = "addons-view";
+  registryView.append(status, registryGrid);
+
   const installedStatus = document.createElement("p");
   installedStatus.className = "addons-status";
-  installedStatus.textContent = "Loading installed add-ons...";
-  const grid = document.createElement("div");
-  grid.className = "addons-grid";
-  panels.installed.append(installedStatus, grid);
+  installedStatus.textContent = "Loading your add-ons...";
+  const installedList = document.createElement("ul");
+  installedList.className = "addons-installed-list";
+  const discardedLine = document.createElement("div");
+  discardedLine.className = "addons-discarded";
+  discardedLine.hidden = true;
+  const installedView = document.createElement("div");
+  installedView.className = "addons-view";
+  installedView.append(installedStatus, installedList, discardedLine);
 
-  const discoverableStatus = document.createElement("p");
-  discoverableStatus.className = "addons-status";
-  discoverableStatus.textContent = "Loading discoverable add-ons...";
-  const discoverableGrid = document.createElement("div");
-  discoverableGrid.className = "addons-grid";
-  panels.discoverable.append(discoverableStatus, discoverableGrid);
+  // Discarded add-ons: per-user list state, persisted in extension storage.
+  // Discarding only hides an add-on from My Add-ons; it does not disable or
+  // uninstall anything.
+  let discarded = new Set();
+  const discardedKey = storageKeys?.discardedAddons ?? "";
+  async function persistDiscarded() {
+    if (storage && discardedKey) {
+      await storage.set({ [discardedKey]: [...discarded] }).catch(() => undefined);
+    }
+  }
+  function renderDiscarded() {
+    const count = discarded.size;
+    discardedLine.hidden = count === 0;
+    if (!count) return;
+    discardedLine.replaceChildren();
+    const text = document.createElement("span");
+    text.textContent = `${count} add-on${count === 1 ? "" : "s"} discarded from your list.`;
+    const restore = document.createElement("button");
+    restore.type = "button";
+    restore.textContent = "Restore all";
+    restore.addEventListener("click", async () => {
+      discarded.clear();
+      await persistDiscarded();
+      renderDiscarded();
+      await loadAddons();
+    });
+    discardedLine.append(text, restore);
+  }
+  async function hydrateDiscarded() {
+    if (!storage || !discardedKey) return;
+    const result = await storage.get(discardedKey).catch(() => ({}));
+    const list = result?.[discardedKey];
+    discarded = new Set(Array.isArray(list) ? list : []);
+    renderDiscarded();
+  }
+  const rowActions = {
+    onToggleDisabled: async (addon, disabled) => {
+      await bridge()("/addons/execution-settings", {
+        method: "POST",
+        capability: "addon-execution-settings-write",
+        body: { addon: addon.id, disabled }
+      });
+      await loadAddons();
+    },
+    onUninstall: async (addon) => {
+      const confirmed = window.confirm(`Uninstall ${addon.name}? This removes the add-on from the registry.`);
+      if (!confirmed) return;
+      await bridge()("/addons/uninstall", {
+        method: "POST",
+        capability: "addon-execution-settings-write",
+        body: { addonId: addon.id }
+      });
+      await loadAddons();
+    },
+    onDiscard: async (addon) => {
+      discarded.add(addon.id);
+      await persistDiscarded();
+      renderDiscarded();
+      await loadAddons();
+    }
+  };
+  void hydrateDiscarded();
 
-  // Append the headline status + per-tab content to the Installed panel.
-  panels.installed.prepend(status);
+  const discoverStatus = document.createElement("p");
+  discoverStatus.className = "addons-status";
+  discoverStatus.textContent = "Loading discoverable add-ons...";
+  const discoverGrid = document.createElement("div");
+  discoverGrid.className = "addons-grid";
+  const discoverView = document.createElement("div");
+  discoverView.className = "addons-view";
+  discoverView.append(discoverStatus, discoverGrid);
+
+  const sdkView = document.createElement("div");
+  sdkView.className = "addons-view";
+  // Build the SDK view once at render time — the content is static
+  // links, no async data needed.
+  buildSdkPanel(sdkView);
+
+  const views = { registry: registryView, installed: installedView, discover: discoverView, sdk: sdkView };
+  const viewContainer = document.createElement("div");
+  viewContainer.className = "addons-views";
+  viewContainer.append(views[Object.hasOwn(views, initialView) ? initialView : "registry"]);
 
   const draftReview = document.createElement("section");
   draftReview.className = "addon-draft-review";
@@ -479,11 +631,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
   const delegationList = document.createElement("div");
   delegationList.className = "addon-draft-list addon-delegation-list";
   delegationReview.append(delegationHeader, delegationStatus, delegationList);
-  // Build the SDK tab once at render time — the content is static
-  // links, no async data needed.
-  buildSdkPanel(panels.sdk);
-
-  section.append(header, tabBar, panels.installed, panels.discoverable, panels.sdk, delegationReview, draftReview);
+  section.append(header, viewContainer, delegationReview, draftReview);
   container.replaceChildren(section);
 
   const loadDrafts = async () => {
@@ -644,19 +792,21 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
           await loadAddons();
         }
       });
-      grid.replaceChildren(...installed.map(renderCard));
-      discoverableGrid.replaceChildren(...discoverable.map(renderCard));
-      // Per-tab status line above each grid.
-      installedStatus.textContent = installed.length
-        ? `${installed.length} installed add-on${installed.length === 1 ? "" : "s"} — runtime detected, tools declared.`
-        : "No add-ons are currently installed.";
-      installedStatus.dataset.tone = installed.length ? "success" : "warning";
-      discoverableStatus.textContent = discoverable.length
+      registryGrid.replaceChildren(...addons.map(renderCard));
+      const visibleInstalled = installed.filter((addon) => !discarded.has(addon.id));
+      installedList.replaceChildren(...visibleInstalled.map((addon) => createInstalledRow(addon, rowActions)));
+      discoverGrid.replaceChildren(...discoverable.map(renderCard));
+      const onCount = visibleInstalled.filter((addon) => !addon.disabled).length;
+      installedStatus.textContent = visibleInstalled.length
+        ? `${visibleInstalled.length} add-on${visibleInstalled.length === 1 ? "" : "s"} in your list — ${onCount} on, ${visibleInstalled.length - onCount} off.`
+        : "No add-ons in your list.";
+      installedStatus.dataset.tone = visibleInstalled.length ? "success" : "warning";
+      discoverStatus.textContent = discoverable.length
         ? `${discoverable.length} discoverable add-on${discoverable.length === 1 ? "" : "s"} — manifest present, no tools or runtime not detected yet.`
         : "No additional add-ons discovered.";
-      discoverableStatus.dataset.tone = discoverable.length ? "neutral" : "";
-      // Headline status under the hero (the legacy `status` line)
-      status.textContent = `${addons.length} add-on${addons.length === 1 ? "" : "s"} total — ${installed.length} installed, ${discoverable.length} discoverable.`;
+      discoverStatus.dataset.tone = discoverable.length ? "neutral" : "";
+      // The headline status doubles as the Registry status line.
+      status.textContent = `${addons.length} add-on${addons.length === 1 ? "" : "s"} in the registry — ${installed.length} installed, ${discoverable.length} discoverable.`;
       status.dataset.tone = installed.length ? "success" : "warning";
     } catch (error) {
       status.textContent = addonWorkspaceMessage(error, "Add-on registry unavailable");

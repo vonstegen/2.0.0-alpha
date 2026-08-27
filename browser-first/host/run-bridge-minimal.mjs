@@ -39,6 +39,7 @@ import { createBridgeTokenKey } from "./bridge-token-key.mjs";
 import { createAddonDelegationService } from "./addon-delegation-service.mjs";
 import { createAddonDelegationHostService } from "./addon-delegation-host-service.mjs";
 import { createDevExternalAgentRuntimesPanelService } from "./dev-external-agent-runtimes-panel.mjs";
+import { createDevG0RosPanelService } from "./dev-g0-ros-panel.mjs";
 import { createOpencodeHttpClient, ensureOpencodeServer } from "./opencode-client.mjs";
 import { createOpencodeSessionHandlers, createOpencodeSessionHostService } from "./opencode-session-host-service.mjs";
 import { createArchiveReviewHostService } from "./archive-review-host-service.mjs";
@@ -191,6 +192,13 @@ const { addonDelegationRoutes } = createAddonDelegationHostService(addonDelegati
 // /dev/external-agent-runtimes/ and fetches the JSON at
 // /dev/external-agent-runtimes. Not for production use.
 const devExternalAgentRuntimesPanel = createDevExternalAgentRuntimesPanelService({
+  repoRoot: process.env.RESONANTOS_REPO_ROOT ?? "",
+});
+
+// Dev-only G0-ROS workbench: surfaces the ROS architecture blueprint plus
+// how discovered add-ons map onto the fused G0 core. Served at /dev/g0-ros/
+// (HTML) with JSON at /dev/g0-ros. Not for production use.
+const devG0RosPanel = createDevG0RosPanelService({
   repoRoot: process.env.RESONANTOS_REPO_ROOT ?? "",
 });
 // Inject the panel's repoRoot into the bridge context the JSON endpoint
@@ -386,6 +394,7 @@ const bridgeRoutes = [
   ...opencodeSessionRoutes,
   ...extensionPrefsRoutes,
   ...(devExternalAgentRuntimesPanel?.devPanelRoutes ?? []),
+  ...(devG0RosPanel?.g0RosRoutes ?? []),
   ...profileBootstrapRoutes,
 ];
 
