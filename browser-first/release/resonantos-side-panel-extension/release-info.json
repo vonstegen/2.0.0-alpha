@@ -1,0 +1,7 @@
+{
+  "channel": "stable",
+  "frozenFrom": "9d818006",
+  "frozenAt": "2026-08-26T21:00:00-07:00",
+  "manifestVersion": "0.1.14",
+  "note": "Frozen SDK workbench. Refresh only via `node scripts/release-extension.mjs` from the dev channel, then commit the diff."
+}

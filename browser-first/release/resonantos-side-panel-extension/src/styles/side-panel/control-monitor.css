@@ -1,0 +1,495 @@
+.control-monitor {
+  border: 1px solid rgb(var(--accent-rgb) / 0.18);
+  border-radius: 15px;
+  background:
+    linear-gradient(135deg, rgb(var(--accent-rgb) / 0.1), rgb(var(--hover-rgb) / 0.035)),
+    rgb(var(--panel-rgb) / 0.72);
+  box-shadow: 0 16px 46px rgba(0, 0, 0, 0.24);
+  overflow: hidden;
+}
+
+.control-monitor[data-status="running"] {
+  border-color: rgb(var(--accent-rgb) / 0.36);
+  box-shadow:
+    0 16px 46px rgba(0, 0, 0, 0.24),
+    inset 0 0 28px rgb(var(--accent-rgb) / 0.08);
+}
+
+.control-monitor[hidden] {
+  display: none;
+}
+
+.control-monitor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
+.control-monitor-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.eyebrow {
+  display: block;
+  color: rgb(var(--accent-rgb) / 0.72);
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.control-monitor-header strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.control-status {
+  flex: 0 0 auto;
+  border: 1px solid rgb(var(--accent-rgb) / 0.24);
+  border-radius: 999px;
+  color: rgb(var(--text-rgb) / 0.8);
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 4px 7px;
+  text-transform: uppercase;
+}
+
+.control-stop-button {
+  border: 1px solid rgba(255, 154, 138, 0.32);
+  border-radius: 999px;
+  background: rgba(112, 26, 18, 0.34);
+  color: #ffd3cc;
+  font-size: 0.62rem;
+  font-weight: 900;
+  padding: 4px 8px;
+}
+
+.control-stop-button:hover {
+  background: rgba(255, 122, 92, 0.22);
+  color: #fff1ed;
+}
+
+.control-stop-button[hidden] {
+  display: none;
+}
+
+.control-current-action {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  margin: 0 10px 9px;
+  border: 1px solid rgb(var(--accent-rgb) / 0.2);
+  border-radius: 13px;
+  background:
+    linear-gradient(90deg, rgb(var(--accent-rgb) / 0.13), rgb(var(--accent-rgb) / 0.035)),
+    rgb(var(--panel-rgb) / 0.54);
+  padding: 8px 9px;
+}
+
+.control-current-action[data-state="active"],
+.control-current-action[data-state="running"] {
+  border-color: rgb(var(--accent-rgb) / 0.36);
+  box-shadow: inset 0 0 24px rgb(var(--accent-rgb) / 0.08);
+}
+
+.control-current-action[data-state="blocked"],
+.control-current-action[data-state="failed"] {
+  border-color: rgba(255, 154, 138, 0.28);
+  background: rgba(112, 26, 18, 0.18);
+}
+
+.control-current-orb {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.54);
+  animation: activity-pulse 1.25s ease-out infinite;
+}
+
+.control-current-action[data-state="completed"] .control-current-orb {
+  animation: none;
+  box-shadow: none;
+}
+
+.control-current-action small,
+.control-current-action strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-current-action small {
+  color: rgb(var(--accent-rgb) / 0.76);
+  font-size: 0.56rem;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.control-current-action strong {
+  color: rgb(var(--text-rgb) / 0.9);
+  font-size: 0.72rem;
+  /* The action text must be fully readable, not truncated to one line. */
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.control-current-action .control-target-meta,
+.control-current-action .control-phase-meta {
+  margin-top: 2px;
+  color: rgb(var(--text-2-rgb) / 0.6);
+  font-size: 0.54rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.control-current-action .control-phase-meta {
+  color: rgb(var(--accent-rgb) / 0.72);
+  font-weight: 850;
+}
+
+.control-progress-track {
+  display: block;
+  width: min(100%, 220px);
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(var(--hover-rgb) / 0.08);
+}
+
+.control-progress-track i {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, rgb(var(--accent-rgb) / 0.52), rgb(var(--accent-rgb) / 0.96)),
+    var(--accent);
+  box-shadow: 0 0 12px rgb(var(--accent-rgb) / 0.36);
+  transition: width 180ms ease;
+}
+
+.control-summary-card {
+  margin: 0 10px 9px;
+  border: 1px solid rgb(var(--accent-rgb) / 0.2);
+  border-radius: 13px;
+  background: rgb(var(--accent-rgb) / 0.07);
+  padding: 9px 10px;
+  /* A long result summary scrolls inside the card instead of stretching the
+     whole panel past the dock. */
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.control-summary-card[hidden] {
+  display: none;
+}
+
+.control-summary-card[data-state="blocked"],
+.control-summary-card[data-state="approval"] {
+  border-color: rgba(255, 154, 138, 0.26);
+  background: rgba(112, 26, 18, 0.16);
+}
+
+.control-summary-card strong {
+  display: block;
+  color: rgb(var(--text-rgb) / 0.92);
+  font-size: 0.7rem;
+}
+
+.control-summary-card p {
+  margin: 4px 0 0;
+  color: rgb(var(--text-2-rgb) / 0.72);
+  font-size: 0.63rem;
+  line-height: 1.35;
+}
+
+.control-strategy-card {
+  display: grid;
+  gap: 8px;
+  margin: 0 10px 9px;
+  border: 1px solid rgb(var(--accent-rgb) / 0.18);
+  border-radius: 13px;
+  background:
+    linear-gradient(135deg, rgb(var(--accent-rgb) / 0.1), rgb(var(--accent-rgb) / 0.025)),
+    rgb(var(--panel-rgb) / 0.5);
+  padding: 9px 10px;
+}
+
+.control-strategy-card[hidden] {
+  display: none;
+}
+
+.control-strategy-card > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.control-strategy-card small {
+  color: rgb(var(--accent-rgb) / 0.76);
+  font-size: 0.55rem;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.control-strategy-card strong {
+  color: rgb(var(--text-rgb) / 0.9);
+  font-size: 0.7rem;
+}
+
+.control-strategy-card span,
+.control-strategy-card li {
+  color: rgb(var(--text-2-rgb) / 0.68);
+  font-size: 0.58rem;
+  line-height: 1.35;
+}
+
+.control-strategy-card ul {
+  display: grid;
+  gap: 3px;
+  margin: 4px 0 0;
+  padding-left: 15px;
+}
+
+.control-boundary-card {
+  display: grid;
+  gap: 6px;
+  margin: 0 10px 9px;
+  border: 1px solid rgba(255, 206, 132, 0.18);
+  border-radius: 13px;
+  background:
+    linear-gradient(135deg, rgba(255, 206, 132, 0.08), rgb(var(--accent-rgb) / 0.025)),
+    rgb(var(--panel-rgb) / 0.46);
+  padding: 9px 10px;
+}
+
+.control-boundary-card > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.control-boundary-card small {
+  color: rgba(255, 206, 132, 0.76);
+  font-size: 0.55rem;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.control-boundary-card strong {
+  color: rgb(var(--text-rgb) / 0.9);
+  font-size: 0.7rem;
+}
+
+.control-boundary-card p {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.control-boundary-card span {
+  color: rgba(255, 206, 132, 0.76);
+  font-size: 0.54rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.control-boundary-card b {
+  color: rgb(var(--text-2-rgb) / 0.68);
+  font-size: 0.58rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+/* Scroll container for the shared step-list component (ol.step-list + pill).
+   The Claude-app glyph/label/pill visuals live in shared/step-list.css; only
+   the per-step detail expander below is agent-control-specific. */
+.control-step-list {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 0 10px 10px;
+}
+
+.control-step-detail {
+  margin-top: 4px;
+  color: rgb(var(--text-2-rgb) / 0.7);
+}
+
+/* Unobtrusive per-step affordance: a muted "Details" toggle that keeps the
+   clean list calm until you open a step (a blocked step opens itself). */
+.control-step-detail summary {
+  cursor: pointer;
+  width: max-content;
+  color: rgb(var(--text-2-rgb) / 0.5);
+  font-size: 0.54rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.control-step-detail[open] summary {
+  color: rgb(var(--accent-rgb) / 0.72);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.control-step-detail p {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+  margin: 5px 0 0;
+  font-size: 0.58rem;
+  line-height: 1.28;
+}
+
+.control-step-detail span {
+  color: rgb(var(--accent-rgb) / 0.58);
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.control-step-detail b {
+  color: rgb(var(--text-rgb) / 0.76);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.control-artifacts {
+  border-top: 1px solid rgb(var(--hover-rgb) / 0.07);
+  color: rgb(var(--text-2-rgb) / 0.72);
+  font-size: 0.64rem;
+  padding: 9px 12px 11px;
+}
+
+.control-artifacts[hidden] {
+  display: none;
+}
+
+.control-artifacts strong {
+  color: rgb(var(--text-rgb) / 0.84);
+}
+
+.approval-card {
+  border-top: 1px solid rgba(255, 154, 138, 0.22);
+  background: rgba(112, 26, 18, 0.24);
+  padding: 12px;
+}
+
+.approval-card[hidden] {
+  display: none;
+}
+
+.approval-card strong {
+  color: #ffd3cc;
+  font-size: 0.76rem;
+}
+
+.approval-card p {
+  margin: 5px 0 10px;
+  color: rgba(255, 231, 227, 0.74);
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
+}
+
+.approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.approval-actions button {
+  border: 1px solid rgb(var(--hover-rgb) / 0.12);
+  border-radius: 999px;
+  background: rgb(var(--hover-rgb) / 0.08);
+  color: rgba(255, 245, 242, 0.88);
+  font-size: 0.66rem;
+  font-weight: 800;
+  padding: 6px 9px;
+}
+
+.approval-actions button:first-child {
+  background: #ff7a5c;
+  border-color: transparent;
+  color: var(--bg-warm);
+}
+
+.job-approval-card {
+  border: 1px solid rgba(255, 154, 138, 0.22);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 122, 92, 0.13), rgb(var(--panel-rgb) / 0.48)),
+    rgb(var(--panel-warm-rgb) / 0.52);
+  margin: 8px 0 4px;
+  padding: 9px 10px;
+}
+
+.job-approval-card strong {
+  color: #ffd3cc;
+  display: block;
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+}
+
+.job-approval-card p,
+.job-approval-card small {
+  color: rgba(255, 231, 227, 0.76);
+  display: block;
+  font-size: 0.58rem;
+  line-height: 1.35;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.job-approval-card dl {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 3px 7px;
+  margin: 7px 0 0;
+}
+
+.job-approval-card dt {
+  color: rgba(255, 168, 150, 0.76);
+  font-size: 0.52rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.job-approval-card dd {
+  color: rgb(var(--text-rgb) / 0.76);
+  font-size: 0.56rem;
+  font-weight: 750;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@keyframes activity-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0.54);
+    transform: scale(0.94);
+  }
+  70% {
+    box-shadow: 0 0 0 9px rgb(var(--accent-rgb) / 0);
+    transform: scale(1);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(var(--accent-rgb) / 0);
+    transform: scale(0.94);
+  }
+}
