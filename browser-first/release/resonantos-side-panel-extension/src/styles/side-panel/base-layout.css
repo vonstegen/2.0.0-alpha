@@ -1,0 +1,277 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f2eb;
+  --bg-warm: #f7ebe6;
+  --panel-rgb: 252 250 246;
+  --panel-warm-rgb: 248 238 232;
+  --hover-rgb: 40 37 31;
+  --text-rgb: 35 33 27;
+  --text-2-rgb: 84 79 70;
+  --muted-rgb: 110 104 94;
+  --accent-rgb: 17 138 178;
+  --accent-strong-rgb: 12 98 127;
+  --text: #23211b;
+  --text-2: #544f46;
+  --muted: #6e685e;
+  --accent: #118ab2;
+  --accent-strong: #0c627f;
+  --panel: rgb(var(--panel-rgb) / 0.9);
+  --panel-soft: rgb(var(--hover-rgb) / 0.055);
+  --line: rgb(var(--accent-rgb) / 0.15);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #050807;
+  --bg-warm: #170806;
+  --panel-rgb: 14 24 19;
+  --panel-warm-rgb: 20 12 10;
+  --hover-rgb: 255 255 255;
+  --text-rgb: 238 247 240;
+  --text-2-rgb: 207 219 210;
+  --muted-rgb: 143 159 149;
+  --accent-rgb: 34 184 207;
+  --accent-strong-rgb: 14 165 180;
+  --text: #eef7f0;
+  --text-2: #cfdbd2;
+  --muted: #8f9f95;
+  --accent: #22b8cf;
+  --accent-strong: #0ea5b4;
+  --panel: rgb(var(--panel-rgb) / 0.9);
+  --panel-soft: rgb(var(--hover-rgb) / 0.055);
+  --line: rgb(var(--accent-rgb) / 0.15);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(circle at 10% -10%, rgb(var(--accent-rgb) / 0.2), transparent 22rem),
+    linear-gradient(160deg, var(--bg), var(--bg) 42%);
+  color: var(--text);
+  font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+/* Native <option> popups don't inherit a select's translucent background, so
+   without an explicit opaque surface the list renders light text on a white
+   default on Chrome/Windows 11 (#206). Pin an opaque dark surface + light text. */
+select option,
+select optgroup {
+  background-color: var(--bg, var(--bg));
+  color: var(--text, var(--text));
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.chat-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  height: 100vh;
+  padding: 12px;
+}
+
+.chat-workspace {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The flexible chat region: hosts the transcript and the panel popout overlay. */
+.chat-body {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+
+/* Top links that pop the Site / Agent Control / Jobs panels out full-size. */
+.dock-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dock-tab {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(var(--hover-rgb) / 0.03);
+  color: rgb(var(--text-2-rgb) / 0.75);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.dock-tab:hover {
+  color: var(--text);
+  background: rgb(var(--hover-rgb) / 0.07);
+}
+
+.dock-tab.active {
+  color: var(--text);
+  border-color: rgb(var(--accent-rgb) / 0.5);
+  background: rgb(var(--accent-rgb) / 0.14);
+}
+
+.dock-tab-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: rgb(var(--accent-rgb) / 0.95);
+  box-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.7);
+  vertical-align: middle;
+}
+
+.dock-tab-dot[hidden] {
+  display: none;
+}
+
+/* Blocking message behind the link → red + blinking, to pull the eye. */
+.dock-tab-dot[data-blocking="true"] {
+  background: rgba(255, 90, 74, 0.98);
+  box-shadow: 0 0 9px rgba(255, 90, 74, 0.8);
+  animation: dock-dot-blink 0.9s steps(1, end) infinite;
+}
+
+@keyframes dock-dot-blink {
+  50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-tab-dot[data-blocking="true"] {
+    animation: none;
+  }
+}
+
+/* New-chat "+" lives in the dock, to the right of the Chats tab. */
+.dock-new-chat {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(var(--hover-rgb) / 0.03);
+  color: rgb(var(--text-2-rgb) / 0.8);
+  cursor: pointer;
+}
+
+.dock-new-chat:hover {
+  color: var(--text);
+  background: rgb(var(--accent-rgb) / 0.14);
+  border-color: rgb(var(--accent-rgb) / 0.4);
+}
+
+.dock-new-chat svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.composer {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.28);
+}
+
+.context-meter {
+  display: inline-grid;
+  place-items: center;
+  position: relative;
+  isolation: isolate;
+  gap: 6px;
+}
+
+.icon-button,
+.toolbar-button,
+.send-button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.icon-button svg,
+.send-button svg,
+.connection-line svg,
+.context-meter svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.icon-button:hover {
+  background: var(--panel-soft);
+  color: var(--text);
+}
+
+.icon-button.muted {
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+/* Workspace toggle: filled/accented when the Augmentor workspace is showing. */
+.workspace-toggle[aria-pressed="true"] {
+  background: rgb(var(--accent-rgb) / 0.16);
+  color: var(--text);
+}
+
+.workspace-toggle[aria-pressed="true"]:hover {
+  background: rgb(var(--accent-rgb) / 0.24);
+}
+
+.transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px;
+  scroll-behavior: smooth;
+}
+
+.transcript::before {
+  content: "";
+  margin-top: auto;
+}
