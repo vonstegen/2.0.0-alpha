@@ -1,0 +1,156 @@
+@media (max-width: 920px) {
+  .settings-work-tools,
+  .settings-work-row,
+  .settings-work-row[data-type="project"],
+  .settings-archive-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1120px) {
+  .settings-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-subnav {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-provider-grid,
+  .settings-addon-grid,
+  .settings-routing-grid,
+  .settings-health-grid,
+  .settings-setup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-nav-group-label {
+    grid-column: 1 / -1;
+  }
+
+  .settings-provider-toolbar,
+  .settings-provider-account-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .settings-subnav {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-diagnostics-row,
+  .settings-control-row,
+  .settings-routing-form,
+  .settings-path-picker {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Compact ResonantOS skin: sharper corners and quieter action controls. */
+:where(
+  .workspace-rail,
+  .rail-search-box input,
+  .rail-item,
+  .rail-project,
+  .rail-action,
+  .rail-chat-button,
+  .rail-section,
+  .workspace-main,
+  .chat-panel,
+  .chat-composer,
+  .composer,
+  .composer-input,
+  .chat-message,
+  .message-card,
+  .message-bubble,
+  .module-workspace,
+  .module-card,
+  .module-shell,
+  .dashboard-frame-card,
+  .addon-card,
+  .artifact-card,
+  .artifact-preview,
+  .memory-card,
+  .memory-review-card,
+  .memory-review-draft,
+  .memory-review-preview,
+  .memory-source-candidate,
+  .opencode-card,
+  .settings-workspace,
+  .settings-subnav,
+  .settings-provider-card,
+  .settings-addon-card,
+  .settings-routing-card,
+  .settings-note,
+  .settings-health-card,
+  .settings-provider-panel,
+  .settings-provider-modal-panel,
+  .settings-provider-field input,
+  .settings-provider-field select,
+  .settings-provider-field textarea,
+  .settings-route-badge,
+  .settings-provider-summary span,
+  .settings-provider-model-options label,
+  .settings-provider-recovery-row,
+  .settings-provider-history-row,
+  .settings-diagnostics-row,
+  .settings-control-row,
+  .settings-work-row,
+  .settings-archive-row,
+  .settings-work-empty
+) {
+  border-radius: 3px !important;
+}
+
+button:not(.icon-button):not(.send-button):not(.rail-icon-button),
+:where(
+  .settings-provider-actions button,
+  .settings-provider-model-policy button,
+  .settings-path-picker button,
+  .settings-routing-form button,
+  .settings-control-row button,
+  .settings-overview-action-buttons button,
+  .settings-primary-action,
+  .settings-provider-form button,
+  .settings-work-tools button,
+  .settings-work-artifact-actions button,
+  .settings-work-row button,
+  .settings-archive-row button,
+  .module-form button,
+  .module-action-row button,
+  .addon-card-actions button,
+  .artifacts-hero button,
+  .memory-card button,
+  .memory-review-actions button,
+  .memory-source-candidates button,
+  .artifact-actions button,
+  .opencode-card button
+) {
+  border: 0 !important;
+  border-radius: 3px !important;
+  box-shadow: none !important;
+  padding: 5px 8px;
+}
+
+:where(
+  .settings-provider-actions button,
+  .settings-provider-model-policy button,
+  .settings-path-picker button,
+  .settings-control-row button,
+  .settings-overview-action-buttons button,
+  .settings-work-tools button,
+  .settings-work-artifact-actions button,
+  .settings-work-row button,
+  .settings-archive-row button,
+  .module-action-row button,
+  .addon-card-actions button,
+  .memory-card button,
+  .memory-review-actions button,
+  .artifact-actions button,
+  .opencode-card button
+) {
+  background: rgb(var(--accent-rgb) / 0.06) !important;
+  color: rgb(var(--text-rgb) / 0.82) !important;
+}
