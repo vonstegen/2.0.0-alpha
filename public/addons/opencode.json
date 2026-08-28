@@ -7,6 +7,7 @@
   "category": "agent",
   "description": "Open-source coding workspace add-on. ResonantOS launches OpenCode as an optional scoped local service, embeds OpenCode's own web UI, and uses the server/API layer for governance and audit.",
   "runtimeType": "embedded-module",
+  "extensionClass": "harness-provider",
   "surfaces": [
     {
       "id": "opencode-workspace",
@@ -287,5 +288,16 @@
     "verificationState": "verified",
     "signed": true,
     "signer": "ResonantOS bundled catalog"
+  },
+  "harnessProvider": {
+    "adapterProtocol": "http-json",
+    "taskContract": { "protocol": "opencode-session", "description": "opencode serve session via HTTP/SSE." },
+    "eventContract": { "protocol": "opencode-events", "description": "Session progress and tool events." },
+    "resultContract": { "protocol": "opencode-result", "description": "Final session result with artifacts." },
+    "childActorPolicy": { "sandboxed": true, "workspace": true },
+    "contextPolicy": { "bounded": true, "workspaceScoped": true },
+    "resourceHints": { "cpu": "local", "network": "self" },
+    "cancellationSemantics": "finish-atomic",
+    "sandboxStrength": "sandboxed-outer-boundary"
   }
 }

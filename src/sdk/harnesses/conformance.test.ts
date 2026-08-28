@@ -5,9 +5,13 @@ import { describe, expect, it } from "vitest";
 import type { TaskPacket } from "../tasks";
 import { FakeHarnessProvider } from "./fake-harness-provider";
 import {
+  AgentZeroProviderAdapter,
+  AiderProviderAdapter,
+  DeepSeekHarnessProviderAdapter,
   HermesProviderAdapter,
   OpenClawProviderAdapter,
   OpenCodeProviderAdapter,
+  PiProviderAdapter,
 } from "./reference-providers";
 import { runHarnessProviderConformance } from "./conformance";
 
@@ -57,6 +61,10 @@ const providers = [
   new HermesProviderAdapter(),
   new OpenCodeProviderAdapter(),
   new OpenClawProviderAdapter(),
+  new AgentZeroProviderAdapter(),
+  new DeepSeekHarnessProviderAdapter(),
+  new PiProviderAdapter(),
+  new AiderProviderAdapter(),
 ];
 
 describe("harness provider conformance suite", () => {
@@ -75,10 +83,14 @@ describe("harness provider conformance suite", () => {
     });
   }
 
-  it("gives the three reference providers distinct shapes on the same contract", async () => {
+  it("gives the seven reference providers distinct shapes on the same contract", async () => {
     const hermes = new HermesProviderAdapter();
     const opencode = new OpenCodeProviderAdapter();
     const openclaw = new OpenClawProviderAdapter();
+    const agentzero = new AgentZeroProviderAdapter();
+    const deepseek = new DeepSeekHarnessProviderAdapter();
+    const pi = new PiProviderAdapter();
+    const aider = new AiderProviderAdapter();
 
     expect(hermes.cancellationSemantics).toBe("cancel");
     expect(hermes.sandboxStrength).toBe("host-mediated");
@@ -86,6 +98,14 @@ describe("harness provider conformance suite", () => {
     expect(opencode.sandboxStrength).toBe("sandboxed-outer-boundary");
     expect(openclaw.cancellationSemantics).toBe("quarantine");
     expect(openclaw.sandboxStrength).toBe("sandboxed-outer-boundary");
+    expect(agentzero.cancellationSemantics).toBe("cancel");
+    expect(agentzero.sandboxStrength).toBe("sandboxed-outer-boundary");
+    expect(deepseek.cancellationSemantics).toBe("cancel");
+    expect(deepseek.sandboxStrength).toBe("host-mediated");
+    expect(pi.cancellationSemantics).toBe("cancel");
+    expect(pi.sandboxStrength).toBe("host-mediated");
+    expect(aider.cancellationSemantics).toBe("finish-atomic");
+    expect(aider.sandboxStrength).toBe("host-mediated");
 
     const run = await hermes.startTask(packet(), "grant-1");
     const hermesChildren = await hermes.listChildActors(run.runId);
@@ -99,5 +119,21 @@ describe("harness provider conformance suite", () => {
     const clawChildren = await openclaw.listChildActors(clawRun.runId);
     expect(clawChildren.map((child) => child.kind)).toEqual(["gateway", "child-agent"]);
     expect(clawChildren.some((child) => child.escalationRequired)).toBe(true);
+
+    const azRun = await agentzero.startTask(packet(), "grant-1");
+    const azChildren = await agentzero.listChildActors(azRun.runId);
+    expect(azChildren.map((child) => child.kind)).toEqual(["container-agent"]);
+
+    const dsRun = await deepseek.startTask(packet(), "grant-1");
+    const dsChildren = await deepseek.listChildActors(dsRun.runId);
+    expect(dsChildren.map((child) => child.kind)).toEqual(["cloud-inference"]);
+
+    const piRun = await pi.startTask(packet(), "grant-1");
+    const piChildren = await pi.listChildActors(piRun.runId);
+    expect(piChildren.map((child) => child.kind)).toEqual(["terminal-agent"]);
+
+    const aiderRun = await aider.startTask(packet(), "grant-1");
+    const aiderChildren = await aider.listChildActors(aiderRun.runId);
+    expect(aiderChildren.map((child) => child.kind)).toEqual(["pair-programmer"]);
   });
 });

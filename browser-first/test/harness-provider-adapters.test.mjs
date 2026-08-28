@@ -6,10 +6,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  createAiderProviderAdapter,
+  createAgentZeroProviderAdapter,
+  createDeepSeekHarnessProviderAdapter,
   createHarnessProviderAdapter,
   createHermesProviderAdapter,
   createOpenClawProviderAdapter,
   createOpenCodeProviderAdapter,
+  createPiProviderAdapter,
 } from "../host/harness-provider-adapters.mjs";
 import { createGovernedAuthority } from "../host/bridge-governed-authority.mjs";
 
@@ -89,10 +93,14 @@ test("Hermes adapter diagnose reports real CLI discovery against an empty home d
   assert.equal(health.status, "unavailable");
 });
 
-test("the three provider factories expose distinct shapes on the same contract", async () => {
+test("the seven provider factories expose distinct shapes on the same contract", async () => {
   const hermes = createHermesProviderAdapter({ homeDir: mkdtempSync(join(tmpdir(), "h-")) });
   const opencode = createOpenCodeProviderAdapter({ homeDir: mkdtempSync(join(tmpdir(), "o-")) });
   const openclaw = createOpenClawProviderAdapter({});
+  const agentzero = createAgentZeroProviderAdapter({});
+  const deepseek = createDeepSeekHarnessProviderAdapter({});
+  const pi = createPiProviderAdapter({});
+  const aider = createAiderProviderAdapter({});
 
   assert.equal(hermes.providerId, "hermes");
   assert.equal(hermes.cancellationSemantics, "cancel");
@@ -103,8 +111,20 @@ test("the three provider factories expose distinct shapes on the same contract",
   assert.equal(openclaw.providerId, "openclaw");
   assert.equal(openclaw.cancellationSemantics, "quarantine");
   assert.equal(openclaw.sandboxStrength, "sandboxed-outer-boundary");
+  assert.equal(agentzero.providerId, "agentzero");
+  assert.equal(agentzero.cancellationSemantics, "cancel");
+  assert.equal(agentzero.sandboxStrength, "sandboxed-outer-boundary");
+  assert.equal(deepseek.providerId, "deepseek-harness");
+  assert.equal(deepseek.cancellationSemantics, "cancel");
+  assert.equal(deepseek.sandboxStrength, "host-mediated");
+  assert.equal(pi.providerId, "pi");
+  assert.equal(pi.cancellationSemantics, "cancel");
+  assert.equal(pi.sandboxStrength, "host-mediated");
+  assert.equal(aider.providerId, "aider");
+  assert.equal(aider.cancellationSemantics, "finish-atomic");
+  assert.equal(aider.sandboxStrength, "host-mediated");
 
-  for (const adapter of [hermes, opencode, openclaw]) {
+  for (const adapter of [hermes, opencode, openclaw, agentzero, deepseek, pi, aider]) {
     const health = await adapter.diagnose();
     assert.equal(health.providerId, adapter.providerId);
     assert.ok(["ok", "unavailable"].includes(health.status));
@@ -163,6 +183,28 @@ test("governed dispatch denies a forged subject before any provider effect", asy
   const state = await adapter.getTask(run.runId);
   assert.equal(state.status, "failed");
   assert.match(state.detail, /subject-mismatch/);
+});
+
+test("the four new provider factories deny a forged subject before any effect", async () => {
+  const authority = createGovernedAuthority({ now: () => T0 });
+  const s = governedScope();
+  recordLeaf(authority, s);
+  const handle = authority.mintGrant({ grantId: "g-1", scope: s });
+
+  const factories = [
+    createAgentZeroProviderAdapter,
+    createDeepSeekHarnessProviderAdapter,
+    createPiProviderAdapter,
+    createAiderProviderAdapter,
+  ];
+  for (const factory of factories) {
+    const adapter = factory({ governedAuthority: authority });
+    const forged = { ...packet(), executorPrincipalId: "attacker" };
+    const run = await adapter.startTask(forged, handle);
+    const state = await adapter.getTask(run.runId);
+    assert.equal(state.status, "failed");
+    assert.match(state.detail, /subject-mismatch/);
+  }
 });
 
 test("governed dispatch fails closed without a governed authority", async () => {

@@ -1,0 +1,47 @@
+{
+  "id": "addon.agentzero",
+  "name": "AgentZero",
+  "version": "0.1.0",
+  "publisher": "local",
+  "author": "Resonant Alpha",
+  "category": "agent",
+  "description": "Mount the AgentZero containerized agent framework as a harness provider under ResonantOS supervision.",
+  "runtimeType": "agent-addon",
+  "extensionClass": "harness-provider",
+  "surfaces": [],
+  "requestedCapabilities": [
+    { "capability": "network", "granted": false, "scope": "self", "revocationBehavior": "hard-stop" },
+    { "capability": "shell", "granted": false, "scope": "workspace", "revocationBehavior": "hard-stop" }
+  ],
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": true
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "container-orchestrator-ready"
+  },
+  "installHooks": {
+    "onInstall": "register-agent-framework"
+  },
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS", "linux", "windows"]
+  },
+  "harnessProvider": {
+    "adapterProtocol": "http-json",
+    "taskContract": { "protocol": "agentzero-task", "description": "Delegated task spec for a containerized agent." },
+    "eventContract": { "protocol": "agentzero-events", "description": "Ordered agent progress and artifact events." },
+    "resultContract": { "protocol": "agentzero-result", "description": "Final artifact bundle with exit status." },
+    "childActorPolicy": { "sandboxed": true, "containerized": true },
+    "contextPolicy": { "bounded": true, "workspaceScoped": true },
+    "resourceHints": { "cpu": "shared", "network": "self" },
+    "cancellationSemantics": "cancel",
+    "sandboxStrength": "sandboxed-outer-boundary"
+  }
+}
