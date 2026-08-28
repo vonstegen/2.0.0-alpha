@@ -1,0 +1,102 @@
+{
+  "id": "addon.augmentor-tool-example",
+  "name": "Augmentor Tool Example",
+  "version": "0.1.0",
+  "publisher": "local",
+  "author": "Resonant Alpha",
+  "category": "tool",
+  "sdkVersion": "0.1.0",
+  "description": "Conformance example: a focused Augmentor extension of kind tool that summarizes a file diff into a review note under a human approval gate.",
+  "runtimeType": "ui-module",
+  "extensionClass": "augmentor-extension",
+  "surfaces": [
+    {
+      "id": "augmentor-tool-example-panel",
+      "type": "panel",
+      "label": "Augmentor Tool Example",
+      "description": "Dockable panel proving a tool extension can declare a shell surface.",
+      "shellNavigation": {
+        "sectionId": "augmentor-tool-example",
+        "dockIcon": "augmentor-tool-example",
+        "eyebrow": "Augmentor",
+        "order": 503
+      }
+    }
+  ],
+  "requestedCapabilities": [
+    { "capability": "archive-read", "granted": false, "scope": "shared", "revocationBehavior": "degrade" }
+  ],
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
+  },
+  "runtimeIsolation": {
+    "boundary": "shell-ui",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": false
+  },
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "none"
+  },
+  "installHooks": {},
+  "tools": [
+    {
+      "name": "augmentor.summarize-diff",
+      "description": "Summarize a file diff into a review note.",
+      "requiredCapabilities": ["archive-read"],
+      "requiresHumanApproval": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "diff": { "type": "string" }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "summary": { "type": "string" }
+        }
+      },
+      "audit": {
+        "logRequest": false,
+        "logResult": false,
+        "artifactTypes": ["summary"]
+      }
+    }
+  ],
+  "augmentorExtension": {
+    "kind": "tool",
+    "compatible": {
+      "augmentorVersions": ["^0.1.0"],
+      "sdkVersions": ["^0.1.0"]
+    },
+    "requiredTools": ["augmentor.summarize-diff"],
+    "requiredCapabilities": ["archive-read"],
+    "workflowPhases": [],
+    "approvalGates": ["human-approval"],
+    "contextPolicy": {
+      "read": [],
+      "write": []
+    },
+    "verificationHooks": [],
+    "failureBehavior": "fail-closed",
+    "revocationBehavior": "cancel",
+    "auditLogRequired": true,
+    "producesDelegationPackets": false
+  },
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS", "linux", "windows"]
+  }
+}

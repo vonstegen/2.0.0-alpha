@@ -70,6 +70,7 @@ const BRIDGE_ROUTE_CAPABILITIES = Object.freeze({
   "POST /browser/downloads/action": "browser-download-action",
   "POST /diagnostics/report": "diagnostics-report-export",
   "POST /addons/execution-settings": "addon-execution-settings-write",
+  "POST /addons/uninstall": "addon-execution-settings-write",
   "POST /hermes/dashboard/status": "addon-runtime-read",
   "POST /hermes/dashboard/start": "addon-runtime-control",
   "POST /hermes/dashboard/stop": "addon-runtime-control",

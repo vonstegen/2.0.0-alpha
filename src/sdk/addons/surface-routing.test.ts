@@ -17,6 +17,7 @@ const manifest = (): AddOnManifest => ({
   id: "addon.custom-tool",
   name: "Custom Tool",
   version: "0.1.0",
+  publisher: "local",
   author: "test",
   category: "tool",
   description: "test add-on",

@@ -260,7 +260,11 @@ body[data-rail-collapsed="true"] .workspace-rail :is(
   .rail-text,
   .rail-section h2,
   .brand-lockup strong,
+  .rail-tab-toggle span,
+  .rail-tab-toggle .rail-tab-caret,
+  .rail-tab-header span,
   .rail-user-card > span:last-child,
+  .rail-version,
   .rail-section-row button,
   #rail-search-box
 ) {
@@ -271,6 +275,43 @@ body[data-rail-collapsed="true"] .workspace-rail .rail-item,
 body[data-rail-collapsed="true"] .workspace-rail .rail-project,
 body[data-rail-collapsed="true"] .workspace-rail .rail-user-card {
   justify-content: center;
+}
+
+body[data-rail-collapsed="true"] .rail-header {
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* Collapsed: the upper tabs become a tight icon group — labels and carets
+   hidden, icons centered, row chrome dropped, gaps pulled together. */
+body[data-rail-collapsed="true"] .rail-tabs {
+  gap: 2px;
+}
+
+body[data-rail-collapsed="true"] .workspace-rail :is(.rail-tab-toggle, .rail-tab-header) {
+  justify-content: center;
+  padding-inline: 0;
+}
+/* In icon-only mode the chat header expands the rail on click — afford it. */
+body[data-rail-collapsed="true"] .workspace-rail .rail-tab-header {
+  cursor: pointer;
+}
+
+body[data-rail-collapsed="true"] .workspace-rail .rail-tab-items {
+  margin: 2px 0;
+  padding-left: 0;
+  border-left: 0;
+}
+body[data-rail-collapsed="true"] .rail-footer :is(.rail-tab-toggle, .rail-user-card) {
+  width: 36px;
+  justify-self: center;
+}
+
+body[data-rail-collapsed="true"] .rail-footer .rail-user-card {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  padding-inline: 0;
 }
 
 /* Draggable divider on the rail's right edge. Rides the --rail-width boundary. */

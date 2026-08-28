@@ -63,12 +63,12 @@ body {
   font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-body[data-font-scale="small"] {
-  font-size: 12px;
+html[data-font-scale="small"] {
+  font-size: 15px;
 }
 
-body[data-font-scale="large"] {
-  font-size: 14.5px;
+html[data-font-scale="large"] {
+  font-size: 18px;
 }
 
 body[data-density="compact"] .workspace-rail,
@@ -186,6 +186,8 @@ button {
   color: var(--accent);
 }
 
+/* The brand tile stays white in both themes — the mark is the white
+   rounded-square tile with the teal wave. */
 .rail-icon-button {
   display: grid;
   place-items: center;
@@ -225,7 +227,13 @@ button {
 .rail-tabs {
   display: grid;
   gap: 6px;
+  align-content: start;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
+
+
 
 .rail-tab-toggle,
 .rail-tab-header {
@@ -276,7 +284,8 @@ button {
   stroke-width: 2;
 }
 
-.rail-tab-toggle[aria-expanded="true"] > svg:first-child {
+.rail-tab-toggle[aria-expanded="true"] > svg:first-child,
+.rail-tab-toggle.active > svg:first-child {
   color: var(--accent);
 }
 
@@ -351,6 +360,7 @@ button {
 
 .rail-item:hover,
 .rail-item.active,
+.rail-tab-toggle.active,
 .rail-project:hover,
 .rail-project.active,
 .rail-project.drag-over,
@@ -768,6 +778,7 @@ button {
   display: grid;
   gap: 7px;
   flex: 0 0 auto;
+  margin-top: auto;
   padding-top: 7px;
 }
 
@@ -807,6 +818,15 @@ button {
   font-size: 0.78rem;
 }
 
+
+.rail-version {
+  color: rgb(var(--muted-rgb) / 0.55);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-align: center;
+  padding: 2px 0 1px;
+}
 .rail-user-card small {
   color: rgb(var(--muted-rgb) / 0.72);
   font-size: 0.68rem;

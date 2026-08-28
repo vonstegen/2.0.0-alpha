@@ -66,6 +66,7 @@ const STORAGE_KEYS = {
   browserJobs: "augmentorBrowserJobs",
   activeBrowserJob: "augmentorActiveBrowserJob",
   appearance: "augmentorAppearancePreferences",
+  discardedAddons: "augmentorDiscardedAddons",
   starterPromptsHidden: "augmentorStarterPromptsHidden",
   userProfile: "augmentorUserProfile"
 };
@@ -187,6 +188,26 @@ chrome?.storage?.onChanged?.addListener?.((changes, area) => {
   rebindInFlight = null;
   void hydrateAfterRebind();
 });
+
+// Live appearance sync: if another surface writes the appearance prefs
+// (a second workspace window), follow it immediately.
+chrome?.storage?.onChanged?.addListener?.((changes, area) => {
+  if (area !== "local") return;
+  const next = changes?.[STORAGE_KEYS.appearance]?.newValue;
+  if (next && typeof next === "object") applyAppearancePreferences(next);
+});
+
+// Surface the extension version at the bottom of the rail (from the manifest).
+try {
+  const version = chrome?.runtime?.getManifest?.()?.version ?? "dev";
+  const railVersion = document.querySelector("#rail-version");
+  if (railVersion) {
+    railVersion.textContent = `v${version}`;
+    railVersion.title = `ResonantOS extension v${version}`;
+  }
+} catch {
+  // Non-extension contexts keep the static fallback in the markup.
+}
 let busy = false;
 let activeWorkspace = "answer";
 let pendingWorkspaceAction = null;
@@ -198,6 +219,7 @@ let contextPopoverOpen = false;
 let contextCompactNotice = "";
 let personalizationSettings = null;
 let initialSettingsSection = "overview";
+let activeAddonsView = "registry";
 let messageActions = null;
 const allowedWorkspaces = new Set(["answer", "artifacts", "addons", "memory", "hermes", "opencode", "settings"]);
 
@@ -581,22 +603,42 @@ dockTabs.bind();
 // Collapse / expand the left rail. Collapsed leaves a narrow icon strip so the
 // toggle itself stays reachable to expand it back (see body[data-rail-collapsed]).
 const railToggle = document.querySelector("#rail-toggle");
-railToggle?.addEventListener("click", () => {
-  const collapsed = document.body.dataset.railCollapsed === "true";
-  document.body.dataset.railCollapsed = collapsed ? "false" : "true";
+function setRailCollapsed(collapsed) {
+  document.body.dataset.railCollapsed = collapsed ? "true" : "false";
   const label = collapsed ? "Collapse sidebar" : "Expand sidebar";
-  railToggle.setAttribute("aria-label", label);
-  railToggle.setAttribute("title", label);
-  railToggle.setAttribute("aria-expanded", collapsed ? "true" : "false");
+  railToggle?.setAttribute("aria-label", label);
+  railToggle?.setAttribute("title", label);
+  railToggle?.setAttribute("aria-expanded", collapsed ? "true" : "false");
+}
+railToggle?.addEventListener("click", () => {
+  setRailCollapsed(document.body.dataset.railCollapsed !== "true");
 });
+
 // Collapsible sections: Chat is a fixed always-open header (no toggle); the
 // other tabs toggle their own items independently.
+//
+// In icon-only (collapsed) mode the tab icons are the whole rail, so clicking
+// one expands the rail and opens that tab's items — the tools must be
+// reachable without hunting for the collapse toggle.
 const railTabToggles = [...document.querySelectorAll(".rail-tab-toggle")];
 for (const toggle of railTabToggles) {
   toggle.addEventListener("click", () => {
+    if (document.body.dataset.railCollapsed === "true") {
+      setRailCollapsed(false);
+      toggle.setAttribute("aria-expanded", "true");
+      toggle.closest(".rail-tab").querySelector(".rail-tab-items").hidden = false;
+      return;
+    }
     const expanded = toggle.getAttribute("aria-expanded") === "true";
     toggle.setAttribute("aria-expanded", String(!expanded));
     toggle.closest(".rail-tab").querySelector(".rail-tab-items").hidden = expanded;
+  });
+}
+// The Chat header has no toggle; clicking its icon in collapsed mode just
+// expands the rail so the chat tools are visible.
+for (const header of document.querySelectorAll(".rail-tab-header")) {
+  header.addEventListener("click", () => {
+    if (document.body.dataset.railCollapsed === "true") setRailCollapsed(false);
   });
 }
 
@@ -830,6 +872,9 @@ function renderMessages() {
       container: transcript,
       bridgeRequest: currentBridgeRequest,
       getBridgeRequest,
+      initialView: activeAddonsView,
+      storage: chrome.storage?.local ?? null,
+      storageKeys: STORAGE_KEYS,
       onOpenProviderHandoff: async (handoff) => {
         if (!handoff?.url) return;
         await chrome.tabs.create({ url: handoff.url }).catch(() => undefined);
@@ -895,9 +940,24 @@ function renderAll() {
   renderMessages();
   renderAttachments();
   renderRailNavigation();
+  updateAddonsViewHighlight();
   void renderMainBrowserJobStatusFromStorage();
   updateContextMeter();
   updateConnectionLine();
+}
+
+// The Add-ons rail sub-items (Registry · Installed · Discover · SDK) share
+// the addons workspace; only the one matching the active view highlights.
+function updateAddonsViewHighlight() {
+  document.querySelectorAll("[data-addons-view]").forEach((button) => {
+    const active = activeWorkspace === "addons" && button.dataset.addonsView === activeAddonsView;
+    button.classList.toggle("active", active);
+    if (active) {
+      button.setAttribute("aria-current", "page");
+    } else {
+      button.removeAttribute("aria-current");
+    }
+  });
 }
 
 async function hydrateToolsRail() {
@@ -1063,6 +1123,9 @@ workspaceButtons.forEach((button) => {
   button.addEventListener("click", () => {
     if (button.dataset.workspace === "settings") {
       initialSettingsSection = button.dataset.settingsSection || "overview";
+    }
+    if (button.dataset.addonsView) {
+      activeAddonsView = button.dataset.addonsView;
     }
     setActiveWorkspace(button.dataset.workspace, { persist: true });
     updateWorkspaceDeepLink(activeWorkspace, { settingsSection: initialSettingsSection });

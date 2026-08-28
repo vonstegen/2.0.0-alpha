@@ -1,7 +1,7 @@
 // Intent citation: docs/architecture/ADR-018-addon-sdk-v0.md
 
 import { describe, expect, it } from "vitest";
-import type { AddOnManifest, NativeToolCapability } from "../../core/contracts";
+import type { AddOnManifest, AugmentorExtensionDefinition, NativeToolCapability } from "../../core/contracts";
 import { validateAddOnManifest } from "./validation";
 const validManifest = (overrides: Partial<AddOnManifest> = {}): AddOnManifest => ({
   id: "addon.browser",
@@ -730,10 +730,10 @@ describe("add-on SDK manifest validation", () => {
   it("rejects a systemSlot claim whose backing capability is not declared (P1-b ungated slot bypass)", () => {
     const result = validateAddOnManifest(
       validManifest({
-        // Claims the primary-agent slot but does NOT declare agent-delegation,
+        // Claims the chat-interface slot but does NOT declare chat-interface,
         // so the runtime grant gate (activeSystemSlotProvider) can never apply.
         systemSlots: [
-          { id: "primary-agent", role: "default-provider", replaceable: true },
+          { id: "chat-interface", role: "default-provider", replaceable: true },
         ],
       }),
     );
@@ -763,8 +763,26 @@ describe("add-on SDK manifest validation", () => {
     const base = validManifest();
     const result = validateAddOnManifest(
       validManifest({
-        // primary-agent's backing capability (agent-delegation) is declared, so
+        // memory-system's backing capability (memory-provider) is declared, so
         // the runtime grant gate can apply -> covered.
+        requestedCapabilities: [
+          ...base.requestedCapabilities,
+          { capability: "memory-provider", granted: false, scope: "system", revocationBehavior: "hard-stop" },
+        ],
+        systemSlots: [
+          { id: "memory-system", role: "default-provider", replaceable: true },
+        ],
+      }),
+    );
+
+    expect(result.issues.filter((issue) => issue.code.startsWith("system-slot"))).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  it("rejects a primary-agent slot claim as reserved (ADR-053)", () => {
+    const base = validManifest();
+    const result = validateAddOnManifest(
+      validManifest({
         requestedCapabilities: [
           ...base.requestedCapabilities,
           { capability: "agent-delegation", granted: false, scope: "system", revocationBehavior: "hard-stop" },
@@ -775,8 +793,114 @@ describe("add-on SDK manifest validation", () => {
       }),
     );
 
-    expect(result.issues.filter((issue) => issue.code.startsWith("system-slot"))).toEqual([]);
+    expect(result.valid).toBe(false);
+    expect(
+      result.issues.some(
+        (issue) => issue.code === "system-slot-reserved" && issue.path === "systemSlots[0].id",
+      ),
+    ).toBe(true);
+  });
+
+  const augmentorExtension = (): AugmentorExtensionDefinition => ({
+    kind: "skill",
+    compatible: { augmentorVersions: ["^0.1.0"], sdkVersions: ["^0.1.0"] },
+    requiredTools: [],
+    requiredCapabilities: ["network"],
+    workflowPhases: ["survey", "apply"],
+    approvalGates: ["human-approval"],
+    contextPolicy: { read: [], write: [] },
+    verificationHooks: [],
+    failureBehavior: "fail-closed",
+    revocationBehavior: "cancel",
+    auditLogRequired: true,
+    producesDelegationPackets: false,
+  });
+
+  it("accepts a valid augmentor-extension manifest", () => {
+    const result = validateAddOnManifest(
+      validManifest({
+        extensionClass: "augmentor-extension",
+        augmentorExtension: augmentorExtension(),
+      }),
+    );
     expect(result.valid).toBe(true);
+  });
+
+  it("rejects augmentor-extension without an augmentorExtension declaration", () => {
+    const result = validateAddOnManifest(
+      validManifest({ extensionClass: "augmentor-extension" }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((issue) => issue.code === "augmentor-extension-object")).toBe(true);
+  });
+
+  it("rejects harness-provider without a harnessProvider declaration", () => {
+    const result = validateAddOnManifest(
+      validManifest({ extensionClass: "harness-provider" }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((issue) => issue.code === "harness-provider-object")).toBe(true);
+  });
+
+  it("accepts a valid harness-provider manifest", () => {
+    const result = validateAddOnManifest(
+      validManifest({
+        extensionClass: "harness-provider",
+        harnessProvider: {
+          adapterProtocol: "stdio-json-rpc",
+          taskContract: { protocol: "v1" },
+          eventContract: { protocol: "v1" },
+          resultContract: { protocol: "v1" },
+          childActorPolicy: { sandboxed: true },
+          contextPolicy: { bounded: true },
+          resourceHints: { cpu: "shared" },
+          cancellationSemantics: "cancel",
+          sandboxStrength: "host-mediated",
+        },
+      }),
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it("rejects a system-addon that also declares augmentorExtension", () => {
+    const result = validateAddOnManifest(
+      validManifest({
+        extensionClass: "system-addon",
+        augmentorExtension: augmentorExtension(),
+      }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((issue) => issue.code === "extension-class-mismatch")).toBe(true);
+  });
+
+  it("rejects an augmentorExtension without extensionClass", () => {
+    const result = validateAddOnManifest(
+      validManifest({ augmentorExtension: augmentorExtension() }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((issue) => issue.code === "extension-class-missing")).toBe(true);
+  });
+
+  it("rejects an augmentor extension requiring an undeclared capability", () => {
+    const result = validateAddOnManifest(
+      validManifest({
+        extensionClass: "augmentor-extension",
+        augmentorExtension: { ...augmentorExtension(), requiredCapabilities: ["filesystem"] },
+      }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((issue) => issue.code === "augmentor-extension-unrequested-capability")).toBe(true);
+  });
+
+  it("rejects an augmentor extension requiring an undeclared tool", () => {
+    const result = validateAddOnManifest(
+      validManifest({
+        extensionClass: "augmentor-extension",
+        augmentorExtension: { ...augmentorExtension(), requiredTools: ["nonexistent.tool"] },
+      }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((issue) => issue.code === "augmentor-extension-unknown-tool")).toBe(true);
   });
 
   it("rejects a tool name that directly shadows a native capability (ADR-050)", () => {
