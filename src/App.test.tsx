@@ -6048,6 +6048,7 @@ function createManifest(id: string, name: string, category: AddOnCategory): AddO
     id,
     name,
     version: "0.1.0",
+    publisher: "local",
     author: "test",
     category,
     description: `${name} manifest`,

@@ -7,6 +7,7 @@ const memoryManifest = (id: string, name: string): AddOnManifest => ({
   id,
   name,
   version: "0.1.0",
+  publisher: "local",
   author: "Test",
   category: "memory",
   sdkVersion: "0.1.0",

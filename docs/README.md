@@ -82,6 +82,8 @@ Read [ADR-006: Add-On Runtime SDK](architecture/ADR-006-addon-runtime-sdk.md),
 and [Module Ownership](architecture/MODULE-OWNERSHIP.md). For the separate
 controlled Chromium package, use its
 [component README](../addons/resonant-browser-host/README.md).
+For authoring guides, see [Add-On Authoring](addons/authoring.md) and the
+[benchmark-focused walkthrough](../bench/docs/authoring-a-new-addon.md).
 
 ## Change Documentation
 

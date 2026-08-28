@@ -20,7 +20,11 @@
 // store) and forwards them to `dispatchExternalAgentRuntime`.
 
 
-import { dispatchExternalAgentRuntime } from "./external-agent-runtime-dispatcher.mjs";
+import { dispatchGovernedAugmentorExtension } from "./augmentor-extension-dispatcher.mjs";
+import {
+  dispatchExternalAgentRuntime,
+  dispatchGovernedExternalAgentRuntime,
+} from "./external-agent-runtime-dispatcher.mjs";
 
 import { addonTrustAndIsolationSnapshot } from "./dev-panel-addon-snapshot.mjs";
 
@@ -67,6 +71,15 @@ export function createAddonDelegationHostService(handlers = {}) {
         path: "/addons/execution-settings",
         requiredCapability: "addon-execution-settings-write",
         handler: required("executeAddonExecutionSettingsUpdate"),
+      },
+      {
+        // Human-gated addon management reuses the same write capability as
+        // execution settings — both are the My Add-ons management surface,
+        // and a separate capability would cascade a new launcher arg/env.
+        method: "POST",
+        path: "/addons/uninstall",
+        requiredCapability: "addon-execution-settings-write",
+        handler: required("executeAddonUninstall"),
       },
       { method: "GET", path: "/opencode/status", handler: required("executeOpenCodeStatus") },
       {
@@ -168,6 +181,12 @@ export function createAddonDelegationHostService(handlers = {}) {
         requiredCapability: "agent-delegation",
         handler: async (body, request, bridgeContext) => {
           const addonId = body?.addonId;
+          if (await handlers.isAddonDisabled?.(addonId)) {
+            return {
+              status: 403,
+              body: { error: { code: "addon-disabled", message: "This add-on is switched off in My Add-ons." } },
+            };
+          }
           const toolName = body?.tool;
           const payload = body?.payload ?? {};
           const result = await dispatchExternalAgentRuntime({
@@ -191,6 +210,80 @@ export function createAddonDelegationHostService(handlers = {}) {
             };
           }
           return { status: 200, body: { response: result.response } };
+        },
+      },
+      // CP-2 governed pilot route (ADR-054). Body is a GovernedRequest<T>
+      // envelope; authority comes from the bridge-resolved grantHandle, not
+      // from the Phase 3.5 per-caller header/store. The launcher supplies
+      // `handlers.governedAuthority` (a createGovernedAuthority() instance);
+      // until it does, this route fails closed with 503.
+      {
+        method: "POST",
+        path: "/external-agent-runtime/governed-delegate",
+        handler: async (body) => {
+          const governedAuthority = handlers.governedAuthority;
+          if (!governedAuthority) {
+            return {
+              status: 503,
+              body: {
+                error: {
+                  code: "governed-authority-unavailable",
+                  message: "Governed authority is not configured on this bridge.",
+                },
+              },
+            };
+          }
+          const result = await dispatchGovernedExternalAgentRuntime({
+            request: body,
+            governedAuthority,
+          });
+          if (result.outcome === "deny") {
+            const status =
+              result.reason === "addon-not-found" || result.reason === "unknown-tool"
+                ? 404
+                : 403;
+            return {
+              status,
+              body: { error: { code: result.reason, message: result.detail } },
+            };
+          }
+          return { status: 200, body: { response: result.response } };
+        },
+      },
+
+      // CP-3 governed Augmentor extension invocation (ADR-054). Body is a
+      // GovernedRequest whose payload is `{ extensionId, kind, input,
+      // requiredCapabilities?, pendingApprovalGates? }`. The effect boundary
+      // (host-mediated tool call) is supplied by the launcher; until it is,
+      // this route fails closed with 503.
+      {
+        method: "POST",
+        path: "/augmentor/extension/invoke",
+        handler: async (body) => {
+          const governedAuthority = handlers.governedAuthority;
+          if (!governedAuthority) {
+            return {
+              status: 503,
+              body: {
+                error: {
+                  code: "governed-authority-unavailable",
+                  message: "Governed authority is not configured on this bridge.",
+                },
+              },
+            };
+          }
+          const result = await dispatchGovernedAugmentorExtension({
+            request: body,
+            governedAuthority,
+            runEffect: handlers.runAugmentorExtensionEffect,
+          });
+          if (result.outcome === "deny") {
+            return {
+              status: 403,
+              body: { error: { code: result.reason, message: result.detail } },
+            };
+          }
+          return { status: 200, body: { response: result.result, effectiveCapabilities: result.effectiveCapabilities } };
         },
       },
       // Dev-only: list addon manifests discovered under examples/addons/
@@ -239,6 +332,8 @@ export function createAddonDelegationHostService(handlers = {}) {
               runtimeType: manifest.runtimeType,
               serviceEntrypoint: manifest.service?.entrypoint,
               trustTier: snapshot.trustTier,
+              untrusted: snapshot.untrusted,
+              trustNotice: snapshot.trustNotice,
               publisher: snapshot.publisher,
               publisherNote: snapshot.publisherNote,
               workerKey: snapshot.workerKey,

@@ -217,3 +217,68 @@ export async function dispatchExternalAgentRuntime({
   }
   return { outcome: "allow", response: response.body };
 }
+/**
+ * CP-2 governed dispatch: the same external-agent-runtime effect as
+ * `dispatchExternalAgentRuntime`, but authority comes from a
+ * `GovernedRequest<T>` envelope resolved by a `createGovernedAuthority()`
+ * instance instead of the Phase 3.5 per-caller grant store.
+ *
+ * `request` is a GovernedRequest whose payload is
+ * `{ addonId, tool, model?, messages?, options? }`. The envelope's
+ * taskId/delegationId/subjectPrincipalId/grantHandle are validated against
+ * the resolved grant before any effect; client-supplied identity is
+ * correlation-only (ADR-054). The governed authority's own audit sink emits
+ * request/effect/denial events, so this function records no audit itself.
+ */
+export async function dispatchGovernedExternalAgentRuntime({
+  request,
+  governedAuthority,
+  fetchImpl,
+  repoRoot,
+}) {
+  const decision = governedAuthority.validateGovernedRequest(request);
+  if (!decision.ok) {
+    return {
+      outcome: "deny",
+      reason: decision.reason,
+      detail: `governed request rejected: ${decision.reason}`,
+    };
+  }
+  const { addonId, tool, model, messages, options } = request.payload ?? {};
+  const manifest = await findAddonManifest(addonId, { repoRoot });
+  if (!manifest) {
+    return {
+      outcome: "deny",
+      reason: "addon-not-found",
+      detail: `addon manifest ${addonId}.json not found`,
+    };
+  }
+  const toolDef = findTool(manifest, tool);
+  if (!toolDef) {
+    return {
+      outcome: "deny",
+      reason: "unknown-tool",
+      detail: `tool ${tool} not declared in addon ${addonId}`,
+    };
+  }
+  const entrypoint = manifest.service?.entrypoint;
+  if (!entrypoint) {
+    return {
+      outcome: "deny",
+      reason: "manifest-misconfigured",
+      detail: `addon ${addonId} has no service.entrypoint`,
+    };
+  }
+  const upstream = buildChatCompletionsRequest({ model, messages, options });
+  const response = await postToCordis({ entrypoint, request: upstream, fetchImpl });
+  if (!response.ok) {
+    return {
+      outcome: "deny",
+      reason: response.status === 0 ? "upstream-unreachable" : "upstream-error",
+      detail: response.error ?? `upstream status ${response.status}`,
+      upstreamStatus: response.status,
+      upstreamBody: response.body,
+    };
+  }
+  return { outcome: "allow", response: response.body };
+}

@@ -1,0 +1,78 @@
+{
+  "id": "addon.testing-hello",
+  "name": "Testing Hello",
+  "version": "0.1.0",
+  "publisher": "local",
+  "author": "Resonant Alpha",
+  "category": "tool",
+  "sdkVersion": "0.1.0",
+  "description": "Simple SDK-built test add-on: declares a dockable panel and one hello.greet tool, to exercise the create -> connect -> validate -> test workflow a future add-on builder follows.",
+  "runtimeType": "ui-module",
+  "surfaces": [
+    {
+      "id": "testing-hello-panel",
+      "type": "panel",
+      "label": "Testing Hello",
+      "description": "A dockable panel proving a newly-built add-on can declare a shell surface.",
+      "shellNavigation": {
+        "sectionId": "testing-hello",
+        "dockIcon": "testing-hello",
+        "eyebrow": "SDK",
+        "order": 501
+      }
+    }
+  ],
+  "requestedCapabilities": [],
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
+  },
+  "runtimeIsolation": {
+    "boundary": "shell-ui",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": false
+  },
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "none"
+  },
+  "installHooks": {},
+  "tools": [
+    {
+      "name": "hello.greet",
+      "description": "Return a friendly greeting.",
+      "requiredCapabilities": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "greeting": { "type": "string" }
+        }
+      },
+      "audit": {
+        "logRequest": false,
+        "logResult": false,
+        "artifactTypes": []
+      }
+    }
+  ],
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS", "linux", "windows"]
+  }
+}

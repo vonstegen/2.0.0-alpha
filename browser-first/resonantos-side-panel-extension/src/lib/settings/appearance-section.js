@@ -29,7 +29,7 @@ function labelledControl(label, help, control) {
 function applyAppearance(preferences = {}) {
   const next = { ...defaults, ...preferences };
   document.body.dataset.density = next.density;
-  document.body.dataset.fontScale = next.fontScale;
+  document.documentElement.dataset.fontScale = next.fontScale;
   document.body.dataset.motion = next.motion;
   document.documentElement.dataset.theme = next.theme;
   return next;

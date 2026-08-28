@@ -9,6 +9,7 @@ const manifest = (id: string, overrides: Partial<AddOnManifest> = {}): AddOnMani
   id,
   name: id,
   version: "0.1.0",
+  publisher: "local",
   author: "test",
   category: "integration",
   description: "test add-on",
