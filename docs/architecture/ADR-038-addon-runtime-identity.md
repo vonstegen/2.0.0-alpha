@@ -4,7 +4,7 @@
 
 - Decision status: Accepted
 - Alpha applicability: Applies
-- Superseded by: None
+- Superseded by: ADR-054 (runtime identity extended to principal chain)
 - Owner: Add-on SDK
 - Decision date: 2026-08-25
 - Alpha note: Adopted with a relaxed publisher constraint; the

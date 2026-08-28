@@ -27,7 +27,6 @@
             </div>
             <div id="rail-tab-chat-items" class="rail-tab-items">
               <button id="rail-new-chat" type="button" class="rail-item">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
                 <span>New chat</span>
               </button>
             </div>
@@ -35,7 +34,7 @@
 
           <section class="rail-tab" data-tab="workspaces">
             <button type="button" class="rail-tab-toggle" aria-expanded="false" aria-controls="rail-tab-workspaces-items">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h18"/><path d="M5 9v11"/><path d="M19 9v11"/><path d="M5 14h14"/></svg>
               <span>Workspaces</span>
               <svg class="rail-tab-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
             </button>
@@ -64,19 +63,6 @@
             </div>
           </section>
 
-          <section class="rail-tab" data-tab="addons">
-            <button type="button" class="rail-tab-toggle" aria-expanded="false" aria-controls="rail-tab-addons-items">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg>
-              <span>Add-ons</span>
-              <svg class="rail-tab-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-            <div id="rail-tab-addons-items" class="rail-tab-items" hidden>
-              <button type="button" class="rail-item" data-workspace="addons">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg>
-                <span>Registry</span>
-              </button>
-            </div>
-          </section>
 
           <section class="rail-tab" data-tab="controls">
             <button type="button" class="rail-tab-toggle" aria-expanded="false" aria-controls="rail-tab-controls-items">
@@ -120,26 +106,41 @@
               </button>
             </div>
           </section>
-
-          <section class="rail-tab" data-tab="settings">
-            <button type="button" class="rail-tab-toggle" aria-expanded="false" aria-controls="rail-tab-settings-items">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-              <span>Settings</span>
+          <section class="rail-tab" data-tab="addons">
+            <button type="button" class="rail-tab-toggle" aria-expanded="false" aria-controls="rail-tab-addons-items">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+              <span>Add-ons</span>
               <svg class="rail-tab-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
             </button>
-            <div id="rail-tab-settings-items" class="rail-tab-items" hidden>
-              <button type="button" class="rail-item" data-workspace="settings" data-settings-section="overview">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-                <span>Open settings</span>
+            <div id="rail-tab-addons-items" class="rail-tab-items" hidden>
+              <button type="button" class="rail-item" data-workspace="addons" data-addons-view="registry">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+                <span>Registry</span>
+              </button>
+              <button type="button" class="rail-item" data-workspace="addons" data-addons-view="installed">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                <span>My Add-ons</span>
+              </button>
+              <button type="button" class="rail-item" data-workspace="addons" data-addons-view="discover">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                <span>Discover</span>
+              </button>
+              <button type="button" class="rail-item" data-workspace="addons" data-addons-view="sdk">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6"/><path d="m16 6 6 6-6 6"/></svg>
+                <span>SDK</span>
               </button>
             </div>
           </section>
-        </nav>
 
+        </nav>
 
         <!-- Projects + Chats moved to the top-bar "Chats" tab (see #dock-popout). -->
 
         <footer class="rail-footer">
+          <button type="button" class="rail-tab-toggle" data-workspace="settings" data-settings-section="overview" aria-label="Open settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            <span>Settings</span>
+          </button>
           <button type="button" class="rail-user-card" data-workspace="settings" data-settings-section="profile">
             <span id="rail-avatar" class="rail-avatar">R</span>
             <span>
@@ -147,6 +148,7 @@
               <small id="rail-user-subtitle">Local sovereign profile</small>
             </span>
           </button>
+          <small id="rail-version" class="rail-version" title="ResonantOS extension version">v0.2.0</small>
         </footer>
       </aside>
 

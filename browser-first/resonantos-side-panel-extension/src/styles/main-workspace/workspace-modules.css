@@ -171,6 +171,15 @@
   font-weight: 800;
 }
 
+.addon-trust-notice {
+  border: 1px solid rgba(255, 214, 138, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 214, 138, 0.08);
+  color: rgba(255, 214, 138, 0.92);
+  padding: 8px 10px;
+  font-size: 0.78rem;
+}
+
 .addon-execution-panel {
   display: grid;
   gap: 8px;
@@ -1448,39 +1457,6 @@
   color: rgba(255, 124, 124, 0.9);
 }
 
-/* VSCode-style tab strip + tab panels. */
-.addons-tabbar {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
-  margin: 16px 0 8px;
-  padding-bottom: 0;
-}
-
-.addons-tabbar button {
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  color: var(--muted, rgba(255,255,255,0.55));
-  cursor: pointer;
-  font: inherit;
-  padding: 8px 14px;
-  margin: 0;
-}
-
-.addons-tabbar button[data-active="true"] {
-  border-bottom-color: var(--accent, #6aa9ff);
-  color: var(--fg, #fff);
-}
-
-.addons-tabbar button:hover {
-  color: var(--fg, #fff);
-}
-
-.addons-tabpanel {
-  padding-top: 12px;
-}
-
 /* State badge in each addon row: green Installed / amber Discoverable. */
 .addon-state-badge {
   border-radius: 999px;
@@ -1693,14 +1669,128 @@
   font-size: 11px;
 }
 
-/* SDK tab: hero + card grid + CLI block. */
-.addons-sdk-hero {
-  margin-bottom: 16px;
+/* Installed view: compact health rows — colored status icon, name, and a
+   short description under the name. Green = running clean, yellow = warning
+   (not running cleanly), red = an issue with the installed add-on. */
+.addons-installed-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.addons-sdk-hero h2 {
-  font-size: 18px;
-  margin: 0 0 6px;
+.addons-installed-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  padding: 10px 12px;
+}
+
+.addons-health-icon {
+  display: grid;
+  place-items: center;
+  margin-top: 2px;
+}
+
+.addons-health-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.addons-installed-row[data-tone="ok"] .addons-health-icon {
+  color: rgba(63, 185, 80, 0.95);
+}
+
+.addons-installed-row[data-tone="warning"] .addons-health-icon {
+  color: rgba(255, 205, 120, 0.95);
+}
+.addons-installed-row[data-tone="error"] .addons-health-icon {
+  color: rgba(255, 124, 124, 0.95);
+}
+
+.addons-installed-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.addons-installed-actions button {
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 7px;
+  background: rgba(255,255,255,0.04);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+
+.addons-installed-actions button:hover:not(:disabled) {
+  background: rgba(255,255,255,0.08);
+}
+
+.addons-installed-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.addons-installed-actions .addons-switch[data-on="true"] {
+  border-color: rgba(63, 185, 80, 0.4);
+  color: rgba(63, 185, 80, 0.95);
+  background: rgba(63, 185, 80, 0.12);
+}
+
+.addons-installed-actions .addons-switch[data-on="false"] {
+  border-color: rgba(255,255,255,0.14);
+  color: var(--muted, rgba(255,255,255,0.55));
+}
+
+.addons-installed-actions button[data-danger="true"] {
+  border-color: rgba(255, 124, 124, 0.35);
+  color: rgba(255, 124, 124, 0.9);
+}
+
+.addons-discarded {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--muted, rgba(255,255,255,0.55));
+  padding: 2px 4px;
+}
+
+.addons-discarded button {
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 7px;
+  background: rgba(255,255,255,0.04);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.addons-installed-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.addons-installed-copy strong {
+  font-size: 13px;
+}
+
+.addons-installed-copy small {
+  color: var(--muted, rgba(255,255,255,0.55));
+  font-size: 11.5px;
+  line-height: 1.4;
 }
 
 .addons-sdk-grid {

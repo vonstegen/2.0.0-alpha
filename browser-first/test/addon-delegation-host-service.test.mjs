@@ -7,6 +7,7 @@ const requiredHandlers = [
   "executeAddonSurfaceRoutes",
   "executeAddonExecutionSettingsGet",
   "executeAddonExecutionSettingsUpdate",
+  "executeAddonUninstall",
   "executeOpenCodeStatus",
   "executeHermesDashboardStatus",
   "executeHermesDashboardStart",
@@ -44,6 +45,7 @@ test("add-on delegation host service owns add-on, delegation, draft, and goal ro
     "GET /addons/surface-routes",
     "GET /addons/execution-settings",
     "POST /addons/execution-settings",
+    "POST /addons/uninstall",
     "GET /opencode/status",
     "POST /hermes/dashboard/status",
     "POST /hermes/dashboard/start",
@@ -61,10 +63,12 @@ test("add-on delegation host service owns add-on, delegation, draft, and goal ro
     "POST /addons/delegate/list",
     "POST /goals",
     "POST /external-agent-runtime/delegate",
+    "POST /external-agent-runtime/governed-delegate",
+    "POST /augmentor/extension/invoke",
     "GET /dev/external-agent-runtimes",
   ]);
   assert.equal(routes.get("POST /addons/execution-settings").requiredCapability, "addon-execution-settings-write");
-  assert.equal(routes.get("POST /hermes/dashboard/status").requiredCapability, "addon-runtime-read");
+  assert.equal(routes.get("POST /addons/uninstall").requiredCapability, "addon-execution-settings-write");
   assert.equal(routes.get("POST /hermes/dashboard/start").requiredCapability, "addon-runtime-control");
   assert.equal(routes.get("POST /hermes/dashboard/stop").requiredCapability, "addon-runtime-control");
   assert.equal(routes.get("POST /hermes/status").requiredCapability, "addon-runtime-read");

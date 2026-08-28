@@ -96,7 +96,7 @@ Add-on skill contracts:
 | [ADR-023: Add-on Repository And Registry Model](ADR-023-addon-repository-registry-model.md) | Accepted | Partial | - | Add-on registry | Bundled manifests and provenance apply; external registry distribution is deferred. |
 | [ADR-024: Add-on Store And Commerce Model](ADR-024-addon-store-commerce.md) | Accepted | Deferred | - | Add-on store | Store and commerce are not Alpha scope. |
 | [ADR-025: Native Embedded Browser Host](ADR-025-native-embedded-browser-host.md) | Superseded | Not applicable | [ADR-035](ADR-035-electron-host-rust-core-runtime.md) | Browser architecture | Historical native-host research; the decision is outside Alpha. |
-| [ADR-026: Minimal Kernel And Replaceable Default Add-ons](ADR-026-minimal-kernel-replaceable-default-addons.md) | Accepted | Applies | - | Core and add-ons | Replaceable chat, memory, and add-on boundaries apply. |
+| [ADR-026: Minimal Kernel And Replaceable Default Add-ons](ADR-026-minimal-kernel-replaceable-default-addons.md) | Accepted | Applies | [ADR-053](ADR-053-browser-first-multi-harness-architecture.md) (`primary-agent` slot) | Core and add-ons | Replaceable chat and memory boundaries apply; `primary-agent` is permanently occupied by Augmentor (ADR-053). |
 | [ADR-027: Living Archive LLM Wiki Compliance](ADR-027-living-archive-llm-wiki-compliance.md) | Accepted | Applies | - | Living Archive | Source preservation, review, verification, and governed promotion apply. |
 | [ADR-028: Paperclip Add-on Organizational Runtime](ADR-028-paperclip-addon-organizational-runtime.md) | Accepted | Deferred | - | Paperclip add-on | Development-only connector; not in the Alpha default catalog. |
 | [ADR-029: Living Archive MCP Bridge](ADR-029-living-archive-mcp-bridge.md) | Accepted | Deferred | - | Living Archive MCP | Optional external MCP services are not required Alpha runtime. |
@@ -108,13 +108,17 @@ Add-on skill contracts:
 | [ADR-035](ADR-035-electron-host-rust-core-runtime.md) | Superseded | Not applicable | [ADR-037](ADR-037-browser-first-chromium-resonantos.md) | Browser architecture | Historical desktop-host direction; its components do not ship in Alpha. |
 | [ADR-036: Resonant Browser Host Architecture](ADR-036-wallet-capable-browser-host.md) | Superseded | Not applicable | [ADR-037](ADR-037-browser-first-chromium-resonantos.md) | Browser architecture | Historical external-browser sidecar direction; it is not the Alpha package. |
 | [ADR-037: Browser-First Chromium ResonantOS](ADR-037-browser-first-chromium-resonantos.md) | Accepted | Partial | - | Browser architecture | Browser-contained product direction applies; Alpha is the unpacked Chrome extension plus bridge, not a custom Chromium build. |
-| [ADR-038: Add-on Runtime Identity](ADR-038-addon-runtime-identity.md) | Accepted | Applies | - | Add-on SDK | `id@publisher` triple anchors caller attribution, update identity, and trust transitions. |
+| [ADR-038: Add-on Runtime Identity](ADR-038-addon-runtime-identity.md) | Accepted | Applies | [ADR-054](ADR-054-principal-delegation-chain-task-scoped-authority.md) (runtime identity extended to principal chain) | Add-on SDK | `id@publisher` triple anchors caller attribution, update identity, and trust transitions. |
 | [ADR-039: New-Permission Review On Update](ADR-039-addon-permission-diff-on-update.md) | Accepted | Applies | - | Add-on SDK | Permission diff on update gates installs on a user prompt for added, widened, weakened, or trust-changing fields. |
 | [ADR-041: Add-on Isolation Boundary](ADR-041-addon-isolation-boundary.md) | Accepted | Applies | - | Add-on SDK | Worker key derived from id@publisher:version plus isolation boundary; bridge dispatcher evicts and rebinds on any of those four fields changing. |
-| [ADR-042: Add-on Trust-Tier Transitions](ADR-042-addon-trust-tier-transitions.md) | Accepted | Applies | - | Add-on SDK | Personal / Verified / Approved / System transition matrix gates install and update flows. |
+| [ADR-042: Add-on Trust-Tier Transitions](ADR-042-addon-trust-tier-transitions.md) | Accepted | Applies | [ADR-054](ADR-054-principal-delegation-chain-task-scoped-authority.md) (trust tier becomes one term of effective authority) | Add-on SDK | Personal / Verified / Approved / System transition matrix gates install and update flows. |
 | [ADR-043: Blockchain Provider Architecture (Stub)](ADR-043-blockchain-provider-architecture.md) | Accepted | Not applicable | - | Add-on SDK + Security + Governance review | Stub ADR; the substantive architecture lives in RESONANT_BLOCKCHAIN_DAO_EXTENSION_INTERFACE_ARCHITECTURE.md and is queued as ADR-044–049. |
 | [ADR-050: Native Tool Fabric and Add-on Tool Surfaces (Two-Tier Model)](ADR-050-native-and-addon-tool-tiers.md) | Accepted | Partial | - | Add-on SDK + Delegation | Pins namespacing (native prefixes + reserved literals), identity (host vs id@publisher), and isolation rules between the two tiers. Add-on tool surface is dispatched; native surface is a typed taxonomy with no executor yet. |
 | [ResonantOS Blockchain and DAO Extension Interface Architecture](RESONANT_BLOCKCHAIN_DAO_EXTENSION_INTERFACE_ARCHITECTURE.md) | Proposed | Not applicable | - | Add-on SDK + Security + Governance review | Future directive; 35-name capability vocabulary, broker contract, verification record, portability profile, GovernanceProvider abstraction. No code ships with this proposal. |
+| [ADR-051: ROS Architecture Blueprint (G0-ROS Core + Add-on Boundary)](ADR-051-ros-architecture-blueprint.md) | Accepted | Applies | - | Add-on SDK | Blueprint encoding, category → rail-destination mapping, and the G0 harness tool catalog govern Alpha manifest validation and rail layout. |
+| [ADR-052: Browser Architecture Package](ADR-052-browser-architecture-package.md) | Accepted | Deferred | - | Core architecture | Adopts the target architecture documentation set; no runtime change until the checkpoint ADRs land. |
+| [ADR-053: Browser-First Multi-Harness Architecture And Terminology](ADR-053-browser-first-multi-harness-architecture.md) | Accepted | Deferred | - | Core architecture | Terminology and constitutional boundary; no runtime change. Ratifies `primary-agent` as permanently occupied by Augmentor (fused orchestration harness, not a replaceable provider); Core governs authority. |
+| [ADR-054: Principal/Delegation Chain And Task-Scoped Temporal Authority](ADR-054-principal-delegation-chain-task-scoped-authority.md) | Accepted | Deferred | - | Core architecture | Principal/delegation chain, task-scoped temporal authority, and the governed request envelope; CP-1 type modules landed, CP-2 enforcement pending. |
 | [ADR-055: Resonant Extension Framework](ADR-055-resonant-extension-framework.md) | Deferred | Partial | - | Add-on SDK | Outline stage; extends ADR-006/018, records RESOLUTIONS_V0.1.md as the conflict-resolution input, and references the runtime hardening notes for the Phase 3.5 caller-attributed bridge work. |
 | [ADR-056: Provider Fabric Boundary for External Agent Runtimes](ADR-056-provider-fabric-boundary-external-agent-runtimes.md) | Deferred | Applies | - | Provider host / Delegation | Locks the credential-mediation and provider-routing boundary for external agent runtimes (DeepSeek Harness, Agent Zero) integrated as local-service add-ons. |
 
@@ -128,4 +132,20 @@ Add-on skill contracts:
   each decision applies now.
 - Historical diagrams, audits, and research do not become current authority by
   linking to an accepted ADR.
+
+## Proposed Target Architecture
+
+The [ResonantOS Browser Architecture Package](resonantos-browser-architecture/README.md)
+documents the proposed target: Augmentor as native orchestrator, harness
+providers, identity/delegation chains, task-scoped authority, resource
+governance, and Ground-0 recovery. It is adopted as documentation by ADR-052
+and implemented in checkpoints CP-0 … CP-9:
+
+- [Adoption roadmap and checkpoints](resonantos-browser-architecture/ROADMAP.md)
+- [Master phased implementation checklist](resonantos-browser-architecture/14-master-phased-implementation-checklist.md)
+- [Review checklists](resonantos-browser-architecture/CHECKLISTS.md)
+
+The two-channel workbench that hosts development against both the frozen
+stable SDK surface and the dev UI surface is documented in the
+[release channel README](../../browser-first/release/README.md).
 

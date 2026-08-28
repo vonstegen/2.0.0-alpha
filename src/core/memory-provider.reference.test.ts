@@ -13,6 +13,7 @@ const referenceMemoryManifest = (): AddOnManifest => ({
   id: "addon.reference-memory",
   name: "Reference Memory",
   version: "0.1.0",
+  publisher: "local",
   author: "Resonant Alpha",
   category: "memory",
   sdkVersion: "0.1.0",

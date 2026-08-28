@@ -1,0 +1,54 @@
+{
+  "id": "addon.hello-resonant",
+  "name": "Hello Resonant",
+  "version": "0.1.0",
+  "publisher": "local",
+  "author": "Resonant Alpha",
+  "category": "tool",
+  "sdkVersion": "0.1.0",
+  "description": "Minimal declarative smoke-test add-on that verifies the Add-on SDK create path end-to-end in the browser-first host.",
+  "runtimeType": "ui-module",
+  "surfaces": [
+    {
+      "id": "hello-resonant-panel",
+      "type": "panel",
+      "label": "Hello Resonant",
+      "description": "A placeholder shell panel proving a third-party add-on can declare a dockable surface.",
+      "shellNavigation": {
+        "sectionId": "hello-resonant",
+        "dockIcon": "hello-resonant",
+        "eyebrow": "SDK",
+        "order": 500
+      }
+    }
+  ],
+  "requestedCapabilities": [],
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
+  },
+  "runtimeIsolation": {
+    "boundary": "shell-ui",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": false
+  },
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "none"
+  },
+  "installHooks": {},
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS", "linux", "windows"]
+  }
+}

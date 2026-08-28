@@ -7,8 +7,13 @@
 // future ledger-style writer.
 //
 // Field set walked: callerId, capability, route, method, url, status,
-// reason, timestamp, and any ad-hoc fields. Records are flat today;
-// shallow walk is enough. Nested objects are serialised intact.
+// reason, timestamp, grantHandle, token, and any ad-hoc fields. Records are
+// flat today; shallow walk is enough. Nested objects are serialised intact.
+//
+// `grantHandle` and `token` are CP-2 defense-in-depth. The governed-authority
+// module's primary guarantee is to never emit them; routing the fields here
+// scrubs any secret-shaped value (bearer token, `key=` assignment, hex token)
+// a future writer might place in those fields before it reaches disk.
 
 import { redactTraceText } from "../resonantos-side-panel-extension/src/lib/trace-redaction.js";
 
@@ -21,6 +26,8 @@ const REDACT_FIELDS = [
   "status",
   "reason",
   "timestamp",
+  "grantHandle",
+  "token",
 ];
 
 export function redactAuditRecord(record) {

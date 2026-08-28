@@ -104,6 +104,14 @@
       wk.innerHTML = `<span class="label">workerKey</span>${esc(addon.workerKey || "(n/a)")}`;
       card.appendChild(wk);
 
+      if (addon.untrusted) {
+        const notice = document.createElement("div");
+        notice.className = "meta";
+        notice.style.color = "var(--na)";
+        notice.textContent = addon.trustNotice || "Not tested or approved.";
+        card.appendChild(notice);
+      }
+
       if (addon.validationNote) {
         const note = document.createElement("div");
         note.className = "note";

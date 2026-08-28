@@ -1,6 +1,10 @@
 .answer-workspace {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* Two children only: the scrollable body and the bottom-anchored composer.
+     The legacy three-row template (topbar · body · composer) shifted both
+     children up a row once the topbar left the DOM, letting the transcript
+     grow the auto row and push the composer below the viewport. */
+  grid-template-rows: minmax(0, 1fr) auto;
   position: relative;
   min-width: 0;
   min-height: 0;
@@ -297,6 +301,8 @@ body:not([data-workspace="answer"]):not([data-workspace="hermes"]) .answer-threa
   .rail-chat-list,
   .rail-project-list,
   .rail-search-box,
+  .rail-footer .rail-tab-toggle span,
+  .rail-version,
   .rail-user-card span:last-child {
     display: none;
   }
@@ -308,6 +314,12 @@ body:not([data-workspace="answer"]):not([data-workspace="hermes"]) .answer-threa
     width: 100%;
   }
 
+  .rail-header {
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+  }
+
   .rail-item,
   .rail-section[aria-label="Tools"] .rail-project {
     grid-template-columns: 1fr;
@@ -315,12 +327,17 @@ body:not([data-workspace="answer"]):not([data-workspace="hermes"]) .answer-threa
     padding-inline: 0;
   }
 
-  .rail-user-card {
-    grid-template-columns: 1fr;
-    justify-items: center;
+  .rail-footer :is(.rail-tab-toggle, .rail-user-card) {
+    width: 36px;
+    justify-self: center;
+    justify-content: center;
     padding-inline: 0;
   }
 
+  .rail-user-card {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
   .main-composer {
     width: min(650px, calc(100% - 24px));
   }

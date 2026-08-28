@@ -89,6 +89,8 @@ Extension Framework package lives at
 [Framework package README](addons/resonant-extension-framework/README.md).
 For the separate controlled Chromium package, use its
 [component README](../addons/resonant-browser-host/README.md).
+For authoring guides, see [Add-On Authoring](addons/authoring.md) and the
+[benchmark-focused walkthrough](../bench/docs/authoring-a-new-addon.md).
 
 ## Change Documentation
 

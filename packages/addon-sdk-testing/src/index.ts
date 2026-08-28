@@ -50,7 +50,10 @@ export {
 export {
   canTransitionBetweenTiers,
   getTrustTierFromManifest,
+  trustNoticeForManifest,
+  trustNoticeForTier,
   type TrustTier,
+  type TrustTierNotice,
   type TrustTransitionDecision,
 } from "./trust-tier.ts";
 export {
