@@ -38,7 +38,7 @@ import { createBridgeAuditLedger } from "./bridge-audit-ledger.mjs";
 import { createBridgeTokenKey } from "./bridge-token-key.mjs";
 import { createGovernedAuthority } from "./bridge-governed-authority.mjs";
 import { createAugmentorExtensionEffect } from "./augmentor-extension-effect.mjs";
-import { createHermesProviderAdapter, createOpenClawProviderAdapter, createOpenCodeProviderAdapter } from "./harness-provider-adapters.mjs";
+import { createAiderProviderAdapter, createAgentZeroProviderAdapter, createDeepSeekHarnessProviderAdapter, createHermesProviderAdapter, createOpenClawProviderAdapter, createOpenCodeProviderAdapter, createPiProviderAdapter } from "./harness-provider-adapters.mjs";
 import { createAddonDelegationService } from "./addon-delegation-service.mjs";
 import { createAddonDelegationHostService } from "./addon-delegation-host-service.mjs";
 import { createDevExternalAgentRuntimesPanelService } from "./dev-external-agent-runtimes-panel.mjs";
@@ -489,6 +489,10 @@ harnessAdapterHolder.value = {
   hermes: createHermesProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
   opencode: createOpenCodeProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
   openclaw: createOpenClawProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
+  agentzero: createAgentZeroProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
+  "deepseek-harness": createDeepSeekHarnessProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
+  pi: createPiProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
+  aider: createAiderProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
 };
 
 // CP-3 task-approval minting seam: mints a task grant + records its delegation so
