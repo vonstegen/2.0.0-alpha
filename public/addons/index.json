@@ -1,7 +1,10 @@
 [
+  "agentzero.json",
+  "aider.json",
   "augmentor-chat.json",
   "browser.json",
   "coherence-gate.json",
+  "deepseek-harness.json",
   "hermes.json",
   "heuristic-auditor.json",
   "lia-verifier.json",
@@ -10,6 +13,7 @@
   "obsidian.json",
   "openclaw.json",
   "opencode.json",
+  "pi.json",
   "r-awareness.json",
   "shield.json",
   "telegram-channel.json",

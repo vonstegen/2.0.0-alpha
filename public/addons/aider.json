@@ -1,0 +1,48 @@
+{
+  "id": "addon.aider",
+  "name": "Aider",
+  "version": "0.1.0",
+  "publisher": "local",
+  "author": "Resonant Alpha",
+  "category": "agent",
+  "description": "Mount Aider's git-committing pair-programmer as a harness provider under ResonantOS supervision.",
+  "runtimeType": "agent-addon",
+  "extensionClass": "harness-provider",
+  "surfaces": [],
+  "requestedCapabilities": [
+    { "capability": "filesystem", "granted": false, "scope": "workspace", "revocationBehavior": "hard-stop" },
+    { "capability": "shell", "granted": false, "scope": "workspace", "revocationBehavior": "hard-stop" },
+    { "capability": "network", "granted": false, "scope": "self", "revocationBehavior": "hard-stop" }
+  ],
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": true
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "host-command-version"
+  },
+  "installHooks": {
+    "onInstall": "register-pair-programmer"
+  },
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS", "linux", "windows"]
+  },
+  "harnessProvider": {
+    "adapterProtocol": "host-command",
+    "taskContract": { "protocol": "aider-cli", "description": "aider CLI invocation with a repo and prompt." },
+    "eventContract": { "protocol": "aider-output", "description": "Terminal output and git diff events." },
+    "resultContract": { "protocol": "aider-result", "description": "Applied git diff and commit hash." },
+    "childActorPolicy": { "sandboxed": false, "gitBoundary": true },
+    "contextPolicy": { "bounded": true, "repoScoped": true },
+    "resourceHints": { "cpu": "local", "network": "self" },
+    "cancellationSemantics": "finish-atomic",
+    "sandboxStrength": "host-mediated"
+  }
+}
