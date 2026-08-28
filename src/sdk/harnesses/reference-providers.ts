@@ -75,3 +75,71 @@ export class OpenClawProviderAdapter extends BaseHarnessProvider {
     ];
   }
 }
+
+export class AgentZeroProviderAdapter extends BaseHarnessProvider {
+  readonly providerId = "agentzero";
+  readonly cancellationSemantics: HarnessCancellationSemantics = "cancel";
+  readonly sandboxStrength: HarnessSandboxStrength = "sandboxed-outer-boundary";
+
+  async diagnose(): Promise<HarnessHealth> {
+    return { status: "ok", providerId: this.providerId, version: "0.1.0", message: "docker-containerized agent framework" };
+  }
+
+  async listChildActors(runId: string): Promise<HarnessChildDescriptor[]> {
+    await this.getTask(runId);
+    return [
+      { childId: "agentzero.agent", kind: "container-agent", sandboxed: true, escalationRequired: false },
+    ];
+  }
+}
+
+export class DeepSeekHarnessProviderAdapter extends BaseHarnessProvider {
+  readonly providerId = "deepseek-harness";
+  readonly cancellationSemantics: HarnessCancellationSemantics = "cancel";
+  readonly sandboxStrength: HarnessSandboxStrength = "host-mediated";
+
+  async diagnose(): Promise<HarnessHealth> {
+    return { status: "ok", providerId: this.providerId, version: "0.1.0", message: "OpenAI-compatible cloud inference harness" };
+  }
+
+  async listChildActors(runId: string): Promise<HarnessChildDescriptor[]> {
+    await this.getTask(runId);
+    return [
+      { childId: "deepseek-harness.inference", kind: "cloud-inference", sandboxed: false, escalationRequired: false },
+    ];
+  }
+}
+
+export class PiProviderAdapter extends BaseHarnessProvider {
+  readonly providerId = "pi";
+  readonly cancellationSemantics: HarnessCancellationSemantics = "cancel";
+  readonly sandboxStrength: HarnessSandboxStrength = "host-mediated";
+
+  async diagnose(): Promise<HarnessHealth> {
+    return { status: "ok", providerId: this.providerId, version: "0.1.0", message: "pi.dev terminal harness (RPC)" };
+  }
+
+  async listChildActors(runId: string): Promise<HarnessChildDescriptor[]> {
+    await this.getTask(runId);
+    return [
+      { childId: "pi.session", kind: "terminal-agent", sandboxed: false, escalationRequired: false },
+    ];
+  }
+}
+
+export class AiderProviderAdapter extends BaseHarnessProvider {
+  readonly providerId = "aider";
+  readonly cancellationSemantics: HarnessCancellationSemantics = "finish-atomic";
+  readonly sandboxStrength: HarnessSandboxStrength = "host-mediated";
+
+  async diagnose(): Promise<HarnessHealth> {
+    return { status: "ok", providerId: this.providerId, version: "0.1.0", message: "git-committing pair-programmer" };
+  }
+
+  async listChildActors(runId: string): Promise<HarnessChildDescriptor[]> {
+    await this.getTask(runId);
+    return [
+      { childId: "aider.session", kind: "pair-programmer", sandboxed: false, escalationRequired: false },
+    ];
+  }
+}

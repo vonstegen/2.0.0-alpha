@@ -7,6 +7,7 @@
   "category": "agent",
   "description": "Mount an OpenClaw runtime as a delegated agent add-on under ResonantOS supervision.",
   "runtimeType": "agent-addon",
+  "extensionClass": "harness-provider",
   "surfaces": [
     {
       "id": "openclaw-panel",
@@ -196,5 +197,16 @@
     "verificationState": "verified",
     "signed": true,
     "signer": "ResonantOS bundled catalog"
+  },
+  "harnessProvider": {
+    "adapterProtocol": "http-json",
+    "taskContract": { "protocol": "openclaw-gateway-task", "description": "Delegated task spec through the OpenClaw runtime gateway." },
+    "eventContract": { "protocol": "openclaw-gateway-events", "description": "Ordered child-actor events enumerated through the gateway." },
+    "resultContract": { "protocol": "openclaw-gateway-result", "description": "Final artifact bundle from child actors." },
+    "childActorPolicy": { "sandboxed": true, "gateway": true, "escalationRequired": true },
+    "contextPolicy": { "bounded": true, "workspaceScoped": true },
+    "resourceHints": { "cpu": "local", "network": "self" },
+    "cancellationSemantics": "quarantine",
+    "sandboxStrength": "sandboxed-outer-boundary"
   }
 }
