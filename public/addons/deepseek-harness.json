@@ -1,0 +1,48 @@
+{
+  "id": "addon.deepseek-harness",
+  "name": "DeepSeek Harness",
+  "version": "0.1.0",
+  "publisher": "local",
+  "author": "Resonant Alpha",
+  "category": "agent",
+  "description": "Delegated cloud inference harness for DeepSeek's OpenAI-compatible API (Cordis kernel).",
+  "runtimeType": "agent-addon",
+  "extensionClass": "harness-provider",
+  "surfaces": [],
+  "requestedCapabilities": [
+    { "capability": "network", "granted": false, "scope": "self", "revocationBehavior": "hard-stop" },
+    { "capability": "providers", "granted": false, "scope": "shared", "revocationBehavior": "hard-stop" }
+  ],
+  "providerRequirements": {
+    "sharedProfiles": ["shared-deepseek"],
+    "supportsPrivateCredentials": true
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "http-endpoint",
+    "endpoint": "/api/v1/chat/completions"
+  },
+  "installHooks": {
+    "onInstall": "register-cloud-inference-harness"
+  },
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS", "linux", "windows"]
+  },
+  "harnessProvider": {
+    "adapterProtocol": "http-json",
+    "taskContract": { "protocol": "openai-chat-completions", "description": "OpenAI-compatible chat request." },
+    "eventContract": { "protocol": "cordis-events", "description": "Streamed completion tokens with finish reason." },
+    "resultContract": { "protocol": "openai-completion", "description": "Final completion plus token usage." },
+    "childActorPolicy": { "sandboxed": false, "cloud": true },
+    "contextPolicy": { "bounded": false, "stateless": true },
+    "resourceHints": { "cpu": "remote", "network": "self", "costTier": "paid-per-call" },
+    "cancellationSemantics": "cancel",
+    "sandboxStrength": "host-mediated"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "id": "addon.pi",
+  "name": "Pi (pi.dev)",
+  "version": "0.1.0",
+  "publisher": "local",
+  "author": "Resonant Alpha",
+  "category": "agent",
+  "description": "Mount the pi.dev terminal coding harness (RPC mode) as a harness provider under ResonantOS supervision.",
+  "runtimeType": "agent-addon",
+  "extensionClass": "harness-provider",
+  "surfaces": [],
+  "requestedCapabilities": [
+    { "capability": "filesystem", "granted": false, "scope": "workspace", "revocationBehavior": "hard-stop" },
+    { "capability": "shell", "granted": false, "scope": "workspace", "revocationBehavior": "hard-stop" },
+    { "capability": "network", "granted": false, "scope": "self", "revocationBehavior": "hard-stop" }
+  ],
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": true
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "stdio-rpc-handshake"
+  },
+  "installHooks": {
+    "onInstall": "register-terminal-harness"
+  },
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS", "linux"]
+  },
+  "harnessProvider": {
+    "adapterProtocol": "stdio-json-rpc",
+    "taskContract": { "protocol": "pi-rpc", "description": "pi.dev RPC prompt command (JSONL over stdin/stdout)." },
+    "eventContract": { "protocol": "pi-rpc-events", "description": "JSONL session events streamed on stdout." },
+    "resultContract": { "protocol": "pi-rpc-response", "description": "response command with success/data." },
+    "childActorPolicy": { "sandboxed": false, "terminal": true, "tools": ["read", "write", "edit", "bash"] },
+    "contextPolicy": { "bounded": true, "projectScoped": true },
+    "resourceHints": { "cpu": "local", "network": "self" },
+    "cancellationSemantics": "cancel",
+    "sandboxStrength": "host-mediated"
+  }
+}
