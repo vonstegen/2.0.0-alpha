@@ -265,3 +265,75 @@ export function createOpenClawProviderAdapter(options = {}) {
     dispatch: governedRuntimeDispatch({ addonId: "addon.openclaw", toolName: "openclaw.delegate", ...options }),
   });
 }
+
+export function createAgentZeroProviderAdapter(options = {}) {
+  const diagnose = async () => {
+    const manifest = await findAddonManifest("addon.agentzero", { repoRoot: options.repoRoot });
+    return {
+      status: manifest ? "ok" : "unavailable",
+      providerId: "agentzero",
+      message: manifest ? "containerized agent framework manifest present" : "AgentZero manifest not found",
+    };
+  };
+  return createHarnessProviderAdapter({
+    providerId: "agentzero",
+    cancellationSemantics: "cancel",
+    sandboxStrength: "sandboxed-outer-boundary",
+    diagnose,
+    dispatch: governedRuntimeDispatch({ addonId: "addon.agentzero", toolName: "agentzero.delegate", ...options }),
+  });
+}
+
+export function createDeepSeekHarnessProviderAdapter(options = {}) {
+  const diagnose = async () => {
+    const manifest = await findAddonManifest("addon.deepseek-harness", { repoRoot: options.repoRoot });
+    return {
+      status: manifest ? "ok" : "unavailable",
+      providerId: "deepseek-harness",
+      message: manifest ? "OpenAI-compatible harness manifest present" : "DeepSeek harness manifest not found",
+    };
+  };
+  return createHarnessProviderAdapter({
+    providerId: "deepseek-harness",
+    cancellationSemantics: "cancel",
+    sandboxStrength: "host-mediated",
+    diagnose,
+    dispatch: governedRuntimeDispatch({ addonId: "addon.deepseek-harness", toolName: "deepseek_harness.run_task", ...options }),
+  });
+}
+
+export function createPiProviderAdapter(options = {}) {
+  const diagnose = async () => {
+    const manifest = await findAddonManifest("addon.pi", { repoRoot: options.repoRoot });
+    return {
+      status: manifest ? "ok" : "unavailable",
+      providerId: "pi",
+      message: manifest ? "pi.dev harness manifest present" : "Pi manifest not found",
+    };
+  };
+  return createHarnessProviderAdapter({
+    providerId: "pi",
+    cancellationSemantics: "cancel",
+    sandboxStrength: "host-mediated",
+    diagnose,
+    dispatch: governedRuntimeDispatch({ addonId: "addon.pi", toolName: "pi.delegate", ...options }),
+  });
+}
+
+export function createAiderProviderAdapter(options = {}) {
+  const diagnose = async () => {
+    const manifest = await findAddonManifest("addon.aider", { repoRoot: options.repoRoot });
+    return {
+      status: manifest ? "ok" : "unavailable",
+      providerId: "aider",
+      message: manifest ? "aider manifest present" : "Aider manifest not found",
+    };
+  };
+  return createHarnessProviderAdapter({
+    providerId: "aider",
+    cancellationSemantics: "finish-atomic",
+    sandboxStrength: "host-mediated",
+    diagnose,
+    dispatch: governedRuntimeDispatch({ addonId: "addon.aider", toolName: "aider.delegate", ...options }),
+  });
+}
