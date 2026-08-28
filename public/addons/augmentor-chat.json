@@ -6,7 +6,7 @@
   "author": "Resonant Alpha",
   "category": "agent",
   "sdkVersion": "0.1.0",
-  "description": "Recommended default chat and primary-agent interface for ResonantOS. It can run as the right rail or detach into a floating chat window, and can be disabled or replaced by another chat add-on.",
+  "description": "Recommended default chat interface for ResonantOS. It can run as the right rail or detach into a floating chat window, and can be disabled or replaced by another chat add-on.",
   "runtimeType": "ui-module",
   "surfaces": [
     {
@@ -58,12 +58,6 @@
       "granted": false,
       "scope": "shared",
       "revocationBehavior": "degrade"
-    },
-    {
-      "capability": "agent-delegation",
-      "granted": false,
-      "scope": "system",
-      "revocationBehavior": "hard-stop"
     }
   ],
   "provenance": {
@@ -111,13 +105,6 @@
     }
   ],
   "systemSlots": [
-    {
-      "id": "primary-agent",
-      "role": "default-provider",
-      "replaceable": true,
-      "requiredForFirstRun": false,
-      "recommended": true
-    },
     {
       "id": "chat-interface",
       "role": "default-provider",
@@ -217,13 +204,5 @@
   "compatibility": {
     "shellVersion": "^0.1.0",
     "platforms": ["macOS", "linux", "windows"]
-  },
-  "agents": [
-    {
-      "id": "augmentor.agent",
-      "displayName": "Augmentor",
-      "trustTier": "addon",
-      "workspaceBehavior": "primary"
-    }
-  ]
+  }
 }

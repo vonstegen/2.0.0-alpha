@@ -20,6 +20,16 @@
   --line: rgb(var(--accent-rgb) / 0.15);
 }
 
+.side-version {
+  margin-left: auto;
+  align-self: center;
+  color: rgb(var(--muted-rgb) / 0.55);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding-right: 4px;
+}
+
 [data-theme="dark"] {
   color-scheme: dark;
   --bg: #050807;

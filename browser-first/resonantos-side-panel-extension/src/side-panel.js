@@ -1307,6 +1307,29 @@ async function applyStoredTheme() {
   document.documentElement.dataset.theme = theme === "dark" ? "dark" : "light";
 }
 
+// Live theme sync: when the main workspace saves an appearance change, the
+// open side panel follows immediately instead of waiting for a reload.
+function applyThemeValue(preferences) {
+  document.documentElement.dataset.theme = preferences?.theme === "dark" ? "dark" : "light";
+}
+chrome?.storage?.onChanged?.addListener?.((changes, area) => {
+  if (area !== "local") return;
+  const next = changes?.[STORAGE_KEYS.appearance]?.newValue;
+  if (next && typeof next === "object") applyThemeValue(next);
+});
+
+// Surface the extension version in the dock-tab strip (from the manifest).
+try {
+  const version = chrome?.runtime?.getManifest?.()?.version ?? "dev";
+  const sideVersion = document.querySelector("#side-version");
+  if (sideVersion) {
+    sideVersion.textContent = `v${version}`;
+    sideVersion.title = `ResonantOS extension v${version}`;
+  }
+} catch {
+  // Non-extension contexts (test harness) keep the static fallback.
+}
+
 hydrateChatSettings().then(async () => {
   await applyStoredTheme();
   await hydrateRegenerationModePreference();

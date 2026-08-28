@@ -225,7 +225,7 @@ test("add-ons workspace renders registry status and governed open actions", asyn
 
   assert.deepEqual(calls.map((call) => call[0]), ["/addons/status", "/addons/delegate/list", "/addons/draft/list"]);
   assert.match(container.textContent, /Replaceable capabilities, explicit trust/);
-  assert.match(container.textContent, /5 add-on[s]? total/);
+  assert.match(container.textContent, /5 add-on[s]? in the registry/);
   assert.match(container.textContent, /Hermes/);
   assert.match(container.textContent, /OpenCode/);
   assert.match(container.textContent, /Living Archive/);
@@ -360,4 +360,182 @@ test("add-ons workspace replaces raw bridge fetch failures with setup guidance",
   assert.match(container.textContent, /Draft review unavailable: ResonantOS bridge is unreachable/);
   assert.match(container.textContent, /Settings > Bridge Target/);
   assert.doesNotMatch(container.textContent, /Failed to fetch/);
+});
+
+test("installed view renders compact health rows with green/yellow/red tones", async () => {
+  const dom = new JSDOM(`<main id="root"></main>`, { url: "https://example.test/" });
+  globalThis.document = dom.window.document;
+  const container = dom.window.document.querySelector("#root");
+  const bridgeRequest = async (route) => {
+    if (route === "/addons/status") {
+      return {
+        addons: [
+          {
+            id: "addon.clean",
+            name: "Clean Agent",
+            available: true,
+            runtime: "agent-addon",
+            tools: ["tool.x"],
+            description: "Runs clean."
+          },
+          {
+            id: "addon.warny",
+            name: "Warny Agent",
+            available: true,
+            runtime: "agent-addon",
+            tools: ["tool.y"],
+            description: "Warning state.",
+            execution: { localCliExecution: false, mode: "packet-only" }
+          },
+          {
+            id: "addon.broken",
+            name: "Broken Agent",
+            available: false,
+            runtime: "agent-addon",
+            tools: ["tool.z"],
+            description: "Issue state."
+          }
+        ]
+      };
+    }
+    if (route === "/addons/draft/list") return { drafts: [] };
+    if (route === "/addons/delegate/list") return { delegations: [] };
+    return {};
+  };
+  renderAddOnsWorkspace({ container, bridgeRequest, initialView: "installed" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const rows = [...container.querySelectorAll(".addons-installed-row")];
+  assert.equal(rows.length, 3);
+  assert.equal(rows[0].dataset.tone, "ok");
+  assert.equal(rows[1].dataset.tone, "warning");
+  assert.equal(rows[2].dataset.tone, "error");
+  assert.match(container.textContent, /Clean Agent/);
+  assert.match(container.textContent, /Runs clean\./);
+  // The installed view carries no full registry cards.
+  assert.equal(container.querySelectorAll(".addon-card").length, 0);
+});
+
+test("My Add-ons rows toggle, uninstall, and discard add-ons", async () => {
+  const dom = new JSDOM(`<main id="root"></main>`, { url: "https://example.test/" });
+  globalThis.document = dom.window.document;
+  globalThis.window = dom.window;
+  dom.window.confirm = () => true;
+  const container = dom.window.document.querySelector("#root");
+  const calls = [];
+  const stored = {};
+  const storage = {
+    get: async (key) => ({ [key]: stored[key] }),
+    set: async (entry) => { Object.assign(stored, entry); }
+  };
+  const addons = [
+    { id: "addon.clean", name: "Clean Agent", available: true, runtime: "agent-addon", tools: ["tool.x"], description: "Runs clean." },
+    { id: "addon.sideloaded", name: "Sideloaded Agent", available: true, untrusted: true, runtime: "agent-addon", tools: ["tool.y"], description: "Personal tier." },
+    { id: "addon.warny", name: "Warny Agent", available: true, disabled: true, runtime: "agent-addon", tools: ["tool.z"], description: "Switched off." }
+  ];
+  const bridgeRequest = async (route, options = {}) => {
+    calls.push([route, options.body ?? null, options.capability ?? null]);
+    if (route === "/addons/status") return { addons };
+    if (route === "/addons/draft/list") return { drafts: [] };
+    if (route === "/addons/delegate/list") return { delegations: [] };
+    return {};
+  };
+  renderAddOnsWorkspace({
+    container,
+    bridgeRequest,
+    initialView: "installed",
+    storage,
+    storageKeys: { discardedAddons: "testDiscarded" }
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const rows = () => [...container.querySelectorAll(".addons-installed-row")];
+  const rowFor = (name) => rows().find((row) => row.querySelector("strong")?.textContent === name);
+  assert.equal(rows().length, 3);
+
+  // Switch off: On -> Off through the gated execution-settings route.
+  rowFor("Clean Agent").querySelector(".addons-switch").click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(calls.some(([route, body, capability]) =>
+    route === "/addons/execution-settings" &&
+    capability === "addon-execution-settings-write" &&
+    body.addon === "addon.clean" &&
+    body.disabled === true
+  ));
+
+  // Uninstall the personal-tier add-on (confirm stubbed to accept).
+  rowFor("Sideloaded Agent").querySelector("button[data-danger]").click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(calls.some(([route, body]) => route === "/addons/uninstall" && body.addonId === "addon.sideloaded"));
+
+  // Discard hides the row and persists the id.
+  rowFor("Warny Agent").querySelector("button:not(.addons-switch)").click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(stored.testDiscarded, ["addon.warny"]);
+  assert.equal(rows().length, 2);
+  assert.match(container.querySelector(".addons-discarded").textContent, /1 add-on discarded/);
+
+  // Restore all brings the row back.
+  container.querySelector(".addons-discarded button").click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(stored.testDiscarded.length, 0);
+  assert.equal(rows().length, 3);
+});
+
+test("hello-resonant add-on is added to the registry and Discover views as untrusted", async () => {
+  const dom = new JSDOM(`<main id="root"></main>`, { url: "https://example.test/" });
+  globalThis.document = dom.window.document;
+  globalThis.window = dom.window;
+  const container = dom.window.document.querySelector("#root");
+
+  // Shape matches what the bridge's /addons/status returns for the
+  // examples/addons/addon.hello-resonant.json manifest.
+  const helloResonant = {
+    id: "addon.hello-resonant",
+    name: "Hello Resonant",
+    available: true,
+    mode: "unknown",
+    trust: "host-mediated service",
+    trustTier: "personal",
+    untrusted: true,
+    trustNotice: "Not tested or approved — no verified or approved signature (personal trust tier).",
+    requestedCapabilities: [],
+    grantedCapabilities: [],
+    runtime: "ui-module",
+    category: "tool",
+    source: "examples/addons",
+    tools: []
+  };
+  const bridgeRequest = async (route) => {
+    if (route === "/addons/status") return { addons: [helloResonant] };
+    if (route === "/addons/draft/list") return { drafts: [] };
+    if (route === "/addons/delegate/list") return { delegations: [] };
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  // Registry (default) view: the add-on card renders with a Discoverable
+  // badge and the untrusted warning.
+  renderAddOnsWorkspace({ container, bridgeRequest });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.match(container.textContent, /Hello Resonant/);
+  assert.match(container.textContent, /addon\.hello-resonant/);
+  assert.match(container.textContent, /Discoverable/);
+  assert.match(container.textContent, /1 add-on in the registry — 0 installed, 1 discoverable/);
+  const notice = container.querySelector(".addon-trust-notice");
+  assert.ok(notice, "expected the untrusted notice element to render");
+  assert.equal(notice.dataset.tone, "warning");
+  assert.match(notice.textContent, /Not tested or approved/);
+
+  // Discover view: a ui-module with no tools stays discoverable.
+  const discoverContainer = dom.window.document.createElement("main");
+  renderAddOnsWorkspace({ container: discoverContainer, bridgeRequest, initialView: "discover" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(discoverContainer.textContent, /Hello Resonant/);
+  assert.match(discoverContainer.textContent, /1 discoverable add-on/);
+
+  // Installed view: it is not runtime-detectable, so it does not appear.
+  const installedContainer = dom.window.document.createElement("main");
+  renderAddOnsWorkspace({ container: installedContainer, bridgeRequest, initialView: "installed" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.match(installedContainer.textContent, /No add-ons in your list/);
+  assert.doesNotMatch(installedContainer.textContent, /Hello Resonant/);
 });

@@ -11,6 +11,7 @@ import {
 import { dashboardProxyUrl } from "./bridge-server.mjs";
 import { ensureOpencodeServer } from "./opencode-client.mjs";
 import { createOpenCodeWebUrlHandler } from "./opencode-session-host-service.mjs";
+import { addonTrustAndIsolationSnapshot } from "./dev-panel-addon-snapshot.mjs";
 
 const DEFAULT_OPENCODE_MODEL = "openai/gpt-5.4-mini";
 const MINIMAX_OPENCODE_MODEL = "minimax/MiniMax-M3";
@@ -618,14 +619,19 @@ export function createAddonDelegationService(dependencies) {
     return {
       hermes: { localCliExecution: false },
       opencode: { localCliExecution: false },
+      disabledAddons: [],
+      uninstalledAddons: [],
     };
   }
 
   function normalizeAddonExecutionSettings(value = {}) {
     const defaults = defaultAddonExecutionSettings();
+    const list = (candidate) => [...new Set((Array.isArray(candidate) ? candidate : []).map((entry) => String(entry)).filter(Boolean))].sort();
     return {
       hermes: { localCliExecution: Boolean(value?.hermes?.localCliExecution ?? defaults.hermes.localCliExecution) },
       opencode: { localCliExecution: Boolean(value?.opencode?.localCliExecution ?? defaults.opencode.localCliExecution) },
+      disabledAddons: list(value?.disabledAddons ?? defaults.disabledAddons),
+      uninstalledAddons: list(value?.uninstalledAddons ?? defaults.uninstalledAddons),
     };
   }
 
@@ -1251,6 +1257,10 @@ except BaseException as exc:
   }
 
   async function executeHermesDelegationStart(payload = {}) {
+    const startSettings = await readAddonExecutionSettings();
+    if ((startSettings.disabledAddons ?? []).includes("addon.hermes")) {
+      throw new Error("Hermes is switched off in My Add-ons. Enable it before starting a delegation.");
+    }
     const taskPath = resolveDelegationPath(payload.path, "hermes");
     const packet = await readFile(taskPath, "utf8");
     const currentStatus = fieldFromMarkdown(packet, "status") || "queued";
@@ -1735,6 +1745,10 @@ except BaseException as exc:
   }
 
   async function executeOpenCodeDelegationStart(payload = {}) {
+    const startSettings = await readAddonExecutionSettings();
+    if ((startSettings.disabledAddons ?? []).includes("addon.opencode")) {
+      throw new Error("OpenCode is switched off in My Add-ons. Enable it before starting a delegation.");
+    }
     const taskPath = resolveDelegationPath(payload.path, "opencode");
     const packet = await readFile(taskPath, "utf8");
     const currentStatus = fieldFromMarkdown(packet, "status") || "queued";
@@ -1951,6 +1965,7 @@ except BaseException as exc:
     const discovered = await discoverBundledAddonManifests(repoRoot);
     const fromManifests = discovered.map((entry) => {
       const { id, manifest, source } = entry;
+      const snapshot = addonTrustAndIsolationSnapshot(manifest);
       const requestedCapabilities = Array.isArray(manifest.requestedCapabilities)
         ? manifest.requestedCapabilities.map((e) => e?.capability).filter(Boolean)
         : [];
@@ -1960,14 +1975,20 @@ except BaseException as exc:
         available: true,
         mode: modeForManifest(manifest),
         trust: trustLabelFor(manifest),
+        trustTier: snapshot.trustTier,
+        trustNotice: snapshot.trustNotice,
+        untrusted: snapshot.untrusted,
         requestedCapabilities,
         grantedCapabilities: requestedCapabilities,
         runtime: manifest.runtimeType ?? null,
         category: manifest.category ?? null,
         source,
+        description: typeof manifest.description === "string" ? manifest.description : "",
         tools: Array.isArray(manifest.tools) ? manifest.tools.map((t) => t?.name).filter(Boolean) : [],
       };
     });
+    const uninstalled = new Set(executionSettings.uninstalledAddons ?? []);
+    const disabled = new Set(executionSettings.disabledAddons ?? []);
     return {
       addons: [
         {
@@ -1977,6 +1998,7 @@ except BaseException as exc:
           mode: "delegation-addon",
           trust: "add-on agent",
           requestedCapabilities: ["agent-delegation", "network", "notifications"],
+          description: "Communication and coordination agent add-on for delegated messaging, follow-up, and channel workflows.",
           grantedCapabilities: ["agent-delegation"],
           execution: {
             localCliExecution: Boolean(executionSettings.hermes.localCliExecution),
@@ -1991,6 +2013,7 @@ except BaseException as exc:
           available: existsSync(path.join(repoRoot, "src", "modules", "opencode")),
           mode: "coding-addon",
           trust: "add-on agent",
+          description: "Coding agent add-on that receives bounded delegation packets, runs governed OpenCode sessions, and returns artifacts through ResonantOS.",
           requestedCapabilities: ["agent-delegation", "filesystem-scoped", "shell", "providers"],
           grantedCapabilities: ["agent-delegation"],
           deniedCapabilities: executionSettings.opencode.localCliExecution ? [] : ["shell"],
@@ -2000,7 +2023,9 @@ except BaseException as exc:
           },
         },
         ...fromManifests.filter((entry) => entry.id !== "addon.hermes" && entry.id !== "addon.opencode"),
-      ],
+      ]
+        .filter((addon) => !uninstalled.has(addon.id))
+        .map((addon) => ({ ...addon, disabled: disabled.has(addon.id) })),
     };
   }
 
@@ -2038,6 +2063,23 @@ except BaseException as exc:
   async function executeAddonExecutionSettingsUpdate(payload = {}) {
     const current = await readAddonExecutionSettings();
     const addon = String(payload.addon ?? "").trim().toLowerCase();
+    if (!addon) {
+      throw new Error("Addon id is required.");
+    }
+    if (typeof payload.disabled === "boolean") {
+      const set = new Set(current.disabledAddons ?? []);
+      if (payload.disabled) set.add(addon);
+      else set.delete(addon);
+      const settings = await writeAddonExecutionSettings({ ...current, disabledAddons: [...set] });
+      await appendAddonGovernanceAuditEntry({
+        at: new Date().toISOString(),
+        addonId: addon,
+        field: "disabled",
+        from: !payload.disabled,
+        to: payload.disabled,
+      });
+      return { addon, disabled: settings.disabledAddons.includes(addon) };
+    }
     if (!["hermes", "opencode"].includes(addon)) {
       throw new Error("Execution settings can only be updated for Hermes or OpenCode.");
     }
@@ -2063,6 +2105,36 @@ except BaseException as exc:
       settings,
       status: settings[addon].localCliExecution ? "enabled" : "disabled",
     };
+  }
+
+  async function isAddonDisabled(addonId) {
+    if (!addonId) return false;
+    const settings = await readAddonExecutionSettings();
+    return (settings.disabledAddons ?? []).includes(addonId);
+  }
+
+  async function executeAddonUninstall(payload = {}) {
+    const addonId = String(payload.addonId ?? "").trim();
+    if (!addonId) throw new Error("Addon id is required.");
+    const discovered = await discoverBundledAddonManifests(repoRoot);
+    const entry = discovered.find((candidate) => candidate.id === addonId);
+    if (!entry) throw new Error("Addon not found in the local registry.");
+    const snapshot = addonTrustAndIsolationSnapshot(entry.manifest);
+    if (!snapshot.untrusted) {
+      throw new Error("Bundled and approved add-ons cannot be uninstalled. Only personal-tier (sideloaded) add-ons can be removed.");
+    }
+    const settings = await readAddonExecutionSettings();
+    const set = new Set(settings.uninstalledAddons ?? []);
+    set.add(addonId);
+    await writeAddonExecutionSettings({ ...settings, uninstalledAddons: [...set] });
+    await appendAddonGovernanceAuditEntry({
+      at: new Date().toISOString(),
+      addonId,
+      field: "uninstalled",
+      from: false,
+      to: true,
+    });
+    return { addonId, uninstalled: true };
   }
 
   async function executeHermesDashboardStatus(payload = {}) {
@@ -2176,6 +2248,8 @@ except BaseException as exc:
     executeAddonSurfaceRoutes,
     executeAddonExecutionSettingsGet,
     executeAddonExecutionSettingsUpdate,
+    executeAddonUninstall,
+    isAddonDisabled,
     executeHermesDashboardStatus,
     executeHermesDashboardStart,
     executeHermesDashboardStop,

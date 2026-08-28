@@ -1176,7 +1176,9 @@ export async function evaluateBridgeRequestForSelfTest({
       // open the panel in a browser tab. The actual dispatcher route
       // still requires its own capability token, so this does not weaken
       // the bridge.
-      const isDevPanelPath = (url ?? "").startsWith("/dev/external-agent-runtimes");
+      const isDevPanelPath =
+        (url ?? "").startsWith("/dev/external-agent-runtimes") ||
+        (url ?? "").startsWith("/dev/g0-ros");
       // Treat IPv4 loopback, IPv6 loopback, IPv4-mapped IPv6 loopback,
       // and any private RFC1918 range (10/8, 172.16/12, 192.168/16) as
       // local. This lets the panel load from a Chrome tab on the same
@@ -1241,11 +1243,16 @@ export async function evaluateBridgeRequestForSelfTest({
       callerId = callerIdFromHeaders(request, perCallerGrants) ?? "__extension__";
     }
     const payload = method === "POST" ? body : {};
-    // TODO(ref): bridgeContext.auditLedger is null; the launcher's auditSink
-    // doesn't expose a `record(entry)` method on the ledger side. The
-    // dispatcher's per-call audit rows are missing today — fix when the
-    // bridge audit ledger gains a record() method.
-    const bridgeContext = { callerId, perCallerGrants, auditLedger: null, repoRoot: process.env.RESONANTOS_REPO_ROOT };
+    // The governed authority owns request/decision/effect/denial audit; the
+    // Phase 3.5 dispatcher still expects an `auditLedger.record(entry)` shape,
+    // so expose the ledger's sink behind a `record` method so its per-call
+    // rows land in the same append-only file.
+    const bridgeContext = {
+      callerId,
+      perCallerGrants,
+      auditLedger: typeof auditSink === "function" ? { record: auditSink } : null,
+      repoRoot: process.env.RESONANTOS_REPO_ROOT,
+    };
     const result = await route.handler(payload, request, bridgeContext);
     emitAuthorized(callerId, route.requiredCapability ?? null, route.path);
     return { status: 200, payload: { ok: true, ...result } };

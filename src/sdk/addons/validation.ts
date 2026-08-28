@@ -5,9 +5,14 @@ import type {
   AddOnManifest,
   AddOnRuntimeType,
   AddOnSurfaceType,
+  AugmentorExtensionFailureBehavior,
+  AugmentorExtensionKind,
   Capability,
   CapabilityScope,
   DelegationArtifactType,
+  ExtensionClass,
+  HarnessCancellationSemantics,
+  HarnessSandboxStrength,
   RevocationBehavior,
   RuntimeIsolationBoundary,
   SystemSlotId,
@@ -94,6 +99,23 @@ const hookEvents = [
   "after-archive-intake",
 ] as const;
 const hookFailurePolicies = ["block", "degrade", "warn"] as const;
+const extensionClasses: readonly ExtensionClass[] = ["augmentor-extension", "harness-provider", "system-addon"];
+const augmentorExtensionKinds: readonly AugmentorExtensionKind[] = [
+  "skill",
+  "tool",
+  "connector",
+  "workflow",
+  "model-adapter",
+  "memory-view",
+];
+const augmentorExtensionFailureBehaviors: readonly AugmentorExtensionFailureBehavior[] = [
+  "fail-closed",
+  "degrade",
+  "retry-once",
+];
+const augmentorExtensionRevocationBehaviors = ["cancel", "finish-atomic", "quarantine"] as const;
+const harnessCancellationSemantics: readonly HarnessCancellationSemantics[] = ["cancel", "finish-atomic", "quarantine"];
+const harnessSandboxStrengths: readonly HarnessSandboxStrength[] = ["host-mediated", "sandboxed-outer-boundary"];
 
 // systemSlots coverage (P1-b). A manifest that declares a systemSlot becomes the
 // active provider for that slot (activeSystemSlotProvider), replacing a built-in
@@ -216,6 +238,100 @@ const validateUniqueStringId = (
   }
   seen.add(value);
 };
+
+// Strict validation of the `augmentorExtension` declaration (doc 04 §Required
+// declaration). Only reachable when `extensionClass` is "augmentor-extension".
+const validateAugmentorExtension = (
+  issues: AddOnValidationIssue[],
+  definition: unknown,
+  requestedCapabilitySet: Set<Capability>,
+  declaredToolNames: Set<string>,
+): void => {
+  const path = "augmentorExtension";
+  if (!isRecord(definition)) {
+    pushIssue(
+      issues,
+      "error",
+      "augmentor-extension-object",
+      path,
+      "augmentorExtension must be an object when extensionClass is \"augmentor-extension\".",
+    );
+    return;
+  }
+  validateEnum(issues, definition.kind, augmentorExtensionKinds, `${path}.kind`);
+  if (isRecord(definition.compatible)) {
+    validateStringArray(issues, definition.compatible.augmentorVersions, `${path}.compatible.augmentorVersions`);
+    validateStringArray(issues, definition.compatible.sdkVersions, `${path}.compatible.sdkVersions`);
+  } else {
+    pushIssue(issues, "error", "augmentor-extension-compatible-object", `${path}.compatible`, "augmentorExtension.compatible must be an object.");
+  }
+  validateStringArray(issues, definition.requiredTools, `${path}.requiredTools`);
+  if (Array.isArray(definition.requiredTools)) {
+    definition.requiredTools.forEach((toolName, toolIndex) => {
+      if (isString(toolName) && !declaredToolNames.has(toolName)) {
+        pushIssue(
+          issues,
+          "error",
+          "augmentor-extension-unknown-tool",
+          `${path}.requiredTools[${toolIndex}]`,
+          "Augmentor extensions may only require tools declared by the manifest.",
+        );
+      }
+    });
+  }
+  validateCapabilityReferences(
+    issues,
+    definition.requiredCapabilities,
+    `${path}.requiredCapabilities`,
+    requestedCapabilitySet,
+    "augmentor-extension-unrequested-capability",
+    "Augmentor extensions may only require capabilities requested by the manifest.",
+  );
+  validateStringArray(issues, definition.workflowPhases, `${path}.workflowPhases`);
+  validateStringArray(issues, definition.approvalGates, `${path}.approvalGates`);
+  if (isRecord(definition.contextPolicy)) {
+    validateStringArray(issues, definition.contextPolicy.read, `${path}.contextPolicy.read`);
+    validateStringArray(issues, definition.contextPolicy.write, `${path}.contextPolicy.write`);
+  } else {
+    pushIssue(issues, "error", "augmentor-extension-context-policy-object", `${path}.contextPolicy`, "augmentorExtension.contextPolicy must be an object.");
+  }
+  validateStringArray(issues, definition.verificationHooks, `${path}.verificationHooks`);
+  validateEnum(issues, definition.failureBehavior, augmentorExtensionFailureBehaviors, `${path}.failureBehavior`);
+  validateEnum(issues, definition.revocationBehavior, augmentorExtensionRevocationBehaviors, `${path}.revocationBehavior`);
+  if (typeof definition.auditLogRequired !== "boolean") {
+    pushIssue(issues, "error", "augmentor-extension-audit-boolean", `${path}.auditLogRequired`, "augmentorExtension.auditLogRequired must be boolean.");
+  }
+  if (typeof definition.producesDelegationPackets !== "boolean") {
+    pushIssue(issues, "error", "augmentor-extension-delegation-boolean", `${path}.producesDelegationPackets`, "augmentorExtension.producesDelegationPackets must be boolean.");
+  }
+};
+
+// Strict validation of the `harnessProvider` declaration (doc 05 / CONTRACTS).
+// Only reachable when `extensionClass` is "harness-provider". `taskContract`,
+// `eventContract`, `resultContract`, `childActorPolicy`, `contextPolicy`, and
+// `resourceHints` are opaque protocol/schema declarations validated by the
+// conformance suite, not structurally here.
+const validateHarnessProvider = (
+  issues: AddOnValidationIssue[],
+  definition: unknown,
+): void => {
+  const path = "harnessProvider";
+  if (!isRecord(definition)) {
+    pushIssue(
+      issues,
+      "error",
+      "harness-provider-object",
+      path,
+      "harnessProvider must be an object when extensionClass is \"harness-provider\".",
+    );
+    return;
+  }
+  validateStringValue(issues, definition.adapterProtocol, `${path}.adapterProtocol`);
+  validateEnum(issues, definition.cancellationSemantics, harnessCancellationSemantics, `${path}.cancellationSemantics`);
+  validateEnum(issues, definition.sandboxStrength, harnessSandboxStrengths, `${path}.sandboxStrength`);
+};
+
+
 
 const validateEnum = <T extends string>(
   issues: AddOnValidationIssue[],
@@ -631,7 +747,7 @@ export const validateAddOnManifest = (
           );
         }
       }
-      if (tool.coversNativeTool !== undefined && !NATIVE_TOOL_CAPABILITIES.includes(tool.coversNativeTool)) {
+      if (isString(tool.coversNativeTool) && !NATIVE_TOOL_CAPABILITIES.includes(tool.coversNativeTool)) {
         pushIssue(
           issues,
           "error",
@@ -743,6 +859,28 @@ export const validateAddOnManifest = (
       }
     });
   }
+
+  // extensionClass strict combinations (doc 12 §Manifest evolution). The
+  // discriminated class must be consistent with the declared extension content.
+  if (candidate.extensionClass !== undefined) {
+    validateEnum(issues, candidate.extensionClass, extensionClasses, "extensionClass");
+    if (candidate.extensionClass === "augmentor-extension") {
+      validateAugmentorExtension(issues, candidate.augmentorExtension, requestedCapabilitySet, declaredToolNames);
+      if (candidate.harnessProvider !== undefined) {
+        pushIssue(issues, "error", "extension-class-mismatch", "extensionClass", "An augmentor-extension manifest must not declare harnessProvider.");
+      }
+    } else if (candidate.extensionClass === "harness-provider") {
+      validateHarnessProvider(issues, candidate.harnessProvider);
+      if (candidate.augmentorExtension !== undefined) {
+        pushIssue(issues, "error", "extension-class-mismatch", "extensionClass", "A harness-provider manifest must not declare augmentorExtension.");
+      }
+    } else if (candidate.augmentorExtension !== undefined || candidate.harnessProvider !== undefined) {
+      pushIssue(issues, "error", "extension-class-mismatch", "extensionClass", "A manifest declaring augmentorExtension or harnessProvider must set the matching extensionClass.");
+    }
+  } else if (candidate.augmentorExtension !== undefined || candidate.harnessProvider !== undefined) {
+    pushIssue(issues, "error", "extension-class-missing", "extensionClass", "A manifest declaring augmentorExtension or harnessProvider must set extensionClass.");
+  }
+
 
   if (Array.isArray(candidate.workflowBoundaries)) {
     const boundaryIds = new Set<string>();
@@ -1159,6 +1297,19 @@ export const validateAddOnManifest = (
         const path = `systemSlots[${index}]`;
         if (!isRecord(slot)) {
           pushIssue(issues, "error", "system-slot-object", path, "Each systemSlots entry must be an object.");
+          return;
+        }
+        // ADR-053 / D-9: primary-agent is permanently occupied by the fused
+        // Augmentor and can never be claimed by an add-on, regardless of
+        // declared capabilities.
+        if (slot.id === "primary-agent") {
+          pushIssue(
+            issues,
+            "error",
+            "system-slot-reserved",
+            `${path}.id`,
+            "primary-agent is permanently occupied by the fused Augmentor and cannot be claimed by an add-on.",
+          );
           return;
         }
         if (!isString(slot.id) || !systemSlotIds.includes(slot.id as SystemSlotId)) {

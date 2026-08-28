@@ -52,6 +52,40 @@ export function getTrustTierFromManifest(manifest: AddOnManifest): TrustTier {
   // sideloaded-unverified / undefined / anything else
   return "personal";
 }
+export type TrustTierNotice = {
+  tier: TrustTier;
+  /** True when the add-on carries no verified or approved signature. */
+  untrusted: boolean;
+  /** Human-readable verdict for status/panel surfaces. */
+  notice: string;
+};
+
+/**
+ * Human-readable verdict for a trust tier. `untrusted` is true only
+ * for `personal` — a sideloaded or unprovenanced add-on that
+ * ResonantOS has not tested or approved. Mirrored in
+ * browser-first/host/dev-panel-addon-snapshot.mjs.
+ */
+export function trustNoticeForTier(tier: TrustTier): TrustTierNotice {
+  switch (tier) {
+    case "system":
+      return { tier, untrusted: false, notice: "Bundled core add-on (system trust tier)." };
+    case "approved":
+      return { tier, untrusted: false, notice: "Enterprise-signed add-on (approved trust tier)." };
+    case "verified":
+      return { tier, untrusted: false, notice: "Curated-signed add-on (verified trust tier)." };
+    case "personal":
+      return {
+        tier,
+        untrusted: true,
+        notice: "Not tested or approved — no verified or approved signature (personal trust tier).",
+      };
+  }
+}
+
+export function trustNoticeForManifest(manifest: AddOnManifest): TrustTierNotice {
+  return trustNoticeForTier(getTrustTierFromManifest(manifest));
+}
 
 /**
  * Returns the canonical verdict for an attempted move between two
