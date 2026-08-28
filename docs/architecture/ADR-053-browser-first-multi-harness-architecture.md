@@ -4,8 +4,8 @@
 
 - Decision status: Accepted
 - Alpha applicability: Deferred
-- Superseded by: None (amends ADR-006, ADR-018, ADR-026, and ADR-010 only through
-  the checkpoint ADRs listed below; see [Amends](#amends))
+- Superseded by: None
+- Amends: ADR-006, ADR-018, ADR-026, ADR-010 (through the checkpoint ADRs listed below; see [Amends](#amends))
 - Owner: Core architecture
 - Decision date: 2026-08-27
 
