@@ -7,6 +7,7 @@ const browserManifest = (): AddOnManifest => ({
   id: "addon.browser",
   name: "Resonant Browser",
   version: "0.1.0",
+  publisher: "local",
   author: "Resonant Alpha",
   category: "tool",
   description: "Controlled browser add-on.",

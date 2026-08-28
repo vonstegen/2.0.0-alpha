@@ -529,14 +529,81 @@ export interface AddOnDeterministicSmokeTest {
   requiredCapabilities: Capability[];
 }
 
+// Discriminated extension class (doc 12 §Manifest evolution). A manifest that
+// omits this defaults to "system-addon".
+export type ExtensionClass = "augmentor-extension" | "harness-provider" | "system-addon";
+
+// Augmentor extension declaration (doc 04). Kinds of a focused extension that
+// runs inside Augmentor's orchestration loop.
+export type AugmentorExtensionKind =
+  | "skill"
+  | "tool"
+  | "connector"
+  | "workflow"
+  | "model-adapter"
+  | "memory-view";
+
+export type AugmentorExtensionFailureBehavior = "fail-closed" | "degrade" | "retry-once";
+
+// The extension-specific portion of a manifest when `extensionClass` is
+// "augmentor-extension". Identity/version live on AddOnManifest; the
+// discriminant is `extensionClass`. `revocationBehavior` mirrors the authority
+// grant-revocation semantics (cancel | finish-atomic | quarantine).
+export interface AugmentorExtensionDefinition {
+  kind: AugmentorExtensionKind;
+  compatible: {
+    augmentorVersions: string[];
+    sdkVersions: string[];
+  };
+  requiredTools: string[];
+  requiredCapabilities: Capability[];
+  inputSchema?: unknown;
+  outputSchema?: unknown;
+  workflowPhases: string[];
+  approvalGates: string[];
+  contextPolicy: {
+    read: string[];
+    write: string[];
+  };
+  verificationHooks: string[];
+  failureBehavior: AugmentorExtensionFailureBehavior;
+  revocationBehavior: "cancel" | "finish-atomic" | "quarantine";
+  auditLogRequired: boolean;
+  producesDelegationPackets: boolean;
+}
+
+export type HarnessCancellationSemantics = "cancel" | "finish-atomic" | "quarantine";
+export type HarnessSandboxStrength = "host-mediated" | "sandboxed-outer-boundary";
+
+// Harness provider declaration (doc 05 / CONTRACTS). A harness provider
+// integrates a complete external AI execution environment; the manifest
+// declares the adapter protocol and its policies. Identity/version live on
+// AddOnManifest; the discriminant is `extensionClass`.
+export interface HarnessProviderDefinition {
+  adapterProtocol: string;
+  taskContract: unknown;
+  eventContract: unknown;
+  resultContract: unknown;
+  childActorPolicy: unknown;
+  contextPolicy: unknown;
+  resourceHints: unknown;
+  cancellationSemantics: HarnessCancellationSemantics;
+  sandboxStrength: HarnessSandboxStrength;
+}
+
 export interface AddOnManifest {
   sdkVersion?: string;
+  id: string;
+  version: string;
   publisher: string;
   name: string;
   author: string;
   category: AddOnCategory;
   description: string;
   runtimeType: AddOnRuntimeType;
+  extensionClass?: ExtensionClass;
+  augmentorExtension?: AugmentorExtensionDefinition;
+  harnessProvider?: HarnessProviderDefinition;
   surfaces: AddOnSurface[];
   requestedCapabilities: CapabilityGrant[];
   provenance?: AddOnProvenance;

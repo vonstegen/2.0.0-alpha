@@ -8,6 +8,7 @@ const testManifest = (id: string): AddOnManifest => ({
   id,
   name: id,
   version: "0.1.0",
+  publisher: "local",
   author: "test",
   category: "integration",
   description: "test",

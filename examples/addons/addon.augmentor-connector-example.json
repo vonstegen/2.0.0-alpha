@@ -1,0 +1,87 @@
+{
+  "id": "addon.augmentor-connector-example",
+  "name": "Augmentor Connector Example",
+  "version": "0.1.0",
+  "publisher": "local",
+  "author": "Resonant Alpha",
+  "category": "integration",
+  "sdkVersion": "0.1.0",
+  "description": "Conformance example: a focused Augmentor extension of kind connector that exposes an MCP server so Augmentor can query a third-party knowledge base.",
+  "runtimeType": "ui-module",
+  "extensionClass": "augmentor-extension",
+  "surfaces": [
+    {
+      "id": "augmentor-connector-example-panel",
+      "type": "panel",
+      "label": "Augmentor Connector Example",
+      "description": "Dockable panel proving a connector extension can declare a shell surface.",
+      "shellNavigation": {
+        "sectionId": "augmentor-connector-example",
+        "dockIcon": "augmentor-connector-example",
+        "eyebrow": "Augmentor",
+        "order": 504
+      }
+    }
+  ],
+  "requestedCapabilities": [
+    { "capability": "network", "granted": false, "scope": "shared", "revocationBehavior": "hard-stop" }
+  ],
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
+  },
+  "runtimeIsolation": {
+    "boundary": "shell-ui",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": false
+  },
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "none"
+  },
+  "installHooks": {},
+  "connectors": [
+    {
+      "id": "mcp.third-party-kb",
+      "name": "Third-Party Knowledge Base",
+      "type": "mcp-server",
+      "description": "Query a third-party knowledge base over MCP with user-configured credentials.",
+      "requiredCapabilities": ["network"],
+      "configScope": "user-config"
+    }
+  ],
+  "augmentorExtension": {
+    "kind": "connector",
+    "compatible": {
+      "augmentorVersions": ["^0.1.0"],
+      "sdkVersions": ["^0.1.0"]
+    },
+    "requiredTools": [],
+    "requiredCapabilities": ["network"],
+    "workflowPhases": [],
+    "approvalGates": ["human-approval"],
+    "contextPolicy": {
+      "read": [],
+      "write": []
+    },
+    "verificationHooks": [],
+    "failureBehavior": "fail-closed",
+    "revocationBehavior": "cancel",
+    "auditLogRequired": true,
+    "producesDelegationPackets": false
+  },
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS", "linux", "windows"]
+  }
+}

@@ -2,6 +2,7 @@
 
 import type { ResonantShellState } from "../../core/contracts";
 import { Panel } from "../../components/Panel";
+import { buildLineageSteps } from "./augmentor-approval-lineage";
 
 export function StrategistWorkspace({
   state,
@@ -82,6 +83,22 @@ export function StrategistWorkspace({
             </article>
           ))}
         </div>
+      </Panel>
+
+      <Panel title="Lineage &amp; Approval" subtitle="Delegation chain and pending approval gates for the current task context.">
+        <ol className="lineage-list">
+          {buildLineageSteps(displayedStrategistName, null).map((step) => (
+            <li key={`${step.kind}:${step.principalId}`} className={`lineage-step lineage-${step.kind}`}>
+              <span className="eyebrow">{step.kind}</span>
+              <strong>{step.label}</strong>
+            </li>
+          ))}
+        </ol>
+        <p className="muted">
+          A task's extension runs under an identity subordinate to Augmentor
+          (user &rarr; Augmentor &rarr; extension &rarr; tool). No extension invocation
+          is awaiting human approval in this session.
+        </p>
       </Panel>
     </>
   );

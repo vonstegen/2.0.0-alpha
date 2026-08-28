@@ -4,7 +4,7 @@
 
 - Decision status: Accepted
 - Alpha applicability: Applies
-- Superseded by: None
+- Superseded by: ADR-054 (trust tier becomes one term of effective authority)
 - Owner: Add-on SDK
 - Decision date: 2026-08-25
 - Alpha note: Trust tiers are labels on every installed add-on; the

@@ -36,9 +36,11 @@ import { buildBridgeCapabilityTokens } from "./bridge-capability-tokens.mjs";
 import { createBridgeGrantsStore } from "./bridge-grants-store.mjs";
 import { createBridgeAuditLedger } from "./bridge-audit-ledger.mjs";
 import { createBridgeTokenKey } from "./bridge-token-key.mjs";
+import { createGovernedAuthority } from "./bridge-governed-authority.mjs";
 import { createAddonDelegationService } from "./addon-delegation-service.mjs";
 import { createAddonDelegationHostService } from "./addon-delegation-host-service.mjs";
 import { createDevExternalAgentRuntimesPanelService } from "./dev-external-agent-runtimes-panel.mjs";
+import { createDevG0RosPanelService } from "./dev-g0-ros-panel.mjs";
 import { createOpencodeHttpClient, ensureOpencodeServer } from "./opencode-client.mjs";
 import { createOpencodeSessionHandlers, createOpencodeSessionHostService } from "./opencode-session-host-service.mjs";
 import { createArchiveReviewHostService } from "./archive-review-host-service.mjs";
@@ -183,7 +185,15 @@ const addonDelegationService = createAddonDelegationService({
 });
 
 const { executeAddonsStatus } = addonDelegationService;
-const { addonDelegationRoutes } = createAddonDelegationHostService(addonDelegationService);
+// Governed authority is created after the audit ledger (below); this holder
+// lets the host-service route resolve it at request time.
+const governedAuthorityHolder = { value: null };
+const { addonDelegationRoutes } = createAddonDelegationHostService({
+  ...addonDelegationService,
+  get governedAuthority() {
+    return governedAuthorityHolder.value;
+  },
+});
 
 // Dev-only HTML panel for addon SDK testing. Requires
 // RESONANTOS_REPO_ROOT to be set so the JSON endpoint can enumerate
@@ -191,6 +201,13 @@ const { addonDelegationRoutes } = createAddonDelegationHostService(addonDelegati
 // /dev/external-agent-runtimes/ and fetches the JSON at
 // /dev/external-agent-runtimes. Not for production use.
 const devExternalAgentRuntimesPanel = createDevExternalAgentRuntimesPanelService({
+  repoRoot: process.env.RESONANTOS_REPO_ROOT ?? "",
+});
+
+// Dev-only G0-ROS workbench: surfaces the ROS architecture blueprint plus
+// how discovered add-ons map onto the fused G0 core. Served at /dev/g0-ros/
+// (HTML) with JSON at /dev/g0-ros. Not for production use.
+const devG0RosPanel = createDevG0RosPanelService({
   repoRoot: process.env.RESONANTOS_REPO_ROOT ?? "",
 });
 // Inject the panel's repoRoot into the bridge context the JSON endpoint
@@ -386,6 +403,7 @@ const bridgeRoutes = [
   ...opencodeSessionRoutes,
   ...extensionPrefsRoutes,
   ...(devExternalAgentRuntimesPanel?.devPanelRoutes ?? []),
+  ...(devG0RosPanel?.g0RosRoutes ?? []),
   ...profileBootstrapRoutes,
 ];
 
@@ -444,6 +462,12 @@ try {
   console.error("[run-bridge-minimal] filePath:", bridgeAuditFilePath);
   process.exit(1);
 }
+
+// CP-2/CP-3 governed authority: one bridge-process instance wired to the
+// append-only audit ledger sink. Grants are minted at task-approval time
+// (CP-3); until a launcher mints grants, the governed route fails closed
+// with "unknown-handle" rather than 503.
+governedAuthorityHolder.value = createGovernedAuthority({ auditSink: bridgeAudit.sink });
 
 async function invokeBridgeRouteForSelfTest({ method = "POST", routePath, body = {}, capabilityToken = "" } = {}) {
   const route = bridgeRoutes.find((entry) => entry.method === method && entry.path === routePath);

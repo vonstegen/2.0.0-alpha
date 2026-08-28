@@ -1,0 +1,101 @@
+{
+  "id": "addon.augmentor-skill-example",
+  "name": "Augmentor Skill Example",
+  "version": "0.1.0",
+  "publisher": "local",
+  "author": "Resonant Alpha",
+  "category": "orchestration",
+  "sdkVersion": "0.1.0",
+  "description": "Conformance example: a focused Augmentor extension of kind skill that proposes a workspace organization plan under a human approval gate. Demonstrates the extensionClass/augmentorExtension manifest contract (doc 04).",
+  "runtimeType": "ui-module",
+  "extensionClass": "augmentor-extension",
+  "surfaces": [
+    {
+      "id": "augmentor-skill-example-panel",
+      "type": "panel",
+      "label": "Augmentor Skill Example",
+      "description": "Dockable panel proving a skill extension can declare a shell surface.",
+      "shellNavigation": {
+        "sectionId": "augmentor-skill-example",
+        "dockIcon": "augmentor-skill-example",
+        "eyebrow": "Augmentor",
+        "order": 502
+      }
+    }
+  ],
+  "requestedCapabilities": [
+    { "capability": "archive-read", "granted": false, "scope": "shared", "revocationBehavior": "degrade" }
+  ],
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
+  },
+  "runtimeIsolation": {
+    "boundary": "shell-ui",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": false
+  },
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "none"
+  },
+  "installHooks": {},
+  "tools": [
+    {
+      "name": "augmentor.organize",
+      "description": "Propose a workspace organization plan.",
+      "requiredCapabilities": ["archive-read"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspaceTree": { "type": "string" }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "plan": { "type": "string" }
+        }
+      },
+      "audit": {
+        "logRequest": false,
+        "logResult": false,
+        "artifactTypes": ["summary"]
+      }
+    }
+  ],
+  "augmentorExtension": {
+    "kind": "skill",
+    "compatible": {
+      "augmentorVersions": ["^0.1.0"],
+      "sdkVersions": ["^0.1.0"]
+    },
+    "requiredTools": ["augmentor.organize"],
+    "requiredCapabilities": ["archive-read"],
+    "workflowPhases": ["survey", "propose"],
+    "approvalGates": ["human-approval"],
+    "contextPolicy": {
+      "read": [],
+      "write": []
+    },
+    "verificationHooks": [],
+    "failureBehavior": "fail-closed",
+    "revocationBehavior": "cancel",
+    "auditLogRequired": true,
+    "producesDelegationPackets": false
+  },
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS", "linux", "windows"]
+  }
+}
