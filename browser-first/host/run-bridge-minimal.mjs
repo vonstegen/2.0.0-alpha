@@ -37,6 +37,8 @@ import { createBridgeGrantsStore } from "./bridge-grants-store.mjs";
 import { createBridgeAuditLedger } from "./bridge-audit-ledger.mjs";
 import { createBridgeTokenKey } from "./bridge-token-key.mjs";
 import { createGovernedAuthority } from "./bridge-governed-authority.mjs";
+import { createAugmentorExtensionEffect } from "./augmentor-extension-effect.mjs";
+import { createHermesProviderAdapter, createOpenClawProviderAdapter, createOpenCodeProviderAdapter } from "./harness-provider-adapters.mjs";
 import { createAddonDelegationService } from "./addon-delegation-service.mjs";
 import { createAddonDelegationHostService } from "./addon-delegation-host-service.mjs";
 import { createDevExternalAgentRuntimesPanelService } from "./dev-external-agent-runtimes-panel.mjs";
@@ -188,10 +190,15 @@ const { executeAddonsStatus } = addonDelegationService;
 // Governed authority is created after the audit ledger (below); this holder
 // lets the host-service route resolve it at request time.
 const governedAuthorityHolder = { value: null };
+const extensionEffectHolder = { value: null };
+const harnessAdapterHolder = { value: null };
 const { addonDelegationRoutes } = createAddonDelegationHostService({
   ...addonDelegationService,
   get governedAuthority() {
     return governedAuthorityHolder.value;
+  },
+  get runAugmentorExtensionEffect() {
+    return extensionEffectHolder.value;
   },
 });
 
@@ -469,6 +476,69 @@ try {
 // with "unknown-handle" rather than 503.
 governedAuthorityHolder.value = createGovernedAuthority({ auditSink: bridgeAudit.sink });
 
+// CP-3 host-mediated extension effect: after the governed envelope authorizes an
+// invocation, dispatch the extension's declared tool through the host-mediated
+// path and return a typed result.
+extensionEffectHolder.value = createAugmentorExtensionEffect({
+  repoRoot,
+  auditSink: bridgeAudit.sink,
+});
+
+// CP-4/CP-5 harness provider adapters, each driven through the governed envelope.
+harnessAdapterHolder.value = {
+  hermes: createHermesProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
+  opencode: createOpenCodeProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
+  openclaw: createOpenClawProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
+};
+
+// CP-3 task-approval minting seam: mints a task grant + records its delegation so
+// the governed routes can resolve the handle. Called by the runtime at approval
+// time; the minimal launcher exposes it but does not mint at boot (fail-closed).
+function mintTaskGrant({
+  taskId,
+  delegationId,
+  subjectPrincipalId,
+  issuerPrincipalId,
+  action,
+  resourceSelectors = [],
+  operations = [],
+}) {
+  const authority = governedAuthorityHolder.value;
+  if (!authority) throw new Error("governed authority is not ready");
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  authority.recordDelegation({
+    id: delegationId,
+    taskId,
+    parentDelegationId: null,
+    issuerPrincipalId,
+    subjectPrincipalId,
+    requestedCapabilities: [],
+    effectiveGrantId: `g:${taskId}`,
+    purpose: "task approval",
+    issuedAt: now,
+    notBefore: now,
+    expiresAt,
+    status: "active",
+    auditCorrelationId: `aud:${taskId}`,
+  });
+  return authority.mintGrant({
+    grantId: `g:${taskId}`,
+    scope: {
+      action,
+      resourceSelectors,
+      operations,
+      taskId,
+      delegationId,
+      issuerPrincipalId,
+      subjectPrincipalId,
+      notBefore: now,
+      expiresAt,
+      revocationBehavior: "cancel",
+    },
+  });
+}
+
 async function invokeBridgeRouteForSelfTest({ method = "POST", routePath, body = {}, capabilityToken = "" } = {}) {
   const route = bridgeRoutes.find((entry) => entry.method === method && entry.path === routePath);
   if (!route) {
@@ -560,6 +630,14 @@ console.log(JSON.stringify({
   recovered: bridgeInfo.recovered,
   bridgeUrl: bridgePublicUrl,
   bridgeConfigPath,
+}, null, 2));
+
+console.log(JSON.stringify({
+  event: "browser.first.governed_runtime_ready",
+  governedAuthority: Boolean(governedAuthorityHolder.value),
+  extensionEffect: Boolean(extensionEffectHolder.value),
+  harnessAdapters: Object.keys(harnessAdapterHolder.value),
+  grantMintSeam: typeof mintTaskGrant === "function",
 }, null, 2));
 
 const shutdown = async () => {
