@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ResonantOS — Governed Runtime Simulations</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: #0b0e14; color: #d7dbe6;
+    line-height: 1.5;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .subtitle { color: #8b93a7; font-size: 12px; margin: 0 0 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+  .card { background: #12161f; border: 1px solid #232a38; border-radius: 10px; padding: 16px; }
+  .card h2 { font-size: 14px; margin: 0 0 4px; }
+  .card p.desc { color: #8b93a7; font-size: 11px; margin: 0 0 12px; }
+  .run {
+    background: #1f6feb; color: #fff; border: 0; border-radius: 6px;
+    padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .run:hover { background: #2b7cf0; }
+  .output { margin-top: 12px; font-size: 12px; }
+  .line { padding: 3px 0; border-bottom: 1px dashed #1c2230; white-space: pre-wrap; }
+  .line:last-child { border-bottom: 0; }
+  .ok::before { content: "✓ "; color: #3fb950; }
+  .deny::before { content: "✗ "; color: #f85149; }
+  .dim { color: #8b93a7; }
+  .chip { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 10px; margin-left: 6px; }
+  .chip.allow { background: #1b3a2a; color: #3fb950; }
+  .chip.deny { background: #3a1b1b; color: #f85149; }
+  .badge { color: #8b93a7; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+</style>
+</head>
+<body>
+  <h1>Governed Runtime Simulations</h1>
+  <p class="subtitle">Browser-first ResonantOS — illustrative ports of the bridge governed authority, Ground-0 state machine, Continuity Gatekeeper, and harness conformance. No live harness required.</p>
+  <div class="grid" id="grid"></div>
+
+<script>
+  // ---- tiny render helper -------------------------------------------------
+  function card(id, title, desc) {
+    const el = document.createElement("section");
+    el.className = "card";
+    el.innerHTML = `<h2>${title}</h2><p class="desc">${desc}</p>
+      <button class="run">Run</button><div class="output" id="${id}"></div>`;
+    document.getElementById("grid").appendChild(el);
+    const out = document.getElementById(id);
+    return {
+      run(fn) {
+        el.querySelector(".run").addEventListener("click", () => { out.innerHTML = ""; fn.call(this); });
+        fn.call(this);
+      },
+      line(text, cls) {
+        const d = document.createElement("div");
+        d.className = "line " + (cls || "dim");
+        d.textContent = text;
+        out.appendChild(d);
+      },
+    };
+  }
+
+  // ---- shared primitives (simplified, deterministic) ----------------------
+  const NOW = "2026-08-27T06:00:00Z";
+  let seq = 0;
+  const mint = () => `g-${++seq}`;
+
+  // ---- 1. Governed authority --------------------------------------------
+  card("gov", "Governed authority", "A grant is minted behind an opaque handle; every request is validated for task, principal, delegation, time, and scope before any effect.")
+    .run(function () {
+      const out = this;
+      const grant = {
+        taskId: "task-1", delegationId: "del-1",
+        subjectPrincipalId: "hermes-1", action: "archive-read",
+        resourceSelectors: ["/workspace/project-a"], notBefore: "2026-08-27T00:00:00Z", expiresAt: "2026-08-27T12:00:00Z",
+      };
+      const now = Date.parse(NOW);
+      function validate(req) {
+        if (req.taskId !== grant.taskId) return "task-mismatch";
+        if (req.delegationId !== grant.delegationId) return "delegation-mismatch";
+        if (req.subjectPrincipalId !== grant.subjectPrincipalId) return "subject-mismatch";
+        if (now > Date.parse(grant.expiresAt)) return "expired";
+        if (now < Date.parse(grant.notBefore)) return "not-yet-valid";
+        if (req.requestedScope && !req.requestedScope.every((op) => grant.resourceSelectors.includes(op) || req.requestedScope.length === 0)) return "scope-widening";
+        return null;
+      }
+      const cases = [
+        ["valid request", { taskId: "task-1", delegationId: "del-1", subjectPrincipalId: "hermes-1" }],
+        ["forged subject", { taskId: "task-1", delegationId: "del-1", subjectPrincipalId: "attacker" }],
+        ["sibling reuse", { taskId: "task-9", delegationId: "del-1", subjectPrincipalId: "hermes-1" }],
+      ];
+      out.line(`handle ${mint()} (opaque, resolved in-memory)`);
+      for (const [label, req] of cases) {
+        const reason = validate(req);
+        out.line(`${label} → ${reason ?? "ALLOW"}`, reason ? "deny" : "ok");
+      }
+    });
+
+  // ---- 2. Ground-0 recovery ----------------------------------------------
+  card("g0", "Ground-0 recovery", "Entry revokes every grant and quarantines optional items; exit re-enables in dependency order with fresh grants — never reviving old authority.")
+    .run(function () {
+      const out = this;
+      let grants = ["grant-A", "grant-B"];
+      let items = [{ id: "addon.hermes", healthy: true }, { id: "addon.browser", healthy: false }];
+      let quarantined = [];
+      out.line(`normal — ${grants.length} active grants, ${items.length} optional items`);
+      // enter
+      quarantined = items.map((i) => ({ ...i, disposition: null }));
+      out.line(`enter Ground-0 → revoke ${grants.length} grants, quarantine ${quarantined.length} items`, "deny");
+      grants = [];
+      // re-enable in dependency order + health check
+      const order = ["addon.browser", "addon.hermes"]; // dependency order
+      const fresh = order.filter((id) => items.find((i) => i.id === id)?.healthy).map((id) => `fresh-grant:${id}`);
+      for (const q of quarantined) {
+        q.disposition = items.find((i) => i.id === q.id)?.healthy ? "accepted" : "left-disabled";
+      }
+      out.line(`re-enable → fresh grants: [${fresh.join(", ")}]`);
+      out.line(`addon.hermes ${quarantined.find((q) => q.id === "addon.hermes").disposition}`, "ok");
+      out.line(`addon.browser ${quarantined.find((q) => q.id === "addon.browser").disposition}`, "deny");
+      out.line(`old grants [grant-A, grant-B] never revived`);
+    });
+
+  // ---- 3. Continuity gatekeeper ------------------------------------------
+  card("gk", "Continuity gatekeeper", "Effective context is the intersection of requested domains, actor permissions, task scope, user policy, and trust level — information least privilege.")
+    .run(function () {
+      const out = this;
+      const policy = { permissions: ["trusted-continuity"], scope: ["trusted-continuity"], user: ["trusted-continuity"], trust: ["trusted-continuity", "user-identity"] };
+      const facts = [
+        { ref: "proj-x", domain: "trusted-continuity", value: "{ project: X }" },
+        { ref: "identity", domain: "user-identity", value: "{ prefs }" },
+        { ref: "dangling", domain: null, value: "{ ? }" },
+      ];
+      const allowed = policy.permissions.filter((d) => policy.scope.includes(d) && policy.user.includes(d) && policy.trust.includes(d));
+      for (const f of facts) {
+        const admit = f.domain && allowed.includes(f.domain);
+        out.line(`${f.ref} [${f.domain ?? "no domain"}] → ${admit ? "ADMIT" : "DENY"}`, admit ? "ok" : "deny");
+      }
+      out.line(`allowed domains: ${allowed.join(", ")}`);
+    });
+
+  // ---- 4. Harness conformance --------------------------------------------
+  card("conf", "Harness conformance", "The five gate checks every provider adapter must pass: lifecycle, cancellation, artifact confinement, event replay, and failure.")
+    .run(function () {
+      const out = this;
+      const checks = [
+        ["lifecycle", "start → running → complete → completed"],
+        ["cancellation", "cancel → cancelled + revoked event"],
+        ["artifact-confinement", "escape outside workspace root rejected"],
+        ["event-replay", "cursor N replays events N..end in order"],
+        ["failure", "fail → failed with residual detail"],
+      ];
+      for (const [name, detail] of checks) {
+        out.line(`${name} — ${detail}`, "ok");
+      }
+      out.line(`4 providers × 5 checks = 20 assertions (shared conformance suite)`);
+    });
+
+  // auto-run all on load
+  document.querySelectorAll(".run").forEach((b) => b.click());
+</script>
+</body>
+</html>
