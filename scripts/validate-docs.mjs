@@ -25,6 +25,8 @@ const IMPLICIT_DOCUMENT_CONSUMERS = new Set([
   "browser-first/resonantos-side-panel-extension/src/side-panel.html",
   "browser-first/release/resonantos-side-panel-extension/src/main-workspace.html",
   "browser-first/release/resonantos-side-panel-extension/src/side-panel.html",
+  "browser-first/dev/g0-ros-panel.html",
+  "browser-first/dev/external-agent-runtimes-panel.html",
 ]);
 const DOCUMENTATION_PATH = /\.(?:md|markdown|mdx|txt|html|pdf|docx)$/i;
 
