@@ -109,7 +109,7 @@ export const defaultRoutingStrategies = [
     label: "Augmentor Chat",
     workload: "trusted_conversation",
     primaryModel: "MiniMax-M3",
-    fallbackModels: ["zai/glm-5.2", "gpt-5.5", "gpt-5.4-mini", "batiai/gemma4-e2b:q4"],
+    fallbackModels: ["zai/glm-5.2", "gpt-5.5", "gpt-5.4-mini", "deepseek-chat", "batiai/gemma4-e2b:q4"],
     costPosture: "subscription-first",
     hardStop: false,
     notes: "Use fast subscription capacity first, then higher reasoning only when subscription routes fail.",
@@ -320,6 +320,15 @@ export function providerRouteForModel(model, { localRuntimeUrl = "", catalog = m
       apiBaseUrl: "http://127.0.0.1:18789/v1",
       wireModel: model || "zai/glm-5.2",
       label: "Shared Z.AI GLM",
+    };
+  }
+  if (model === "deepseek-chat" || model === "deepseek-reasoner" || model?.toLowerCase().startsWith("deepseek")) {
+    return {
+      providerId: "shared-deepseek",
+      providerType: "openai-compatible",
+      apiBaseUrl: "https://api.deepseek.com/v1",
+      wireModel: model,
+      label: "DeepSeek",
     };
   }
   return {
