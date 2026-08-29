@@ -34,6 +34,12 @@
     "shellVersion": "^0.1.0",
     "platforms": ["macOS", "linux", "windows"]
   },
+  "provenance": {
+    "tier": "bundled-core",
+    "verificationState": "verified",
+    "signed": true,
+    "signer": "ResonantOS bundled catalog"
+  },
   "harnessProvider": {
     "adapterProtocol": "host-command",
     "taskContract": { "protocol": "aider-cli", "description": "aider CLI invocation with a repo and prompt." },
