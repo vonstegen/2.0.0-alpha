@@ -162,3 +162,32 @@ code reviews.
 - **Tradeoff:** option 2 is cleaner conceptually but removes the bundled default chat
   add-on ADR-026 promises; option 3 avoids a manifest rename but still requires the
   slot split at validation time.
+
+## D-10 — Which external agent runtimes become harness-provider add-ons, and with what shapes? — RESOLVED
+
+- **Status:** Resolved (2026-08-28) — six harness-provider add-ons landed + wired.
+- **Outcome:** Six external runtimes are bundled as `harness-provider` add-ons
+  (`public/addons/*.json`, `extensionClass: "harness-provider"`): OpenClaw, OpenCode,
+  AgentZero, DeepSeek-harness, Pi (pi.dev), Aider. OpenClaw + OpenCode migrated in place
+  (augmented with `extensionClass` + `harnessProvider`); the other four are new manifests.
+  Each pairs a `HarnessProviderAdapter` reference (SDK) with a bridge factory that
+  dispatches through the CP-2 governed envelope (fail-closed — no live transport).
+  Shapes:
+  - OpenClaw — `quarantine` / `sandboxed-outer-boundary` (runtime gateway)
+  - OpenCode — `finish-atomic` / `sandboxed-outer-boundary` (coding workspace)
+  - AgentZero — `cancel` / `sandboxed-outer-boundary` (Docker containers)
+  - DeepSeek-harness — `cancel` / `host-mediated` (OpenAI-compatible cloud API)
+  - Pi (pi.dev) — `cancel` / `host-mediated` (RPC, `stdio-json-rpc`)
+  - Aider — `finish-atomic` / `host-mediated` (git-committing pair-programmer)
+- **Context:** "Pi" means **pi.dev** (`@earendil-works/pi-coding-agent`), **not** pi-infra.
+  pi.dev integrates over RPC mode (JSONL stdin/stdout), so its `adapterProtocol` is
+  `stdio-json-rpc`.
+- **Original options:**
+  1. Bundle all six as `harness-provider` (manifest + adapter + conformance), migrating
+     OpenClaw/OpenCode in place. **← chosen**
+  2. Manifests only, no adapter/conformance wiring.
+  3. Full live transports now (blocked on live CLIs/servers in this environment).
+- **Rationale:** matches the CP-4/CP-5 model — one `HarnessProviderAdapter` contract with
+  no vendor-specific authority exception; transports stay fail-closed until a live runtime
+  is present. Launcher (`run-bridge-minimal.mjs`) exposes all seven providers (incl. Hermes)
+  in `harnessAdapterHolder`.
