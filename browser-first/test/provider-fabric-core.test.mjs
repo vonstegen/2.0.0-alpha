@@ -206,3 +206,27 @@ test("provider fabric can describe separate accounts for the same provider type"
   assert.equal(entries[0].providerType, "minimax");
   assert.equal(entries[0].wireModel, "MiniMax-M3");
 });
+
+test("provider fabric maps manual DeepSeek selection to the shared DeepSeek provider", () => {
+  const route = providerRouteForModel("deepseek-chat");
+
+  assert.equal(route.providerId, "shared-deepseek");
+  assert.equal(route.providerType, "openai-compatible");
+  assert.equal(route.wireModel, "deepseek-chat");
+});
+
+test("provider fabric falls back to DeepSeek for Augmentor Chat when only it is configured", () => {
+  const secrets = { "shared-deepseek": "stored-deepseek" };
+  const strategies = resolveRoutingStrategies({ secrets });
+  const decision = providerRouteForWorkload({
+    workloadId: "augmentor-chat",
+    requestedModel: "__auto__",
+    secrets,
+    strategies,
+  });
+
+  assert.equal(decision.source, "strategy");
+  assert.equal(decision.strategy.id, "augmentor-chat");
+  assert.equal(decision.route.providerId, "shared-deepseek");
+  assert.equal(decision.route.wireModel, "deepseek-chat");
+});
