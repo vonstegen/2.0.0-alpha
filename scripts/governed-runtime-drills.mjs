@@ -11,9 +11,13 @@
 import { createGovernedAuthority } from "../browser-first/host/bridge-governed-authority.mjs";
 import { dispatchGovernedAugmentorExtension } from "../browser-first/host/augmentor-extension-dispatcher.mjs";
 import {
+  createAiderProviderAdapter,
+  createAgentZeroProviderAdapter,
+  createDeepSeekHarnessProviderAdapter,
   createHermesProviderAdapter,
   createOpenClawProviderAdapter,
   createOpenCodeProviderAdapter,
+  createPiProviderAdapter,
 } from "../browser-first/host/harness-provider-adapters.mjs";
 
 const T0 = Date.parse("2026-08-27T06:00:00Z");
@@ -135,11 +139,15 @@ async function main() {
     if (r.outcome !== "deny" || r.reason !== "capability-not-granted") throw new Error(`got ${r.outcome}/${r.reason}`);
   });
 
-  console.log("Parity — three adapter shapes share one governed authority (no vendor exceptions)");
+  console.log("Parity — seven adapter shapes share one governed authority (no vendor exceptions)");
   const adapters = [
     createHermesProviderAdapter({ governedAuthority: authority }),
     createOpenCodeProviderAdapter({ governedAuthority: authority, ensureServer: async () => ({ baseUrl: "http://stub" }), createClient: () => ({ createSession: async () => ({ id: "s" }), prompt: async () => {} }) }),
     createOpenClawProviderAdapter({ governedAuthority: authority }),
+    createAgentZeroProviderAdapter({ governedAuthority: authority }),
+    createDeepSeekHarnessProviderAdapter({ governedAuthority: authority }),
+    createPiProviderAdapter({ governedAuthority: authority }),
+    createAiderProviderAdapter({ governedAuthority: authority }),
   ];
   for (const adapter of adapters) {
     await check(`${adapter.providerId} denies forged subject before effect`, async () => {
