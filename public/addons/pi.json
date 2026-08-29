@@ -34,6 +34,12 @@
     "shellVersion": "^0.1.0",
     "platforms": ["macOS", "linux"]
   },
+  "provenance": {
+    "tier": "bundled-core",
+    "verificationState": "verified",
+    "signed": true,
+    "signer": "ResonantOS bundled catalog"
+  },
   "harnessProvider": {
     "adapterProtocol": "stdio-json-rpc",
     "taskContract": { "protocol": "pi-rpc", "description": "pi.dev RPC prompt command (JSONL over stdin/stdout)." },
