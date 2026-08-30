@@ -64,6 +64,7 @@ import {
   memorySourceRepairHistoryPath as sourceRepairHistoryPath,
   memorySourceSyncHistoryPath as sourceSyncHistoryPath,
 } from "./memory-source-history.mjs";
+import { createContinuityVault } from "./continuity-vault.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 const resonantExtension = path.join(repoRoot, "browser-first", "resonantos-side-panel-extension");
@@ -106,6 +107,10 @@ function memorySourceMoveHistoryPath() {
 
 function browserFirstRoot() {
   return path.join(userRoot(), "BrowserFirst");
+}
+
+function continuityRoot() {
+  return path.join(browserFirstRoot(), "continuity");
 }
 
 function extractJsonObject(value) {
@@ -476,6 +481,30 @@ try {
 // with "unknown-handle" rather than 503.
 governedAuthorityHolder.value = createGovernedAuthority({ auditSink: bridgeAudit.sink });
 
+// CP-7 Identity & Continuity Vault: Core-owned trusted continuity + delegation
+// history (doc 15). Hydrated from BrowserFirst/continuity/ at boot so a task
+// survives restart reconstruction; delegation history records which harness
+// worked which task under whose authority (audit summaries, never credentials).
+const continuityVault = createContinuityVault({
+  persistenceRoot: continuityRoot(),
+  secretPattern: /\b(?:sk-[A-Za-z0-9]{12,}|[A-Za-z0-9_-]{24,})\b/,
+});
+
+// Delegation-history seam: as a harness run completes, append a trusted
+// continuity entry. Denied/failed runs produce no continuity (the audit ledger
+// still records them separately).
+function recordRunEnded({ providerId, taskId, delegationId, issuerPrincipalId, summary, status, endedAt }) {
+  if (status !== "completed") return;
+  continuityVault.recordDelegation({
+    delegationId,
+    taskId,
+    harnessId: providerId,
+    issuerPrincipalId,
+    summary,
+    completedAt: endedAt,
+  });
+}
+
 // CP-3 host-mediated extension effect: after the governed envelope authorizes an
 // invocation, dispatch the extension's declared tool through the host-mediated
 // path and return a typed result.
@@ -498,13 +527,13 @@ const hermesHarnessCommand = process.env.RESONANTOS_HERMES_COMMAND ?? `${process
 const openclawHarnessCommand = process.env.RESONANTOS_OPENCLAW_COMMAND ?? "openclaw";
 
 harnessAdapterHolder.value = {
-  hermes: createHermesProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, command: hermesHarnessCommand, model: hermesHarnessModel }),
-  opencode: createOpenCodeProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
-  openclaw: createOpenClawProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, command: openclawHarnessCommand }),
-  agentzero: createAgentZeroProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
-  "deepseek-harness": createDeepSeekHarnessProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
-  pi: createPiProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, provider: piHarnessModel.split("/")[0], model: piHarnessModel }),
-  aider: createAiderProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, command: aiderHarnessCommand, model: aiderHarnessModel }),
+  hermes: createHermesProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, command: hermesHarnessCommand, model: hermesHarnessModel, onRunEnded: recordRunEnded }),
+  opencode: createOpenCodeProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, onRunEnded: recordRunEnded }),
+  openclaw: createOpenClawProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, command: openclawHarnessCommand, onRunEnded: recordRunEnded }),
+  agentzero: createAgentZeroProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, onRunEnded: recordRunEnded }),
+  "deepseek-harness": createDeepSeekHarnessProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, onRunEnded: recordRunEnded }),
+  pi: createPiProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, provider: piHarnessModel.split("/")[0], model: piHarnessModel, onRunEnded: recordRunEnded }),
+  aider: createAiderProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, command: aiderHarnessCommand, model: aiderHarnessModel, onRunEnded: recordRunEnded }),
 };
 
 // CP-3 task-approval minting seam: mints a task grant + records its delegation so
@@ -654,15 +683,42 @@ console.log(JSON.stringify({
   extensionEffect: Boolean(extensionEffectHolder.value),
   harnessAdapters: Object.keys(harnessAdapterHolder.value),
   grantMintSeam: typeof mintTaskGrant === "function",
-}, null, 2));
-
+  continuityVault: true,
+  continuityDelegationCount: continuityVault.delegationHistory().length,
+  continuitySnapshotCount: continuityVault.snapshots().length,
+  lastKnownGoodSnapshot: continuityVault.lastKnownGood()?.snapshotId ?? null,
+ }, null, 2));
+ 
 const shutdown = async () => {
+  // CP-7 last-known-good continuity snapshot: capture FIRST and synchronously,
+  // so even an unclean shutdown persists durable identity + continuity for the
+  // next boot to reconstruct (doc 15 §Ground-0 reload path). No credentials are
+  // ever snapshot payloads.
+  continuityVault.recordSnapshot({
+    domains: {
+      "user-identity": { userRoot: userRoot() },
+      "augmentor-identity": { flavor: "browser-first", recovered: bridgeInfo.recovered },
+      "trusted-continuity": {
+        delegationCount: continuityVault.delegationHistory().length,
+        snapshotTakenAt: new Date().toISOString(),
+      },
+    },
+  });
   await flushPendingExtensionPrefs().catch(() => undefined);
-  await new Promise((resolve) => bridgeInfo.server.close(resolve));
+  await new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(), 1500);
+    timeout.unref();
+    bridgeInfo.server.close(() => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
 };
 
-for (const signal of ["SIGINT", "SIGTERM"]) {
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(signal, () => {
     void shutdown().finally(() => process.exit(0));
   });
 }
+
+
