@@ -56,7 +56,7 @@ export function createHarnessProviderAdapter({
   }
 
   async function startTask(packet, grant) {
-    const runId = `run-${++seq}`;
+    const runId = `${providerId}-run-${++seq}`;
     const workspaceRoot = packet.workspaceRoots?.[0] ?? "/tmp";
     runs.set(runId, {
       run: { runId, providerId, taskId: packet.taskId, status: "running", startedAt: new Date().toISOString() },

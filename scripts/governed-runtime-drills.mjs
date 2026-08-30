@@ -157,6 +157,30 @@ async function main() {
     });
   }
 
+  console.log("Concurrency — concurrent tasks stay isolated (no workspace/grant leakage)");
+  await check("two harnesses run concurrently with independent run ids", async () => {
+    const a1 = createHermesProviderAdapter({ governedAuthority: authority, spawnImpl: () => ({ status: 0, stdout: "ok", stderr: "" }) });
+    const a2 = createAiderProviderAdapter({ governedAuthority: authority, spawnImpl: () => ({ status: 0, stdout: "ok", stderr: "" }) });
+    const [r1, r2] = await Promise.all([
+      a1.startTask(packet("hermes-1"), handle),
+      a2.startTask(packet("hermes-1"), handle),
+    ]);
+    if (r1.runId === r2.runId) throw new Error("run ids collided");
+    const s1 = await a1.getTask(r1.runId);
+    const s2 = await a2.getTask(r2.runId);
+    if (s1.status !== "completed" || s2.status !== "completed") throw new Error(`statuses ${s1.status}/${s2.status}`);
+  });
+  await check("cancelling one run leaves the sibling run untouched", async () => {
+    const adapter = createHermesProviderAdapter({ governedAuthority: authority, spawnImpl: () => ({ status: 0, stdout: "ok", stderr: "" }) });
+    const r1 = await adapter.startTask(packet("hermes-1"), handle);
+    const r2 = await adapter.startTask(packet("hermes-1"), handle);
+    await adapter.cancelTask(r1.runId, "drill-cancel");
+    const s1 = await adapter.getTask(r1.runId);
+    const s2 = await adapter.getTask(r2.runId);
+    if (s1.status !== "cancelled") throw new Error(`cancellation not deterministic: ${s1.status}`);
+    if (s2.status !== "completed") throw new Error(`sibling run affected: ${s2.status}`);
+  });
+
   console.log("Recovery drill — Ground-0 revokes all authority, re-enable mints fresh");
   await check("revoke-on-entry empties grant resolution", () => {
     const g0 = createGovernedAuthority({ now: () => T0 });
