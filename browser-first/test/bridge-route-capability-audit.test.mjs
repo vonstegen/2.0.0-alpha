@@ -50,8 +50,10 @@ const memoryHandlers = [
 
 const addonHandlers = [
   "executeAddonsStatus",
+  "executeAddonSurfaceRoutes",
   "executeAddonExecutionSettingsGet",
   "executeAddonExecutionSettingsUpdate",
+  "executeAddonUninstall",
   "executeOpenCodeStatus",
   "executeHermesDashboardStatus",
   "executeHermesDashboardStart",

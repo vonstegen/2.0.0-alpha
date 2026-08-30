@@ -8,10 +8,59 @@
   "description": "Delegated cloud inference harness for DeepSeek's OpenAI-compatible API (Cordis kernel).",
   "runtimeType": "agent-addon",
   "extensionClass": "harness-provider",
-  "surfaces": [],
+  "surfaces": [
+    {
+      "id": "deepseek-harness-status",
+      "type": "panel",
+      "label": "DeepSeek Harness",
+      "description": "Configure and monitor the local DeepSeek Harness service and the wrapped deepseek-chat / deepseek-reasoner models.",
+      "shellNavigation": {
+        "sectionId": "deepseek-harness",
+        "dockIcon": "harness",
+        "eyebrow": "Agent runtime",
+        "order": 40
+      }
+    },
+    {
+      "id": "deepseek-harness-runs",
+      "type": "background-task-monitor",
+      "label": "DeepSeek Harness Runs",
+      "description": "Track delegated DeepSeek reasoning runs and returned artifacts."
+    }
+  ],
+  "tools": [
+    {
+      "name": "deepseek_harness.status",
+      "description": "Read DeepSeek Harness service health, current model, and queued runs.",
+      "requiredCapabilities": ["network", "providers"],
+      "inputSchema": {},
+      "outputSchema": {},
+      "audit": { "logRequest": true, "logResult": true, "artifactTypes": ["diagnostic-report"] },
+      "requiresHumanApproval": false
+    },
+    {
+      "name": "deepseek_harness.run_task",
+      "description": "Run an approved Delegation Packet through DeepSeek Harness and return artifacts.",
+      "requiredCapabilities": ["network", "providers", "agent-delegation"],
+      "inputSchema": {},
+      "outputSchema": {},
+      "audit": { "logRequest": true, "logResult": true, "artifactTypes": ["summary", "markdown", "log"] },
+      "requiresHumanApproval": true
+    },
+    {
+      "name": "deepseek_harness.cancel",
+      "description": "Cancel a queued or running DeepSeek Harness task by routing decision id.",
+      "requiredCapabilities": ["network", "providers", "agent-delegation"],
+      "inputSchema": {},
+      "outputSchema": {},
+      "audit": { "logRequest": true, "logResult": true, "artifactTypes": ["log"] },
+      "requiresHumanApproval": false
+    }
+  ],
   "requestedCapabilities": [
     { "capability": "network", "granted": false, "scope": "self", "revocationBehavior": "hard-stop" },
-    { "capability": "providers", "granted": false, "scope": "shared", "revocationBehavior": "hard-stop" }
+    { "capability": "providers", "granted": false, "scope": "shared", "revocationBehavior": "hard-stop" },
+    { "capability": "agent-delegation", "granted": false, "scope": "workspace", "revocationBehavior": "degrade" }
   ],
   "providerRequirements": {
     "sharedProfiles": ["shared-deepseek"],
