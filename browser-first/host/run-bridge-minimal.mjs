@@ -492,13 +492,15 @@ extensionEffectHolder.value = createAugmentorExtensionEffect({
 // printed) and flows through the adapter transports via `process.env`.
 const piHarnessModel = process.env.RESONANTOS_PI_MODEL ?? "deepseek/deepseek-chat";
 const aiderHarnessModel = process.env.RESONANTOS_AIDER_MODEL ?? "deepseek/deepseek-chat";
+const hermesHarnessModel = process.env.RESONANTOS_HERMES_MODEL ?? "deepseek/deepseek-chat";
 const aiderHarnessCommand = process.env.RESONANTOS_AIDER_COMMAND ?? `${process.env.HOME}/.local/bin/aider`;
+const hermesHarnessCommand = process.env.RESONANTOS_HERMES_COMMAND ?? `${process.env.HOME}/.hermes/hermes-agent/venv/bin/hermes`;
+const openclawHarnessCommand = process.env.RESONANTOS_OPENCLAW_COMMAND ?? "openclaw";
 
-// CP-4/CP-5 harness provider adapters, each driven through the governed envelope.
 harnessAdapterHolder.value = {
-  hermes: createHermesProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
+  hermes: createHermesProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, command: hermesHarnessCommand, model: hermesHarnessModel }),
   opencode: createOpenCodeProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
-  openclaw: createOpenClawProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
+  openclaw: createOpenClawProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, command: openclawHarnessCommand }),
   agentzero: createAgentZeroProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
   "deepseek-harness": createDeepSeekHarnessProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
   pi: createPiProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, provider: piHarnessModel.split("/")[0], model: piHarnessModel }),
