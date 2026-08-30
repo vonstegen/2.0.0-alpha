@@ -8,6 +8,7 @@
 
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { statSync } from "node:fs";
 
 function hasCommand(cmd) {
   // `r.error` is ENOENT when the binary is not on PATH; otherwise the binary
@@ -45,11 +46,33 @@ function hasOmpDeepSeekCredential() {
   return !r.error && String(r.stdout ?? "").trim() === "1";
 }
 
+function hasExecutable(filePath) {
+  try {
+    const st = statSync(filePath);
+    return st.isFile() && (st.mode & 0o111) !== 0;
+  } catch {
+    return false;
+  }
+}
+
+// Hermes Agent installs under ~/.hermes/hermes-agent/venv/bin/hermes and is not
+// on PATH; mirror the bridge's hermes-runtime.mjs allowlisted roots instead of
+// relying on `hasCommand`.
+function hasHermesAgent() {
+  const home = process.env.HOME || "";
+  if (!home) return false;
+  return [
+    path.join(home, ".hermes", "hermes-agent", "venv", "bin", "hermes"),
+    path.join(home, ".hermes", "venv", "bin", "hermes"),
+    path.join(home, ".hermes", "bin", "hermes"),
+  ].some(hasExecutable);
+}
+
 const checks = [
   {
     id: "hermes",
     label: "Hermes",
-    detect: () => Boolean(process.env.HERMES_COMMAND) || hasCommand("hermes"),
+    detect: () => Boolean(process.env.HERMES_COMMAND) || hasCommand("hermes") || hasHermesAgent(),
     install: "set HERMES_COMMAND to the Hermes CLI path (the repo's own agent)",
   },
   {
@@ -86,8 +109,9 @@ const checks = [
   {
     id: "aider",
     label: "Aider",
-    detect: () => hasCommand("aider"),
-    install: "pipx install aider-chat",
+    detect: () =>
+      hasCommand("aider") || hasExecutable(path.join(process.env.HOME || "", ".local", "bin", "aider")),
+    install: "uv tool install aider-chat --python 3.12   # or: pipx install aider-chat",
   },
 ];
 
