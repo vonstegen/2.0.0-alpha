@@ -41,6 +41,7 @@ test("bundled manifests resolve to grouped rail menus", async () => {
       { menuId: "opencode", kind: "harness", label: "OpenCode", dockIcon: "workspace", order: 30 },
       { menuId: "deepseek-harness", kind: "harness", label: "DeepSeek Harness", dockIcon: "harness", order: 40 },
       { menuId: "recursive-mas", kind: "harness", label: "RecursiveMAS", dockIcon: "recursion", order: 50 },
+      { menuId: "tools", kind: "tools", label: "Tools", dockIcon: "tool", order: 500 },
     ],
   );
 
