@@ -79,6 +79,7 @@ const BRIDGE_ROUTE_CAPABILITIES = Object.freeze({
   "POST /hermes/delegation/status": "addon-runtime-read",
   "POST /hermes/delegation/artifact": "addon-runtime-read",
   "POST /hermes/delegation/cancel": "addon-runtime-control",
+  "POST /hermes/delegation/list": "addon-runtime-read",
   "POST /opencode/delegation/start": "addon-runtime-control",
   "POST /opencode/delegation/status": "addon-runtime-read",
   "POST /opencode/delegation/artifact": "addon-runtime-read",
@@ -105,6 +106,7 @@ const BRIDGE_ROUTE_CAPABILITIES = Object.freeze({
   "POST /addons/delegate/list": "addon-record-read",
   "POST /goals": "addon-record-write",
   "POST /settings/extension-prefs": "extension-prefs-write",
+  "POST /external-agent-runtime/delegate": "agent-delegation",
 });
 export const RUNTIME_CAPABILITY_ALLOWLIST = Object.freeze([...new Set(Object.values(BRIDGE_ROUTE_CAPABILITIES))]);
 

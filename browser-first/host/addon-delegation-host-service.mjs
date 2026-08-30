@@ -84,6 +84,36 @@ export function createAddonDelegationHostService(handlers = {}) {
       { method: "GET", path: "/opencode/status", handler: required("executeOpenCodeStatus") },
       {
         method: "POST",
+        path: "/opencode/delegation/start",
+        requiredCapability: "addon-runtime-control",
+        handler: required("executeOpenCodeDelegationStart"),
+      },
+      {
+        method: "POST",
+        path: "/opencode/delegation/status",
+        requiredCapability: "addon-runtime-read",
+        handler: required("executeOpenCodeDelegationStatus"),
+      },
+      {
+        method: "POST",
+        path: "/opencode/delegation/artifact",
+        requiredCapability: "addon-runtime-read",
+        handler: required("executeOpenCodeDelegationArtifact"),
+      },
+      {
+        method: "POST",
+        path: "/opencode/delegation/cancel",
+        requiredCapability: "addon-runtime-control",
+        handler: required("executeOpenCodeDelegationCancel"),
+      },
+      {
+        method: "POST",
+        path: "/opencode/web/url",
+        requiredCapability: "addon-runtime-control",
+        handler: required("executeOpenCodeWebUrl"),
+      },
+      {
+        method: "POST",
         path: "/hermes/dashboard/status",
         requiredCapability: "addon-runtime-read",
         handler: required("executeHermesDashboardStatus"),
@@ -117,6 +147,12 @@ export function createAddonDelegationHostService(handlers = {}) {
         path: "/hermes/delegation/status",
         requiredCapability: "addon-runtime-read",
         handler: required("executeHermesDelegationStatus"),
+      },
+      {
+        method: "POST",
+        path: "/hermes/delegation/artifact",
+        requiredCapability: "addon-runtime-read",
+        handler: required("executeHermesDelegationArtifact"),
       },
       {
         method: "POST",
