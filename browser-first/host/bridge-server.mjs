@@ -1066,6 +1066,10 @@ function isAuthorizedCapabilityRequest(request, bridgeCapabilityTokens, required
     const callerGrants = perCallerGrants[callerId];
     const callerToken = callerGrants && callerGrants[requiredCapability];
     if (callerToken && constantTimeEqual(request.headers[bridgeCapabilityHeader], callerToken)) return true;
+    // The verifier is authoritative on revocation. Do NOT fall through to the
+    // legacy raw-HMAC path below — it re-verifies the token signature, which
+    // stays valid after revoke, and would re-accept a revoked grant.
+    return false;
   }
   // Legacy callerAttributed path: verify the token against tokenKey, then
   // also confirm the static mapping in the snapshot exists. The snapshot
