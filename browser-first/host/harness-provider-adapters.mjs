@@ -15,6 +15,8 @@ import { hermesRuntimeDiagnostics } from "./hermes-runtime.mjs";
 import { opencodeRuntimeDiagnostics } from "./opencode-runtime.mjs";
 import { dispatchGovernedExternalAgentRuntime, findAddonManifest } from "./external-agent-runtime-dispatcher.mjs";
 import { createOpencodeHttpClient, ensureOpencodeServer } from "./opencode-client.mjs";
+import { spawnSync } from "node:child_process";
+import { runPiPrompt } from "./pi-rpc-client.mjs";
 
 function isPathWithin(path, root) {
   return path === root || path.startsWith(`${root}/`) || path.startsWith(`${root}\\`);
@@ -210,6 +212,62 @@ function opencodeRuntimeDispatch({
 }
 
 
+// Pi transport (stdio-json-rpc): validate the governed envelope, then drive
+function piRuntimeDispatch({ governedAuthority, command, provider, model, env, timeoutMs, runPrompt = runPiPrompt }) {
+  return async (packet, grant) => {
+    if (!governedAuthority) {
+      return { outcome: "deny", reason: "governed-authority-unavailable", detail: "no governed authority on this bridge" };
+    }
+    const request = {
+      taskId: packet.taskId,
+      delegationId: packet.delegationChainRef?.delegationId ?? null,
+      subjectPrincipalId: packet.executorPrincipalId,
+      grantHandle: grant,
+      auditCorrelationId: packet.auditCorrelationId,
+      payload: { addonId: "addon.pi", tool: "pi.delegate", messages: [{ role: "user", content: packet.intent }] },
+    };
+    const decision = governedAuthority.validateGovernedRequest(request);
+    if (!decision.ok) {
+      return { outcome: "deny", reason: decision.reason, detail: `governed request rejected: ${decision.reason}` };
+    }
+    return runPrompt({ intent: packet.intent, command, provider, model, env, timeoutMs });
+  };
+}
+
+// Aider transport (host-command): validate the governed envelope, then run
+// `aider --yes-always --message <intent>` in the workspace root and capture
+// stdout/stderr plus exit status.
+function aiderRuntimeDispatch({ governedAuthority, command = "aider", model, env, directory, timeoutMs = 120000, spawnImpl = spawnSync }) {
+  return async (packet, grant) => {
+    if (!governedAuthority) {
+      return { outcome: "deny", reason: "governed-authority-unavailable", detail: "no governed authority on this bridge" };
+    }
+    const request = {
+      taskId: packet.taskId,
+      delegationId: packet.delegationChainRef?.delegationId ?? null,
+      subjectPrincipalId: packet.executorPrincipalId,
+      grantHandle: grant,
+      auditCorrelationId: packet.auditCorrelationId,
+      payload: { addonId: "addon.aider", tool: "aider.delegate", messages: [{ role: "user", content: packet.intent }] },
+    };
+    const decision = governedAuthority.validateGovernedRequest(request);
+    if (!decision.ok) {
+      return { outcome: "deny", reason: decision.reason, detail: `governed request rejected: ${decision.reason}` };
+    }
+    const cwd = directory ?? packet.workspaceRoots?.[0];
+    const args = ["--yes-always", "--message", packet.intent];
+    if (model) args.push("--model", model);
+    const r = spawnImpl(command, args, { cwd, env: { ...process.env, ...env }, encoding: "utf8", timeout: timeoutMs });
+    if (r.error) {
+      return { outcome: "deny", reason: "upstream-unreachable", detail: `aider spawn failed: ${r.error?.message ?? r.error}` };
+    }
+    if (r.status !== 0) {
+      return { outcome: "deny", reason: "upstream-error", detail: `aider exited ${r.status}`, response: { stdout: r.stdout, stderr: r.stderr } };
+    }
+    return { outcome: "allow", response: { stdout: r.stdout, stderr: r.stderr } };
+  };
+}
+
 export function createHermesProviderAdapter(options = {}) {
   const diagnose = async () => {
     const diag = hermesRuntimeDiagnostics({ homeDir: options.homeDir });
@@ -316,7 +374,7 @@ export function createPiProviderAdapter(options = {}) {
     cancellationSemantics: "cancel",
     sandboxStrength: "host-mediated",
     diagnose,
-    dispatch: governedRuntimeDispatch({ addonId: "addon.pi", toolName: "pi.delegate", ...options }),
+    dispatch: piRuntimeDispatch({ ...options }),
   });
 }
 
@@ -334,6 +392,6 @@ export function createAiderProviderAdapter(options = {}) {
     cancellationSemantics: "finish-atomic",
     sandboxStrength: "host-mediated",
     diagnose,
-    dispatch: governedRuntimeDispatch({ addonId: "addon.aider", toolName: "aider.delegate", ...options }),
+    dispatch: aiderRuntimeDispatch({ ...options }),
   });
 }
