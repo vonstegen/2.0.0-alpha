@@ -234,10 +234,11 @@ function piRuntimeDispatch({ governedAuthority, command, provider, model, env, t
   };
 }
 
-// Aider transport (host-command): validate the governed envelope, then run
-// `aider --yes-always --message <intent>` in the workspace root and capture
-// stdout/stderr plus exit status.
-function aiderRuntimeDispatch({ governedAuthority, command = "aider", model, env, directory, timeoutMs = 120000, spawnImpl = spawnSync }) {
+// Host-command transport: validate the governed envelope, then spawn a CLI in
+// the workspace root and capture stdout/stderr plus exit status. Aider, OpenClaw,
+// and Hermes all dispatch a single non-interactive CLI invocation this way; only
+// their `command` and `buildArgs` differ.
+function hostCommandRuntimeDispatch({ governedAuthority, addonId, tool, command, buildArgs = (packet) => [], env, directory, timeoutMs = 120000, spawnImpl = spawnSync }) {
   return async (packet, grant) => {
     if (!governedAuthority) {
       return { outcome: "deny", reason: "governed-authority-unavailable", detail: "no governed authority on this bridge" };
@@ -248,21 +249,19 @@ function aiderRuntimeDispatch({ governedAuthority, command = "aider", model, env
       subjectPrincipalId: packet.executorPrincipalId,
       grantHandle: grant,
       auditCorrelationId: packet.auditCorrelationId,
-      payload: { addonId: "addon.aider", tool: "aider.delegate", messages: [{ role: "user", content: packet.intent }] },
+      payload: { addonId, tool, messages: [{ role: "user", content: packet.intent }] },
     };
     const decision = governedAuthority.validateGovernedRequest(request);
     if (!decision.ok) {
       return { outcome: "deny", reason: decision.reason, detail: `governed request rejected: ${decision.reason}` };
     }
     const cwd = directory ?? packet.workspaceRoots?.[0];
-    const args = ["--yes-always", "--message", packet.intent];
-    if (model) args.push("--model", model);
-    const r = spawnImpl(command, args, { cwd, env: { ...process.env, ...env }, encoding: "utf8", timeout: timeoutMs });
+    const r = spawnImpl(command, buildArgs(packet), { cwd, env: { ...process.env, ...env }, encoding: "utf8", timeout: timeoutMs });
     if (r.error) {
-      return { outcome: "deny", reason: "upstream-unreachable", detail: `aider spawn failed: ${r.error?.message ?? r.error}` };
+      return { outcome: "deny", reason: "upstream-unreachable", detail: `${command} spawn failed: ${r.error?.message ?? r.error}` };
     }
     if (r.status !== 0) {
-      return { outcome: "deny", reason: "upstream-error", detail: `aider exited ${r.status}`, response: { stdout: r.stdout, stderr: r.stderr } };
+      return { outcome: "deny", reason: "upstream-error", detail: `${command} exited ${r.status}`, response: { stdout: r.stdout, stderr: r.stderr } };
     }
     return { outcome: "allow", response: { stdout: r.stdout, stderr: r.stderr } };
   };
@@ -283,7 +282,19 @@ export function createHermesProviderAdapter(options = {}) {
     cancellationSemantics: "cancel",
     sandboxStrength: "host-mediated",
     diagnose,
-    dispatch: governedRuntimeDispatch({ addonId: "addon.hermes", toolName: "hermes.delegate", ...options }),
+    dispatch: hostCommandRuntimeDispatch({
+      ...options,
+      addonId: "addon.hermes",
+      tool: "hermes.delegate",
+      command: options.command ?? "hermes",
+      buildArgs: (packet) => {
+        const args = ["-z", packet.intent];
+        if (options.model) args.push("-m", options.model);
+        const provider = options.provider ?? (options.model?.includes("/") ? options.model.split("/")[0] : "");
+        if (provider) args.push("--provider", provider);
+        return args;
+      },
+    }),
   });
 }
 
@@ -320,7 +331,13 @@ export function createOpenClawProviderAdapter(options = {}) {
     cancellationSemantics: "quarantine",
     sandboxStrength: "sandboxed-outer-boundary",
     diagnose,
-    dispatch: governedRuntimeDispatch({ addonId: "addon.openclaw", toolName: "openclaw.delegate", ...options }),
+    dispatch: hostCommandRuntimeDispatch({
+      ...options,
+      addonId: "addon.openclaw",
+      tool: "openclaw.delegate",
+      command: options.command ?? "openclaw",
+      buildArgs: (packet) => ["agent", "--local", "--agent", options.agent ?? "main", "-m", packet.intent, "--json"],
+    }),
   });
 }
 
@@ -392,6 +409,12 @@ export function createAiderProviderAdapter(options = {}) {
     cancellationSemantics: "finish-atomic",
     sandboxStrength: "host-mediated",
     diagnose,
-    dispatch: aiderRuntimeDispatch({ ...options }),
+    dispatch: hostCommandRuntimeDispatch({
+      ...options,
+      addonId: "addon.aider",
+      tool: "aider.delegate",
+      command: options.command ?? "aider",
+      buildArgs: (packet) => ["--yes-always", "--message", packet.intent, ...(options.model ? ["--model", options.model] : [])],
+    }),
   });
 }
