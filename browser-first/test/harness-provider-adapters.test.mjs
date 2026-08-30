@@ -339,3 +339,42 @@ test("Aider transport denies a forged subject before running the command", async
   assert.equal((await adapter.getTask(run.runId)).status, "failed");
   assert.equal(called, false);
 });
+
+test("Hermes transport runs a oneshot prompt through the governed envelope", async () => {
+  const authority = createGovernedAuthority({ now: () => T0 });
+  const s = governedScope();
+  recordLeaf(authority, s);
+  const handle = authority.mintGrant({ grantId: "g-1", scope: s });
+
+  const calls = [];
+  const adapter = createHermesProviderAdapter({
+    governedAuthority: authority,
+    command: "hermes",
+    model: "deepseek/deepseek-chat",
+    spawnImpl: (cmd, args) => { calls.push({ cmd, args }); return { status: 0, stdout: "Hello." }; },
+  });
+  const run = await adapter.startTask(packet(), handle);
+
+  assert.equal((await adapter.getTask(run.runId)).status, "completed");
+  assert.equal(calls[0].cmd, "hermes");
+  assert.deepEqual(calls[0].args, ["-z", "summarize the diff", "-m", "deepseek/deepseek-chat", "--provider", "deepseek"]);
+});
+
+test("OpenClaw transport runs an agent turn through the governed envelope", async () => {
+  const authority = createGovernedAuthority({ now: () => T0 });
+  const s = governedScope();
+  recordLeaf(authority, s);
+  const handle = authority.mintGrant({ grantId: "g-1", scope: s });
+
+  const calls = [];
+  const adapter = createOpenClawProviderAdapter({
+    governedAuthority: authority,
+    command: "openclaw",
+    spawnImpl: (cmd, args) => { calls.push({ cmd, args }); return { status: 0, stdout: "{}" }; },
+  });
+  const run = await adapter.startTask(packet(), handle);
+
+  assert.equal((await adapter.getTask(run.runId)).status, "completed");
+  assert.equal(calls[0].cmd, "openclaw");
+  assert.deepEqual(calls[0].args, ["agent", "--local", "--agent", "main", "-m", "summarize the diff", "--json"]);
+});
