@@ -32,6 +32,7 @@ export function createHarnessProviderAdapter({
   sandboxStrength,
   diagnose,
   dispatch = null,
+  onRunEnded = null,
 }) {
   const runs = new Map();
   let seq = 0;
@@ -63,6 +64,8 @@ export function createHarnessProviderAdapter({
       events: [],
       artifacts: [],
       workspaceRoot,
+      packet,
+      grant,
     });
     appendEvent(runId, "active", packet.issuerPrincipalId);
     if (typeof dispatch === "function") {
@@ -113,12 +116,27 @@ export function createHarnessProviderAdapter({
     run.artifacts.push(artifact);
   }
 
+  function runEnded(runId, status) {
+    if (typeof onRunEnded !== "function") return;
+    const run = entry(runId);
+    onRunEnded({
+      providerId,
+      taskId: run.packet?.taskId ?? run.run.taskId,
+      delegationId: run.packet?.delegationChainRef?.delegationId ?? null,
+      issuerPrincipalId: run.packet?.issuerPrincipalId ?? null,
+      summary: run.packet?.intent ?? "",
+      status,
+      endedAt: run.run.endedAt,
+    });
+  }
+
   function complete(runId, artifacts = []) {
     const run = entry(runId);
     run.run.status = "completed";
     run.run.endedAt = new Date().toISOString();
     for (const artifact of artifacts) recordArtifact(runId, artifact);
     appendEvent(runId, "completed", "core");
+    runEnded(runId, "completed");
   }
 
   function fail(runId, detail) {
@@ -127,6 +145,7 @@ export function createHarnessProviderAdapter({
     run.run.detail = detail;
     run.run.endedAt = new Date().toISOString();
     appendEvent(runId, "revoked", "core", detail);
+    runEnded(runId, "failed");
   }
 
   return {
@@ -281,6 +300,7 @@ export function createHermesProviderAdapter(options = {}) {
     providerId: "hermes",
     cancellationSemantics: "cancel",
     sandboxStrength: "host-mediated",
+    onRunEnded: options.onRunEnded,
     diagnose,
     dispatch: hostCommandRuntimeDispatch({
       ...options,
@@ -312,6 +332,7 @@ export function createOpenCodeProviderAdapter(options = {}) {
     providerId: "opencode",
     cancellationSemantics: "finish-atomic",
     sandboxStrength: "sandboxed-outer-boundary",
+    onRunEnded: options.onRunEnded,
     diagnose,
     dispatch: opencodeRuntimeDispatch({ ...options }),
   });
@@ -330,6 +351,7 @@ export function createOpenClawProviderAdapter(options = {}) {
     providerId: "openclaw",
     cancellationSemantics: "quarantine",
     sandboxStrength: "sandboxed-outer-boundary",
+    onRunEnded: options.onRunEnded,
     diagnose,
     dispatch: hostCommandRuntimeDispatch({
       ...options,
@@ -354,6 +376,7 @@ export function createAgentZeroProviderAdapter(options = {}) {
     providerId: "agentzero",
     cancellationSemantics: "cancel",
     sandboxStrength: "sandboxed-outer-boundary",
+    onRunEnded: options.onRunEnded,
     diagnose,
     dispatch: governedRuntimeDispatch({ addonId: "addon.agentzero", toolName: "agentzero.delegate", ...options }),
   });
@@ -372,6 +395,7 @@ export function createDeepSeekHarnessProviderAdapter(options = {}) {
     providerId: "deepseek-harness",
     cancellationSemantics: "cancel",
     sandboxStrength: "host-mediated",
+    onRunEnded: options.onRunEnded,
     diagnose,
     dispatch: governedRuntimeDispatch({ addonId: "addon.deepseek-harness", toolName: "deepseek_harness.run_task", ...options }),
   });
@@ -390,6 +414,7 @@ export function createPiProviderAdapter(options = {}) {
     providerId: "pi",
     cancellationSemantics: "cancel",
     sandboxStrength: "host-mediated",
+    onRunEnded: options.onRunEnded,
     diagnose,
     dispatch: piRuntimeDispatch({ ...options }),
   });
@@ -408,6 +433,7 @@ export function createAiderProviderAdapter(options = {}) {
     providerId: "aider",
     cancellationSemantics: "finish-atomic",
     sandboxStrength: "host-mediated",
+    onRunEnded: options.onRunEnded,
     diagnose,
     dispatch: hostCommandRuntimeDispatch({
       ...options,

@@ -84,6 +84,39 @@ test("cancels a task through the generic lifecycle without a dispatch", async ()
   assert.equal((await adapter.getTask(run.runId)).status, "cancelled");
 });
 
+test("onRunEnded reports delegation history on completion and failure", async () => {
+  const ended = [];
+  const adapter = createHarnessProviderAdapter({
+    providerId: "hermes",
+    cancellationSemantics: "cancel",
+    sandboxStrength: "host-mediated",
+    diagnose: async () => ({ status: "ok", providerId: "hermes" }),
+    dispatch: async () => ({ outcome: "allow" }),
+    onRunEnded: (record) => ended.push(record),
+  });
+  await adapter.startTask(packet(), "grant-1");
+  assert.equal(ended.length, 1);
+  assert.equal(ended[0].providerId, "hermes");
+  assert.equal(ended[0].taskId, "task-1");
+  assert.equal(ended[0].delegationId, "del-1");
+  assert.equal(ended[0].issuerPrincipalId, "user-1");
+  assert.equal(ended[0].summary, "summarize the diff");
+  assert.equal(ended[0].status, "completed");
+  assert.ok(ended[0].endedAt);
+
+  const denying = createHarnessProviderAdapter({
+    providerId: "hermes",
+    cancellationSemantics: "cancel",
+    sandboxStrength: "host-mediated",
+    diagnose: async () => ({ status: "ok", providerId: "hermes" }),
+    dispatch: async () => ({ outcome: "deny", reason: "capability-denied", detail: "nope" }),
+    onRunEnded: (record) => ended.push(record),
+  });
+  await denying.startTask(packet(), "grant-1");
+  assert.equal(ended.length, 2);
+  assert.equal(ended[1].status, "failed");
+});
+
 test("Hermes adapter diagnose reports real CLI discovery against an empty home directory", async () => {
   const emptyHome = mkdtempSync(join(tmpdir(), "hermes-empty-"));
   const adapter = createHermesProviderAdapter({ homeDir: emptyHome });
