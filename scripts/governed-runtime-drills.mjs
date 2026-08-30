@@ -19,6 +19,29 @@ import {
   createOpenCodeProviderAdapter,
   createPiProviderAdapter,
 } from "../browser-first/host/harness-provider-adapters.mjs";
+import { createContinuityVault, mediateContextRead, reconstructTask } from "../browser-first/host/continuity-vault.mjs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+function makeTempDir() {
+  return mkdtempSync(join(tmpdir(), "ros-continuity-"));
+}
+
+function rmrf(root) {
+  rmSync(root, { recursive: true, force: true });
+}
+
+function readJsonl(filePath) {
+  return readFileSync(filePath, "utf8")
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line));
+}
+
+function writeJsonl(filePath, records) {
+  writeFileSync(filePath, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`, "utf8");
+}
 
 const T0 = Date.parse("2026-08-27T06:00:00Z");
 
@@ -202,6 +225,75 @@ async function main() {
     if (!r.ok) throw new Error(`fresh grant rejected: ${r.reason}`);
     const old = g0.validateGovernedRequest(governedRequest(oldHandle));
     if (old.ok || old.reason !== "status-revoked") throw new Error(`old handle revived: ${old.reason}`);
+  });
+
+  console.log("CP-7 continuity — bounded context, restart reconstruction, last-known-good");
+  await check("gatekeeper admits only the effective-context intersection", () => {
+    const facts = [
+      { value: { project: "X" }, sourceRefs: ["proj-x"], domain: "trusted-continuity" },
+      { value: { prefs: {} }, sourceRefs: ["identity"], domain: "user-identity" },
+      { value: { dangling: true }, sourceRefs: ["dangling"] },
+    ];
+    const policy = {
+      actorPermissions: ["trusted-continuity", "delegation-history"],
+      taskScope: ["trusted-continuity"],
+      userPolicy: ["trusted-continuity"],
+      trustLevel: ["trusted-continuity", "user-identity"],
+    };
+    const decision = mediateContextRead(facts, policy);
+    if (decision.effectiveContext.map((f) => f.sourceRefs[0]).join(",") !== "proj-x") {
+      throw new Error(`effective context ${decision.effectiveContext.map((f) => f.sourceRefs[0])}`);
+    }
+    if (decision.deniedRefs.sort().join(",") !== "dangling,identity") throw new Error(`denied ${decision.deniedRefs}`);
+  });
+  await check("gatekeeper redacts secret-shaped facts even in-domain", () => {
+    const facts = [{ value: { apiKey: "sk-SECRET_TOKEN_123" }, sourceRefs: ["cfg"], domain: "trusted-continuity" }];
+    const policy = {
+      actorPermissions: ["trusted-continuity"],
+      taskScope: ["trusted-continuity"],
+      userPolicy: ["trusted-continuity"],
+      trustLevel: ["trusted-continuity"],
+    };
+    const decision = mediateContextRead(facts, policy, { secretPattern: /SECRET_TOKEN/ });
+    if (decision.effectiveContext.length !== 0) throw new Error("secret-shaped fact leaked");
+    if (decision.redactions.join(",") !== "cfg") throw new Error(`redactions ${decision.redactions}`);
+  });
+  await check("reconstructs a delegated task from history (provider switch)", () => {
+    const history = [
+      { delegationId: "d1", taskId: "t1", harnessId: "hermes", issuerPrincipalId: "u", summary: "summarize", completedAt: "2026-08-28T09:00:00Z" },
+      { delegationId: "d2", taskId: "t1", harnessId: "opencode", issuerPrincipalId: "u", summary: "code it", completedAt: "2026-08-28T10:00:00Z" },
+    ];
+    const r = reconstructTask(history, "t1");
+    if (!r || r.lastHarness !== "opencode" || r.summary !== "code it") throw new Error(`got ${JSON.stringify(r)}`);
+    if (reconstructTask(history, "missing") !== null) throw new Error("reconstructed a missing task");
+  });
+  await check("vault persists delegation history across restart reconstruction", async () => {
+    const root = await makeTempDir();
+    try {
+      const vault = createContinuityVault({ persistenceRoot: root });
+      vault.recordDelegation({ delegationId: "d1", taskId: "task-7", harnessId: "pi", issuerPrincipalId: "user-1", summary: "add multiply", completedAt: "2026-08-30T10:00:00Z" });
+      const reloaded = createContinuityVault({ persistenceRoot: root });
+      const r = reloaded.reconstruct("task-7");
+      if (!r || r.lastHarness !== "pi" || r.summary !== "add multiply") throw new Error(`restart reconstruction failed: ${JSON.stringify(r)}`);
+    } finally {
+      await rmrf(root);
+    }
+  });
+  await check("vault skips a tampered snapshot when picking last-known-good", async () => {
+    const root = await makeTempDir();
+    try {
+      const vault = createContinuityVault({ persistenceRoot: root });
+      vault.recordSnapshot({ domains: { "user-identity": { id: "u" } } });
+      // Tamper with the persisted snapshot domains so its stored hash no longer
+      // matches a recomputation — reload must skip it.
+      const snapshots = await readJsonl(join(root, "snapshots.jsonl"));
+      snapshots[0].domains = { "user-identity": { id: "tampered" } };
+      await writeJsonl(join(root, "snapshots.jsonl"), snapshots);
+      const reloaded = createContinuityVault({ persistenceRoot: root });
+      if (reloaded.lastKnownGood() !== null) throw new Error("tampered snapshot accepted as last-known-good");
+    } finally {
+      await rmrf(root);
+    }
   });
 
   console.log(`\n${pass} passed, ${fail} failed`);
