@@ -20,6 +20,7 @@ import {
   createPiProviderAdapter,
 } from "../browser-first/host/harness-provider-adapters.mjs";
 import { createContinuityVault, mediateContextRead, reconstructTask } from "../browser-first/host/continuity-vault.mjs";
+import { enterGroundZero, reEnableFromGroundZero } from "../browser-first/host/ground-zero.mjs";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -203,8 +204,7 @@ async function main() {
     if (s1.status !== "cancelled") throw new Error(`cancellation not deterministic: ${s1.status}`);
     if (s2.status !== "completed") throw new Error(`sibling run affected: ${s2.status}`);
   });
-
-  console.log("Recovery drill — Ground-0 revokes all authority, re-enable mints fresh");
+  console.log("Authority drill — revocation empties grant resolution, fresh grant never revives");
   await check("revoke-on-entry empties grant resolution", () => {
     const g0 = createGovernedAuthority({ now: () => T0 });
     const s3 = scope();
@@ -225,6 +225,52 @@ async function main() {
     if (!r.ok) throw new Error(`fresh grant rejected: ${r.reason}`);
     const old = g0.validateGovernedRequest(governedRequest(oldHandle));
     if (old.ok || old.reason !== "status-revoked") throw new Error(`old handle revived: ${old.reason}`);
+  });
+
+  console.log("Ground-0 recovery drill — state machine revokes all, re-enables in dependency order");
+  const g0Snapshot = () => ({
+    state: "normal",
+    activeGrantIds: ["grant-1", "grant-2"],
+    optionalItems: [
+      { id: "addon.hermes", kind: "harness" },
+      { id: "addon.browser", kind: "extension" },
+    ],
+    quarantine: [],
+    audit: [],
+  });
+  await check("enterGroundZero revokes every grant and quarantines every optional item", () => {
+    const entered = enterGroundZero(g0Snapshot(), { trigger: "drill", at: "t1" });
+    if (entered.state !== "ground-zero") throw new Error(`state ${entered.state}`);
+    if (entered.activeGrantIds.length !== 0) throw new Error("pre-recovery authority survived entry");
+    if (entered.quarantine.length !== 2) throw new Error(`quarantined ${entered.quarantine.length}`);
+  });
+  await check("reEnableFromGroundZero mints fresh grants, never revives old ids", () => {
+    const entered = enterGroundZero(g0Snapshot(), { trigger: "drill", at: "t1" });
+    const reenabled = reEnableFromGroundZero(entered, {
+      order: ["addon.browser", "addon.hermes"],
+      healthCheck: () => true,
+      at: "t2",
+    });
+    if (reenabled.state !== "normal") throw new Error(`state ${reenabled.state}`);
+    if (reenabled.activeGrantIds.some((id) => id === "grant-1" || id === "grant-2")) {
+      throw new Error("old grant id revived");
+    }
+    if (!reenabled.activeGrantIds.every((id) => id.startsWith("fresh-grant:"))) {
+      throw new Error(`got ${reenabled.activeGrantIds}`);
+    }
+  });
+  await check("unhealthy item is left disabled after re-enable", () => {
+    const entered = enterGroundZero(g0Snapshot(), { trigger: "drill", at: "t1" });
+    const reenabled = reEnableFromGroundZero(entered, {
+      order: ["addon.browser", "addon.hermes"],
+      healthCheck: (id) => id !== "addon.hermes",
+      at: "t2",
+    });
+    if (reenabled.activeGrantIds.join(",") !== "fresh-grant:addon.browser") {
+      throw new Error(`got ${reenabled.activeGrantIds}`);
+    }
+    const hermes = reenabled.quarantine.find((q) => q.item === "addon.hermes");
+    if (hermes.disposition !== "left-disabled") throw new Error(`hermes disposition ${hermes.disposition}`);
   });
 
   console.log("CP-7 continuity — bounded context, restart reconstruction, last-known-good");
