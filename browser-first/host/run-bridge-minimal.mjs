@@ -485,14 +485,24 @@ extensionEffectHolder.value = createAugmentorExtensionEffect({
 });
 
 // CP-4/CP-5 harness provider adapters, each driven through the governed envelope.
+// External-runtime LLM wiring. pi and aider fall back to the machine's local
+// default model (e.g. ollama) unless an explicit model/provider is supplied, so
+// pin DeepSeek here and let env override for other setups. The DEEPSEEK_API_KEY
+// is read from the process env (sourced at runtime by the launcher, never
+// printed) and flows through the adapter transports via `process.env`.
+const piHarnessModel = process.env.RESONANTOS_PI_MODEL ?? "deepseek/deepseek-chat";
+const aiderHarnessModel = process.env.RESONANTOS_AIDER_MODEL ?? "deepseek/deepseek-chat";
+const aiderHarnessCommand = process.env.RESONANTOS_AIDER_COMMAND ?? `${process.env.HOME}/.local/bin/aider`;
+
+// CP-4/CP-5 harness provider adapters, each driven through the governed envelope.
 harnessAdapterHolder.value = {
   hermes: createHermesProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
   opencode: createOpenCodeProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
   openclaw: createOpenClawProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
   agentzero: createAgentZeroProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
   "deepseek-harness": createDeepSeekHarnessProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
-  pi: createPiProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
-  aider: createAiderProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot }),
+  pi: createPiProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, provider: piHarnessModel.split("/")[0], model: piHarnessModel }),
+  aider: createAiderProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, command: aiderHarnessCommand, model: aiderHarnessModel }),
 };
 
 // CP-3 task-approval minting seam: mints a task grant + records its delegation so
