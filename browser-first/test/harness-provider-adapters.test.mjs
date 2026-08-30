@@ -258,3 +258,84 @@ test("OpenCode transport denies a forged subject before opening a session", asyn
   assert.equal((await adapter.getTask(run.runId)).status, "failed");
   assert.equal(serverCalled, false);
 });
+
+test("Pi transport drives a stdio-json-rpc prompt through the governed envelope", async () => {
+  const authority = createGovernedAuthority({ now: () => T0 });
+  const s = governedScope();
+  recordLeaf(authority, s);
+  const handle = authority.mintGrant({ grantId: "g-1", scope: s });
+
+  const calls = [];
+  const adapter = createPiProviderAdapter({
+    governedAuthority: authority,
+    provider: "deepseek",
+    model: "deepseek/deepseek-chat",
+    runPrompt: async ({ intent, provider, model }) => {
+      calls.push(`runPrompt:${provider}:${model}:${intent}`);
+      return { outcome: "allow", response: { text: "Hello." } };
+    },
+  });
+  const run = await adapter.startTask(packet(), handle);
+
+  assert.equal((await adapter.getTask(run.runId)).status, "completed");
+  assert.deepEqual(calls, ["runPrompt:deepseek:deepseek/deepseek-chat:summarize the diff"]);
+});
+
+test("Pi transport denies a forged subject before spawning pi", async () => {
+  const authority = createGovernedAuthority({ now: () => T0 });
+  const s = governedScope();
+  recordLeaf(authority, s);
+  const handle = authority.mintGrant({ grantId: "g-1", scope: s });
+
+  let called = false;
+  const adapter = createPiProviderAdapter({
+    governedAuthority: authority,
+    runPrompt: async () => { called = true; return { outcome: "allow", response: { text: "x" } }; },
+  });
+  const run = await adapter.startTask({ ...packet(), executorPrincipalId: "attacker" }, handle);
+
+  assert.equal((await adapter.getTask(run.runId)).status, "failed");
+  assert.equal(called, false);
+});
+
+test("Aider transport runs a host-command through the governed envelope", async () => {
+  const authority = createGovernedAuthority({ now: () => T0 });
+  const s = governedScope();
+  recordLeaf(authority, s);
+  const handle = authority.mintGrant({ grantId: "g-1", scope: s });
+
+  const calls = [];
+  const adapter = createAiderProviderAdapter({
+    governedAuthority: authority,
+    command: "aider",
+    model: "deepseek/deepseek-chat",
+    spawnImpl: (cmd, args, opts) => {
+      calls.push({ cmd, args, cwd: opts.cwd });
+      return { status: 0, stdout: "applied", stderr: "" };
+    },
+  });
+  const run = await adapter.startTask(packet(), handle);
+
+  assert.equal((await adapter.getTask(run.runId)).status, "completed");
+  assert.equal(calls[0].cmd, "aider");
+  assert.ok(calls[0].args.includes("--yes-always"));
+  assert.ok(calls[0].args.includes("--message"));
+  assert.equal(calls[0].cwd, "/workspace/project-a");
+});
+
+test("Aider transport denies a forged subject before running the command", async () => {
+  const authority = createGovernedAuthority({ now: () => T0 });
+  const s = governedScope();
+  recordLeaf(authority, s);
+  const handle = authority.mintGrant({ grantId: "g-1", scope: s });
+
+  let called = false;
+  const adapter = createAiderProviderAdapter({
+    governedAuthority: authority,
+    spawnImpl: () => { called = true; return { status: 0 }; },
+  });
+  const run = await adapter.startTask({ ...packet(), executorPrincipalId: "attacker" }, handle);
+
+  assert.equal((await adapter.getTask(run.runId)).status, "failed");
+  assert.equal(called, false);
+});
