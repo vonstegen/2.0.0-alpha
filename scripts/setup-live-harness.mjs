@@ -7,6 +7,7 @@
 // anything. Run: node scripts/setup-live-harness.mjs
 
 import { spawnSync } from "node:child_process";
+import path from "node:path";
 
 function hasCommand(cmd) {
   // `r.error` is ENOENT when the binary is not on PATH; otherwise the binary
@@ -28,6 +29,20 @@ async function isReachable(url) {
   } catch {
     return false;
   }
+}
+
+// Read-only probe: does the omp credential store hold a non-disabled DeepSeek
+// api_key? The `data` column is JSON ({ "key": "...", "source": "..." }), so
+// the raw key lives at json_extract(data, '$.key') — never the column itself.
+function hasOmpDeepSeekCredential() {
+  const home = process.env.HOME || "";
+  if (!home) return false;
+  const db = path.join(home, ".omp", "agent", "agent.db");
+  const r = spawnSync("sqlite3", [
+    db,
+    "SELECT 1 FROM auth_credentials WHERE provider='deepseek' AND credential_type='api_key' AND disabled_cause IS NULL AND json_extract(data, '$.key') IS NOT NULL LIMIT 1",
+  ], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 });
+  return !r.error && String(r.stdout ?? "").trim() === "1";
 }
 
 const checks = [
@@ -89,6 +104,11 @@ async function main() {
 
   const missing = results.filter((result) => !result.ready);
   console.log(`\n${results.length - missing.length}/${results.length} harnesses ready`);
+  const ompHasDeepSeek = hasOmpDeepSeekCredential();
+  console.log("\nDeepSeek credential (omp store, read-only check):");
+  console.log(`  ${ompHasDeepSeek ? "\u2713" : "\u2717"} DeepSeek api_key in ~/.omp/agent/agent.db${ompHasDeepSeek ? "" : " (sign in via `omp /login`)"}`);
+  console.log("  Source it at runtime so the bridge reads shared-deepseek (never printed):");
+  console.log(`  export DEEPSEEK_API_KEY="$(sqlite3 "$HOME/.omp/agent/agent.db" "SELECT json_extract(data, '$.key') FROM auth_credentials WHERE provider='deepseek' AND credential_type='api_key' AND disabled_cause IS NULL LIMIT 1")"`);
 
   if (missing.length === 0) {
     console.log("\nAll live harnesses present. Run the parity + recovery gates:");
