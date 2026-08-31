@@ -9,6 +9,7 @@ import { createAgentControlHostService } from "../host/agent-control-host-servic
 import { createExtensionPrefsHostService } from "../host/extension-prefs-host-service.mjs";
 import { createMemoryHostService } from "../host/memory-host-service.mjs";
 import { createProviderHostService } from "../host/provider-host-service.mjs";
+import { createGroundZeroHostService } from "../host/ground-zero-host-service.mjs";
 import { capabilityForBridgeRoute } from "../resonantos-side-panel-extension/src/lib/bridge-client.js";
 
 const memoryHandlers = [
@@ -78,6 +79,8 @@ const addonHandlers = [
   "executeGoalRecord",
 ];
 
+const groundZeroHandlers = ["executeGroundZeroEnter", "executeGroundZeroExit", "executeGroundZeroStatus"];
+
 function handlers(names) {
   return Object.fromEntries(names.map((name) => [name, async () => ({ name })]));
 }
@@ -107,10 +110,12 @@ test("extension bridge client capability map matches gated host routes", async (
     const memory = createMemoryHostService(handlers(memoryHandlers));
     const addon = createAddonDelegationHostService(handlers(addonHandlers));
     const prefs = createExtensionPrefsHostService({ userRoot: () => root });
+    const groundZero = createGroundZeroHostService(handlers(groundZeroHandlers));
     const routes = [
       ...provider.providerBridgeRoutes,
       ...agent.agentControlRoutes,
       ...memory.memoryBridgeRoutes,
+      ...groundZero.groundZeroRoutes,
       ...addon.addonDelegationRoutes,
       ...prefs.extensionPrefsRoutes,
     ];

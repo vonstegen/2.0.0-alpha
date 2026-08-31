@@ -299,6 +299,30 @@ test("revokes every grant bound to a task", () => {
   assert.equal(bResult.reason, "status-revoked");
 });
 
+test("listActiveGrants enumerates active grants and revokeAll revokes them all", () => {
+  const authority = createGovernedAuthority({ now: () => T0 });
+  const s1 = scope({ taskId: "task-1", delegationId: "del-1" });
+  const s2 = scope({ taskId: "task-2", delegationId: "del-2" });
+  recordLeaf(authority, s1);
+  recordLeaf(authority, s2);
+  const h1 = authority.mintGrant({ grantId: "g-1", scope: s1 });
+  const h2 = authority.mintGrant({ grantId: "g-2", scope: s2 });
+
+  assert.deepEqual(
+    authority.listActiveGrants().map((grant) => grant.grantId).sort(),
+    ["g-1", "g-2"],
+  );
+
+  const revoked = authority.revokeAll("ground-zero");
+  assert.equal(revoked.length, 2);
+  assert.equal(authority.listActiveGrants().length, 0);
+  assert.equal(authority.validateGovernedRequest(request(h1)).reason, "status-revoked");
+  assert.equal(
+    authority.validateGovernedRequest(request(h2, { taskId: "task-2", delegationId: "del-2" })).reason,
+    "status-revoked",
+  );
+});
+
 test("emits decision/request/effect/denial/cancel events and never logs the handle or token", () => {
   const events = [];
   const authority = createGovernedAuthority({

@@ -65,6 +65,8 @@ import {
   memorySourceSyncHistoryPath as sourceSyncHistoryPath,
 } from "./memory-source-history.mjs";
 import { createContinuityVault } from "./continuity-vault.mjs";
+import { createGroundZeroService } from "./ground-zero-service.mjs";
+import { createGroundZeroHostService } from "./ground-zero-host-service.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 const resonantExtension = path.join(repoRoot, "browser-first", "resonantos-side-panel-extension");
@@ -536,6 +538,54 @@ harnessAdapterHolder.value = {
   aider: createAiderProviderAdapter({ governedAuthority: governedAuthorityHolder.value, repoRoot, command: aiderHarnessCommand, model: aiderHarnessModel, onRunEnded: recordRunEnded }),
 };
 
+// CP-8 Ground-0 state (Core-owned recovery, doc 10). The live "optional
+// executable surface" is the seven harness adapters plus the host-mediated
+// extension effect and the archive ingest writer. Entering Ground-0 revokes
+// every active grant (the governed dispatch then fails closed on a replayed
+// handle) and marks the surface disabled; exit health-checks each item in
+// dependency order and re-enables the healthy ones — never reviving a
+// pre-recovery grant. The per-item live health probe lands with CP-5 parity;
+// until then every registered adapter is treated as known-good.
+const groundZeroSurfaceInventory = () => [
+  ...Object.keys(harnessAdapterHolder.value ?? {}).map((id) => ({ id: `harness:${id}`, kind: "harness" })),
+  { id: "extension:augmentor-effect", kind: "extension" },
+  { id: "archive-ingest", kind: "archive-ingest" },
+];
+
+const groundZeroService = createGroundZeroService({
+  governedAuthority: governedAuthorityHolder.value,
+  surfaceInventory: groundZeroSurfaceInventory,
+});
+
+const groundZeroExitHealthCheck = () => true;
+const groundZeroExitResumeItem = () => {};
+
+function executeGroundZeroEnter(body) {
+  const { trigger = "manual" } = body ?? {};
+  return groundZeroService.enter({ trigger });
+}
+
+function executeGroundZeroExit(body) {
+  const { order = [] } = body ?? {};
+  return groundZeroService.exit({
+    order,
+    healthCheck: groundZeroExitHealthCheck,
+    resumeItem: groundZeroExitResumeItem,
+  });
+}
+
+function executeGroundZeroStatus() {
+  return groundZeroService.getSnapshot();
+}
+
+const { groundZeroRoutes } = createGroundZeroHostService({
+  executeGroundZeroEnter,
+  executeGroundZeroExit,
+  executeGroundZeroStatus,
+});
+bridgeRoutes.push(...groundZeroRoutes);
+
+
 // CP-3 task-approval minting seam: mints a task grant + records its delegation so
 // the governed routes can resolve the handle. Called by the runtime at approval
 // time; the minimal launcher exposes it but does not mint at boot (fail-closed).
@@ -550,6 +600,11 @@ function mintTaskGrant({
 }) {
   const authority = governedAuthorityHolder.value;
   if (!authority) throw new Error("governed authority is not ready");
+  // CP-8: no fresh authority may be minted while Ground-0 is active — recovery
+  // exit is the only way to resume, and it never revives pre-recovery grants.
+  if (groundZeroService.isDisabled()) {
+    throw new Error("Ground-0 active: mintTaskGrant is blocked until recovery exit");
+  }
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   authority.recordDelegation({
