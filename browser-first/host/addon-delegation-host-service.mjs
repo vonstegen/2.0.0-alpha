@@ -256,6 +256,7 @@ export function createAddonDelegationHostService(handlers = {}) {
       {
         method: "POST",
         path: "/external-agent-runtime/governed-delegate",
+        enforcement: "governed",
         handler: async (body) => {
           const governedAuthority = handlers.governedAuthority;
           if (!governedAuthority) {
@@ -295,6 +296,7 @@ export function createAddonDelegationHostService(handlers = {}) {
       {
         method: "POST",
         path: "/augmentor/extension/invoke",
+        enforcement: "governed",
         handler: async (body) => {
           const governedAuthority = handlers.governedAuthority;
           if (!governedAuthority) {
