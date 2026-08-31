@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { GroundZeroSnapshot } from "./index";
-import { enterGroundZero, reEnableFromGroundZero } from "./index";
+import { enterGroundZero, reEnableFromGroundZero, serializeKnownGoodSet, verifyKnownGoodSet } from "./index";
 
 function snapshot(): GroundZeroSnapshot {
   return {
@@ -67,5 +67,27 @@ describe("Ground-0 state machine", () => {
     expect(() =>
       reEnableFromGroundZero(snapshot(), { order: [], healthCheck: () => true, at: "y" }),
     ).toThrow(/cannot re-enable/);
+  });
+});
+
+describe("known-good manifest set", () => {
+  const digest = (serialized: string) => `d:${serialized}`;
+
+  it("serializes canonically — manifest-id order is irrelevant", () => {
+    expect(serializeKnownGoodSet({ version: "1", manifestIds: ["b", "a"] })).toBe(
+      serializeKnownGoodSet({ version: "1", manifestIds: ["a", "b"] }),
+    );
+  });
+
+  it("verifies an intact set and rejects a tampered one", () => {
+    const set = {
+      version: "1",
+      frozenAt: "t",
+      manifestIds: ["a"],
+      configDigest: digest(serializeKnownGoodSet({ version: "1", manifestIds: ["a"] })),
+    };
+    expect(verifyKnownGoodSet(set, digest)).toBe(true);
+    expect(verifyKnownGoodSet({ ...set, manifestIds: ["b"] }, digest)).toBe(false);
+    expect(verifyKnownGoodSet({ ...set, version: "2" }, digest)).toBe(false);
   });
 });
