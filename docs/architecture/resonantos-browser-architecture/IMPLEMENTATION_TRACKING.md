@@ -91,7 +91,7 @@ resumes from the artifact instead of re-deriving it.
 | Migrate OpenCode + workspace lease/isolation | `in-progress` | `opencodeRuntimeDispatch` validates the governed envelope then drives a real `opencode serve` session (`ensureOpencodeServer` + `createOpencodeHttpClient`) — structurally distinct from Cordis; workspace lease enforcement + dedup pending |
 | Validate OpenClaw against the contract | `in-progress` | runtime-gateway shape passes shared conformance; real gateway transport pending |
 | Keep installs/config intact; approval-gate install | `not-started` | — |
-| Assistant-only output filtering + deterministic smoke tests | `in-progress` | `AddOnOutputFilteringMode` + smoke-test contract exist; harness parity pending |
+| Assistant-only output filtering + deterministic smoke tests | `done` | `filterHarnessOutput` (parity seam, `src/sdk/harnesses/output-filtering.ts`) maps `assistant-reply-only`/`structured-events`/`raw-log` over `HarnessOutputRecord`s; 4 deterministic tests incl. `expectedOutputPattern` vs filtered output |
 | Archive reads scoped/cited; writes intake-only | `in-progress` | `archive-promotion-guards.mjs` etc. present; per-harness parity pending |
 | Remove duplicated provider lifecycle logic after parity | `not-started` | — |
 
@@ -117,7 +117,7 @@ resumes from the artifact instead of re-deriving it.
 | Last-known-good continuity snapshot | `done` | `ContinuitySnapshot` + `reconstructLastKnownGood` (integrity-verified, most-recent-good) |
 | Separate harness checkpoints from trusted continuity | `not-started` | — |
 | Route returned knowledge through artifact review/intake | `in-progress` | Living Archive intake boundaries + `archive-review-service.mjs` present |
-| Redaction/export/retention/deletion tests | `in-progress` | `mediateContextRead` secret-pattern redaction tested; export/retention/deletion not yet |
+| Redaction/export/retention/deletion tests | `done` | `exportContinuity` (redacted portable envelope), `applyRetentionPolicy` (`recordedAt` window), `deleteFacts` (audit-preserving deletion) + 3 tests in `continuity.test.ts` |
 | Provider-switch/restart reconstruction without secret persistence | `done` | `reconstructTask` rebuilds task + last harness from delegation history (audit summaries, never credentials) |
 | Identity & Continuity Vault + Continuity Gatekeeper | `done` | `mediateContextRead` (effective-context intersection) + `reloadGroundZeroKernel` (core skills only); Core-owned, doc 15 |
 
