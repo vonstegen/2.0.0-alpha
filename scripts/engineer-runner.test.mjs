@@ -8,6 +8,7 @@ import test from "node:test";
 
 import {
   buildOpenCodePrompt,
+  runCommand,
   evaluateScope,
   normalizeTaskContract,
   parseGitStatusPorcelain,
@@ -154,4 +155,30 @@ test("verifyTaskContract fails when a required command fails", () => {
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
+});
+
+
+test("runCommand executes argv commands without a shell", () => {
+  const res = runCommand(process.cwd(), "git --version");
+  assert.equal(res.status, 0, `stderr: ${res.stderr}`);
+  assert.match(res.stdout, /git version/);
+});
+
+test("runCommand keeps quoted arguments as single literal argv words", () => {
+  const res = runCommand(process.cwd(), 'node -e "process.exit(7)"');
+  assert.equal(res.status, 7, `stderr: ${res.stderr}`);
+});
+
+test("runCommand refuses unquoted shell metacharacters (injection guard, issue #163 class)", () => {
+  for (const bad of ["echo hi; touch /tmp/pwn", "echo `id`", "echo $(id)", "echo a && echo b", "echo x > /tmp/pwn", "echo | id"]) {
+    const res = runCommand(process.cwd(), bad);
+    assert.equal(res.status, 126, `should refuse: ${bad}`);
+    assert.match(res.stderr, /refused/);
+  }
+});
+
+test("runCommand refuses empty commands and unterminated quotes", () => {
+  assert.equal(runCommand(process.cwd(), "   ").status, 126);
+  assert.equal(runCommand(process.cwd(), 'echo "unterminated').status, 126);
+  assert.equal(runCommand(process.cwd(), "echo a\u0000b").status, 126);
 });
