@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Type-check + SDK tests + governed-runtime drills + docs
+    name: Type-check + SDK/bridge tests + drills + docs + security scan
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -43,8 +43,17 @@ jobs:
       - name: SDK tests (vitest)
         run: npx vitest run src
 
+      - name: Browser-first bridge tests
+        run: npm run test:browser-first
+
       - name: Governed-runtime drills (7-provider parity + Ground-0 recovery)
         run: node scripts/governed-runtime-drills.mjs
 
       - name: Documentation contract validation
         run: node scripts/validate-docs.mjs
+
+      - name: Security pipeline (certify)
+        run: node scripts/security-pipeline/run-check.mjs --certify --config .github/security-pipeline/checks.yml
+
+      - name: Pre-release artifact scan
+        run: npm run pre-release:scan

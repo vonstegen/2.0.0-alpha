@@ -43,7 +43,7 @@ test("gatekeeper admits only the effective-context intersection", () => {
 });
 
 test("gatekeeper redacts a secret-shaped fact even when in-domain", () => {
-  const facts = [{ value: { apiKey: "sk-SECRET_TOKEN_123" }, sourceRefs: ["cfg"], domain: "trusted-continuity" }];
+  const facts = [{ value: { apiKey: "SECRET_TOKEN_123" }, sourceRefs: ["cfg"], domain: "trusted-continuity" }];
   const decision = mediateContextRead(facts, policy, { secretPattern: /SECRET_TOKEN/ });
   assert.equal(decision.effectiveContext.length, 0);
   assert.deepEqual(decision.redactions, ["cfg"]);
