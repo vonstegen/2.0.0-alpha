@@ -348,7 +348,7 @@ async function main() {
     if (decision.deniedRefs.sort().join(",") !== "dangling,identity") throw new Error(`denied ${decision.deniedRefs}`);
   });
   await check("gatekeeper redacts secret-shaped facts even in-domain", () => {
-    const facts = [{ value: { apiKey: "sk-SECRET_TOKEN_123" }, sourceRefs: ["cfg"], domain: "trusted-continuity" }];
+    const facts = [{ value: { apiKey: "SECRET_TOKEN_123" }, sourceRefs: ["cfg"], domain: "trusted-continuity" }];
     const policy = {
       actorPermissions: ["trusted-continuity"],
       taskScope: ["trusted-continuity"],

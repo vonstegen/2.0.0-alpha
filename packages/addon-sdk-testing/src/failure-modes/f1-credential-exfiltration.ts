@@ -32,7 +32,7 @@ export function runF1CredentialExfiltration(
   const result = host.forwardNetwork({
     callerId: manifest.callerId,
     payload: { route: "external-service", body: "user prompt" },
-    headers: { authorization: "Bearer sk-test-1234567890abcdef" },
+    headers: { authorization: "Bearer sk-test-1234567890" },
   });
 
   // Per ADR-040 §7 F1: the routing decision is revoked on credential

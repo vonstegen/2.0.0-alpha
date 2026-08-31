@@ -143,7 +143,7 @@ resumes from the artifact instead of re-deriving it.
 | Manifest templates for all three extension classes | `done` | `src/sdk/templates.ts` (`createAugmentorExtensionTemplate` / `createHarnessProviderTemplate` / `createSystemAddonTemplate`) |
 | Conformance suite + reference adapters | `done` | CP-4 `runHarnessProviderConformance` + CP-5 `FakeHarnessProvider` + `Hermes/OpenCode/OpenClaw` adapters |
 | Threat model (confused deputy, token theft, path escape, event spoofing, memory poisoning, resource exhaustion, recovery persistence) | `done` | `THREAT_MODEL.md` maps all 7 threats to the governed envelope/opaque handle/path-check/gatekeeper/budget/Ground-0 mechanisms |
-| Security pipeline + browser-first tests + docs checks + pre-release scan | `in-progress` | `scripts/security-pipeline/`, `verify-alpha.mjs`, `agent-control-live.yml` exist |
+| Security pipeline + browser-first tests + docs checks + pre-release scan | `done` | `verify.yml` now gates: type-check + SDK vitest + `test:browser-first` (1192) + drills + `validate-docs` + security-pipeline `--certify` + `pre-release:scan`; `repo:hygiene` + `test:docs` (228) green; `/tool` `/addon` command reference restored |
 | Document known limitations + deferred Compute Fabric | `done` | `THREAT_MODEL.md` §Known limitations (live transport, ADR-032 node execution, recovery drills, slot hardening) |
 | Declare stable after migration telemetry + recovery drills | `not-started` | — |
 
