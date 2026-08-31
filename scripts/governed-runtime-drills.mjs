@@ -21,6 +21,7 @@ import {
 } from "../browser-first/host/harness-provider-adapters.mjs";
 import { createContinuityVault, mediateContextRead, reconstructTask } from "../browser-first/host/continuity-vault.mjs";
 import { enterGroundZero, reEnableFromGroundZero } from "../browser-first/host/ground-zero.mjs";
+import { createGroundZeroService } from "../browser-first/host/ground-zero-service.mjs";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -271,6 +272,43 @@ async function main() {
     }
     const hermes = reenabled.quarantine.find((q) => q.item === "addon.hermes");
     if (hermes.disposition !== "left-disabled") throw new Error(`hermes disposition ${hermes.disposition}`);
+  });
+  await check("Ground-0 service revokes every live grant on entry (handle denied)", () => {
+    const authority = createGovernedAuthority({ now: () => T0 });
+    const s3 = scope();
+    recordLeaf(authority, s3);
+    const handle = authority.mintGrant({ grantId: "g-live", scope: s3 });
+    const service = createGroundZeroService({
+      governedAuthority: authority,
+      surfaceInventory: () => [{ id: "harness:hermes", kind: "harness" }],
+      now: () => T0,
+    });
+    service.enter({ trigger: "drill" });
+    if (!service.isDisabled()) throw new Error("service not disabled after entry");
+    if (authority.listActiveGrants().length !== 0) throw new Error("active grants survived entry");
+    const r = authority.validateGovernedRequest(governedRequest(handle));
+    if (r.ok || r.reason !== "status-revoked") throw new Error(`got ${r.reason}`);
+  });
+  await check("Ground-0 service blocks a second entry and re-enables on exit", () => {
+    const authority = createGovernedAuthority({ now: () => T0 });
+    const service = createGroundZeroService({
+      governedAuthority: authority,
+      surfaceInventory: () => [{ id: "harness:hermes", kind: "harness" }],
+      now: () => T0,
+    });
+    service.enter({ trigger: "drill" });
+    let threw = false;
+    try {
+      service.enter({ trigger: "drill" });
+    } catch {
+      threw = true;
+    }
+    if (!threw) throw new Error("double entry did not throw");
+    const exited = service.exit({
+      order: ["harness:hermes"],
+      healthCheck: () => true,
+    });
+    if (exited.state !== "normal" || service.isDisabled()) throw new Error("exit did not resume");
   });
 
   console.log("CP-7 continuity — bounded context, restart reconstruction, last-known-good");
