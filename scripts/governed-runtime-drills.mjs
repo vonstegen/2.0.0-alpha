@@ -290,7 +290,7 @@ async function main() {
     const r = authority.validateGovernedRequest(governedRequest(handle));
     if (r.ok || r.reason !== "status-revoked") throw new Error(`got ${r.reason}`);
   });
-  await check("Ground-0 service blocks a second entry and re-enables on exit", () => {
+  await check("Ground-0 service blocks a second entry and re-enables on exit", async () => {
     const authority = createGovernedAuthority({ now: () => T0 });
     const service = createGroundZeroService({
       governedAuthority: authority,
@@ -305,9 +305,9 @@ async function main() {
       threw = true;
     }
     if (!threw) throw new Error("double entry did not throw");
-    const exited = service.exit({
+    const exited = await service.exit({
       order: ["harness:hermes"],
-      healthCheck: () => true,
+      healthCheck: async () => true,
     });
     if (exited.state !== "normal" || service.isDisabled()) throw new Error("exit did not resume");
   });
