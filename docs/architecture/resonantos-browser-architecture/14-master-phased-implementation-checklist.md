@@ -66,7 +66,7 @@ This checklist is ordered to preserve the current working system. Each phase has
 - [ ] Migrate OpenCode and enforce workspace lease/isolation semantics.
 - [ ] Validate OpenClaw or another structurally different harness against the same contract.
 - [ ] Keep existing installs/configuration intact and approval-gate installation.
-- [ ] Verify assistant-only output filtering and deterministic smoke tests.
+- [x] Verify assistant-only output filtering and deterministic smoke tests.
 - [ ] Verify archive reads are scoped/cited and writes remain intake-only.
 - [ ] Remove duplicated provider-specific lifecycle logic only after parity tests pass.
 
@@ -92,7 +92,7 @@ This checklist is ordered to preserve the current working system. Each phase has
 - [ ] Implement a last-known-good continuity snapshot.
 - [ ] Separate harness checkpoints from trusted continuity.
 - [ ] Route all returned knowledge through artifact review/intake.
-- [ ] Add redaction, export, retention, and deletion tests.
+- [x] Add redaction, export, retention, and deletion tests.
 - [ ] Verify provider switching and restart reconstruction without raw secret or capability persistence.
 
 **Exit gate:** Augmentor can resume and explain a delegated task after restart using trusted host state, while the harness receives only its bounded context.
