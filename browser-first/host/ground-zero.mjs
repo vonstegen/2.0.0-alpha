@@ -111,3 +111,32 @@ export function createKnownGoodSet({ version, manifestIds, frozenAt = new Date()
     configDigest: computeKnownGoodDigest(serializeKnownGoodSet({ version, manifestIds: sorted })),
   };
 }
+
+// ---- Engineer recovery ladder (ADR-010) beneath Ground-0 (ADR-053 amendment) ----
+// Plain-JS mirror of src/sdk/recovery `driveRecoveryLadder`. Ground-0 drives
+// the ladder: entry activates + resets to phase 1; exit deactivates + marks the
+// report complete (handoff to the Strategist).
+export function driveRecoveryLadder(state, ladder, at) {
+  const active = state === "ground-zero";
+  if (active === ladder.active) return ladder;
+  if (active) {
+    return {
+      ...ladder,
+      active,
+      changeLog: [...ladder.changeLog, `${at}: Entered Ground-0 — recovery ladder active.`],
+      checklist: ladder.checklist.map((step, index) => ({
+        ...step,
+        status: index === 0 ? "active" : "pending",
+      })),
+    };
+  }
+  return {
+    ...ladder,
+    active,
+    changeLog: [...ladder.changeLog, `${at}: Exited Ground-0 — control returned to the Strategist.`],
+    checklist: ladder.checklist.map((step) => ({
+      ...step,
+      status: step.id === "report" ? "complete" : "pending",
+    })),
+  };
+}
