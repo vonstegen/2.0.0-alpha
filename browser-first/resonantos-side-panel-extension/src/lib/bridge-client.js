@@ -107,6 +107,9 @@ const BRIDGE_ROUTE_CAPABILITIES = Object.freeze({
   "POST /goals": "addon-record-write",
   "POST /settings/extension-prefs": "extension-prefs-write",
   "POST /external-agent-runtime/delegate": "agent-delegation",
+  "POST /ground-zero/enter": "ground-zero-control",
+  "POST /ground-zero/exit": "ground-zero-control",
+  "GET /ground-zero/status": "ground-zero-read",
 });
 export const RUNTIME_CAPABILITY_ALLOWLIST = Object.freeze([...new Set(Object.values(BRIDGE_ROUTE_CAPABILITIES))]);
 
