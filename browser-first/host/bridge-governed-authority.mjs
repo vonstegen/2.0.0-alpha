@@ -225,6 +225,45 @@ export function createGovernedAuthority({
     }
     return revoked;
   }
+  // Enumerate active grants for the Ground-0 snapshot (CP-8): the bridge must
+  // be able to report the live executable authority before revoking it. The
+  // handle is included so callers can reconcile; it is never emitted to audit.
+  function listActiveGrants() {
+    const active = [];
+    for (const [handle, grant] of grants.entries()) {
+      if (!ACTIVE_STATUSES.has(grant.status)) continue;
+      active.push({
+        handle,
+        grantId: grant.grantId,
+        taskId: grant.scope.taskId,
+        delegationId: grant.scope.delegationId,
+        subjectPrincipalId: grant.scope.subjectPrincipalId,
+      });
+    }
+    return active;
+  }
+
+  // Revoke every active grant (Ground-0 entry). Returns the revoked grant ids
+  // for the recovery audit; no pre-recovery executable authority survives.
+  function revokeAll(reason = "ground-zero") {
+    const revoked = [];
+    for (const [handle, grant] of grants.entries()) {
+      if (!ACTIVE_STATUSES.has(grant.status)) continue;
+      grant.status = "revoked";
+      grant.revokedAt = now();
+      grant.revokeReason = reason;
+      revoked.push(handle);
+      emit("cancel", {
+        grantId: grant.grantId,
+        taskId: grant.scope.taskId,
+        delegationId: grant.scope.delegationId,
+        reason,
+        status: "revoked",
+      });
+    }
+    return revoked;
+  }
+
 
   // Walk the full principal chain from the grant's delegationId up to the
   // root, verifying every edge is present, active, temporally valid, and
@@ -363,6 +402,8 @@ export function createGovernedAuthority({
     revokeGrant,
     revokeTask,
     revokeDescendants,
+    revokeAll,
+    listActiveGrants,
     validateGovernedRequest,
   };
 }
