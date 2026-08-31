@@ -51,7 +51,7 @@ resumes from the artifact instead of re-deriving it.
 | Cascade revoke/expire on cancellation + parent revocation | `done` | `revokeTask()` + `revokeDescendants()` (BFS over principal lineage) + time-based expiry in `validateGovernedRequest()` |
 | Append-only audit events (request/decision/effect/denial/cancel) | `done` | `bridge-governed-authority.mjs` emits `request`/`decision`/`effect`/`denial`/`cancel` to the ledger sink |
 | Prove tokens/handles never enter browser persistence/artifacts/logs | `done` | module never emits handle/token (test); `bridge-redact-audit.mjs` routes `grantHandle`/`token` through the redactor |
-| Expand route-by-route with compatibility telemetry | `not-started` | Carried to CP-3/CP-4: the launcher now threads `createGovernedAuthority()` (`run-bridge-minimal.mjs`), unblocking per-route-family envelope adoption; per ROADMAP, "CP-2 pilot envelope precedes route-by-route expansion" |
+| Expand route-by-route with compatibility telemetry | `done` | `route-enforcement-telemetry.mjs` (`classifyRouteEnforcement`/`collectRouteEnforcementTelemetry`) reports governed vs legacy vs ungated + a `migrationComplete` flag; the two pilot routes are `enforcement: "governed"`; launcher emits the baseline in the `governed_runtime_ready` boot log; 4 tests + a drill |
 
 ## Phase 3 — Augmentor orchestration and extensions (CP-3) — *done*
 

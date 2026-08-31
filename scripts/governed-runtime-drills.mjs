@@ -22,6 +22,7 @@ import {
 import { createContinuityVault, mediateContextRead, reconstructTask } from "../browser-first/host/continuity-vault.mjs";
 import { driveRecoveryLadder, enterGroundZero, reEnableFromGroundZero } from "../browser-first/host/ground-zero.mjs";
 import { createGroundZeroService } from "../browser-first/host/ground-zero-service.mjs";
+import { collectRouteEnforcementTelemetry } from "../browser-first/host/route-enforcement-telemetry.mjs";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -326,6 +327,18 @@ async function main() {
     if (exited.active || exited.checklist.find((s) => s.id === "report").status !== "complete") {
       throw new Error("ladder not handed off on exit");
     }
+  });
+  await check("route-enforcement telemetry reports governed vs legacy parity", () => {
+    const telemetry = collectRouteEnforcementTelemetry([
+      { method: "POST", path: "/external-agent-runtime/governed-delegate", enforcement: "governed" },
+      { method: "POST", path: "/augmentor/extension/invoke", enforcement: "governed" },
+      { method: "POST", path: "/hermes/delegation/start", requiredCapability: "addon-runtime-control" },
+      { method: "GET", path: "/addons/status" },
+    ]);
+    if (telemetry.governed !== 2) throw new Error(`governed ${telemetry.governed}`);
+    if (telemetry.legacy !== 1) throw new Error(`legacy ${telemetry.legacy}`);
+    if (telemetry.ungated !== 1) throw new Error(`ungated ${telemetry.ungated}`);
+    if (telemetry.migrationComplete) throw new Error("migration complete while a legacy route remains");
   });
 
   console.log("CP-7 continuity — bounded context, restart reconstruction, last-known-good");
