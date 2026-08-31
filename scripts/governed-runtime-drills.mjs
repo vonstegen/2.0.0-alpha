@@ -20,7 +20,7 @@ import {
   createPiProviderAdapter,
 } from "../browser-first/host/harness-provider-adapters.mjs";
 import { createContinuityVault, mediateContextRead, reconstructTask } from "../browser-first/host/continuity-vault.mjs";
-import { enterGroundZero, reEnableFromGroundZero } from "../browser-first/host/ground-zero.mjs";
+import { driveRecoveryLadder, enterGroundZero, reEnableFromGroundZero } from "../browser-first/host/ground-zero.mjs";
 import { createGroundZeroService } from "../browser-first/host/ground-zero-service.mjs";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -309,6 +309,23 @@ async function main() {
       healthCheck: () => true,
     });
     if (exited.state !== "normal" || service.isDisabled()) throw new Error("exit did not resume");
+  });
+  await check("Ground-0 state drives the recovery ladder (entry active, exit handoff)", () => {
+    const ladder = {
+      active: false,
+      lastNormalThreadId: "thread-main-desktop",
+      checklist: [
+        { id: "facts", status: "pending" },
+        { id: "report", status: "pending" },
+      ],
+      changeLog: [],
+    };
+    const active = driveRecoveryLadder("ground-zero", ladder, "t1");
+    if (!active.active || active.checklist[0].status !== "active") throw new Error("ladder not activated on entry");
+    const exited = driveRecoveryLadder("normal", active, "t2");
+    if (exited.active || exited.checklist.find((s) => s.id === "report").status !== "complete") {
+      throw new Error("ladder not handed off on exit");
+    }
   });
 
   console.log("CP-7 continuity — bounded context, restart reconstruction, last-known-good");
