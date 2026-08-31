@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { GroundZeroSnapshot } from "./index";
-import { enterGroundZero, reEnableFromGroundZero, serializeKnownGoodSet, verifyKnownGoodSet } from "./index";
+import { driveRecoveryLadder, enterGroundZero, reEnableFromGroundZero, serializeKnownGoodSet, verifyKnownGoodSet } from "./index";
 
 function snapshot(): GroundZeroSnapshot {
   return {
@@ -89,5 +89,40 @@ describe("known-good manifest set", () => {
     expect(verifyKnownGoodSet(set, digest)).toBe(true);
     expect(verifyKnownGoodSet({ ...set, manifestIds: ["b"] }, digest)).toBe(false);
     expect(verifyKnownGoodSet({ ...set, version: "2" }, digest)).toBe(false);
+  });
+});
+
+describe("Engineer recovery ladder beneath Ground-0", () => {
+  const ladder = () => ({
+    active: false,
+    lastNormalThreadId: "thread-main-desktop",
+    checklist: [
+      { id: "facts", status: "pending" as const },
+      { id: "better-brain", status: "pending" as const },
+      { id: "report", status: "pending" as const },
+    ],
+    changeLog: [] as string[],
+  });
+
+  it("activates and resets to phase 1 on Ground-0 entry", () => {
+    const next = driveRecoveryLadder("ground-zero", ladder(), "t1");
+    expect(next.active).toBe(true);
+    expect(next.checklist.map((s) => s.status)).toEqual(["active", "pending", "pending"]);
+    expect(next.changeLog).toHaveLength(1);
+  });
+
+  it("deactivates and marks the report complete on exit", () => {
+    const active = driveRecoveryLadder("ground-zero", ladder(), "t1");
+    const exited = driveRecoveryLadder("normal", active, "t2");
+    expect(exited.active).toBe(false);
+    expect(exited.checklist.find((s) => s.id === "report")?.status).toBe("complete");
+    expect(exited.lastNormalThreadId).toBe("thread-main-desktop");
+  });
+
+  it("is idempotent when the ladder already matches the Ground-0 state", () => {
+    const active = driveRecoveryLadder("ground-zero", ladder(), "t1");
+    expect(driveRecoveryLadder("ground-zero", active, "t2")).toBe(active);
+    const inactive = ladder();
+    expect(driveRecoveryLadder("normal", inactive, "t2")).toBe(inactive);
   });
 });

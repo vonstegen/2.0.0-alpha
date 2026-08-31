@@ -121,7 +121,7 @@ resumes from the artifact instead of re-deriving it.
 | Provider-switch/restart reconstruction without secret persistence | `done` | `reconstructTask` rebuilds task + last harness from delegation history (audit summaries, never credentials) |
 | Identity & Continuity Vault + Continuity Gatekeeper | `done` | `mediateContextRead` (effective-context intersection) + `reloadGroundZeroKernel` (core skills only); Core-owned, doc 15 |
 
-## Phase 8 — Ground-0 state (CP-8) — *in-progress*
+## Phase 8 — Ground-0 state (CP-8) — *done*
 
 | Item | Status | Evidence / gap |
 | --- | --- | --- |
@@ -131,7 +131,7 @@ resumes from the artifact instead of re-deriving it.
 | Disable harnesses/extensions/hooks/scripts/channels/background/ingest | `done` | bridge-side `ground-zero-service.mjs` revokes every active grant + marks the surface disabled (7 harness adapters + extension effect + archive ingest); hooks/scripts/channels/background-jobs have no runtime component yet (modeled as `QuarantineKind`, disabled at the authority level) |
 | Preserve identity/audit/history/continuity/recovery-hints read-only | `done` | entry is non-destructive: identity/continuity live in the vault, audit in the append-only ledger (revocation appends `cancel` events); the recovery snapshot is exposed read-only via `GET /ground-zero/status` |
 | Ground-0 vault-reload (identity + continuity checkpoint + core skills → minimal Augmentor kernel) | `done` | `reloadGroundZeroKernel` (CP-7, `src/sdk/continuity`) — core-skill tier only |
-| Connect Engineer recovery ladder beneath Ground-0 | `in-progress` | ADR-010 ladder exists; not yet driven by a Ground-0 state |
+| Connect Engineer recovery ladder beneath Ground-0 | `done` | `driveRecoveryLadder(state, ladder, at)` (SDK `src/sdk/recovery` + bridge mirror) — the ADR-010 ladder activates/resets to phase 1 on Ground-0 entry and hands off (report complete) on exit; `lastNormalThreadId` preserved; idempotent |
 | Re-enable in dependency order + health checks + fresh grants | `done` | `reEnableFromGroundZero` — ordered, health-checked, fresh grants (never old); tested |
 | Manual/crash-loop/corrupt-state/interrupted-recovery/rollback tests | `done` | `browser-first/test/ground-zero.test.mjs` (9 tests) + `ground-zero-service.test.mjs` (6 tests) + drills (5 checks) exercise the machine and the runtime consumer; live per-harness health probe still lands with CP-5 parity |
 
