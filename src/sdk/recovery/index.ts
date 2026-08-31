@@ -116,3 +116,29 @@ export function reEnableFromGroundZero(
     audit: [...snapshot.audit, transition],
   };
 }
+
+// ---- Known-good manifest/config set (doc 10 §Entry, §Recovery sequence) ----
+// The frozen Core-owned baseline Ground-0 restores to. It is integrity-checked
+// before reload: a tampered set must fail closed, never silently reload.
+
+export interface KnownGoodSet {
+  version: string;
+  frozenAt: string;
+  manifestIds: string[];
+  configDigest: string;
+}
+
+// Canonical serialization for the digest. Key order and manifest-id ordering
+// are fixed so the same logical set always hashes identically.
+export function serializeKnownGoodSet(set: Pick<KnownGoodSet, "version" | "manifestIds">): string {
+  return JSON.stringify({ version: set.version, manifestIds: [...set.manifestIds].sort() });
+}
+
+// Verify a known-good set against a caller-supplied digest function (kept
+// injectable so the SDK stays free of `node:crypto`).
+export function verifyKnownGoodSet(
+  set: KnownGoodSet,
+  computeDigest: (serialized: string) => string,
+): boolean {
+  return computeDigest(serializeKnownGoodSet(set)) === set.configDigest;
+}

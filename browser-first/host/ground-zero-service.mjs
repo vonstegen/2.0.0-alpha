@@ -15,13 +15,19 @@
 // non-normal state and exiting from a non-ground-zero state both throw, so the
 // bridge cannot silently double-revoke or half-recover.
 
-import { enterGroundZero, reEnableFromGroundZero } from "./ground-zero.mjs";
+import {
+  enterGroundZero,
+  reEnableFromGroundZero,
+  verifyKnownGoodSet,
+} from "./ground-zero.mjs";
 
 export function createGroundZeroService({
   governedAuthority,
   surfaceInventory = () => [],
   now = () => Date.now(),
   onSnapshot = null,
+  knownGood = null,
+  verifyKnownGood = verifyKnownGoodSet,
 } = {}) {
   if (!governedAuthority || typeof governedAuthority.revokeAll !== "function") {
     throw new Error("createGroundZeroService requires a governed authority with revokeAll");
@@ -48,6 +54,12 @@ export function createGroundZeroService({
   function enter({ trigger = "manual", at = new Date(now()).toISOString() } = {}) {
     if (snapshot.state !== "normal") {
       throw new Error(`cannot enter Ground-0 from state "${snapshot.state}"`);
+    }
+    // Doc 10 §Entry: switch to a known-good manifest set. Fail closed if the
+    // baseline is missing or tampered — recovery has nothing trustworthy to
+    // restore to.
+    if (knownGood != null && !verifyKnownGood(knownGood)) {
+      throw new Error("known-good manifest set failed integrity check");
     }
     const { grants, items } = refreshInventory();
     // Carry the audit history forward; refresh only the live authority + the

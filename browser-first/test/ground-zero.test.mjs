@@ -2,7 +2,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { enterGroundZero, reEnableFromGroundZero } from "../host/ground-zero.mjs";
+import {
+  createKnownGoodSet,
+  enterGroundZero,
+  reEnableFromGroundZero,
+  serializeKnownGoodSet,
+  verifyKnownGoodSet,
+} from "../host/ground-zero.mjs";
 
 function snapshot(overrides = {}) {
   return {
@@ -118,4 +124,18 @@ test("rollback: re-entering Ground-0 after exit revokes the fresh grants", () =>
   assert.equal(rolledBack.state, "ground-zero");
   assert.deepEqual(rolledBack.activeGrantIds, []);
   assert.equal(rolledBack.audit.length, 3);
+});
+
+test("known-good set verifies intact and rejects tampering", () => {
+  const set = createKnownGoodSet({ version: "1", manifestIds: ["overview", "archive", "strategist"] });
+  assert.equal(verifyKnownGoodSet(set), true);
+  assert.equal(verifyKnownGoodSet({ ...set, manifestIds: [...set.manifestIds, "compute"] }), false);
+  assert.equal(verifyKnownGoodSet({ ...set, version: "2" }), false);
+});
+
+test("known-good digest is order-independent and deterministic", () => {
+  const a = createKnownGoodSet({ version: "1", manifestIds: ["b", "a"] });
+  const b = createKnownGoodSet({ version: "1", manifestIds: ["a", "b"] });
+  assert.equal(a.configDigest, b.configDigest);
+  assert.equal(serializeKnownGoodSet(a), serializeKnownGoodSet(b));
 });
