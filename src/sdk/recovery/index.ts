@@ -142,3 +142,47 @@ export function verifyKnownGoodSet(
 ): boolean {
   return computeDigest(serializeKnownGoodSet(set)) === set.configDigest;
 }
+
+// ---- Engineer recovery ladder (ADR-010) beneath Ground-0 (ADR-053 amendment) ----
+// The recovery ladder runs only while in Ground-0. Ground-0 drives it: entry
+// activates the ladder and resets it to phase 1; exit deactivates it and marks
+// the report complete (handoff back to the Strategist). `lastNormalThreadId` is
+// preserved — the caller captures it before entry.
+
+export type RecoveryChecklistStatus = "pending" | "active" | "complete";
+
+export interface RecoveryLadderState {
+  active: boolean;
+  lastNormalThreadId: string;
+  checklist: Array<{ id: string; status: RecoveryChecklistStatus }>;
+  changeLog: string[];
+}
+
+export function driveRecoveryLadder(
+  state: GroundZeroState,
+  ladder: RecoveryLadderState,
+  at: string,
+): RecoveryLadderState {
+  const active = state === "ground-zero";
+  if (active === ladder.active) return ladder;
+  if (active) {
+    return {
+      ...ladder,
+      active,
+      changeLog: [...ladder.changeLog, `${at}: Entered Ground-0 — recovery ladder active.`],
+      checklist: ladder.checklist.map((step, index) => ({
+        ...step,
+        status: index === 0 ? ("active" as const) : ("pending" as const),
+      })),
+    };
+  }
+  return {
+    ...ladder,
+    active,
+    changeLog: [...ladder.changeLog, `${at}: Exited Ground-0 — control returned to the Strategist.`],
+    checklist: ladder.checklist.map((step) => ({
+      ...step,
+      status: step.id === "report" ? ("complete" as const) : ("pending" as const),
+    })),
+  };
+}

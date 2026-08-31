@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   createKnownGoodSet,
+  driveRecoveryLadder,
   enterGroundZero,
   reEnableFromGroundZero,
   serializeKnownGoodSet,
@@ -138,4 +139,25 @@ test("known-good digest is order-independent and deterministic", () => {
   const b = createKnownGoodSet({ version: "1", manifestIds: ["a", "b"] });
   assert.equal(a.configDigest, b.configDigest);
   assert.equal(serializeKnownGoodSet(a), serializeKnownGoodSet(b));
+});
+
+test("Ground-0 drives the recovery ladder: entry activates, exit hands off", () => {
+  const ladder = {
+    active: false,
+    lastNormalThreadId: "thread-main-desktop",
+    checklist: [
+      { id: "facts", status: "pending" },
+      { id: "better-brain", status: "pending" },
+      { id: "report", status: "pending" },
+    ],
+    changeLog: [],
+  };
+  const active = driveRecoveryLadder("ground-zero", ladder, "t1");
+  assert.equal(active.active, true);
+  assert.deepEqual(active.checklist.map((s) => s.status), ["active", "pending", "pending"]);
+
+  const exited = driveRecoveryLadder("normal", active, "t2");
+  assert.equal(exited.active, false);
+  assert.equal(exited.checklist.find((s) => s.id === "report").status, "complete");
+  assert.equal(exited.lastNormalThreadId, "thread-main-desktop");
 });
