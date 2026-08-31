@@ -20,6 +20,8 @@ export type {
   HarnessSandboxStrength,
 } from "../../core/contracts";
 
+export * from "./output-filtering";
+
 // SDK-facing first-class provider declaration: the manifest definition plus
 // identity/version and the class discriminant.
 export type HarnessProviderManifest = HarnessProviderDefinition & {
