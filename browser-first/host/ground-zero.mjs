@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 // Intent citation: docs/architecture/resonantos-browser-architecture/10-ground-0-recovery.md
 // Intent citation: docs/architecture/resonantos-browser-architecture/12-sdk-api-implications.md
 // Intent citation: docs/architecture/resonantos-browser-architecture/CONTRACTS.md
@@ -81,5 +83,31 @@ export function reEnableFromGroundZero(snapshot, args) {
     optionalItems: [],
     quarantine,
     audit: [...snapshot.audit, transition],
+  };
+}
+
+// ---- Known-good manifest/config set (doc 10 §Entry) ----
+// Plain-JS mirror of the SDK's KnownGoodSet. `configDigest` is a SHA-256 over
+// the canonical serialization; a tampered set fails `verifyKnownGoodSet`.
+
+export function serializeKnownGoodSet(set) {
+  return JSON.stringify({ version: set.version, manifestIds: [...set.manifestIds].sort() });
+}
+
+export function computeKnownGoodDigest(serialized) {
+  return createHash("sha256").update(serialized).digest("hex");
+}
+
+export function verifyKnownGoodSet(set) {
+  return computeKnownGoodDigest(serializeKnownGoodSet(set)) === set.configDigest;
+}
+
+export function createKnownGoodSet({ version, manifestIds, frozenAt = new Date().toISOString() }) {
+  const sorted = [...manifestIds].sort();
+  return {
+    version,
+    frozenAt,
+    manifestIds: sorted,
+    configDigest: computeKnownGoodDigest(serializeKnownGoodSet({ version, manifestIds: sorted })),
   };
 }
