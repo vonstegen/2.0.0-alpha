@@ -185,10 +185,49 @@ export function renderTextReport(report) {
   return `${lines.join("\n")}\n`;
 }
 
+// Untrusted-search-path / injection guard (issue #163 class): commands execute as
+// argv arrays with shell:false. Quoted segments group words and are passed as
+// literal argv (never interpreted); unquoted shell metacharacters are refused
+// (validate-and-refuse - stricter than the runtime remedy in #163, appropriate
+// for a dev-time verification gate; argv[0] PATH resolution remains, dev-script scope).
+const SHELL_METACHARS = /[\u0000;&|<>`$()\\]/;
+
+export function splitCommand(command) {
+  const tokens = [];
+  let current = "";
+  let quote = null;
+  let unquoted = "";
+  for (const ch of String(command)) {
+    if (quote) {
+      if (ch === quote) { quote = null; continue; }
+      current += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (/\s/.test(ch)) { if (current) { tokens.push(current); current = ""; } continue; }
+    current += ch;
+    unquoted += ch;
+  }
+  if (quote) return { error: "unterminated quote" };
+  if (current) tokens.push(current);
+  return { tokens, unquoted };
+}
+
 export function runCommand(cwd, command, options = {}) {
-  const result = spawnSync(command, {
+  const split = splitCommand(command);
+  const argv = split.tokens ?? [];
+  if (split.error || argv.length === 0 || SHELL_METACHARS.test(split.unquoted ?? "")) {
+    return {
+      command,
+      status: 126,
+      signal: null,
+      stdout: "",
+      stderr: `engineer-runner: refused (${split.error ?? "unquoted shell metacharacters or empty command"}): ${command}`,
+    };
+  }
+  const result = spawnSync(argv[0], argv.slice(1), {
     cwd,
-    shell: true,
+    shell: false,
     encoding: "utf-8",
     timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     maxBuffer: options.maxBuffer ?? 1024 * 1024 * 10,
