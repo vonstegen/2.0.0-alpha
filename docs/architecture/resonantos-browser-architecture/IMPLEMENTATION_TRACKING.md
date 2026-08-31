@@ -128,12 +128,12 @@ resumes from the artifact instead of re-deriving it.
 | Core-owned Ground-0 state machine + transition audit | `done` | `src/sdk/recovery/index.ts` `GroundZeroSnapshot`/`GroundZeroTransition` + `enterGroundZero`/`reEnableFromGroundZero`; bridge plain-JS mirror `browser-first/host/ground-zero.mjs`; `src/modules/recovery` becomes a consumer |
 | Known-good manifest/config set + integrity check | `seeded` | ADR-051 fused-core + `lastNormalThreadId`/`recoverySession` encode intent; no integrity-checked set |
 | On entry: revoke temporal grants + quarantine optional runs | `done` | `enterGroundZero` revokes all grants + quarantines optional items (no pre-recovery authority survives); tested |
-| Disable harnesses/extensions/hooks/scripts/channels/background/ingest | `not-started` | — |
-| Preserve identity/audit/history/continuity/recovery-hints read-only | `not-started` | — |
+| Disable harnesses/extensions/hooks/scripts/channels/background/ingest | `done` | bridge-side `ground-zero-service.mjs` revokes every active grant + marks the surface disabled (7 harness adapters + extension effect + archive ingest); hooks/scripts/channels/background-jobs have no runtime component yet (modeled as `QuarantineKind`, disabled at the authority level) |
+| Preserve identity/audit/history/continuity/recovery-hints read-only | `done` | entry is non-destructive: identity/continuity live in the vault, audit in the append-only ledger (revocation appends `cancel` events); the recovery snapshot is exposed read-only via `GET /ground-zero/status` |
 | Ground-0 vault-reload (identity + continuity checkpoint + core skills → minimal Augmentor kernel) | `done` | `reloadGroundZeroKernel` (CP-7, `src/sdk/continuity`) — core-skill tier only |
 | Connect Engineer recovery ladder beneath Ground-0 | `in-progress` | ADR-010 ladder exists; not yet driven by a Ground-0 state |
 | Re-enable in dependency order + health checks + fresh grants | `done` | `reEnableFromGroundZero` — ordered, health-checked, fresh grants (never old); tested |
-| Manual/crash-loop/corrupt-state/interrupted-recovery/rollback tests | `done` | `browser-first/test/ground-zero.test.mjs` (9 tests) + drills (3 checks) exercise crash-loop/corrupt-state/interrupted-recovery/rollback at the state-machine level; runtime-surface disable still pending (see "Disable harnesses/…" row) |
+| Manual/crash-loop/corrupt-state/interrupted-recovery/rollback tests | `done` | `browser-first/test/ground-zero.test.mjs` (9 tests) + `ground-zero-service.test.mjs` (6 tests) + drills (5 checks) exercise the machine and the runtime consumer; live per-harness health probe still lands with CP-5 parity |
 
 ## Phase 9 — SDK stabilization and release readiness (CP-9) — *in-progress*
 
