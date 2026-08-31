@@ -342,3 +342,21 @@ test("known canonical, ADR, icon, and deleted documentation pass strict audit", 
   assert.match(stdout, /deleted\s+docs\/retired\/legacy-release-notes\.html/);
   assert.match(stdout, /deleted\s+CODEBASE-EVALUATION-OLD\.md/);
 });
+
+test("classify includes the add-on SDK package family and tsconfig in the browser-first release surface", () => {
+  const classify = requireExport("classify");
+  // packages/addon-sdk and packages/addon-sdk-testing must be in-scope (ADR-018/ADR-040)
+  // so strict release-scope audit does not reject SDK work — regression guard for the
+  // #327-#331 framework stack CI blocker.
+  for (const p of [
+    "packages/addon-sdk/src/contracts.ts",
+    "packages/addon-sdk/package.json",
+    "packages/addon-sdk-testing/test/trust-tier.test.ts",
+    "packages/addon-sdk-testing/src/failure-modes/f1-credential-exfiltration.ts",
+  ]) {
+    assert.equal(classify(p, "added").bucket, "include", `${p} must be in release scope`);
+  }
+  assert.equal(classify("tsconfig.json", "modified").bucket, "include", "tsconfig.json must be in release scope");
+  // negative control: an unrelated new top-level path still needs review
+  assert.notEqual(classify("packages/some-unrelated-tool/index.ts", "added").bucket, "include");
+});
