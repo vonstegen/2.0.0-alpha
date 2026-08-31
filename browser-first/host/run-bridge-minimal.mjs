@@ -69,6 +69,7 @@ import { createGroundZeroService } from "./ground-zero-service.mjs";
 import { createGroundZeroHostService } from "./ground-zero-host-service.mjs";
 import { createKnownGoodSet } from "./ground-zero.mjs";
 import { ROS_FUSED_CORE } from "./ros-architecture-snapshot.mjs";
+import { collectRouteEnforcementTelemetry } from "./route-enforcement-telemetry.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 const resonantExtension = path.join(repoRoot, "browser-first", "resonantos-side-panel-extension");
@@ -742,7 +743,6 @@ console.log(JSON.stringify({
   bridgeUrl: bridgePublicUrl,
   bridgeConfigPath,
 }, null, 2));
-
 console.log(JSON.stringify({
   event: "browser.first.governed_runtime_ready",
   governedAuthority: Boolean(governedAuthorityHolder.value),
@@ -753,6 +753,7 @@ console.log(JSON.stringify({
   continuityDelegationCount: continuityVault.delegationHistory().length,
   continuitySnapshotCount: continuityVault.snapshots().length,
   lastKnownGoodSnapshot: continuityVault.lastKnownGood()?.snapshotId ?? null,
+  routeEnforcement: collectRouteEnforcementTelemetry(bridgeRoutes),
  }, null, 2));
  
 const shutdown = async () => {
