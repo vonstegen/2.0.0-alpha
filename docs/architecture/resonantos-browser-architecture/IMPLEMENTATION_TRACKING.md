@@ -100,11 +100,11 @@ resumes from the artifact instead of re-deriving it.
 | Item | Status | Evidence / gap |
 | --- | --- | --- |
 | Per-task resource budgets/reservations | `done` | `src/sdk/resources/index.ts`: structured `ResourceUsage` + tightened `ResourceBudget` (`estimated`/`hardCeiling`), `ResourceReservation` (`amount: number`) |
-| Global/per-harness concurrency + fair scheduling | `in-progress` | `admissionDecision` (admit/queue/reject by concurrency limit + budget); fair-share weighting not yet typed |
-| Workspace/browser/GPU/provider-route/external-account leases | `not-started` | `ResourceLease` exists; per-kind lease tables not yet typed |
+| Global/per-harness concurrency + fair scheduling | `done` | `admissionDecision` (admit/queue/reject) + `FairShareAccount` / `fairShareDeficit` / `fairShareRank` (under-share principals schedule before over-share; zero allocation ranks last) |
+| Workspace/browser/GPU/provider-route/external-account leases | `done` | `LeaseKind` + `ResourceLease.resourceId` + `leaseConflicts` (same kind + resource + one exclusive) + `leaseActive` (expiry) |
 | Child usage rolls up into parent budget + hard ceilings | `done` | `rollUpChildUsage` + `remainingBudget` + `isBudgetExhausted` — deterministic roll-up with exceeded-dimension reporting |
-| Priority/queue/preemption/checkpoint/budget-exhaustion events | `in-progress` | `admissionDecision` covers admit/queue/reject + exhaustion; preemption/checkpoint event types not yet added |
-| Reserve capacity for interactive Augmentor + Ground-0 | `not-started` | — |
+| Priority/queue/preemption/checkpoint/budget-exhaustion events | `done` | `GovernorEvent` (admitted/queued/rejected/preempted/checkpointed/budget-exhausted) + `admissionEvent` overloads (admit/queue/reject → typed event) |
+| Reserve capacity for interactive Augmentor + Ground-0 | `done` | `ReservedCapacity` (`interactive-augmentor` | `ground-zero`) + `optionalWorkHeadroom` (remaining headroom minus the reserved amount; fully-reserved dimensions omitted) |
 | Integrate with ADR-032 compute jobs (no duplication) | `seeded` | ADR-032 + `src/core/compute-fabric.ts` types exist; deferred, per doc 13 |
 | UI: executor/budget/usage/status/stop | `not-started` | — |
 
