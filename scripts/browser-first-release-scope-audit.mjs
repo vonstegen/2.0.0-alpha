@@ -223,7 +223,7 @@ export function collectChangedPaths(options, runGit) {
   ];
 }
 
-function classify(changedPath, state) {
+export function classify(changedPath, state) {
   if (changedPath.startsWith("browser-first/")) {
     return {
       bucket: "include",
@@ -272,6 +272,12 @@ function classify(changedPath, state) {
       reason: "pure Node browser host support package",
     };
   }
+  if (changedPath.startsWith("packages/addon-sdk")) {
+    return {
+      bucket: "include",
+      reason: "add-on SDK package family (ADR-018/ADR-040), part of the browser-first extension release surface",
+    };
+  }
   if (
     changedPath.startsWith("src/") ||
     changedPath.startsWith("public/addons/") ||
@@ -290,7 +296,8 @@ function classify(changedPath, state) {
     changedPath === "SECURITY.md" ||
     changedPath === "LICENSE.txt" ||
     changedPath === "run-bridge-minimal.mjs" ||
-    changedPath === "vite.config.ts"
+    changedPath === "vite.config.ts" ||
+    changedPath === "tsconfig.json"
   ) {
     return {
       bucket: "include",
