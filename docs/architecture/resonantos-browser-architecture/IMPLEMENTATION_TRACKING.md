@@ -126,7 +126,7 @@ resumes from the artifact instead of re-deriving it.
 | Item | Status | Evidence / gap |
 | --- | --- | --- |
 | Core-owned Ground-0 state machine + transition audit | `done` | `src/sdk/recovery/index.ts` `GroundZeroSnapshot`/`GroundZeroTransition` + `enterGroundZero`/`reEnableFromGroundZero`; bridge plain-JS mirror `browser-first/host/ground-zero.mjs`; `src/modules/recovery` becomes a consumer |
-| Known-good manifest/config set + integrity check | `seeded` | ADR-051 fused-core + `lastNormalThreadId`/`recoverySession` encode intent; no integrity-checked set |
+| Known-good manifest/config set + integrity check | `done` | `KnownGoodSet` + `serializeKnownGoodSet`/`verifyKnownGoodSet` (SDK `src/sdk/recovery`) + bridge mirror `createKnownGoodSet`/`verifyKnownGoodSet` (SHA-256); the service verifies the frozen fused-core baseline (`ROS_FUSED_CORE` sections + integrated harness) on entry and fails closed on tamper |
 | On entry: revoke temporal grants + quarantine optional runs | `done` | `enterGroundZero` revokes all grants + quarantines optional items (no pre-recovery authority survives); tested |
 | Disable harnesses/extensions/hooks/scripts/channels/background/ingest | `done` | bridge-side `ground-zero-service.mjs` revokes every active grant + marks the surface disabled (7 harness adapters + extension effect + archive ingest); hooks/scripts/channels/background-jobs have no runtime component yet (modeled as `QuarantineKind`, disabled at the authority level) |
 | Preserve identity/audit/history/continuity/recovery-hints read-only | `done` | entry is non-destructive: identity/continuity live in the vault, audit in the append-only ledger (revocation appends `cancel` events); the recovery snapshot is exposed read-only via `GET /ground-zero/status` |
