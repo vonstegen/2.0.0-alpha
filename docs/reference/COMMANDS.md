@@ -86,3 +86,9 @@ naming the captured tab count so the user can review or delete it.
 
 The human reviews and completes external draft handoffs. A returned URL or
 artifact is not proof that an external action occurred.
+
+## Add-on Tools
+
+| Command | Purpose |
+| --- | --- |
+| `/tool <addon-id> [args]` / `/addon <addon-id> [args]` | Invoke a tool on an installed add-on through the host-mediated add-on tool command. |
