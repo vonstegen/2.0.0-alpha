@@ -132,8 +132,8 @@ resumes from the artifact instead of re-deriving it.
 | Preserve identity/audit/history/continuity/recovery-hints read-only | `done` | entry is non-destructive: identity/continuity live in the vault, audit in the append-only ledger (revocation appends `cancel` events); the recovery snapshot is exposed read-only via `GET /ground-zero/status` |
 | Ground-0 vault-reload (identity + continuity checkpoint + core skills → minimal Augmentor kernel) | `done` | `reloadGroundZeroKernel` (CP-7, `src/sdk/continuity`) — core-skill tier only |
 | Connect Engineer recovery ladder beneath Ground-0 | `done` | `driveRecoveryLadder(state, ladder, at)` (SDK `src/sdk/recovery` + bridge mirror) — the ADR-010 ladder activates/resets to phase 1 on Ground-0 entry and hands off (report complete) on exit; `lastNormalThreadId` preserved; idempotent |
-| Re-enable in dependency order + health checks + fresh grants | `done` | `reEnableFromGroundZero` — ordered, health-checked, fresh grants (never old); tested |
-| Manual/crash-loop/corrupt-state/interrupted-recovery/rollback tests | `done` | `browser-first/test/ground-zero.test.mjs` (9 tests) + `ground-zero-service.test.mjs` (6 tests) + drills (5 checks) exercise the machine and the runtime consumer; live per-harness health probe still lands with CP-5 parity |
+| Re-enable in dependency order + health checks + fresh grants | `done` | `reEnableFromGroundZero` — ordered, health-checked, fresh grants (never old); the exit `healthCheck` is now the real `createHarnessHealthCheck` (async `adapter.diagnose()` → `status === "ok"`), not a constant-true stub |
+| Manual/crash-loop/corrupt-state/interrupted-recovery/rollback tests | `done` | `browser-first/test/ground-zero.test.mjs` (9 tests) + `ground-zero-service.test.mjs` (6 tests) + drills (6 checks) exercise the machine and the runtime consumer; async health-check resolution tested via `createHarnessHealthCheck` (ok/degraded/unavailable/throw/missing) |
 
 ## Phase 9 — SDK stabilization and release readiness (CP-9) — *in-progress*
 
