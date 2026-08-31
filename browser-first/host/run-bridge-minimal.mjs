@@ -67,6 +67,8 @@ import {
 import { createContinuityVault } from "./continuity-vault.mjs";
 import { createGroundZeroService } from "./ground-zero-service.mjs";
 import { createGroundZeroHostService } from "./ground-zero-host-service.mjs";
+import { createKnownGoodSet } from "./ground-zero.mjs";
+import { ROS_FUSED_CORE } from "./ros-architecture-snapshot.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 const resonantExtension = path.join(repoRoot, "browser-first", "resonantos-side-panel-extension");
@@ -552,9 +554,18 @@ const groundZeroSurfaceInventory = () => [
   { id: "archive-ingest", kind: "archive-ingest" },
 ];
 
+// CP-8 known-good manifest/config set (doc 10 §Entry): the frozen fused-core
+// baseline (shell sections + integrated harness) Ground-0 restores to. The
+// integrity digest is recomputed on entry — a tampered set fails closed.
+const groundZeroKnownGoodSet = createKnownGoodSet({
+  version: "1",
+  manifestIds: [...ROS_FUSED_CORE.sections, ROS_FUSED_CORE.integratedHarness],
+});
+
 const groundZeroService = createGroundZeroService({
   governedAuthority: governedAuthorityHolder.value,
   surfaceInventory: groundZeroSurfaceInventory,
+  knownGood: groundZeroKnownGoodSet,
 });
 
 const groundZeroExitHealthCheck = () => true;

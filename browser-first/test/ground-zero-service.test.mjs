@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createGovernedAuthority } from "../host/bridge-governed-authority.mjs";
+import { createKnownGoodSet } from "../host/ground-zero.mjs";
 import { createGroundZeroService } from "../host/ground-zero-service.mjs";
 
 const T0 = Date.parse("2026-08-27T06:00:00Z");
@@ -151,4 +152,38 @@ test("full cycle: enter, exit, then re-enter revokes the fresh authority", () =>
   assert.equal(service.isDisabled(), true);
   // Audit history is preserved across the full cycle.
   assert.equal(reentered.audit.length, 3);
+});
+
+test("enter proceeds with a verified known-good set", () => {
+  const authority = createGovernedAuthority({ now: () => T0 });
+  const good = createKnownGoodSet({ version: "1", manifestIds: ["overview"] });
+  const service = createGroundZeroService({
+    governedAuthority: authority,
+    surfaceInventory: () => surface,
+    now: () => T0,
+    knownGood: good,
+  });
+  assert.equal(service.enter({ trigger: "manual" }).state, "ground-zero");
+});
+
+test("enter fails closed on a tampered known-good set, without revoking", () => {
+  const authority = createGovernedAuthority({ now: () => T0 });
+  const s = scope();
+  recordLeaf(authority, s);
+  authority.mintGrant({ grantId: "g-1", scope: s });
+  const good = createKnownGoodSet({ version: "1", manifestIds: ["overview"] });
+  const tampered = { ...good, manifestIds: [...good.manifestIds, "injected"] };
+  const service = createGroundZeroService({
+    governedAuthority: authority,
+    surfaceInventory: () => surface,
+    now: () => T0,
+    knownGood: tampered,
+  });
+
+  assert.throws(
+    () => service.enter({ trigger: "crash-loop" }),
+    /known-good manifest set failed integrity check/,
+  );
+  // The integrity gate fires before any revocation — the grant survives.
+  assert.equal(authority.listActiveGrants().length, 1);
 });
