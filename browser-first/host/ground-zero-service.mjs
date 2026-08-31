@@ -80,23 +80,33 @@ export function createGroundZeroService({
     return next;
   }
 
-  function exit({
+  async function exit({
     order = [],
-    healthCheck = () => true,
+    healthCheck = async () => true,
     at = new Date(now()).toISOString(),
     resumeItem = null,
   } = {}) {
     if (snapshot.state !== "ground-zero") {
       throw new Error(`cannot exit Ground-0 from state "${snapshot.state}"`);
     }
-    const next = reEnableFromGroundZero(snapshot, { order, healthCheck, at });
+    // Resolve async health probes first (adapter.diagnose() is async); the
+    // pure re-enable machine takes a synchronous predicate.
+    const health = new Map();
+    for (const item of order) {
+      health.set(item, Boolean(await healthCheck(item)));
+    }
+    const next = reEnableFromGroundZero(snapshot, {
+      order,
+      healthCheck: (item) => health.get(item) ?? false,
+      at,
+    });
     // Side effect: resume healthy items with fresh runtime authority; leave the
     // unhealthy ones disabled. `resumeItem` re-establishes an item's authority
     // (the per-task grants are minted fresh at approval, never revived here).
     if (resumeItem) {
       for (const item of order) {
-        if (!healthCheck(item)) continue;
-        resumeItem(item);
+        if (!health.get(item)) continue;
+        await resumeItem(item);
       }
     }
     snapshot = next;

@@ -38,7 +38,7 @@ import { createBridgeAuditLedger } from "./bridge-audit-ledger.mjs";
 import { createBridgeTokenKey } from "./bridge-token-key.mjs";
 import { createGovernedAuthority } from "./bridge-governed-authority.mjs";
 import { createAugmentorExtensionEffect } from "./augmentor-extension-effect.mjs";
-import { createAiderProviderAdapter, createAgentZeroProviderAdapter, createDeepSeekHarnessProviderAdapter, createHermesProviderAdapter, createOpenClawProviderAdapter, createOpenCodeProviderAdapter, createPiProviderAdapter } from "./harness-provider-adapters.mjs";
+import { createAiderProviderAdapter, createAgentZeroProviderAdapter, createDeepSeekHarnessProviderAdapter, createHarnessHealthCheck, createHermesProviderAdapter, createOpenClawProviderAdapter, createOpenCodeProviderAdapter, createPiProviderAdapter } from "./harness-provider-adapters.mjs";
 import { createAddonDelegationService } from "./addon-delegation-service.mjs";
 import { createAddonDelegationHostService } from "./addon-delegation-host-service.mjs";
 import { createDevExternalAgentRuntimesPanelService } from "./dev-external-agent-runtimes-panel.mjs";
@@ -569,7 +569,11 @@ const groundZeroService = createGroundZeroService({
   knownGood: groundZeroKnownGoodSet,
 });
 
-const groundZeroExitHealthCheck = () => true;
+// CP-8 exit health probe: a harness resumes only if its runtime `diagnose()`
+// reports `ok`. Core-owned effect boundaries (extension effect, archive ingest)
+// have no external runtime and are always healthy. A diagnose throw fails
+// closed (item left disabled).
+const groundZeroExitHealthCheck = createHarnessHealthCheck(harnessAdapterHolder.value);
 const groundZeroExitResumeItem = () => {};
 
 function executeGroundZeroEnter(body) {

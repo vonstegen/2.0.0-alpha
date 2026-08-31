@@ -444,3 +444,21 @@ export function createAiderProviderAdapter(options = {}) {
     }),
   });
 }
+
+// CP-8 exit health probe: maps a Ground-0 surface item to its harness
+// adapter's diagnose() result. Non-harness items (Core-owned effect
+// boundaries) are always healthy; a missing adapter or a thrown diagnose
+// fails closed (item left disabled).
+export function createHarnessHealthCheck(adapters) {
+  return async function harnessHealthCheck(itemId) {
+    if (!itemId.startsWith("harness:")) return true;
+    const adapter = adapters[itemId.slice("harness:".length)];
+    if (!adapter || typeof adapter.diagnose !== "function") return false;
+    try {
+      const health = await adapter.diagnose();
+      return health.status === "ok";
+    } catch {
+      return false;
+    }
+  };
+}

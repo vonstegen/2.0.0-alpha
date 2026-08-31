@@ -100,16 +100,16 @@ test("enter snapshots the live surface and records a transition", () => {
   assert.equal(snapshot.audit[0].trigger, "manual");
 });
 
-test("exit resumes healthy items and leaves unhealthy ones disabled", () => {
+test("exit resumes healthy items and leaves unhealthy ones disabled", async () => {
   const authority = createGovernedAuthority({ now: () => T0 });
   const service = makeService(authority);
   service.enter({ trigger: "crash-loop" });
 
   const resumed = [];
-  const snapshot = service.exit({
+  const snapshot = await service.exit({
     order: ["harness:hermes", "harness:opencode", "extension:augmentor-effect"],
-    healthCheck: (id) => id !== "harness:opencode",
-    resumeItem: (id) => resumed.push(id),
+    healthCheck: async (id) => id !== "harness:opencode",
+    resumeItem: async (id) => resumed.push(id),
   });
 
   assert.equal(snapshot.state, "normal");
@@ -125,11 +125,11 @@ test("exit resumes healthy items and leaves unhealthy ones disabled", () => {
   );
 });
 
-test("refuses to exit from a non-ground-zero state", () => {
+test("refuses to exit from a non-ground-zero state", async () => {
   const authority = createGovernedAuthority({ now: () => T0 });
   const service = makeService(authority);
-  assert.throws(
-    () => service.exit({ order: [], healthCheck: () => true }),
+  await assert.rejects(
+    service.exit({ order: [], healthCheck: async () => true }),
     /cannot exit Ground-0/,
   );
 });
@@ -141,11 +141,11 @@ test("refuses to enter twice without an intervening exit", () => {
   assert.throws(() => service.enter({ trigger: "manual" }), /cannot enter Ground-0/);
 });
 
-test("full cycle: enter, exit, then re-enter revokes the fresh authority", () => {
+test("full cycle: enter, exit, then re-enter revokes the fresh authority", async () => {
   const authority = createGovernedAuthority({ now: () => T0 });
   const service = makeService(authority);
   service.enter({ trigger: "crash-loop" });
-  service.exit({ order: surface.map((s) => s.id), healthCheck: () => true });
+  await service.exit({ order: surface.map((s) => s.id), healthCheck: async () => true });
 
   const reentered = service.enter({ trigger: "rollback" });
   assert.equal(reentered.state, "ground-zero");
