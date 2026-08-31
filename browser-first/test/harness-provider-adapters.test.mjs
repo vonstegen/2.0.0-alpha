@@ -9,6 +9,7 @@ import {
   createAiderProviderAdapter,
   createAgentZeroProviderAdapter,
   createDeepSeekHarnessProviderAdapter,
+  createHarnessHealthCheck,
   createHarnessProviderAdapter,
   createHermesProviderAdapter,
   createOpenClawProviderAdapter,
@@ -410,4 +411,24 @@ test("OpenClaw transport runs an agent turn through the governed envelope", asyn
   assert.equal((await adapter.getTask(run.runId)).status, "completed");
   assert.equal(calls[0].cmd, "openclaw");
   assert.deepEqual(calls[0].args, ["agent", "--local", "--agent", "main", "-m", "summarize the diff", "--json"]);
+});
+
+test("createHarnessHealthCheck resumes only ok harnesses and always-healthy core items", async () => {
+  const adapters = {
+    hermes: { diagnose: async () => ({ status: "ok" }) },
+    opencode: { diagnose: async () => ({ status: "unavailable" }) },
+    openclaw: { diagnose: async () => ({ status: "degraded" }) },
+    pi: { diagnose: async () => { throw new Error("boom"); } },
+    // no aider adapter key -> missing
+  };
+  const healthCheck = createHarnessHealthCheck(adapters);
+
+  assert.equal(await healthCheck("harness:hermes"), true);
+  assert.equal(await healthCheck("harness:opencode"), false);
+  assert.equal(await healthCheck("harness:openclaw"), false);
+  assert.equal(await healthCheck("harness:pi"), false);
+  assert.equal(await healthCheck("harness:aider"), false);
+  // Core-owned effect boundaries are always healthy.
+  assert.equal(await healthCheck("extension:augmentor-effect"), true);
+  assert.equal(await healthCheck("archive-ingest"), true);
 });
