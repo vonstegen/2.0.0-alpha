@@ -15,7 +15,15 @@ what is seeded, what is untouched."
 | `not-started` | No work beyond pre-existing baseline |
 
 Every `seeded` row names the existing artifact and the gap to the target, so work
-resumes from the artifact instead of re-deriving it.
+ resumes from the artifact instead of re-deriving it.
+
+## Future chat prompts
+
+Prompts for new chat sessions live in `prompts/` at the repo root. They let a
+fresh session resume work without re-deriving context.
+
+- [`prompts/_template-continuation-prompt.md`](../../../prompts/_template-continuation-prompt.md) — fill-in skeleton (workstream / branch / state / acceptance / steps).
+- [`prompts/cp4-generic-lifecycle-extraction.md`](../../../prompts/cp4-generic-lifecycle-extraction.md) — ready-to-run prompt for CP-4 generic lifecycle extraction.
 
 ## Phase 0 — Ratify scope and vocabulary (CP-0) — *done*
 
@@ -113,7 +121,7 @@ resumes from the artifact instead of re-deriving it.
 | Item | Status | Evidence / gap |
 | --- | --- | --- |
 | Typed context envelopes (provenance/sensitivity/freshness/purpose/retention) | `done` | `src/sdk/continuity/index.ts` `ContextEnvelope`/`ContextFact` (now domain-labeled) |
-| Link task/delegation events into ADR-016 compact state | `seeded` | `src/core/context-memory.ts` compaction exists; no delegation-event linking |
+| Link task/delegation events into ADR-016 compact state | `done` | `ContextDelegationRef` (core/contracts.ts) + `delegationRefs?: ContextDelegationRef[]` on `ContextMemoryState`; `buildDeterministicCompactState`/`compactThreadContext` accept `readonly ContextDelegationRef[]`, plumbed into the `context-compacted` transcript event payload; `copyCompactStatesForFork` carries refs across forks; `formatCompactStateForPrompt` renders `harness:task@completedAt`; 7 tests in `context-memory.test.ts` |
 | Last-known-good continuity snapshot | `done` | `ContinuitySnapshot` + `reconstructLastKnownGood` (integrity-verified, most-recent-good) |
 | Separate harness checkpoints from trusted continuity | `not-started` | — |
 | Route returned knowledge through artifact review/intake | `in-progress` | Living Archive intake boundaries + `archive-review-service.mjs` present |
