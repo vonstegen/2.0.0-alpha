@@ -81,7 +81,7 @@ fresh session resume work without re-deriving context.
 | --- | --- | --- |
 | `HarnessProviderManifest` + adapter interface | `done` | `src/sdk/harnesses/index.ts` exports `HarnessProviderManifest`, `HarnessProviderAdapter`, `HarnessHealth`/`HarnessRun`/`HarnessRunState`, `HarnessChildDescriptor`, `GrantHandle`; `AddOnManifest.harnessProvider` field added |
 | Conformance fake provider + exit-gate tests | `done` | `fake-harness-provider.ts` (`FakeHarnessProvider`) + 5 tests: lifecycle, cancellation, artifact confinement, event replay, failure — the CP-4 exit gate |
-| Extract generic start/status/events/cancel/artifact | `seeded` | `addon-delegation-host-service.mjs` + `addon-delegation-service.mjs` (94 KB) contain provider-specific duplication to extract |
+| Extract generic start/status/events/cancel/artifact | `in-progress` | Phase 1 migration table at [`CP4-LIFECYCLE-EXTRACTION-MIGRATION.md`](CP4-LIFECYCLE-EXTRACTION-MIGRATION.md): 60+ per-provider mappings against `BaseHarnessProvider`; Hermes first (largest surface, most-tested path), then OpenCode; one provider per commit; ≥50% line-count reduction target on `addon-delegation-service.mjs` |
 | Preserve Hermes/OpenCode compatibility routes | `in-progress` | Active routes exist; must be retained during extraction |
 | Durable status/event ordering + reconnect | `not-started` | — |
 | Child namespace/sandbox reporting + escalation | `not-started` | — |
