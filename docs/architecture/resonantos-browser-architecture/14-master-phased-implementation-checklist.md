@@ -88,7 +88,7 @@ This checklist is ordered to preserve the current working system. Each phase has
 ## Phase 7 — Trusted continuity and context exchange
 
 - [ ] Implement typed context envelopes with provenance, sensitivity, freshness, purpose, and retention.
-- [ ] Link task/delegation events into ADR-016 compact state.
+- [x] Link task/delegation events into ADR-016 compact state.
 - [ ] Implement a last-known-good continuity snapshot.
 - [ ] Separate harness checkpoints from trusted continuity.
 - [ ] Route all returned knowledge through artifact review/intake.
