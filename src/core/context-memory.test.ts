@@ -373,4 +373,124 @@ describe("deterministic compact state generation", () => {
     expect(compactState.checksum).toMatch(/^fnv32:/);
     expect(formatCompactStateForPrompt(compactState)).toContain("Facts:");
   });
+ });
+
+describe("compact state delegation linking (CP-7 / ADR-016)", () => {
+  const sampleThread = buildDefaultState([]).conversationThreads[0];
+
+  it("builds an empty delegationRefs list when no history is provided (loss-checklist default)", () => {
+    const compactState = buildDeterministicCompactState(sampleThread, 2);
+    expect(compactState.delegationRefs).toEqual([]);
+  });
+
+  it("populates delegationRefs from the supplied history (durable pointers, not copied bulk)", () => {
+    const history = [
+      {
+        delegationId: "del-1",
+        taskId: "task-7",
+        harnessId: "opencode",
+        issuerPrincipalId: "augmentor:user-1",
+        completedAt: "2026-08-31T10:00:00.000Z",
+      },
+      {
+        delegationId: "del-2",
+        taskId: "task-8",
+        harnessId: "hermes",
+        issuerPrincipalId: "augmentor:user-1",
+        completedAt: "2026-08-31T11:00:00.000Z",
+      },
+    ];
+    const compactState = buildDeterministicCompactState(sampleThread, 2, history);
+    expect(compactState.delegationRefs).toEqual([
+      {
+        delegationId: "del-1",
+        taskId: "task-7",
+        harnessId: "opencode",
+        issuerPrincipalId: "augmentor:user-1",
+        completedAt: "2026-08-31T10:00:00.000Z",
+      },
+      {
+        delegationId: "del-2",
+        taskId: "task-8",
+        harnessId: "hermes",
+        issuerPrincipalId: "augmentor:user-1",
+        completedAt: "2026-08-31T11:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("does not alias the caller's delegation history array", () => {
+    const history = [
+      {
+        delegationId: "del-1",
+        taskId: "task-7",
+        harnessId: "opencode",
+        issuerPrincipalId: "augmentor:user-1",
+        completedAt: "2026-08-31T10:00:00.000Z",
+      },
+    ];
+    const compactState = buildDeterministicCompactState(sampleThread, 2, history);
+    expect(compactState.delegationRefs).not.toBe(history);
+    expect(compactState.delegationRefs?.[0]).not.toBe(history[0]);
+  });
+
+  it("compactThreadContext plumbs delegationRefs into both compact state and transcript event payload", () => {
+    const state = buildDefaultState([]);
+    const history = [
+      {
+        delegationId: "del-9",
+        taskId: "task-22",
+        harnessId: "openclaw",
+        issuerPrincipalId: "augmentor:user-1",
+        completedAt: "2026-08-31T12:00:00.000Z",
+      },
+    ];
+    const compacted = compactThreadContext(state, "thread-main-desktop", 1, history);
+
+    const compactState = compacted.contextMemoryStates.at(-1);
+    expect(compactState?.delegationRefs).toEqual(history);
+
+    const transcriptEvent = compacted.transcriptLedger.at(-1);
+    expect(transcriptEvent?.action).toBe("context-compacted");
+    expect(transcriptEvent?.payload).toMatchObject({
+      delegationRefs: history,
+    });
+  });
+
+  it("formatCompactStateForPrompt renders delegation refs as harness:task@completedAt", () => {
+    const compactState = buildDeterministicCompactState(sampleThread, 2, [
+      {
+        delegationId: "del-1",
+        taskId: "task-7",
+        harnessId: "opencode",
+        issuerPrincipalId: "augmentor:user-1",
+        completedAt: "2026-08-31T10:00:00.000Z",
+      },
+    ]);
+    expect(formatCompactStateForPrompt(compactState)).toContain(
+      "- Delegation refs: opencode:task-7@2026-08-31T10:00:00.000Z",
+    );
+  });
+
+  it("formatCompactStateForPrompt falls back to 'none' when delegationRefs is absent (loss-checklist guard)", () => {
+    const compactState = buildDeterministicCompactState(sampleThread, 2);
+    expect(formatCompactStateForPrompt(compactState)).toContain("- Delegation refs: none");
+  });
+
+  it("copyCompactStatesForFork carries delegationRefs across the fork (refs are durable)", () => {
+    const sourceState = buildDeterministicCompactState(sampleThread, 2, [
+      {
+        delegationId: "del-1",
+        taskId: "task-7",
+        harnessId: "opencode",
+        issuerPrincipalId: "augmentor:user-1",
+        completedAt: "2026-08-31T10:00:00.000Z",
+      },
+    ]);
+    const forkThread = { ...sampleThread, id: "thread-fork", messages: [...sampleThread.messages] };
+    const copied = copyCompactStatesForFork([sourceState], sampleThread.id, forkThread);
+    const forked = copied.find((state) => state.threadId === forkThread.id);
+    expect(forked?.delegationRefs).toEqual(sourceState.delegationRefs);
+    expect(forked?.delegationRefs).not.toBe(sourceState.delegationRefs);
+  });
 });
