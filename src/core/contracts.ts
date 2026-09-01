@@ -2770,31 +2770,46 @@ export interface ContextQuestion {
   sourceMessageIds: string[];
 }
 
-export interface ContextMemoryState {
-  threadId: string;
-  compactedAt: string;
-  sourceRange: {
-    fromMessageId: string;
-    toMessageId: string;
-  };
-  userIntent: {
-    goal: string;
-    why: string;
-    successCriteria: string[];
-    prioritySignals: string[];
-    sourceMessageIds: string[];
-  };
-  workingSummary: string;
-  decisions: ContextDecision[];
-  facts: ContextFact[];
-  preferences: ContextPreference[];
-  openTasks: ContextTask[];
-  artifacts: ContextArtifactRef[];
-  risks: ContextRisk[];
-  unresolvedQuestions: ContextQuestion[];
-  preservedRecentMessageIds: string[];
-  checksum: string;
+export interface ContextDelegationRef {
+  delegationId: string;
+  taskId: string;
+  harnessId: string;
+  issuerPrincipalId: string;
+  completedAt: string;
 }
+
+ export interface ContextMemoryState {
+   threadId: string;
+   compactedAt: string;
+   sourceRange: {
+     fromMessageId: string;
+     toMessageId: string;
+   };
+   userIntent: {
+     goal: string;
+     why: string;
+     successCriteria: string[];
+     prioritySignals: string[];
+     sourceMessageIds: string[];
+   };
+   workingSummary: string;
+   decisions: ContextDecision[];
+   facts: ContextFact[];
+   preferences: ContextPreference[];
+   openTasks: ContextTask[];
+   artifacts: ContextArtifactRef[];
+   risks: ContextRisk[];
+   unresolvedQuestions: ContextQuestion[];
+   preservedRecentMessageIds: string[];
+  /**
+   * Durable pointers into the delegation history whose tasks the compacted
+   * thread touched (doc 09 §Portability + ADR-016 §Compaction flow step 6).
+   * Provider-switch / restart reconstruction reads these refs through the
+   * continuity module's `reconstructTask` (src/sdk/continuity).
+   */
+  delegationRefs?: ContextDelegationRef[];
+   checksum: string;
+ }
 
 export interface ContextBudget {
   providerId: string;
