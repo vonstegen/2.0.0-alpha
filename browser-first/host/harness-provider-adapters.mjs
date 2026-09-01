@@ -15,6 +15,7 @@ import { hermesRuntimeDiagnostics } from "./hermes-runtime.mjs";
 import { opencodeRuntimeDiagnostics } from "./opencode-runtime.mjs";
 import { dispatchGovernedExternalAgentRuntime, findAddonManifest } from "./external-agent-runtime-dispatcher.mjs";
 import { createOpencodeHttpClient, ensureOpencodeServer } from "./opencode-client.mjs";
+import { openclawGatewayRuntimeDispatch } from "./openclaw-gateway-client.mjs";
 import { defaultRegistry as defaultWorkspaceLeaseRegistry } from "./workspace-lease.mjs";
 import { spawnSync } from "node:child_process";
 import { runPiPrompt } from "./pi-rpc-client.mjs";
@@ -379,19 +380,33 @@ export function createOpenClawProviderAdapter(options = {}) {
       message: manifest ? "runtime-gateway manifest present" : "OpenClaw manifest not found",
     };
   };
+  // Phase 5 row 100: when a gatewayClient is provided, the OpenClaw
+  // adapter drives a real MCP gateway transport. The bridge still
+  // owns the CP-2 governed envelope; the gateway is the only
+  // authority path for the child actor. When no gatewayClient is
+  // provided, fall back to the legacy host-command transport so
+  // existing tests and call sites that drive `openclaw` directly
+  // keep working until they migrate.
+  const dispatch = options.gatewayClient
+    ? openclawGatewayRuntimeDispatch({
+        governedAuthority: options.governedAuthority,
+        gatewayClient: options.gatewayClient,
+        requestIdFactory: options.requestIdFactory,
+      })
+    : hostCommandRuntimeDispatch({
+        ...options,
+        addonId: "addon.openclaw",
+        tool: "openclaw.delegate",
+        command: options.command ?? "openclaw",
+        buildArgs: (packet) => ["agent", "--local", "--agent", options.agent ?? "main", "-m", packet.intent, "--json"],
+      });
   return createHarnessProviderAdapter({
     providerId: "openclaw",
     cancellationSemantics: "quarantine",
     sandboxStrength: "sandboxed-outer-boundary",
     onRunEnded: options.onRunEnded,
     diagnose,
-    dispatch: hostCommandRuntimeDispatch({
-      ...options,
-      addonId: "addon.openclaw",
-      tool: "openclaw.delegate",
-      command: options.command ?? "openclaw",
-      buildArgs: (packet) => ["agent", "--local", "--agent", options.agent ?? "main", "-m", packet.intent, "--json"],
-    }),
+    dispatch,
   });
 }
 
