@@ -50,14 +50,15 @@ This checklist is ordered to preserve the current working system. Each phase has
 
 ## Phase 4 — Extract the Harness Provider API
 
-- [ ] Add `HarnessProviderManifest` and adapter interface.
-- [ ] Extract generic start/status/events/cancel/artifact behavior from provider-specific delegation code.
-- [ ] Preserve Hermes/OpenCode compatibility routes during migration.
-- [ ] Define durable status/event ordering and reconnect behavior.
-- [ ] Define child namespace/sandbox reporting and escalation requests.
-- [ ] Add artifact provenance, evidence, verification, and residual-risk fields.
-- [ ] Require bounded context and prohibit secret/full-memory forwarding.
-
+- [x] Add `HarnessProviderManifest` and adapter interface.
+- [x] Extract generic start/status/events/cancel/artifact behavior from provider-specific delegation code.
+- [x] Preserve Hermes/OpenCode compatibility routes during migration.
+- [x] Define durable status/event ordering and reconnect behavior.
+- [x] Define child namespace/sandbox reporting and escalation requests.
+- [x] Add artifact provenance, evidence, verification, and residual-risk fields.
+- [x] Require bounded context and prohibit secret/full-memory forwarding.
+- [x] Confirm addon-delegation-service.mjs is thin glue (Phase 4 cutover, see [`CP4-PHASE4-CUTOVER-CONTINUATION.md`](./CP4-PHASE4-CUTOVER-CONTINUATION.md)).
+- [x] Run full engineer:verify gate (1201/1201 extension tests + tsc + docs:check green).
 **Exit gate:** a fake conformance provider passes lifecycle, cancellation, artifact confinement, event replay, and failure tests.
 
 ## Phase 5 — Migrate reference harnesses
@@ -68,7 +69,7 @@ This checklist is ordered to preserve the current working system. Each phase has
 - [ ] Keep existing installs/configuration intact and approval-gate installation.
 - [x] Verify assistant-only output filtering and deterministic smoke tests.
 - [ ] Verify archive reads are scoped/cited and writes remain intake-only.
-- [ ] Remove duplicated provider-specific lifecycle logic only after parity tests pass.
+- [x] Remove duplicated provider-specific lifecycle logic only after parity tests pass (Phase 4 cutover — Hermes + OpenCode lifecycles moved to `addon-delegation-adapter-bridge.mjs`; 4 new seam parity tests + 1197 pre-existing tests still pass).
 
 **Exit gate:** at least three provider shapes use the contract without vendor-specific authority exceptions.
 
