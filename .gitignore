@@ -55,6 +55,7 @@ runs/
 *.zip
 
 # Repository-local agent and analysis state
+.craft/
 .abacusai/
 .codex/
 .understand-anything/

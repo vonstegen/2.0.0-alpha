@@ -29,6 +29,7 @@
     "test:security-pipeline": "node --test scripts/security-pipeline/checks/*.test.mjs scripts/security-pipeline/disclosure-baseline.test.mjs",
     "test:module-ownership": "node --test scripts/module-ownership-doc.test.mjs",
     "discipline:validate": "node scripts/validate-discipline-catalog.mjs",
+    "validate:manifest": "npx tsx scripts/validate-addon-manifest.mjs",
     "repo:hygiene": "node scripts/check-repo-hygiene.mjs --content-allowlist scripts/check-repo-hygiene.mjs --content-allowlist scripts/check-repo-hygiene.test.mjs --content-allowlist scripts/validate-docs.test.mjs",
     "docs:check": "node scripts/validate-docs.mjs",
     "test:recipes": "node --test scripts/recipe-doc-fixtures.test.mjs",

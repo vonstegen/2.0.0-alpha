@@ -120,5 +120,10 @@
   "compatibility": {
     "shellVersion": "^0.1.0",
     "platforms": ["macOS", "linux", "windows"]
+  },
+  "manifestSignature": {
+    "algorithm": "ed25519",
+    "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"ZqZOkm5DbEYWr1aWBOI8UoLOn2NevwCLCUha4fQncmE\",\"kty\":\"OKP\"}",
+    "signature": "cFN44FxeMRyKjYxwONZjs2yynUcDONv9nN+7/Q7zEfn2+PdvtYs3kYcX6cSkh0OXBoZqNQQD/NcE1ZZUbjOFCg=="
   }
 }

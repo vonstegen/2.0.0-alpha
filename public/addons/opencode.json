@@ -299,5 +299,10 @@
     "resourceHints": { "cpu": "local", "network": "self" },
     "cancellationSemantics": "finish-atomic",
     "sandboxStrength": "sandboxed-outer-boundary"
+  },
+  "manifestSignature": {
+    "algorithm": "ed25519",
+    "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"ZqZOkm5DbEYWr1aWBOI8UoLOn2NevwCLCUha4fQncmE\",\"kty\":\"OKP\"}",
+    "signature": "bjrdlPe0jlrsmFfS4XbotSY5y30YM07MguLFXXYFLQvCKGDu0b65URe5KD9So7MNpoxNqwj9nOpy6hO5QT4tAA=="
   }
 }

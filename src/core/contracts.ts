@@ -666,7 +666,19 @@ export interface AddOnManifest {
     trustTier: Exclude<TrustTier, "core">;
     workspaceBehavior: WorkspaceBehavior;
   }>;
+  manifestSignature?: AddOnManifestSignature;
 }
+
+// CP-7.5.1 (Manifest Signing). Optional Ed25519 signature over the
+// canonical-JSON body of the manifest (recursively sorted object keys, no
+// whitespace) excluding this field. Required by the validator when
+// provenance.verificationState === "verified".
+export interface AddOnManifestSignature {
+  algorithm: "ed25519";
+  publicKey: string;
+  signature: string;
+}
+
 
 export interface AddOnArtifactReference {
   type: AddOnArtifactType;

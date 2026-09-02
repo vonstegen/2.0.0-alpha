@@ -26,6 +26,9 @@ import {
 } from "./contracts";
 import { validateRuntimeIsolationForManifest } from "../../../packages/addon-sdk-testing/src/isolation.ts";
 import { classifyAddOnToolName, NATIVE_TOOL_CAPABILITIES } from "../../../packages/addon-sdk-testing/src/native-tool-prefixes.mjs";
+import type { JsonWebKey, KeyObject } from "node:crypto";
+import { createPublicKey, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
+import { MANIFEST_SIGNATURE_ALGORITHM } from "./contracts";
 
 const runtimeTypes: readonly AddOnRuntimeType[] = ["ui-module", "embedded-module", "local-service", "agent-addon", "channel-addon"];
 const categories: readonly AddOnCategory[] = [
@@ -1352,12 +1355,123 @@ export const validateAddOnManifest = (
       pushIssue(issues, "error", err.code, err.path, err.message);
     }
   }
+  validateManifestSignature(issues, candidate);
+
 
   return {
     valid: issues.every((issue) => issue.severity !== "error"),
     manifestId,
     issues,
   };
+};
+
+// CP-7.5.1 (Manifest Signing). When a manifest's provenance declares
+// verificationState === "verified", the manifest MUST carry a
+// `manifestSignature` block (ed25519) whose signature verifies against the
+// canonical-JSON body of the manifest. Tampering with any field or omitting
+// the signature block on a verified manifest is a hard error. Manifests with
+// verificationState "unverified" or no provenance are untouched by this
+// check.
+const MANIFEST_SIGNATURE_FIELD = "manifestSignature";
+
+/**
+ * Sign a manifest body with the supplied Ed25519 private key. Returns the
+ * base64-encoded signature over the canonicalized body (recursively sorted
+ * keys, `manifestSignature` field excluded). Mirrors the algorithm used by
+ * `scripts/sign-addon-manifest.mjs` and by `verifyManifestSignature` below.
+ */
+export const signManifest = (
+  manifest: unknown,
+  privateKey: KeyObject | Buffer,
+): string => {
+  const payload = canonicalizeManifestBody(manifest);
+  // The Node @types overload for `sign(algorithm, data, key)` types `data` as
+  // `NodeJS.ArrayBufferView`. A Buffer is a Uint8Array which structurally
+  // satisfies that interface, but tsc needs the explicit cast.
+  const signature = cryptoSign(null, Buffer.from(payload, "utf8") as NodeJS.ArrayBufferView, privateKey);
+  return signature.toString("base64");
+};
+
+export const canonicalizeManifestBody = (manifest: unknown): string => {
+  const stripSignature = (value: unknown): unknown => {
+    if (Array.isArray(value)) {
+      return value.map(stripSignature);
+    }
+    if (isRecord(value)) {
+      const out: Record<string, unknown> = {};
+      for (const key of Object.keys(value).sort()) {
+        if (key === MANIFEST_SIGNATURE_FIELD) continue;
+        out[key] = stripSignature(value[key]);
+      }
+      return out;
+    }
+    return value;
+  };
+  return JSON.stringify(stripSignature(manifest));
+};
+
+export const verifyManifestSignature = (
+  manifest: unknown,
+  signature: { algorithm: string; publicKey: string; signature: string },
+): boolean => {
+  if (signature.algorithm !== MANIFEST_SIGNATURE_ALGORITHM) return false;
+  if (typeof signature.publicKey !== "string" || signature.publicKey.length === 0) return false;
+  if (typeof signature.signature !== "string" || signature.signature.length === 0) return false;
+  const payload = canonicalizeManifestBody(manifest);
+  try {
+    const raw = signature.publicKey;
+    let publicKey;
+    if (raw.startsWith("{")) {
+      publicKey = createPublicKey({ key: JSON.parse(raw) as JsonWebKey, format: "jwk" });
+    } else if (raw.startsWith("-----BEGIN")) {
+      publicKey = createPublicKey(raw);
+    } else {
+      // base64 SPKI; createPublicKey auto-detects "spki" base64 input.
+      publicKey = createPublicKey(Buffer.from(raw, "base64"));
+    }
+    return cryptoVerify(
+      null,
+      Buffer.from(payload, "utf8"),
+      publicKey,
+      Buffer.from(signature.signature, "base64"),
+    );
+  } catch {
+    return false;
+  }
+};
+
+export const validateManifestSignature = (
+  issues: AddOnValidationIssue[],
+  candidate: Record<string, unknown>,
+): void => {
+  if (!isRecord(candidate.provenance) || candidate.provenance.verificationState !== "verified") {
+    return;
+  }
+  const sig = candidate[MANIFEST_SIGNATURE_FIELD];
+  if (!isRecord(sig)) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-signature-missing",
+      MANIFEST_SIGNATURE_FIELD,
+      "Manifests with provenance.verificationState === \"verified\" must include an ed25519 manifestSignature block.",
+    );
+    return;
+  }
+  const ok = verifyManifestSignature(candidate, {
+    algorithm: String(sig.algorithm),
+    publicKey: String(sig.publicKey ?? ""),
+    signature: String(sig.signature ?? ""),
+  });
+  if (!ok) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-signature-invalid",
+      MANIFEST_SIGNATURE_FIELD,
+      "manifestSignature failed ed25519 verification against the canonical JSON body of the manifest.",
+    );
+  }
 };
 
 export const assertValidAddOnManifest = (
