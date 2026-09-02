@@ -31,7 +31,7 @@ const manifest = (id: string, overrides: Partial<AddOnManifest> = {}): AddOnMani
   },
   installHooks: {},
   compatibility: {
-    shellVersion: "^0.1.0",
+    shellVersion: "2.0.0-beta.1",
     platforms: ["macOS", "Windows", "Linux"],
   },
   ...overrides,
