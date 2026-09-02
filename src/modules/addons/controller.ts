@@ -37,6 +37,26 @@ type SideloadControllerInput = {
 };
 
 /**
+ * CP-7.5.4 (Cross-manifest id-collision detection). Error thrown when
+ * the new manifest's `id@publisher` pair matches an existing entry in
+ * the bundled or sideloaded catalog and `forceOverride` is false. The
+ * host UI surfaces this to the user (per ADR-039) and re-invokes the
+ * install path with `forceOverride: true` only after the user
+ * confirms that the existing entry may be shadowed.
+ */
+export class AddOnRegistryIdCollisionError extends Error {
+  constructor(
+    message: string,
+    public readonly collidingAddonKey: string,
+    public readonly existingName: string,
+    public readonly existingVersion: string,
+    public readonly catalog: "bundled" | "sideloaded",
+  ) {
+    super(message);
+    this.name = "AddOnRegistryIdCollisionError";
+  }
+}
+/**
  * CP-7.5.5 (permission-diff wiring). Error thrown when the new manifest's
  * capability set differs from the previously-installed set in a way that
  * requires human approval (add / widen / weaken / revocation-strengthen /
@@ -150,10 +170,18 @@ export const executeSideloadManifest = async ({
     const sideloadedCollision = collidesWith(sideloaded);
     const hasCollision = bundledCollision !== undefined || sideloadedCollision !== undefined;
     if (hasCollision && !forceOverride) {
-      throw new Error(
+      const existing = bundledCollision ?? sideloadedCollision;
+      const catalog: "bundled" | "sideloaded" = bundledCollision
+        ? "bundled"
+        : "sideloaded";
+      throw new AddOnRegistryIdCollisionError(
         `Install rejected: manifest "${newKey}" collides with an existing entry in the ${
           bundledCollision ? "bundled catalog" : "sideloaded catalog"
         }. Pass forceOverride=true (after a human-approved confirmation) to shadow the existing entry.`,
+        newKey,
+        existing?.name ?? newKey,
+        existing?.version ?? "unknown",
+        catalog,
       );
     }
 
@@ -178,6 +206,17 @@ export const executeSideloadManifest = async ({
     setSelectedAddonId(manifest.id);
     setSideloadPath("");
   } catch (error) {
+    // CP-7.5.4 + §7.5.5 (deferred UI per ADR-039). Typed errors
+    // must escape the controller so the host UI's
+    // `handleSideload` catch can intercept them and surface the
+    // appropriate prompt. Only generic / unknown errors fall
+    // through to the flat error banner.
+    if (
+      error instanceof AddOnPermissionEscalationRequired ||
+      error instanceof AddOnRegistryIdCollisionError
+    ) {
+      throw error;
+    }
     setErrorState(errorMessageOf(error, "Failed to sideload manifest."));
   }
 };
