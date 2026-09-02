@@ -23,6 +23,16 @@ type SideloadControllerInput = {
   setSideloadPath: Dispatch<SetStateAction<string>>;
   setErrorState: (message: string) => void;
   errorMessageOf: (error: unknown, fallback: string) => string;
+  /**
+   * CP-7.5.4 (Cross-manifest id-collision detection). When true, the
+   * install path allows the new manifest to shadow an existing
+   * `id@publisher` collision in the bundled or sideloaded catalog. When
+   * false (the default), a collision throws an `AddOnRegistryIdCollision`
+   * error and the install is rejected. The prompt UI is responsible for
+   * setting this to true only after a human-approved confirmation
+   * (per ADR-039).
+   */
+  forceOverride?: boolean;
 };
 
 export const executeSideloadManifest = async ({
@@ -34,6 +44,7 @@ export const executeSideloadManifest = async ({
   setSideloadPath,
   setErrorState,
   errorMessageOf,
+  forceOverride = false,
 }: SideloadControllerInput): Promise<void> => {
   if (!sideloadPath.trim()) {
     return;
@@ -41,6 +52,26 @@ export const executeSideloadManifest = async ({
 
   try {
     const manifest = await sideloadManifest(sideloadPath.trim());
+
+    // CP-7.5.4 (Cross-manifest id-collision detection). The new manifest
+    // collides if its `id@publisher` pair is already in the bundled set
+    // or in the existing sideloaded set. Without `--force-override` (the
+    // prompt UI's human-approved confirmation per ADR-039), the install is
+    // rejected and the user is asked to pick a different manifest path.
+    const newKey = `${manifest.id}@${manifest.publisher}`;
+    const collidesWith = (existing: AddOnManifest[]) =>
+      existing.find((m) => `${m.id}@${m.publisher}` === newKey);
+    const bundledCollision = collidesWith(bundled);
+    const sideloadedCollision = collidesWith(sideloaded);
+    const hasCollision = bundledCollision !== undefined || sideloadedCollision !== undefined;
+    if (hasCollision && !forceOverride) {
+      throw new Error(
+        `Install rejected: manifest "${newKey}" collides with an existing entry in the ${
+          bundledCollision ? "bundled catalog" : "sideloaded catalog"
+        }. Pass forceOverride=true (after a human-approved confirmation) to shadow the existing entry.`,
+      );
+    }
+
     const nextSideloaded = [...sideloaded, manifest].filter(
       (item, index, array) => array.findIndex((candidate) => candidate.id === item.id) === index,
     );
