@@ -83,6 +83,7 @@ Use the rows that match the change:
 | Shared TypeScript or React | `npm test -- --run` and `npm run build` |
 | Security-sensitive behavior | `node scripts/security-pipeline/run-check.mjs` |
 | Alpha release scope | `npm run pre-release:scan` plus the release checks routed from `docs/README.md` |
+| Add-on manifest (`public/addons/*.json`) or SDK surface (`src/sdk/addons/`) | `npm run validate:manifest -- <path>` (or `--all`) plus the change's matching row above (browser-first, security, or scope) |
 
 Run broader checks when ownership, contracts, or release behavior crosses more
 than one row. Run the complete deterministic gate for release-impacting,
