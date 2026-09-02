@@ -88,6 +88,7 @@ the files you will change.
 | Shared TypeScript or React | `npm test -- --run` and `npm run build` |
 | Security-sensitive paths | `node scripts/security-pipeline/run-check.mjs` |
 | Alpha release scope | `npm run pre-release:scan` and the release checks in the relevant docs |
+| Add-on manifest (any `public/addons/*.json` or new `src/sdk/addons/` surface) | `npm run validate:manifest -- <path>` (or `--all`) plus `npm run test:browser-first` for browser-host extensions |
 
 Run every row touched by the change. A pull request may require more checks than
 the minimum listed here. Run `npm run verify:alpha` for release-impacting,
