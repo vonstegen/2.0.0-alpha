@@ -24,6 +24,8 @@ fresh session resume work without re-deriving context.
 
 - [`prompts/_template-continuation-prompt.md`](../../../prompts/_template-continuation-prompt.md) — fill-in skeleton (workstream / branch / state / acceptance / steps).
 - [`prompts/cp4-generic-lifecycle-extraction.md`](../../../prompts/cp4-generic-lifecycle-extraction.md) — ready-to-run prompt for CP-4 generic lifecycle extraction.
+- [`CP5-PHASE5-CONTINUATION.md`](./CP5-PHASE5-CONTINUATION.md) — Phase 5 continuation prompt for CP-5 reference harness migration.
+- [`TOM-FEEDBACK-CROSS-REFERENCE.md`](./TOM-FEEDBACK-CROSS-REFERENCE.md) — cross-reference of Tom's three new maintainer feedback docs against the current branch state.
 
 ## Phase 0 — Ratify scope and vocabulary (CP-0) — *done*
 

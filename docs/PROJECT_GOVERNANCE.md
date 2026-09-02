@@ -45,9 +45,11 @@ module ownership.
 
 Project 2 has one coarse `Area` value per item: `Bridge`, `Extension`, `Chat`,
 `Settings`, `Hermes`, `OpenCode`, `Living Archive`, `Blackboard`, `Build`,
-`Security`, `Docs`, or `Legacy`. Choose the area that owns the acceptance
-criteria. Cross-cutting topical labels may provide more detail without changing
-that single owning area.
+`Security`, `Add-on SDK`, `Docs`, or `Legacy`. The `Add-on SDK` area owns
+add-on manifest contracts, the `src/sdk/addons/` SDK surface, the
+`public/addons/` manifest catalog, and any change that introduces a new
+`extensionClass` (harness-provider, augmentor-extension, system-addon) or
+modifies one of the seven reference adapter shapes.
 
 ### Status
 
