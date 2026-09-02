@@ -624,4 +624,61 @@ describe("executeSideloadManifest", () => {
     expect(setErrorState).toHaveBeenCalledTimes(1);
     expect(setErrorState.mock.calls[0][0]).toContain("sideloaded catalog");
   });
+
+  // CP-7.5.5 (permission-diff wiring). The sideload path calls
+  // applyPermissionDiffGate before hydrating state; a fresh install with
+  // non-empty requestedCapabilities must surface a typed error so the
+  // host UI can prompt per ADR-039.
+  it("rejects a fresh sideload with non-empty requestedCapabilities without forceOverride", async () => {
+    // No existing sideloaded manifest with this id@publisher; sideloaded is
+    // empty. The new manifest has non-empty requestedCapabilities — §7.5.5
+    // treats a fresh install's capability set as a hard change that needs
+    // human approval (per ADR-039).
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const setErrorState = vi.fn();
+    const setReadyState = vi.fn();
+    const errorMessageOf = (e: unknown, fallback: string) =>
+      e instanceof Error ? e.message : fallback;
+
+    await executeSideloadManifest({
+      sideloadPath: "/path/to/hermes.json",
+      bundled: [],
+      sideloaded: [],
+      setReadyState,
+      setSelectedAddonId: vi.fn(),
+      setSideloadPath: vi.fn(),
+      setErrorState,
+      errorMessageOf,
+    });
+
+    expect(setReadyState).not.toHaveBeenCalled();
+    expect(setErrorState).toHaveBeenCalledTimes(1);
+    const message = setErrorState.mock.calls[0][0] as string;
+    expect(message).toContain("addon.hermes@local");
+    expect(message).toContain("hard change");
+    expect(message).toContain("forceOverride=true");
+  });
+
+  it("accepts a fresh sideload with non-empty requestedCapabilities when forceOverride is set (the human-approved path)", async () => {
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const setErrorState = vi.fn();
+    const setReadyState = vi.fn();
+
+    await executeSideloadManifest({
+      sideloadPath: "/path/to/hermes.json",
+      bundled: [],
+      sideloaded: [],
+      setReadyState,
+      setSelectedAddonId: vi.fn(),
+      setSideloadPath: vi.fn(),
+      setErrorState,
+      errorMessageOf: (_e, fallback) => fallback,
+      forceOverride: true,
+    });
+
+    expect(setErrorState).not.toHaveBeenCalled();
+    expect(setReadyState).toHaveBeenCalled();
+  });
 });

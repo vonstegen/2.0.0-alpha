@@ -13,6 +13,7 @@ import type {
 } from "../../core/contracts";
 import { executeLogicianHook, executeLogicianScript } from "../../core/logician";
 import { applyProviderCredentialStatuses, hydrateState, loadProviderCredentialStatuses, sideloadManifest } from "../../core/runtime";
+import { diffAddOnManifest } from "../../../packages/addon-sdk-testing/src/permission-diff.ts";
 
 type SideloadControllerInput = {
   sideloadPath: string;
@@ -33,6 +34,90 @@ type SideloadControllerInput = {
    * (per ADR-039).
    */
   forceOverride?: boolean;
+};
+
+/**
+ * CP-7.5.5 (permission-diff wiring). Error thrown when the new manifest's
+ * capability set differs from the previously-installed set in a way that
+ * requires human approval (add / widen / weaken / revocation-strengthen /
+ * scope-narrow-then-allow). The host UI is responsible for surfacing the
+ * hard-change list to the user per ADR-039 and re-invoking the install
+ * path with `forceOverride: true` after confirmation.
+ */
+export class AddOnPermissionEscalationRequired extends Error {
+  constructor(
+    message: string,
+    public readonly hardChanges: Array<{ path: string; kind: string }>,
+  ) {
+    super(message);
+    this.name = "AddOnPermissionEscalationRequired";
+  }
+}
+
+/**
+ * CP-7.5.5 (permission-diff wiring). Reconstructs a synthetic "prior"
+ * manifest from the previously-installed granted capabilities and diffs
+ * it against the new manifest using the canonical `diffAddOnManifest`.
+ *
+ * The synthetic prior carries only the capability set (everything else
+ * stays empty / undefined) because `AddOnInstallation` does not
+ * preserve the full prior manifest — only the granted capabilities.
+ * The prompt's diff domain is `requestedCapabilities`; identity,
+ * version, isolation, runtime-type changes are surfaced as soft
+ * changes (auto-accepted, logged) for now. Identity changes
+ * (`identityChanged: true`) are treated as fresh installs and short-
+ * circuit through.
+ *
+ * Throws `AddOnPermissionEscalationRequired` when the diff surfaces
+ * any hard changes AND `forceOverride` is false. With `forceOverride:
+ * true`, the gate is bypassed (the host UI's human-approved prompt
+ * has already happened).
+ */
+export const applyPermissionDiffGate = (
+  priorGrantedCapabilities: CapabilityGrant[],
+  nextManifest: AddOnManifest,
+  options: { forceOverride?: boolean } = {},
+): void => {
+  // Build the synthetic prior manifest with only the granted capability
+  // set. Other fields are left blank — the diff falls back to comparing
+  // capability sets alone.
+  const syntheticPrior: AddOnManifest = {
+    id: nextManifest.id,
+    name: "",
+    version: "",
+    publisher: nextManifest.publisher,
+    author: "",
+    category: "tool",
+    description: "",
+    runtimeType: nextManifest.runtimeType,
+    surfaces: [],
+    requestedCapabilities: priorGrantedCapabilities,
+    providerRequirements: { sharedProfiles: [], supportsPrivateCredentials: false },
+    archiveIntegration: { readScopes: [], intakeWriteScopes: [], canRequestIngest: false, canWriteKnowledgePages: false },
+    health: { strategy: "ready" },
+    installHooks: {},
+    sdkVersion: "^0.0.0",
+    compatibility: { shellVersion: "0.0.0", platforms: [] },
+  } as unknown as AddOnManifest;
+  const delta = diffAddOnManifest(syntheticPrior, nextManifest);
+  if (delta.identityChanged) {
+    // Identity drift (publisher, id) — treat as a fresh install. No diff
+    // gate; the install path will create a new installation record.
+    return;
+  }
+  if (delta.hardChanges.length === 0) {
+    return; // soft changes only (or no changes) — auto-accept.
+  }
+  if (options.forceOverride) {
+    return; // human-approved prompt path; the host UI set the flag.
+  }
+  const summary = delta.hardChanges
+    .map((c) => `${c.path}: ${c.kind}`)
+    .join("; ");
+  throw new AddOnPermissionEscalationRequired(
+    `Install rejected: manifest "${nextManifest.id}@${nextManifest.publisher}" introduces ${delta.hardChanges.length} hard change(s) (${summary}). Pass forceOverride=true (after a human-approved confirmation per ADR-039) to accept.`,
+    delta.hardChanges.map((c) => ({ path: c.path, kind: c.kind, capability: c.detail?.capability })),
+  );
 };
 
 export const executeSideloadManifest = async ({
@@ -71,6 +156,17 @@ export const executeSideloadManifest = async ({
         }. Pass forceOverride=true (after a human-approved confirmation) to shadow the existing entry.`,
       );
     }
+
+    // CP-7.5.5 (permission-diff wiring). Reconstruct the prior granted
+    // capability set from the existing sideloaded or bundled entry with
+    // the same id@publisher, then diff against the new manifest. A diff
+    // with hard changes (add / widen / weaken / trust-change) is
+    // rejected unless forceOverride is set (the host UI's human-approved
+    // prompt path per ADR-039).
+    const priorEntry = bundledCollision ?? sideloadedCollision;
+    const priorGranted: CapabilityGrant[] =
+      priorEntry?.requestedCapabilities?.map((grant) => ({ ...grant, granted: false })) ?? [];
+    applyPermissionDiffGate(priorGranted, manifest, { forceOverride });
 
     const nextSideloaded = [...sideloaded, manifest].filter(
       (item, index, array) => array.findIndex((candidate) => candidate.id === item.id) === index,
