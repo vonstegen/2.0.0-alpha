@@ -1,1 +1,809 @@
-{"archiveIntegration":{"canRequestIngest":true,"canWriteKnowledgePages":false,"intakeWriteScopes":["LivingArchive/INTAKE/browser"],"readScopes":[]},"author":"Resonant Alpha","category":"tool","compatibility":{"platforms":["macOS","linux","windows"],"shellVersion":"2.0.0-beta.1"},"connectors":[{"configScope":"user-config","description":"Host-mediated Chromium runtime used for visible browsing, page reads, interaction, and evidence capture.","id":"controlled-chromium-host","name":"Controlled Chromium host","requiredCapabilities":["network","ui-embedding","browser-control"],"type":"local-runtime"}],"delegation":{"acceptsTasks":true,"artifactReturnTypes":["summary","markdown","log","citation-bundle","diagnostic-report"],"defaultTargetRuntime":"local-service","notes":["Prefer API research for normal web lookup.","Use browser delegation when visual inspection, login, forms, live page interaction, or web app testing are required.","AI control must be routed through audited browser-session tools, not direct hidden DOM automation."],"requiresHumanApprovalBeforeExecution":false,"taskTypes":["research","browser-inspection"]},"description":"Chrome extension browser layer for side-panel web work, audited page context, and bridge-mediated AI control.","grantPresets":[{"description":"Allows ResonantOS to use the Chrome extension surface and audited bridge-mediated browser tools.","grants":[{"capability":"network","granted":true,"revocationBehavior":"hard-stop","scope":"shared"},{"capability":"ui-embedding","granted":true,"revocationBehavior":"hide-surface","scope":"system"},{"capability":"browser-control","granted":true,"revocationBehavior":"hard-stop","scope":"system"},{"capability":"filesystem","granted":true,"revocationBehavior":"hard-stop","scope":"shared"}],"id":"browser-controlled-session","label":"Browser extension session"}],"health":{"strategy":"browser-first-bridge-status"},"hooks":[{"event":"before-task-complete","failurePolicy":"block","handlerRef":"browser-host-preflight","id":"browser-task-completion-check","requiredCapabilities":["browser-control"]}],"id":"addon.browser","installHooks":{"onInstall":"register-browser-surface"},"name":"Resonant Browser","provenance":{"signed":true,"signer":"ResonantOS bundled catalog","tier":"bundled-core","verificationState":"verified"},"providerRequirements":{"sharedProfiles":[],"supportsPrivateCredentials":false},"publisher":"local","requestedCapabilities":[{"capability":"network","granted":false,"revocationBehavior":"hard-stop","scope":"shared"},{"capability":"ui-embedding","granted":false,"revocationBehavior":"hide-surface","scope":"system"},{"capability":"browser-control","granted":false,"revocationBehavior":"hard-stop","scope":"system"},{"capability":"filesystem","granted":false,"revocationBehavior":"hard-stop","scope":"shared"},{"capability":"archive-intake-write","granted":false,"revocationBehavior":"degrade","scope":"intake-only"}],"runtimeIsolation":{"boundary":"host-mediated-service","requiresReviewedGrant":true,"supportsDegradedMode":true},"runtimeType":"local-service","scripts":[{"commandRef":"browser.health","description":"Verify that the native browser host and controlled Chromium runtime are reachable before a delegated browser task runs.","deterministic":true,"id":"browser-host-preflight","name":"Browser host preflight","producesArtifacts":["diagnostic-report"],"requiredCapabilities":["browser-control"],"requiresHumanApproval":false,"runPolicy":"preflight"}],"sdkVersion":"^2.0.x","service":{"entrypoint":"browser-first/host/run-bridge-minimal.mjs","healthCommand":"/status","protocol":"http-json","shutdownCommand":""},"skills":[{"description":"Guide Augmentor through a browser task that needs visual inspection, login-aware context, form interaction, or evidence capture.","documentPath":"docs/addons/browser/skills/browser-research-session.md","id":"browser-research-session","invocation":"agent-suggested","name":"Browser-backed research session","requiredCapabilities":["network","browser-control"],"requiredTools":["browser.open_url","browser.read_page","browser.capture_evidence"]}],"surfaces":[{"description":"Open the live Browser workspace inside the ResonantOS center column.","id":"browser-pane","label":"Browser","type":"embedded-pane"}],"tools":[{"audit":{"artifactTypes":["log"],"logRequest":true,"logResult":true},"description":"Check the controlled Chromium browser host state.","inputSchema":{"type":"object"},"name":"browser.health","outputSchema":{"properties":{"audit":{"type":"array"},"engine":{"type":"string"},"ready":{"type":"boolean"},"sessionId":{"type":"string"},"url":{"type":"string"}},"required":["ready","engine","audit"],"type":"object"},"requiredCapabilities":["browser-control"],"requiresHumanApproval":false},{"audit":{"artifactTypes":["log"],"logRequest":true,"logResult":true},"description":"Start the controlled Chromium browser host and open the default or requested URL.","inputSchema":{"properties":{"defaultUrl":{"type":"string"},"headless":{"type":"boolean"}},"type":"object"},"name":"browser.start","outputSchema":{"properties":{"audit":{"type":"array"},"engine":{"type":"string"},"ready":{"type":"boolean"},"sessionId":{"type":"string"},"url":{"type":"string"}},"required":["ready","engine","audit"],"type":"object"},"requiredCapabilities":["network","browser-control"],"requiresHumanApproval":false},{"audit":{"artifactTypes":["log","citation-bundle"],"logRequest":true,"logResult":true},"description":"Open or navigate the live Chromium browser session and return URL, title, status, and audit events.","inputSchema":{"properties":{"url":{"type":"string"}},"required":["url"],"type":"object"},"name":"browser.open_url","outputSchema":{"properties":{"audit":{"type":"array"},"finalUrl":{"type":"string"},"sessionId":{"type":"string"},"status":{"type":"string"},"title":{"type":"string"}},"required":["sessionId","finalUrl","title","status","audit"],"type":"object"},"requiredCapabilities":["network","browser-control"],"requiresHumanApproval":false},{"audit":{"artifactTypes":["log","citation-bundle"],"logRequest":true,"logResult":true},"description":"Read title, final URL, body text, and links from the active Chromium session.","inputSchema":{"properties":{"sessionId":{"type":"string"}},"required":["sessionId"],"type":"object"},"name":"browser.read_page","outputSchema":{"properties":{"audit":{"type":"array"},"finalUrl":{"type":"string"},"links":{"type":"array"},"sessionId":{"type":"string"},"text":{"type":"string"},"title":{"type":"string"}},"required":["sessionId","finalUrl","title","text","links","audit"],"type":"object"},"requiredCapabilities":["browser-control"],"requiresHumanApproval":false},{"audit":{"artifactTypes":["log"],"logRequest":true,"logResult":true},"description":"Click the active Chromium session by audited selector or coordinates.","inputSchema":{"properties":{"selector":{"type":"string"},"sessionId":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"}},"type":"object"},"name":"browser.click","outputSchema":{"properties":{"audit":{"type":"array"},"finalUrl":{"type":"string"},"sessionId":{"type":"string"},"title":{"type":"string"}},"required":["sessionId","finalUrl","title","audit"],"type":"object"},"requiredCapabilities":["browser-control"],"requiresHumanApproval":false},{"audit":{"artifactTypes":["log"],"logRequest":true,"logResult":true},"description":"Type into the active Chromium session by audited selector.","inputSchema":{"properties":{"selector":{"type":"string"},"sensitive":{"type":"boolean"},"sessionId":{"type":"string"},"text":{"type":"string"}},"required":["selector","text"],"type":"object"},"name":"browser.type","outputSchema":{"properties":{"audit":{"type":"array"},"finalUrl":{"type":"string"},"sessionId":{"type":"string"},"title":{"type":"string"}},"required":["sessionId","finalUrl","title","audit"],"type":"object"},"requiredCapabilities":["browser-control"],"requiresHumanApproval":false},{"audit":{"artifactTypes":["log","citation-bundle"],"logRequest":true,"logResult":true},"description":"Capture explicit evidence from the active live browser session when requested.","inputSchema":{"properties":{"sessionId":{"type":"string"}},"required":["sessionId"],"type":"object"},"name":"browser.capture_evidence","outputSchema":{"properties":{"audit":{"type":"array"},"evidenceRef":{"type":"string"},"sessionId":{"type":"string"}},"required":["sessionId","evidenceRef","audit"],"type":"object"},"requiredCapabilities":["browser-control"],"requiresHumanApproval":false},{"audit":{"artifactTypes":["log"],"logRequest":true,"logResult":true},"description":"List extensions available to the native embedded Chromium Browser host.","inputSchema":{"type":"object"},"name":"browser.native.extension.list","outputSchema":{"properties":{"audit":{"type":"array"},"extensions":{"type":"array"}},"required":["extensions","audit"],"type":"object"},"requiredCapabilities":["browser-control"],"requiresHumanApproval":false},{"audit":{"artifactTypes":["log"],"logRequest":true,"logResult":true},"description":"Open the native embedded Chromium trusted extension-install flow, including Chrome Web Store installation where supported.","inputSchema":{"properties":{"extensionId":{"type":"string"},"pinned":{"type":"boolean"},"source":{"type":"string"}},"required":["source"],"type":"object"},"name":"browser.native.extension.install","outputSchema":{"properties":{"audit":{"type":"array"},"extension":{"type":"object"}},"required":["extension","audit"],"type":"object"},"requiredCapabilities":["network","browser-control"],"requiresHumanApproval":true},{"audit":{"artifactTypes":["log"],"logRequest":true,"logResult":true},"description":"Update native Browser chrome pin state for a loaded extension where the host supports pinning.","inputSchema":{"properties":{"extensionId":{"type":"string"},"pinned":{"type":"boolean"}},"required":["extensionId"],"type":"object"},"name":"browser.native.extension.pin","outputSchema":{"properties":{"audit":{"type":"array"},"extensions":{"type":"array"}},"required":["extensions","audit"],"type":"object"},"requiredCapabilities":["browser-control"],"requiresHumanApproval":false},{"audit":{"artifactTypes":["log"],"logRequest":true,"logResult":true},"description":"Disable a Browser extension from the current native embedded Chromium host session.","inputSchema":{"properties":{"extensionId":{"type":"string"}},"required":["extensionId"],"type":"object"},"name":"browser.native.extension.disable","outputSchema":{"properties":{"audit":{"type":"array"},"extensions":{"type":"array"}},"required":["extensions","audit"],"type":"object"},"requiredCapabilities":["browser-control"],"requiresHumanApproval":false},{"audit":{"artifactTypes":["log"],"logRequest":true,"logResult":true},"description":"Close a host-managed Chromium browser session and clean up its local profile directory.","inputSchema":{"properties":{"sessionId":{"type":"string"}},"required":["sessionId"],"type":"object"},"name":"browser.close_session","outputSchema":{"properties":{"audit":{"type":"array"},"closed":{"type":"boolean"},"sessionId":{"type":"string"}},"required":["sessionId","closed","audit"],"type":"object"},"requiredCapabilities":["browser-control"],"requiresHumanApproval":false}],"version":"0.1.0","workflowBoundaries":[{"id":"visible-browser-work","jobToBeDone":"Let ResonantOS open, inspect, and capture live web pages through a visible, host-mediated browser session.","label":"Visible browser work","nonGoals":["Hidden browsing that the human cannot inspect","Credential entry without explicit human approval","Direct trusted Living Archive knowledge-page writes"],"owner":"augmentor","repeatability":"workflow-package","userValue":"The human avoids repeated copy/paste browser work while keeping sensitive browsing actions visible and auditable."}],"manifestSignature":{"algorithm":"ed25519","publicKey":"{\"crv\":\"Ed25519\",\"x\":\"EsZYEa4u5S9MyBn5fiODyxmOnICG-8LuwoSDPFYwNhg\",\"kty\":\"OKP\"}","signature":"kjw5HURxumjjCYxX6galOCPzqhkLrEfDiXD0tg3k4+CbEgpgU5/92+XGLhZ905pURvuUCekGOP1Wi6cCUXX7Ag=="}}
+{
+  "archiveIntegration": {
+    "canRequestIngest": true,
+    "canWriteKnowledgePages": false,
+    "intakeWriteScopes": [
+      "LivingArchive/INTAKE/browser"
+    ],
+    "readScopes": []
+  },
+  "author": "Resonant Alpha",
+  "category": "tool",
+  "compatibility": {
+    "platforms": [
+      "macOS",
+      "linux",
+      "windows"
+    ],
+    "shellVersion": "2.0.0-beta.1"
+  },
+  "connectors": [
+    {
+      "configScope": "user-config",
+      "description": "Host-mediated Chromium runtime used for visible browsing, page reads, interaction, and evidence capture.",
+      "id": "controlled-chromium-host",
+      "name": "Controlled Chromium host",
+      "requiredCapabilities": [
+        "network",
+        "ui-embedding",
+        "browser-control"
+      ],
+      "type": "local-runtime"
+    }
+  ],
+  "delegation": {
+    "acceptsTasks": true,
+    "artifactReturnTypes": [
+      "summary",
+      "markdown",
+      "log",
+      "citation-bundle",
+      "diagnostic-report"
+    ],
+    "defaultTargetRuntime": "local-service",
+    "notes": [
+      "Prefer API research for normal web lookup.",
+      "Use browser delegation when visual inspection, login, forms, live page interaction, or web app testing are required.",
+      "AI control must be routed through audited browser-session tools, not direct hidden DOM automation."
+    ],
+    "requiresHumanApprovalBeforeExecution": true,
+    "taskTypes": [
+      "research",
+      "browser-inspection"
+    ]
+  },
+  "description": "Chrome extension browser layer for side-panel web work, audited page context, and bridge-mediated AI control.",
+  "grantPresets": [
+    {
+      "description": "Allows ResonantOS to use the Chrome extension surface and audited bridge-mediated browser tools.",
+      "grants": [
+        {
+          "capability": "network",
+          "granted": true,
+          "revocationBehavior": "hard-stop",
+          "scope": "shared"
+        },
+        {
+          "capability": "ui-embedding",
+          "granted": true,
+          "revocationBehavior": "hide-surface",
+          "scope": "system"
+        },
+        {
+          "capability": "browser-control",
+          "granted": true,
+          "revocationBehavior": "hard-stop",
+          "scope": "system"
+        },
+        {
+          "capability": "filesystem",
+          "granted": true,
+          "revocationBehavior": "hard-stop",
+          "scope": "shared"
+        }
+      ],
+      "id": "browser-controlled-session",
+      "label": "Browser extension session"
+    }
+  ],
+  "health": {
+    "strategy": "browser-first-bridge-status"
+  },
+  "hooks": [
+    {
+      "event": "before-task-complete",
+      "failurePolicy": "block",
+      "handlerRef": "browser-host-preflight",
+      "id": "browser-task-completion-check",
+      "requiredCapabilities": [
+        "browser-control"
+      ]
+    }
+  ],
+  "id": "addon.browser",
+  "installHooks": {
+    "onInstall": "register-browser-surface"
+  },
+  "name": "Resonant Browser",
+  "provenance": {
+    "signed": true,
+    "signer": "ResonantOS bundled catalog",
+    "tier": "bundled-core",
+    "verificationState": "verified"
+  },
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "publisher": "local",
+  "requestedCapabilities": [
+    {
+      "capability": "network",
+      "granted": false,
+      "revocationBehavior": "hard-stop",
+      "scope": "shared"
+    },
+    {
+      "capability": "ui-embedding",
+      "granted": false,
+      "revocationBehavior": "hide-surface",
+      "scope": "system"
+    },
+    {
+      "capability": "browser-control",
+      "granted": false,
+      "revocationBehavior": "hard-stop",
+      "scope": "system"
+    },
+    {
+      "capability": "filesystem",
+      "granted": false,
+      "revocationBehavior": "hard-stop",
+      "scope": "shared"
+    },
+    {
+      "capability": "archive-intake-write",
+      "granted": false,
+      "revocationBehavior": "degrade",
+      "scope": "intake-only"
+    }
+  ],
+  "runtimeIsolation": {
+    "boundary": "host-mediated-service",
+    "requiresReviewedGrant": true,
+    "supportsDegradedMode": true
+  },
+  "runtimeType": "local-service",
+  "scripts": [
+    {
+      "commandRef": "browser.health",
+      "description": "Verify that the native browser host and controlled Chromium runtime are reachable before a delegated browser task runs.",
+      "deterministic": true,
+      "id": "browser-host-preflight",
+      "name": "Browser host preflight",
+      "producesArtifacts": [
+        "diagnostic-report"
+      ],
+      "requiredCapabilities": [
+        "browser-control"
+      ],
+      "requiresHumanApproval": false,
+      "runPolicy": "preflight"
+    }
+  ],
+  "sdkVersion": "^2.0.x",
+  "service": {
+    "entrypoint": "browser-first/host/run-bridge-minimal.mjs",
+    "healthCommand": "/status",
+    "protocol": "http-json",
+    "shutdownCommand": ""
+  },
+  "skills": [
+    {
+      "description": "Guide Augmentor through a browser task that needs visual inspection, login-aware context, form interaction, or evidence capture.",
+      "documentPath": "docs/addons/browser/skills/browser-research-session.md",
+      "id": "browser-research-session",
+      "invocation": "agent-suggested",
+      "name": "Browser-backed research session",
+      "requiredCapabilities": [
+        "network",
+        "browser-control"
+      ],
+      "requiredTools": [
+        "browser.open_url",
+        "browser.read_page",
+        "browser.capture_evidence"
+      ]
+    }
+  ],
+  "surfaces": [
+    {
+      "description": "Open the live Browser workspace inside the ResonantOS center column.",
+      "id": "browser-pane",
+      "label": "Browser",
+      "type": "embedded-pane"
+    }
+  ],
+  "tools": [
+    {
+      "audit": {
+        "artifactTypes": [
+          "log"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "Check the controlled Chromium browser host state.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "name": "browser.health",
+      "outputSchema": {
+        "properties": {
+          "audit": {
+            "type": "array"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ready",
+          "engine",
+          "audit"
+        ],
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "browser-control"
+      ],
+      "requiresHumanApproval": false
+    },
+    {
+      "audit": {
+        "artifactTypes": [
+          "log"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "Start the controlled Chromium browser host and open the default or requested URL.",
+      "inputSchema": {
+        "properties": {
+          "defaultUrl": {
+            "type": "string"
+          },
+          "headless": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "name": "browser.start",
+      "outputSchema": {
+        "properties": {
+          "audit": {
+            "type": "array"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ready",
+          "engine",
+          "audit"
+        ],
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "network",
+        "browser-control"
+      ],
+      "requiresHumanApproval": false
+    },
+    {
+      "audit": {
+        "artifactTypes": [
+          "log",
+          "citation-bundle"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "Open or navigate the live Chromium browser session and return URL, title, status, and audit events.",
+      "inputSchema": {
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      },
+      "name": "browser.open_url",
+      "outputSchema": {
+        "properties": {
+          "audit": {
+            "type": "array"
+          },
+          "finalUrl": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "finalUrl",
+          "title",
+          "status",
+          "audit"
+        ],
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "network",
+        "browser-control"
+      ],
+      "requiresHumanApproval": false
+    },
+    {
+      "audit": {
+        "artifactTypes": [
+          "log",
+          "citation-bundle"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "Read title, final URL, body text, and links from the active Chromium session.",
+      "inputSchema": {
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ],
+        "type": "object"
+      },
+      "name": "browser.read_page",
+      "outputSchema": {
+        "properties": {
+          "audit": {
+            "type": "array"
+          },
+          "finalUrl": {
+            "type": "string"
+          },
+          "links": {
+            "type": "array"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "finalUrl",
+          "title",
+          "text",
+          "links",
+          "audit"
+        ],
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "browser-control"
+      ],
+      "requiresHumanApproval": false
+    },
+    {
+      "audit": {
+        "artifactTypes": [
+          "log"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "Click the active Chromium session by audited selector or coordinates.",
+      "inputSchema": {
+        "properties": {
+          "selector": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "name": "browser.click",
+      "outputSchema": {
+        "properties": {
+          "audit": {
+            "type": "array"
+          },
+          "finalUrl": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "finalUrl",
+          "title",
+          "audit"
+        ],
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "browser-control"
+      ],
+      "requiresHumanApproval": false
+    },
+    {
+      "audit": {
+        "artifactTypes": [
+          "log"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "Type into the active Chromium session by audited selector.",
+      "inputSchema": {
+        "properties": {
+          "selector": {
+            "type": "string"
+          },
+          "sensitive": {
+            "type": "boolean"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "selector",
+          "text"
+        ],
+        "type": "object"
+      },
+      "name": "browser.type",
+      "outputSchema": {
+        "properties": {
+          "audit": {
+            "type": "array"
+          },
+          "finalUrl": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "finalUrl",
+          "title",
+          "audit"
+        ],
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "browser-control"
+      ],
+      "requiresHumanApproval": false
+    },
+    {
+      "audit": {
+        "artifactTypes": [
+          "log",
+          "citation-bundle"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "Capture explicit evidence from the active live browser session when requested.",
+      "inputSchema": {
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ],
+        "type": "object"
+      },
+      "name": "browser.capture_evidence",
+      "outputSchema": {
+        "properties": {
+          "audit": {
+            "type": "array"
+          },
+          "evidenceRef": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "evidenceRef",
+          "audit"
+        ],
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "browser-control"
+      ],
+      "requiresHumanApproval": false
+    },
+    {
+      "audit": {
+        "artifactTypes": [
+          "log"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "List extensions available to the native embedded Chromium Browser host.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "name": "browser.native.extension.list",
+      "outputSchema": {
+        "properties": {
+          "audit": {
+            "type": "array"
+          },
+          "extensions": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "extensions",
+          "audit"
+        ],
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "browser-control"
+      ],
+      "requiresHumanApproval": false
+    },
+    {
+      "audit": {
+        "artifactTypes": [
+          "log"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "Open the native embedded Chromium trusted extension-install flow, including Chrome Web Store installation where supported.",
+      "inputSchema": {
+        "properties": {
+          "extensionId": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object"
+      },
+      "name": "browser.native.extension.install",
+      "outputSchema": {
+        "properties": {
+          "audit": {
+            "type": "array"
+          },
+          "extension": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "extension",
+          "audit"
+        ],
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "network",
+        "browser-control"
+      ],
+      "requiresHumanApproval": true
+    },
+    {
+      "audit": {
+        "artifactTypes": [
+          "log"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "Update native Browser chrome pin state for a loaded extension where the host supports pinning.",
+      "inputSchema": {
+        "properties": {
+          "extensionId": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "extensionId"
+        ],
+        "type": "object"
+      },
+      "name": "browser.native.extension.pin",
+      "outputSchema": {
+        "properties": {
+          "audit": {
+            "type": "array"
+          },
+          "extensions": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "extensions",
+          "audit"
+        ],
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "browser-control"
+      ],
+      "requiresHumanApproval": false
+    },
+    {
+      "audit": {
+        "artifactTypes": [
+          "log"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "Disable a Browser extension from the current native embedded Chromium host session.",
+      "inputSchema": {
+        "properties": {
+          "extensionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "extensionId"
+        ],
+        "type": "object"
+      },
+      "name": "browser.native.extension.disable",
+      "outputSchema": {
+        "properties": {
+          "audit": {
+            "type": "array"
+          },
+          "extensions": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "extensions",
+          "audit"
+        ],
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "browser-control"
+      ],
+      "requiresHumanApproval": false
+    },
+    {
+      "audit": {
+        "artifactTypes": [
+          "log"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "Close a host-managed Chromium browser session and clean up its local profile directory.",
+      "inputSchema": {
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ],
+        "type": "object"
+      },
+      "name": "browser.close_session",
+      "outputSchema": {
+        "properties": {
+          "audit": {
+            "type": "array"
+          },
+          "closed": {
+            "type": "boolean"
+          },
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "closed",
+          "audit"
+        ],
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "browser-control"
+      ],
+      "requiresHumanApproval": false
+    }
+  ],
+  "version": "0.1.0",
+  "workflowBoundaries": [
+    {
+      "id": "visible-browser-work",
+      "jobToBeDone": "Let ResonantOS open, inspect, and capture live web pages through a visible, host-mediated browser session.",
+      "label": "Visible browser work",
+      "nonGoals": [
+        "Hidden browsing that the human cannot inspect",
+        "Credential entry without explicit human approval",
+        "Direct trusted Living Archive knowledge-page writes"
+      ],
+      "owner": "augmentor",
+      "repeatability": "workflow-package",
+      "userValue": "The human avoids repeated copy/paste browser work while keeping sensitive browsing actions visible and auditable."
+    }
+  ],
+  "manifestSignature": {
+    "algorithm": "ed25519",
+    "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"EsZYEa4u5S9MyBn5fiODyxmOnICG-8LuwoSDPFYwNhg\",\"kty\":\"OKP\"}",
+    "signature": "hJFFRXMESv+gDxV8hK5hj1oTeBjL6A7gJhD9vLqyd6KL9RSO+cH4k+VxpxN6FVd7NIeGhahPElIroxBTHOt6Cg=="
+  }
+}
