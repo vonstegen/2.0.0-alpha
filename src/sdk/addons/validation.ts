@@ -28,7 +28,10 @@ import { validateRuntimeIsolationForManifest } from "../../../packages/addon-sdk
 import { classifyAddOnToolName, NATIVE_TOOL_CAPABILITIES } from "../../../packages/addon-sdk-testing/src/native-tool-prefixes.mjs";
 import type { JsonWebKey, KeyObject } from "node:crypto";
 import { createPublicKey, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
-import { MANIFEST_SIGNATURE_ALGORITHM } from "./contracts";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import semver from "semver";
+import { ADDON_SDK_VERSION, MANIFEST_SIGNATURE_ALGORITHM } from "./contracts";
 
 const runtimeTypes: readonly AddOnRuntimeType[] = ["ui-module", "embedded-module", "local-service", "agent-addon", "channel-addon"];
 const categories: readonly AddOnCategory[] = [
@@ -349,7 +352,7 @@ const validateEnum = <T extends string>(
 
 export const validateAddOnManifest = (
   candidate: unknown,
-  options: { source?: AddOnManifestSource } = {},
+  options: { source?: AddOnManifestSource; runtimeShellVersion?: string } = {},
 ): AddOnManifestValidationResult => {
   const source = options.source ?? "bundled";
   const issues: AddOnValidationIssue[] = [];
@@ -1356,7 +1359,11 @@ export const validateAddOnManifest = (
     }
   }
   validateManifestSignature(issues, candidate);
-
+  validateManifestVersionRange(
+    issues,
+    candidate,
+    options.runtimeShellVersion ?? resolveRuntimeShellVersion(),
+  );
 
   return {
     valid: issues.every((issue) => issue.severity !== "error"),
@@ -1488,4 +1495,113 @@ export const assertValidAddOnManifest = (
     throw new Error(`Invalid ${label}: ${details}`);
   }
   return candidate as AddOnManifest;
+};
+
+// CP-7.5.2 (Version Enforcement). Resolve the runtime shell version from
+// `<cwd>/package.json` once per process and memoize the result. Tests can
+// bypass this by passing `options.runtimeShellVersion` to
+// `validateAddOnManifest` directly. A read failure or missing #version falls
+// back to ADDON_SDK_VERSION (the strictest plausible value), so a corrupt
+// checkout still rejects manifests that declare a tighter range.
+let _cachedShellVersion: string | undefined;
+export const resolveRuntimeShellVersion = (): string => {
+  if (_cachedShellVersion !== undefined) return _cachedShellVersion;
+  try {
+    const pkgPath = resolve(process.cwd(), "package.json");
+    const raw = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: unknown };
+    if (typeof raw.version === "string" && raw.version.length > 0) {
+      _cachedShellVersion = raw.version;
+      return _cachedShellVersion;
+    }
+  } catch {
+    // fall through to fallback
+  }
+  _cachedShellVersion = ADDON_SDK_VERSION;
+  return _cachedShellVersion;
+};
+
+// Reset the memoized shell version. Intended for tests that change the
+// working directory or mutate `process.env.RESONANTOS_SHELL_VERSION` (not
+// honored today; reserved for future explicit-overrides).
+export const __resetRuntimeShellVersionForTesting = (): void => {
+  _cachedShellVersion = undefined;
+};
+
+// CP-7.5.2 (Version Enforcement). A manifest must declare a `sdkVersion`
+// semver range that the current runtime SDK satisfies, and a
+// `compatibility.shellVersion` semver range that the runtime shell
+// satisfies. Both must be valid semver ranges (or the validator fails).
+// Failures produce `manifest-version-mismatch` issues (the SDK or shell
+// is outside the manifest's declared range) or
+// `manifest-version-range-invalid` (the range itself is not parseable as
+// a semver range — Tom's "banana" case).
+export const validateManifestVersionRange = (
+  issues: AddOnValidationIssue[],
+  candidate: Record<string, unknown>,
+  runtimeShellVersion: string,
+): void => {
+  // sdkVersion: the AddOnSdkManifest type declares it as `string` (not
+  // optional). If it is missing or wrong-typed, that's a hard error.
+  const sdkVersion = candidate.sdkVersion;
+  if (typeof sdkVersion !== "string" || sdkVersion.length === 0) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-version-range-invalid",
+      "sdkVersion",
+      "sdkVersion must be a non-empty semver range.",
+    );
+  } else if (semver.validRange(sdkVersion) === null) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-version-range-invalid",
+      "sdkVersion",
+      `sdkVersion is not a valid semver range: "${sdkVersion}".`,
+    );
+  } else if (!semver.satisfies(ADDON_SDK_VERSION, sdkVersion, { includePrerelease: true })) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-version-mismatch",
+      "sdkVersion",
+      `Manifest requires sdkVersion "${sdkVersion}" but runtime is "${ADDON_SDK_VERSION}".`,
+    );
+  }
+
+  // shellVersion: the `compatibility.shellVersion` field is required (the
+  // existing validator already enforces non-empty string at the field
+  // level). Re-read here so this function is self-contained.
+  const compatibility = candidate.compatibility;
+  const shellVersion = isRecord(compatibility) ? compatibility.shellVersion : undefined;
+  if (typeof shellVersion !== "string" || shellVersion.length === 0) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-version-range-invalid",
+      "compatibility.shellVersion",
+      "compatibility.shellVersion must be a non-empty semver range.",
+    );
+    return;
+  }
+  if (semver.validRange(shellVersion) === null) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-version-range-invalid",
+      "compatibility.shellVersion",
+      `compatibility.shellVersion is not a valid semver range: "${shellVersion}".`,
+    );
+    return;
+  }
+  const coercedShell = semver.coerce(runtimeShellVersion, { includePrerelease: true })?.version ?? runtimeShellVersion;
+  if (!semver.satisfies(coercedShell, shellVersion, { includePrerelease: true })) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-version-mismatch",
+      "compatibility.shellVersion",
+      `Manifest requires shellVersion "${shellVersion}" but runtime is "${runtimeShellVersion}".`,
+    );
+  }
 };

@@ -1,78 +1,86 @@
 {
-  "id": "addon.testing-hello",
-  "name": "Testing Hello",
-  "version": "0.1.0",
-  "publisher": "local",
+  "archiveIntegration": {
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false,
+    "intakeWriteScopes": [],
+    "readScopes": []
+  },
   "author": "Resonant Alpha",
   "category": "tool",
-  "sdkVersion": "0.1.0",
-  "description": "Simple SDK-built test add-on: declares a dockable panel and one hello.greet tool, to exercise the create -> connect -> validate -> test workflow a future add-on builder follows.",
-  "runtimeType": "ui-module",
-  "surfaces": [
-    {
-      "id": "testing-hello-panel",
-      "type": "panel",
-      "label": "Testing Hello",
-      "description": "A dockable panel proving a newly-built add-on can declare a shell surface.",
-      "shellNavigation": {
-        "sectionId": "testing-hello",
-        "dockIcon": "testing-hello",
-        "eyebrow": "SDK",
-        "order": 501
-      }
-    }
-  ],
-  "requestedCapabilities": [],
-  "provenance": {
-    "tier": "sideloaded-unverified",
-    "verificationState": "unverified",
-    "signed": false
+  "compatibility": {
+    "platforms": [
+      "macOS",
+      "linux",
+      "windows"
+    ],
+    "shellVersion": "2.0.0-beta.1"
   },
-  "runtimeIsolation": {
-    "boundary": "shell-ui",
-    "supportsDegradedMode": true,
-    "requiresReviewedGrant": false
+  "description": "Simple SDK-built test add-on: declares a dockable panel and one hello.greet tool, to exercise the create -> connect -> validate -> test workflow a future add-on builder follows.",
+  "health": {
+    "strategy": "none"
+  },
+  "id": "addon.testing-hello",
+  "installHooks": {},
+  "name": "Testing Hello",
+  "provenance": {
+    "signed": false,
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified"
   },
   "providerRequirements": {
     "sharedProfiles": [],
     "supportsPrivateCredentials": false
   },
-  "archiveIntegration": {
-    "readScopes": [],
-    "intakeWriteScopes": [],
-    "canRequestIngest": false,
-    "canWriteKnowledgePages": false
+  "publisher": "local",
+  "requestedCapabilities": [],
+  "runtimeIsolation": {
+    "boundary": "shell-ui",
+    "requiresReviewedGrant": false,
+    "supportsDegradedMode": true
   },
-  "health": {
-    "strategy": "none"
-  },
-  "installHooks": {},
-  "tools": [
+  "runtimeType": "ui-module",
+  "sdkVersion": "^2.0.x",
+  "surfaces": [
     {
-      "name": "hello.greet",
-      "description": "Return a friendly greeting.",
-      "requiredCapabilities": [],
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "name": { "type": "string" }
-        }
+      "description": "A dockable panel proving a newly-built add-on can declare a shell surface.",
+      "id": "testing-hello-panel",
+      "label": "Testing Hello",
+      "shellNavigation": {
+        "dockIcon": "testing-hello",
+        "eyebrow": "SDK",
+        "order": 501,
+        "sectionId": "testing-hello"
       },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "greeting": { "type": "string" }
-        }
-      },
-      "audit": {
-        "logRequest": false,
-        "logResult": false,
-        "artifactTypes": []
-      }
+      "type": "panel"
     }
   ],
-  "compatibility": {
-    "shellVersion": "^0.1.0",
-    "platforms": ["macOS", "linux", "windows"]
-  }
+  "tools": [
+    {
+      "audit": {
+        "artifactTypes": [],
+        "logRequest": false,
+        "logResult": false
+      },
+      "description": "Return a friendly greeting.",
+      "inputSchema": {
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "hello.greet",
+      "outputSchema": {
+        "properties": {
+          "greeting": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "requiredCapabilities": []
+    }
+  ],
+  "version": "0.1.0"
 }

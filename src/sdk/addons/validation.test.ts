@@ -86,8 +86,9 @@ const validManifest = (overrides: Partial<AddOnManifest> = {}): AddOnManifest =>
   installHooks: {
     onInstall: "install-browser-engine",
   },
+  sdkVersion: "^2.0.x",
   compatibility: {
-    shellVersion: "^0.1.0",
+    shellVersion: "2.0.0-beta.1",
     platforms: ["macOS", "windows", "linux"],
   },
   ...overrides,

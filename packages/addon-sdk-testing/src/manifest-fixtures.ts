@@ -21,7 +21,7 @@ import type {
   CapabilityScope,
 } from "../../../src/core/contracts.ts";
 
-import { validateAddOnManifest } from "../../../src/sdk/addons/validation.ts";
+import { signManifest, validateAddOnManifest } from "../../../src/sdk/addons/validation.ts";
 
 export type ExternalAgentRuntimeManifest = AddOnManifest & {
   /** Caller-attributed token id used by the mock host in F-cases. */
@@ -124,117 +124,346 @@ let validatedFixture: AddOnManifest | undefined;
 
 function buildBase(): AddOnManifest {
   return {
-    id: FIXTURE_ID,
-    publisher: "resonantos-testing",
-    name: "Testing External Agent Runtime",
-    version: "0.1.0",
-    author: "Resonant Extension Framework Tests",
-    category: "agent",
-    description: "Synthetic external-agent-runtime manifest used by ADR-040 §7 failure-mode tests.",
-    runtimeType: "local-service",
-    surfaces: [
-      {
-        id: "testing-external-agent-runs",
-        type: "background-task-monitor",
-        label: "Testing External Agent Runs",
-        description: "Track delegated agent-runtime tasks under test.",
-      },
+  "agents": [
+    {
+      "displayName": "Testing External Agent",
+      "id": "testing-external-agent",
+      "trustTier": "external",
+      "workspaceBehavior": "delegated"
+    }
+  ],
+  "archiveIntegration": {
+    "canRequestIngest": true,
+    "canWriteKnowledgePages": false,
+    "intakeWriteScopes": [
+      "LivingArchive/INTAKE/testing-external-agent"
     ],
-    requestedCapabilities: MOCK_EXTERNAL_AGENT_CAPABILITY_GRANTS,
-    provenance: {
-      tier: "curated-signed",
-      verificationState: "verified",
-      signed: true,
-      signer: "Resonant Extension Framework Testing",
-    },
-    runtimeIsolation: {
-      boundary: "host-mediated-service",
-      supportsDegradedMode: true,
-      requiresReviewedGrant: true,
-    },
-    grantPresets: [
-      {
-        id: "testing-external-agent-default",
-        label: "Testing default external agent runtime",
-        description: "Default granted set: providers (shared), agent-delegation (workspace), network (self), filesystem (self), archive-read (workspace), archive-intake-write (intake-only), notifications (self).",
-        grants: MOCK_EXTERNAL_AGENT_CAPABILITY_GRANTS.map((g) => ({ ...g, granted: true })),
-      },
+    "readScopes": [
+      "LivingArchive/INTAKE/testing-external-agent"
+    ]
+  },
+  "author": "Resonant Extension Framework Tests",
+  "callerId": "caller.testing-external-agent",
+  "category": "agent",
+  "compatibility": {
+    "platforms": [
+      "darwin-arm64",
+      "linux-x64"
     ],
-    providerRequirements: {
-      sharedProfiles: ["resonant-deepseek-v4-pro"],
-      supportsPrivateCredentials: false,
-      recommendedPrimaryModel: "deepseek-v4-pro",
-      recommendedFallbackModel: "deepseek-mini",
-      preferredRuntimeKinds: ["local", "remote-user-owned"],
-      allowExperimentalAuth: false,
-    },
-    systemSlots: [],
-    archiveIntegration: {
-      readScopes: ["LivingArchive/INTAKE/testing-external-agent"],
-      intakeWriteScopes: ["LivingArchive/INTAKE/testing-external-agent"],
-      canRequestIngest: true,
-      canWriteKnowledgePages: false,
-    },
-    health: {
-      strategy: "external-agent-runtime-ready",
-      endpoint: "http://127.0.0.1:4891/healthz",
-    },
-    service: {
-      protocol: "http-json",
-      entrypoint: "http://127.0.0.1:4891",
-      visibleEntrypoint: "http://127.0.0.1:4891",
-      healthCommand: "GET /healthz",
-      shutdownCommand: "POST /shutdown",
-    },
-    delegation: {
-      acceptsTasks: true,
-      taskTypes: ["research", "design"],
-      artifactReturnTypes: ["summary", "log"],
-      defaultTargetRuntime: "external-agent",
-      requiresHumanApprovalBeforeExecution: true,
-      notes: ["Synthetic external-agent-runtime test fixture; ADR-040 §3 trigger."],
-    },
-    installHooks: {
-      onInstall: "install-external-agent.sh",
-      onEnable: "enable-external-agent.sh",
-      onUpgrade: "upgrade-external-agent.sh",
-    },
-    workflowBoundaries: [
-      {
-        id: "testing-agent-task-boundary",
-        label: "Testing External Agent Task Boundary",
-        jobToBeDone: "Run delegated tasks under the §3 boundary rules.",
-        userValue: "Allow the host to validate an external agent runtime against ADR-040 §7.",
-        repeatability: "workflow-package",
-        owner: "addon-agent",
-        nonGoals: ["Provider selection", "Credential storage", "Workspace escape"],
-      },
+    "shellVersion": "2.0.0-beta.1"
+  },
+  "delegation": {
+    "acceptsTasks": true,
+    "artifactReturnTypes": [
+      "summary",
+      "log"
     ],
-    tools: MOCK_EXTERNAL_AGENT_TOOLS,
-    engineerSetup: {
-      documentPath: "docs/testing/external-agent-setup.md",
-      objective: "Bring up the testing external agent runtime against the mock host.",
-      requiredCapabilities: ["providers", "agent-delegation", "filesystem"],
-      allowedHostCommands: ["start", "stop", "reset"],
-      expectedInputs: ["manifest", "routing decision"],
-      expectedOutputs: ["task artifacts"],
-      requiresHumanApprovalBeforeExecution: true,
-      auditLogRequired: true,
-    },
-    compatibility: {
-      shellVersion: "0.1.0",
-      platforms: ["darwin-arm64", "linux-x64"],
-    },
-    agents: [
-      {
-        id: "testing-external-agent",
-        displayName: "Testing External Agent",
-        trustTier: "external",
-        workspaceBehavior: "delegated",
-      },
+    "defaultTargetRuntime": "external-agent",
+    "notes": [
+      "Synthetic external-agent-runtime test fixture; ADR-040 \u00a73 trigger."
     ],
-  };
+    "requiresHumanApprovalBeforeExecution": true,
+    "taskTypes": [
+      "research",
+      "design"
+    ]
+  },
+  "description": "Synthetic external-agent-runtime manifest used by ADR-040 \u00a77 failure-mode tests.",
+  "engineerSetup": {
+    "allowedHostCommands": [
+      "start",
+      "stop",
+      "reset"
+    ],
+    "auditLogRequired": true,
+    "documentPath": "docs/testing/external-agent-setup.md",
+    "expectedInputs": [
+      "manifest",
+      "routing decision"
+    ],
+    "expectedOutputs": [
+      "task artifacts"
+    ],
+    "objective": "Bring up the testing external agent runtime against the mock host.",
+    "requiredCapabilities": [
+      "providers",
+      "agent-delegation",
+      "filesystem"
+    ],
+    "requiresHumanApprovalBeforeExecution": true
+  },
+  "grantPresets": [
+    {
+      "description": "Default granted set: providers (shared), agent-delegation (workspace), network (self), filesystem (self), archive-read (workspace), archive-intake-write (intake-only), notifications (self).",
+      "grants": [
+        {
+          "capability": "providers",
+          "granted": true,
+          "revocationBehavior": "hard-stop",
+          "scope": "shared"
+        },
+        {
+          "capability": "agent-delegation",
+          "granted": true,
+          "revocationBehavior": "degrade",
+          "scope": "workspace"
+        },
+        {
+          "capability": "network",
+          "granted": true,
+          "revocationBehavior": "hard-stop",
+          "scope": "self"
+        },
+        {
+          "capability": "filesystem",
+          "granted": true,
+          "revocationBehavior": "hard-stop",
+          "scope": "self"
+        },
+        {
+          "capability": "archive-read",
+          "granted": true,
+          "revocationBehavior": "degrade",
+          "scope": "workspace"
+        },
+        {
+          "capability": "archive-intake-write",
+          "granted": true,
+          "revocationBehavior": "degrade",
+          "scope": "intake-only"
+        },
+        {
+          "capability": "notifications",
+          "granted": true,
+          "revocationBehavior": "degrade",
+          "scope": "self"
+        }
+      ],
+      "id": "testing-external-agent-default",
+      "label": "Testing default external agent runtime"
+    }
+  ],
+  "health": {
+    "endpoint": "http://127.0.0.1:4891/healthz",
+    "strategy": "external-agent-runtime-ready"
+  },
+  "id": "addon.testing.external-agent-runtime",
+  "installHooks": {
+    "onEnable": "enable-external-agent.sh",
+    "onInstall": "install-external-agent.sh",
+    "onUpgrade": "upgrade-external-agent.sh"
+  },
+  "name": "Testing External Agent Runtime",
+  "provenance": {
+    "signed": true,
+    "signer": "Resonant Extension Framework Testing",
+    "tier": "curated-signed",
+    "verificationState": "verified"
+  },
+  "providerRequirements": {
+    "allowExperimentalAuth": false,
+    "preferredRuntimeKinds": [
+      "local",
+      "remote-user-owned"
+    ],
+    "recommendedFallbackModel": "deepseek-mini",
+    "recommendedPrimaryModel": "deepseek-v4-pro",
+    "sharedProfiles": [
+      "resonant-deepseek-v4-pro"
+    ],
+    "supportsPrivateCredentials": false
+  },
+  "publisher": "resonantos-testing",
+  "requestedCapabilities": [
+    {
+      "capability": "providers",
+      "granted": false,
+      "revocationBehavior": "hard-stop",
+      "scope": "shared"
+    },
+    {
+      "capability": "agent-delegation",
+      "granted": false,
+      "revocationBehavior": "degrade",
+      "scope": "workspace"
+    },
+    {
+      "capability": "network",
+      "granted": false,
+      "revocationBehavior": "hard-stop",
+      "scope": "self"
+    },
+    {
+      "capability": "filesystem",
+      "granted": false,
+      "revocationBehavior": "hard-stop",
+      "scope": "self"
+    },
+    {
+      "capability": "archive-read",
+      "granted": false,
+      "revocationBehavior": "degrade",
+      "scope": "workspace"
+    },
+    {
+      "capability": "archive-intake-write",
+      "granted": false,
+      "revocationBehavior": "degrade",
+      "scope": "intake-only"
+    },
+    {
+      "capability": "notifications",
+      "granted": false,
+      "revocationBehavior": "degrade",
+      "scope": "self"
+    }
+  ],
+  "runtimeIsolation": {
+    "boundary": "host-mediated-service",
+    "requiresReviewedGrant": true,
+    "supportsDegradedMode": true
+  },
+  "runtimeType": "local-service",
+  "sdkVersion": "^2.0.x",
+  "service": {
+    "entrypoint": "http://127.0.0.1:4891",
+    "healthCommand": "GET /healthz",
+    "protocol": "http-json",
+    "shutdownCommand": "POST /shutdown",
+    "visibleEntrypoint": "http://127.0.0.1:4891"
+  },
+  "surfaces": [
+    {
+      "description": "Track delegated agent-runtime tasks under test.",
+      "id": "testing-external-agent-runs",
+      "label": "Testing External Agent Runs",
+      "type": "background-task-monitor"
+    }
+  ],
+  "systemSlots": [],
+  "tools": [
+    {
+      "audit": {
+        "artifactTypes": [
+          "log"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "Send a model request through the host's provider-fabric adapter using a routed handle.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "type": "string"
+          },
+          "routingDecisionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "routingDecisionId"
+        ],
+        "type": "object"
+      },
+      "name": "send_model_request",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "content"
+        ],
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "providers",
+        "network"
+      ]
+    },
+    {
+      "audit": {
+        "artifactTypes": [
+          "summary"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "Run a delegated task within the runtime's task workspace.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "mission": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mission",
+          "path"
+        ],
+        "type": "object"
+      },
+      "name": "run_task",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "artifacts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "surface": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifacts"
+        ],
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "providers",
+        "agent-delegation",
+        "filesystem"
+      ],
+      "requiresHumanApproval": true
+    }
+  ],
+  "version": "0.1.0",
+  "workflowBoundaries": [
+    {
+      "id": "testing-agent-task-boundary",
+      "jobToBeDone": "Run delegated tasks under the \u00a73 boundary rules.",
+      "label": "Testing External Agent Task Boundary",
+      "nonGoals": [
+        "Provider selection",
+        "Credential storage",
+        "Workspace escape"
+      ],
+      "owner": "addon-agent",
+      "repeatability": "workflow-package",
+      "userValue": "Allow the host to validate an external agent runtime against ADR-040 \u00a77."
+    }
+  ],
+  "manifestSignature": {
+    "algorithm": "ed25519",
+    "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"EsZYEa4u5S9MyBn5fiODyxmOnICG-8LuwoSDPFYwNhg\",\"kty\":\"OKP\"}",
+    "signature": "3vFsrjaAnoApBaBlqV0i1SZGwuTs3QKBg3o8qfNIuxJW6FqItrAyGBcgFrV0pxvyk5XksY3XhLxjTqmkwbtqDw=="
+  }
+} as unknown as AddOnManifest;
 }
+
 
 /**
  * Returns the fixture base manifest. Tests should treat the returned
@@ -260,6 +489,51 @@ export function externalAgentRuntimeFixture(): ExternalAgentRuntimeManifest {
  * a fresh fixture, simulating the user accepting a specific
  * `grantPreset` (or the host passing a single grant outside a preset).
  */
+/**
+ * Re-sign the manifest's `manifestSignature` block if the manifest declares
+ * `provenance.verificationState === "verified"`. The bundled-test-signer key
+ * is the same key used to sign the bundled manifests and the fixture's
+ * baseline signature. Synchronous load via dynamic require to keep the
+ * helpers themselves synchronous (test-friendly).
+ */
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+import { createPrivateKey } from "node:crypto";
+
+interface BundledSigner {
+  publicKey: string;
+  privateKey: ReturnType<typeof createPrivateKey>;
+}
+
+let _cachedSigner: BundledSigner | undefined;
+function loadBundledTestSigner(): BundledSigner {
+  if (_cachedSigner) return _cachedSigner;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require("node:fs") as typeof import("node:fs");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require("node:path") as typeof import("node:path");
+  const keyPath = path.resolve(process.cwd(), "scripts/.bundled-test-signer.json");
+  const { publicKey, privateKey: pem } = JSON.parse(fs.readFileSync(keyPath, "utf8")) as { publicKey: string; privateKey: string };
+  _cachedSigner = { publicKey, privateKey: createPrivateKey(pem) };
+  return _cachedSigner;
+}
+
+function resignIfVerified(manifest: AddOnManifest): AddOnManifest {
+  if (!isRecord(manifest.provenance) || manifest.provenance.verificationState !== "verified") {
+    return manifest;
+  }
+  if (!isRecord(manifest.manifestSignature)) {
+    return manifest;
+  }
+  const signer = loadBundledTestSigner();
+  const { manifestSignature: _drop, ...rest } = manifest;
+  void _drop;
+  const signature = signManifest(rest, signer.privateKey);
+  return { ...rest, manifestSignature: { algorithm: "ed25519", publicKey: signer.publicKey, signature } };
+}
+
 export function withGranted(manifest: ExternalAgentRuntimeManifest, capability: Capability): ExternalAgentRuntimeManifest {
   const next: AddOnManifest = {
     ...manifest,
@@ -267,7 +541,8 @@ export function withGranted(manifest: ExternalAgentRuntimeManifest, capability: 
       g.capability === capability ? { ...g, granted: true } : g,
     ),
   };
-  return { ...next, callerId: manifest.callerId };
+  const signed = resignIfVerified(next);
+  return { ...signed, callerId: manifest.callerId } as ExternalAgentRuntimeManifest;
 }
 
 export function withScope(manifest: ExternalAgentRuntimeManifest, capability: Capability, scope: CapabilityScope): ExternalAgentRuntimeManifest {
@@ -277,12 +552,15 @@ export function withScope(manifest: ExternalAgentRuntimeManifest, capability: Ca
       g.capability === capability ? { ...g, scope } : g,
     ),
   };
-  return { ...next, callerId: manifest.callerId };
+  const signed = resignIfVerified(next);
+  return { ...signed, callerId: manifest.callerId } as ExternalAgentRuntimeManifest;
 }
 
 export function withTool(manifest: ExternalAgentRuntimeManifest, tool: AddOnToolDefinition): ExternalAgentRuntimeManifest {
   const tools = manifest.tools ? [...manifest.tools, tool] : [tool];
-  return { ...manifest, tools };
+  const next: AddOnManifest = { ...manifest, tools };
+  const signed = resignIfVerified(next);
+  return { ...signed, callerId: manifest.callerId } as ExternalAgentRuntimeManifest;
 }
 
 /** The fixture's mock caller id; exported so F-cases don't have to read it off the manifest. */
