@@ -32,6 +32,35 @@ export interface AddOnRegistryBuildInput {
 export interface AddOnRegistrySnapshot {
   entries: AddOnRegistryEntry[];
   byId: Record<string, AddOnRegistryEntry>;
+  /**
+   * CP-7.5.4 (Cross-manifest id-collision detection). Every collision
+   * found across `bundled` + `sideloaded` manifests (keyed by the
+   * worker-key `id@publisher`). A non-empty list means the snapshot
+   * includes overlapping identities — callers (install path, snapshot
+   * consumer) must inspect this before treating the snapshot as
+   * authoritative. The snapshot itself does NOT resolve collisions;
+   * that is the install path's job, with the `forceOverride` opt-out.
+   */
+  idCollisions: AddOnRegistryIdCollision[];
+}
+
+/**
+ * CP-7.5.4 (Cross-manifest id-collision detection). The `id@publisher`
+ * pair (the worker's identity key, per ADR-018 + `buildWorkerKey`) is
+ * the collision domain — two manifests with the same `id` but different
+ * publishers are NOT a collision (each gets its own worker); two
+ * manifests with the same `id@publisher` are a collision (one will
+ * shadow the other in the host's worker registry).
+ */
+export interface AddOnRegistryIdCollision {
+  id: string;
+  publisher: string;
+  collisions: Array<{
+    addonId: string;
+    publisher: string;
+    manifestPath: string;
+    source: AddOnRegistrySource;
+  }>;
 }
 
 const sourceDefaults = (
@@ -87,6 +116,56 @@ const installStateFromInstallation = (installation: AddOnInstallation | undefine
   enabled: installation?.enabled ?? false,
 });
 
+/**
+ * CP-7.5.4 (Cross-manifest id-collision detection). Walks the bundled +
+ * sideloaded manifest sets and emits one `AddOnRegistryIdCollision`
+ * per `id@publisher` pair seen two or more times. The first manifest
+ * seen wins ("first-wins"); later manifests collide against the first.
+ *
+ * Note: same `id` with different publishers is NOT a collision (each
+ * gets its own worker). The collision domain is `id@publisher` (the
+ * worker identity key per `buildWorkerKey` in
+ * `packages/addon-sdk-testing/src/isolation.ts`).
+ */
+export const detectRegistryIdCollisions = (
+  bundled: AddOnManifest[],
+  sideloaded: AddOnManifest[],
+): AddOnRegistryIdCollision[] => {
+  type Bucket = { manifest: AddOnManifest; source: AddOnRegistrySource; manifestPath: string };
+  const byWorkerKey = new Map<string, Bucket[]>();
+  const register = (manifest: AddOnManifest, source: AddOnRegistrySource, manifestPath: string) => {
+    const key = `${manifest.id}@${manifest.publisher}`;
+    const bucket = byWorkerKey.get(key) ?? [];
+    bucket.push({ manifest, source, manifestPath });
+    byWorkerKey.set(key, bucket);
+  };
+  // Bundled first (first-wins = bundled wins over sideloaded).
+  for (const m of bundled) register(m, "bundled-catalog", "/addons/index.json");
+  for (const m of sideloaded) register(m, "sideloaded-local", "(sideloaded)");
+  const collisions: AddOnRegistryIdCollision[] = [];
+  for (const [key, bucket] of byWorkerKey) {
+    if (bucket.length < 2) continue;
+    const [first, ...rest] = bucket;
+    const at = key.indexOf("@");
+    const id = key.slice(0, at);
+    const publisher = key.slice(at + 1);
+    collisions.push({
+      id,
+      publisher,
+      collisions: [
+        { addonId: first.manifest.id, publisher: first.manifest.publisher, manifestPath: first.manifestPath, source: first.source },
+        ...rest.map((entry) => ({
+          addonId: entry.manifest.id,
+          publisher: entry.manifest.publisher,
+          manifestPath: entry.manifestPath,
+          source: entry.source,
+        })),
+      ],
+    });
+  }
+  return collisions;
+};
+
 export const createAddOnRegistryEntry = (
   manifest: AddOnManifest,
   options: AddOnRegistryEntryOptions,
@@ -128,6 +207,11 @@ export const createAddOnRegistrySnapshot = ({
   sideloaded,
   installations,
 }: AddOnRegistryBuildInput): AddOnRegistrySnapshot => {
+  // CP-7.5.4 (Cross-manifest id-collision detection). Surface any
+  // id@publisher collision across the bundled + sideloaded sets. The
+  // snapshot itself doesn't resolve the collision — the install path
+  // does, with the `forceOverride` opt-out.
+  const idCollisions = detectRegistryIdCollisions(bundled, sideloaded);
   const entries = [
     ...bundled.map((manifest) =>
       createAddOnRegistryEntry(manifest, {
@@ -146,5 +230,6 @@ export const createAddOnRegistrySnapshot = ({
   return {
     entries,
     byId: Object.fromEntries(entries.map((entry) => [entry.addonId, entry])),
+    idCollisions,
   };
 };
