@@ -26,6 +26,12 @@ import {
 } from "./contracts";
 import { validateRuntimeIsolationForManifest } from "../../../packages/addon-sdk-testing/src/isolation.ts";
 import { classifyAddOnToolName, NATIVE_TOOL_CAPABILITIES } from "../../../packages/addon-sdk-testing/src/native-tool-prefixes.mjs";
+import type { JsonWebKey, KeyObject } from "node:crypto";
+import { createPublicKey, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import semver from "semver";
+import { ADDON_SDK_VERSION, MANIFEST_SIGNATURE_ALGORITHM } from "./contracts";
 
 const runtimeTypes: readonly AddOnRuntimeType[] = ["ui-module", "embedded-module", "local-service", "agent-addon", "channel-addon"];
 const categories: readonly AddOnCategory[] = [
@@ -346,7 +352,7 @@ const validateEnum = <T extends string>(
 
 export const validateAddOnManifest = (
   candidate: unknown,
-  options: { source?: AddOnManifestSource } = {},
+  options: { source?: AddOnManifestSource; runtimeShellVersion?: string } = {},
 ): AddOnManifestValidationResult => {
   const source = options.source ?? "bundled";
   const issues: AddOnValidationIssue[] = [];
@@ -1352,12 +1358,128 @@ export const validateAddOnManifest = (
       pushIssue(issues, "error", err.code, err.path, err.message);
     }
   }
+  validateManifestSignature(issues, candidate);
+  validateManifestVersionRange(
+    issues,
+    candidate,
+    options.runtimeShellVersion ?? resolveRuntimeShellVersion(),
+  );
+  validateAddOnRuntimeBlocks(issues, candidate);
 
   return {
     valid: issues.every((issue) => issue.severity !== "error"),
     manifestId,
     issues,
   };
+};
+
+// CP-7.5.1 (Manifest Signing). When a manifest's provenance declares
+// verificationState === "verified", the manifest MUST carry a
+// `manifestSignature` block (ed25519) whose signature verifies against the
+// canonical-JSON body of the manifest. Tampering with any field or omitting
+// the signature block on a verified manifest is a hard error. Manifests with
+// verificationState "unverified" or no provenance are untouched by this
+// check.
+const MANIFEST_SIGNATURE_FIELD = "manifestSignature";
+
+/**
+ * Sign a manifest body with the supplied Ed25519 private key. Returns the
+ * base64-encoded signature over the canonicalized body (recursively sorted
+ * keys, `manifestSignature` field excluded). Mirrors the algorithm used by
+ * `scripts/sign-addon-manifest.mjs` and by `verifyManifestSignature` below.
+ */
+export const signManifest = (
+  manifest: unknown,
+  privateKey: KeyObject | Buffer,
+): string => {
+  const payload = canonicalizeManifestBody(manifest);
+  // The Node @types overload for `sign(algorithm, data, key)` types `data` as
+  // `NodeJS.ArrayBufferView`. A Buffer is a Uint8Array which structurally
+  // satisfies that interface, but tsc needs the explicit cast.
+  const signature = cryptoSign(null, Buffer.from(payload, "utf8") as NodeJS.ArrayBufferView, privateKey);
+  return signature.toString("base64");
+};
+
+export const canonicalizeManifestBody = (manifest: unknown): string => {
+  const stripSignature = (value: unknown): unknown => {
+    if (Array.isArray(value)) {
+      return value.map(stripSignature);
+    }
+    if (isRecord(value)) {
+      const out: Record<string, unknown> = {};
+      for (const key of Object.keys(value).sort()) {
+        if (key === MANIFEST_SIGNATURE_FIELD) continue;
+        out[key] = stripSignature(value[key]);
+      }
+      return out;
+    }
+    return value;
+  };
+  return JSON.stringify(stripSignature(manifest));
+};
+
+export const verifyManifestSignature = (
+  manifest: unknown,
+  signature: { algorithm: string; publicKey: string; signature: string },
+): boolean => {
+  if (signature.algorithm !== MANIFEST_SIGNATURE_ALGORITHM) return false;
+  if (typeof signature.publicKey !== "string" || signature.publicKey.length === 0) return false;
+  if (typeof signature.signature !== "string" || signature.signature.length === 0) return false;
+  const payload = canonicalizeManifestBody(manifest);
+  try {
+    const raw = signature.publicKey;
+    let publicKey;
+    if (raw.startsWith("{")) {
+      publicKey = createPublicKey({ key: JSON.parse(raw) as JsonWebKey, format: "jwk" });
+    } else if (raw.startsWith("-----BEGIN")) {
+      publicKey = createPublicKey(raw);
+    } else {
+      // base64 SPKI; createPublicKey auto-detects "spki" base64 input.
+      publicKey = createPublicKey(Buffer.from(raw, "base64"));
+    }
+    return cryptoVerify(
+      null,
+      Buffer.from(payload, "utf8"),
+      publicKey,
+      Buffer.from(signature.signature, "base64"),
+    );
+  } catch {
+    return false;
+  }
+};
+
+export const validateManifestSignature = (
+  issues: AddOnValidationIssue[],
+  candidate: Record<string, unknown>,
+): void => {
+  if (!isRecord(candidate.provenance) || candidate.provenance.verificationState !== "verified") {
+    return;
+  }
+  const sig = candidate[MANIFEST_SIGNATURE_FIELD];
+  if (!isRecord(sig)) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-signature-missing",
+      MANIFEST_SIGNATURE_FIELD,
+      "Manifests with provenance.verificationState === \"verified\" must include an ed25519 manifestSignature block.",
+    );
+    return;
+  }
+  const ok = verifyManifestSignature(candidate, {
+    algorithm: String(sig.algorithm),
+    publicKey: String(sig.publicKey ?? ""),
+    signature: String(sig.signature ?? ""),
+  });
+  if (!ok) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-signature-invalid",
+      MANIFEST_SIGNATURE_FIELD,
+      "manifestSignature failed ed25519 verification against the canonical JSON body of the manifest.",
+    );
+  }
 };
 
 export const assertValidAddOnManifest = (
@@ -1374,4 +1496,221 @@ export const assertValidAddOnManifest = (
     throw new Error(`Invalid ${label}: ${details}`);
   }
   return candidate as AddOnManifest;
+};
+
+// CP-7.5.2 (Version Enforcement). Resolve the runtime shell version from
+// `<cwd>/package.json` once per process and memoize the result. Tests can
+// bypass this by passing `options.runtimeShellVersion` to
+// `validateAddOnManifest` directly. A read failure or missing #version falls
+// back to ADDON_SDK_VERSION (the strictest plausible value), so a corrupt
+// checkout still rejects manifests that declare a tighter range.
+let _cachedShellVersion: string | undefined;
+export const resolveRuntimeShellVersion = (): string => {
+  if (_cachedShellVersion !== undefined) return _cachedShellVersion;
+  try {
+    const pkgPath = resolve(process.cwd(), "package.json");
+    const raw = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: unknown };
+    if (typeof raw.version === "string" && raw.version.length > 0) {
+      _cachedShellVersion = raw.version;
+      return _cachedShellVersion;
+    }
+  } catch {
+    // fall through to fallback
+  }
+  _cachedShellVersion = ADDON_SDK_VERSION;
+  return _cachedShellVersion;
+};
+
+// Reset the memoized shell version. Intended for tests that change the
+// working directory or mutate `process.env.RESONANTOS_SHELL_VERSION` (not
+// honored today; reserved for future explicit-overrides).
+export const __resetRuntimeShellVersionForTesting = (): void => {
+  _cachedShellVersion = undefined;
+};
+
+// CP-7.5.2 (Version Enforcement). A manifest must declare a `sdkVersion`
+// semver range that the current runtime SDK satisfies, and a
+// `compatibility.shellVersion` semver range that the runtime shell
+// satisfies. Both must be valid semver ranges (or the validator fails).
+// Failures produce `manifest-version-mismatch` issues (the SDK or shell
+// is outside the manifest's declared range) or
+// `manifest-version-range-invalid` (the range itself is not parseable as
+// a semver range — Tom's "banana" case).
+export const validateManifestVersionRange = (
+  issues: AddOnValidationIssue[],
+  candidate: Record<string, unknown>,
+  runtimeShellVersion: string,
+): void => {
+  // sdkVersion: the AddOnSdkManifest type declares it as `string` (not
+  // optional). If it is missing or wrong-typed, that's a hard error.
+  const sdkVersion = candidate.sdkVersion;
+  if (typeof sdkVersion !== "string" || sdkVersion.length === 0) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-version-range-invalid",
+      "sdkVersion",
+      "sdkVersion must be a non-empty semver range.",
+    );
+  } else if (semver.validRange(sdkVersion) === null) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-version-range-invalid",
+      "sdkVersion",
+      `sdkVersion is not a valid semver range: "${sdkVersion}".`,
+    );
+  } else if (!semver.satisfies(ADDON_SDK_VERSION, sdkVersion, { includePrerelease: true })) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-version-mismatch",
+      "sdkVersion",
+      `Manifest requires sdkVersion "${sdkVersion}" but runtime is "${ADDON_SDK_VERSION}".`,
+    );
+  }
+
+  // shellVersion: the `compatibility.shellVersion` field is required (the
+  // existing validator already enforces non-empty string at the field
+  // level). Re-read here so this function is self-contained.
+  const compatibility = candidate.compatibility;
+  const shellVersion = isRecord(compatibility) ? compatibility.shellVersion : undefined;
+  if (typeof shellVersion !== "string" || shellVersion.length === 0) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-version-range-invalid",
+      "compatibility.shellVersion",
+      "compatibility.shellVersion must be a non-empty semver range.",
+    );
+    return;
+  }
+  if (semver.validRange(shellVersion) === null) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-version-range-invalid",
+      "compatibility.shellVersion",
+      `compatibility.shellVersion is not a valid semver range: "${shellVersion}".`,
+    );
+    return;
+  }
+  const coercedShell = semver.coerce(runtimeShellVersion, { includePrerelease: true })?.version ?? runtimeShellVersion;
+  if (!semver.satisfies(coercedShell, shellVersion, { includePrerelease: true })) {
+    pushIssue(
+      issues,
+      "error",
+      "manifest-version-mismatch",
+      "compatibility.shellVersion",
+      `Manifest requires shellVersion "${shellVersion}" but runtime is "${runtimeShellVersion}".`,
+    );
+  }
+};
+
+// CP-7.5.3 (Runtime Block Validation). Community add-on manifests must NOT
+// declare `agents[].trustTier === "core"` (the core tier is reserved for
+// in-tree code only; the type-level `Exclude<TrustTier, "core">` covers
+// typed callers but does not gate JSON manifests). Community add-on
+// manifests must ALSO declare `delegation.requiresHumanApprovalBeforeExecution
+// === true` — the host gates every delegation call on this flag, and a
+// `false` value would silently bypass the human prompt (the §7.5.5
+// permission-diff wiring builds on this invariant).
+//
+// Bundled + verified manifests are still subject to the same gate: the
+// `core` tier is reserved for code that ships in the same repository,
+// never for add-on manifest declarations. Bundled manifests (e.g.
+// browser.json) that previously declared `requiresHumanApprovalBeforeExecution
+// === false` must be patched as part of this work.
+const RUNTIME_BLOCK_TRUST_TIERS: readonly string[] = ["addon", "external"];
+
+export const validateAddOnRuntimeBlocks = (
+  issues: AddOnValidationIssue[],
+  candidate: Record<string, unknown>,
+): void => {
+  // agents[]: trust-tier exclusion (no `core`).
+  const agents = candidate.agents;
+  if (agents !== undefined) {
+    if (!Array.isArray(agents)) {
+      pushIssue(
+        issues,
+        "error",
+        "runtime-agents-array",
+        "agents",
+        "agents must be an array.",
+      );
+    } else {
+      for (let i = 0; i < agents.length; i++) {
+        const agent = agents[i];
+        if (!isRecord(agent)) {
+          pushIssue(
+            issues,
+            "error",
+            "runtime-agent-shape",
+            `agents[${i}]`,
+            "agents[i] must be an object.",
+          );
+          continue;
+        }
+        const trustTier = agent.trustTier;
+        if (typeof trustTier !== "string") {
+          pushIssue(
+            issues,
+            "error",
+            "runtime-agent-trust-tier-missing",
+            `agents[${i}].trustTier`,
+            `agents[${i}].trustTier must be a string.`,
+          );
+        } else if (trustTier === "core") {
+          pushIssue(
+            issues,
+            "error",
+            "runtime-agent-trust-tier-core",
+            `agents[${i}].trustTier`,
+            `agents[${i}].trustTier "core" is reserved for in-tree code; add-on manifests must use "addon" or "external".`,
+          );
+        } else if (!RUNTIME_BLOCK_TRUST_TIERS.includes(trustTier)) {
+          pushIssue(
+            issues,
+            "error",
+            "runtime-agent-trust-tier-unknown",
+            `agents[${i}].trustTier`,
+            `agents[${i}].trustTier "${trustTier}" is not one of the known tiers (${RUNTIME_BLOCK_TRUST_TIERS.join(", ")}).`,
+          );
+        }
+      }
+    }
+  }
+
+  // delegation: requiresHumanApprovalBeforeExecution must be true.
+  const delegation = candidate.delegation;
+  if (delegation !== undefined) {
+    if (!isRecord(delegation)) {
+      pushIssue(
+        issues,
+        "error",
+        "runtime-delegation-shape",
+        "delegation",
+        "delegation must be an object.",
+      );
+      return;
+    }
+    const flag = delegation.requiresHumanApprovalBeforeExecution;
+    if (typeof flag !== "boolean") {
+      pushIssue(
+        issues,
+        "error",
+        "runtime-delegation-flag-missing",
+        "delegation.requiresHumanApprovalBeforeExecution",
+        "delegation.requiresHumanApprovalBeforeExecution must be a boolean (true is required for add-on manifests).",
+      );
+    } else if (flag === false) {
+      pushIssue(
+        issues,
+        "error",
+        "runtime-delegation-flag-bypassed",
+        "delegation.requiresHumanApprovalBeforeExecution",
+        'delegation.requiresHumanApprovalBeforeExecution is false; add-on manifests MUST require human approval before delegating to their agents. This is the §7.5.3 community-ready trust gate.',
+      );
+    }
+  }
 };

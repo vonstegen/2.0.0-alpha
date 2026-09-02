@@ -55,6 +55,7 @@ runs/
 *.zip
 
 # Repository-local agent and analysis state
+.craft/
 .abacusai/
 .codex/
 .understand-anything/
@@ -77,3 +78,15 @@ browser-first/certs/
 .vscode/
 *.swp
 docs/code-forge-architecture/
+
+# Bundled-test-signer keypair for CP-7.5 manifest signing in tests.
+# NOT a production secret; the bundled manifests are signed with this key
+# and re-signing happens at test time when fixtures are mutated.
+
+# CP-7.5 bundled-test-signer keypair. This is a TEST key only — it signs
+# the bundled test catalog manifests and the testing-external-agent-runtime
+# fixture so the §7.5.1 manifest-signature gate can be exercised end-to-end.
+# It is checked in deliberately so a fresh checkout can sign and verify the
+# bundled manifests deterministically. Production add-on publishers will use
+# their own keys held outside the repo.
+!scripts/.bundled-test-signer.json

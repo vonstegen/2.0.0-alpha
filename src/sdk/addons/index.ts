@@ -21,6 +21,8 @@ export {
   ADDON_CAPABILITIES,
   ADDON_SDK_VERSION,
   ADDON_SERVICE_PROTOCOLS,
+  MANIFEST_SIGNATURE_ALGORITHM,
+  type AddOnManifestSignature,
   type AddOnManifestSource,
   type AddOnManifestValidationResult,
   type AddOnSdkManifest,
