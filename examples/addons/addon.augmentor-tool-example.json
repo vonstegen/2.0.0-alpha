@@ -1,102 +1,129 @@
 {
-  "id": "addon.augmentor-tool-example",
-  "name": "Augmentor Tool Example",
-  "version": "0.1.0",
-  "publisher": "local",
+  "archiveIntegration": {
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false,
+    "intakeWriteScopes": [],
+    "readScopes": []
+  },
+  "augmentorExtension": {
+    "approvalGates": [
+      "human-approval"
+    ],
+    "auditLogRequired": true,
+    "compatible": {
+      "augmentorVersions": [
+        "^0.1.0"
+      ],
+      "sdkVersions": [
+        "^0.1.0"
+      ]
+    },
+    "contextPolicy": {
+      "read": [],
+      "write": []
+    },
+    "failureBehavior": "fail-closed",
+    "kind": "tool",
+    "producesDelegationPackets": false,
+    "requiredCapabilities": [
+      "archive-read"
+    ],
+    "requiredTools": [
+      "augmentor.summarize-diff"
+    ],
+    "revocationBehavior": "cancel",
+    "verificationHooks": [],
+    "workflowPhases": []
+  },
   "author": "Resonant Alpha",
   "category": "tool",
-  "sdkVersion": "0.1.0",
-  "description": "Conformance example: a focused Augmentor extension of kind tool that summarizes a file diff into a review note under a human approval gate.",
-  "runtimeType": "ui-module",
-  "extensionClass": "augmentor-extension",
-  "surfaces": [
-    {
-      "id": "augmentor-tool-example-panel",
-      "type": "panel",
-      "label": "Augmentor Tool Example",
-      "description": "Dockable panel proving a tool extension can declare a shell surface.",
-      "shellNavigation": {
-        "sectionId": "augmentor-tool-example",
-        "dockIcon": "augmentor-tool-example",
-        "eyebrow": "Augmentor",
-        "order": 503
-      }
-    }
-  ],
-  "requestedCapabilities": [
-    { "capability": "archive-read", "granted": false, "scope": "shared", "revocationBehavior": "degrade" }
-  ],
-  "provenance": {
-    "tier": "sideloaded-unverified",
-    "verificationState": "unverified",
-    "signed": false
+  "compatibility": {
+    "platforms": [
+      "macOS",
+      "linux",
+      "windows"
+    ],
+    "shellVersion": "2.0.0-beta.1"
   },
-  "runtimeIsolation": {
-    "boundary": "shell-ui",
-    "supportsDegradedMode": true,
-    "requiresReviewedGrant": false
+  "description": "Conformance example: a focused Augmentor extension of kind tool that summarizes a file diff into a review note under a human approval gate.",
+  "extensionClass": "augmentor-extension",
+  "health": {
+    "strategy": "none"
+  },
+  "id": "addon.augmentor-tool-example",
+  "installHooks": {},
+  "name": "Augmentor Tool Example",
+  "provenance": {
+    "signed": false,
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified"
   },
   "providerRequirements": {
     "sharedProfiles": [],
     "supportsPrivateCredentials": false
   },
-  "archiveIntegration": {
-    "readScopes": [],
-    "intakeWriteScopes": [],
-    "canRequestIngest": false,
-    "canWriteKnowledgePages": false
-  },
-  "health": {
-    "strategy": "none"
-  },
-  "installHooks": {},
-  "tools": [
+  "publisher": "local",
+  "requestedCapabilities": [
     {
-      "name": "augmentor.summarize-diff",
-      "description": "Summarize a file diff into a review note.",
-      "requiredCapabilities": ["archive-read"],
-      "requiresHumanApproval": true,
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "diff": { "type": "string" }
-        }
-      },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "summary": { "type": "string" }
-        }
-      },
-      "audit": {
-        "logRequest": false,
-        "logResult": false,
-        "artifactTypes": ["summary"]
-      }
+      "capability": "archive-read",
+      "granted": false,
+      "revocationBehavior": "degrade",
+      "scope": "shared"
     }
   ],
-  "augmentorExtension": {
-    "kind": "tool",
-    "compatible": {
-      "augmentorVersions": ["^0.1.0"],
-      "sdkVersions": ["^0.1.0"]
-    },
-    "requiredTools": ["augmentor.summarize-diff"],
-    "requiredCapabilities": ["archive-read"],
-    "workflowPhases": [],
-    "approvalGates": ["human-approval"],
-    "contextPolicy": {
-      "read": [],
-      "write": []
-    },
-    "verificationHooks": [],
-    "failureBehavior": "fail-closed",
-    "revocationBehavior": "cancel",
-    "auditLogRequired": true,
-    "producesDelegationPackets": false
+  "runtimeIsolation": {
+    "boundary": "shell-ui",
+    "requiresReviewedGrant": false,
+    "supportsDegradedMode": true
   },
-  "compatibility": {
-    "shellVersion": "^0.1.0",
-    "platforms": ["macOS", "linux", "windows"]
-  }
+  "runtimeType": "ui-module",
+  "sdkVersion": "^2.0.x",
+  "surfaces": [
+    {
+      "description": "Dockable panel proving a tool extension can declare a shell surface.",
+      "id": "augmentor-tool-example-panel",
+      "label": "Augmentor Tool Example",
+      "shellNavigation": {
+        "dockIcon": "augmentor-tool-example",
+        "eyebrow": "Augmentor",
+        "order": 503,
+        "sectionId": "augmentor-tool-example"
+      },
+      "type": "panel"
+    }
+  ],
+  "tools": [
+    {
+      "audit": {
+        "artifactTypes": [
+          "summary"
+        ],
+        "logRequest": false,
+        "logResult": false
+      },
+      "description": "Summarize a file diff into a review note.",
+      "inputSchema": {
+        "properties": {
+          "diff": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "augmentor.summarize-diff",
+      "outputSchema": {
+        "properties": {
+          "summary": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "archive-read"
+      ],
+      "requiresHumanApproval": true
+    }
+  ],
+  "version": "0.1.0"
 }

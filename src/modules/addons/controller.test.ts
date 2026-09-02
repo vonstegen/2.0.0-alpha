@@ -545,4 +545,83 @@ describe("executeSideloadManifest", () => {
 
     expect(setErrorState).toHaveBeenCalledWith("Failed to sideload manifest.");
   });
+
+  // CP-7.5.4 (Cross-manifest id-collision detection).
+  it("rejects a sideload that collides with a bundled entry when forceOverride is false", async () => {
+    const bundled = [createHermesManifest()]; // addon.hermes / local
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const setErrorState = vi.fn();
+    const setReadyState = vi.fn();
+    // Mirror the real App.tsx errorMessageOf so the underlying error.message
+    // is preserved (not just the fallback).
+    const errorMessageOf = (e: unknown, fallback: string) =>
+      e instanceof Error ? e.message : fallback;
+
+    await executeSideloadManifest({
+      sideloadPath: "/path/to/hermes.json",
+      bundled,
+      sideloaded: [],
+      setReadyState,
+      setSelectedAddonId: vi.fn(),
+      setSideloadPath: vi.fn(),
+      setErrorState,
+      errorMessageOf,
+    });
+
+    expect(setReadyState).not.toHaveBeenCalled();
+    expect(setErrorState).toHaveBeenCalledTimes(1);
+    const message = setErrorState.mock.calls[0][0] as string;
+    expect(message).toContain("addon.hermes@local");
+    expect(message).toContain("bundled catalog");
+    expect(message).toContain("forceOverride=true");
+  });
+
+  it("accepts a sideload that collides with a bundled entry when forceOverride is true", async () => {
+    const bundled = [createHermesManifest()];
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const setErrorState = vi.fn();
+    const setReadyState = vi.fn();
+
+    await executeSideloadManifest({
+      sideloadPath: "/path/to/hermes.json",
+      bundled,
+      sideloaded: [],
+      setReadyState,
+      setSelectedAddonId: vi.fn(),
+      setSideloadPath: vi.fn(),
+      setErrorState,
+      errorMessageOf: (_e, fallback) => fallback,
+      forceOverride: true,
+    });
+
+    expect(setErrorState).not.toHaveBeenCalled();
+    expect(setReadyState).toHaveBeenCalled();
+  });
+
+  it("rejects a sideload that collides with an existing sideloaded entry", async () => {
+    const existing = createHermesManifest();
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const setErrorState = vi.fn();
+    const setReadyState = vi.fn();
+    const errorMessageOf = (e: unknown, fallback: string) =>
+      e instanceof Error ? e.message : fallback;
+
+    await executeSideloadManifest({
+      sideloadPath: "/path/to/hermes.json",
+      bundled: [],
+      sideloaded: [existing],
+      setReadyState,
+      setSelectedAddonId: vi.fn(),
+      setSideloadPath: vi.fn(),
+      setErrorState,
+      errorMessageOf,
+    });
+
+    expect(setReadyState).not.toHaveBeenCalled();
+    expect(setErrorState).toHaveBeenCalledTimes(1);
+    expect(setErrorState.mock.calls[0][0]).toContain("sideloaded catalog");
+  });
 });

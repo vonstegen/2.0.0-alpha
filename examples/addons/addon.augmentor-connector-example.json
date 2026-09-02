@@ -1,87 +1,106 @@
 {
-  "id": "addon.augmentor-connector-example",
-  "name": "Augmentor Connector Example",
-  "version": "0.1.0",
-  "publisher": "local",
+  "archiveIntegration": {
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false,
+    "intakeWriteScopes": [],
+    "readScopes": []
+  },
+  "augmentorExtension": {
+    "approvalGates": [
+      "human-approval"
+    ],
+    "auditLogRequired": true,
+    "compatible": {
+      "augmentorVersions": [
+        "^0.1.0"
+      ],
+      "sdkVersions": [
+        "^0.1.0"
+      ]
+    },
+    "contextPolicy": {
+      "read": [],
+      "write": []
+    },
+    "failureBehavior": "fail-closed",
+    "kind": "connector",
+    "producesDelegationPackets": false,
+    "requiredCapabilities": [
+      "network"
+    ],
+    "requiredTools": [],
+    "revocationBehavior": "cancel",
+    "verificationHooks": [],
+    "workflowPhases": []
+  },
   "author": "Resonant Alpha",
   "category": "integration",
-  "sdkVersion": "0.1.0",
-  "description": "Conformance example: a focused Augmentor extension of kind connector that exposes an MCP server so Augmentor can query a third-party knowledge base.",
-  "runtimeType": "ui-module",
-  "extensionClass": "augmentor-extension",
-  "surfaces": [
+  "compatibility": {
+    "platforms": [
+      "macOS",
+      "linux",
+      "windows"
+    ],
+    "shellVersion": "2.0.0-beta.1"
+  },
+  "connectors": [
     {
-      "id": "augmentor-connector-example-panel",
-      "type": "panel",
-      "label": "Augmentor Connector Example",
-      "description": "Dockable panel proving a connector extension can declare a shell surface.",
-      "shellNavigation": {
-        "sectionId": "augmentor-connector-example",
-        "dockIcon": "augmentor-connector-example",
-        "eyebrow": "Augmentor",
-        "order": 504
-      }
+      "configScope": "user-config",
+      "description": "Query a third-party knowledge base over MCP with user-configured credentials.",
+      "id": "mcp.third-party-kb",
+      "name": "Third-Party Knowledge Base",
+      "requiredCapabilities": [
+        "network"
+      ],
+      "type": "mcp-server"
     }
   ],
-  "requestedCapabilities": [
-    { "capability": "network", "granted": false, "scope": "shared", "revocationBehavior": "hard-stop" }
-  ],
-  "provenance": {
-    "tier": "sideloaded-unverified",
-    "verificationState": "unverified",
-    "signed": false
+  "description": "Conformance example: a focused Augmentor extension of kind connector that exposes an MCP server so Augmentor can query a third-party knowledge base.",
+  "extensionClass": "augmentor-extension",
+  "health": {
+    "strategy": "none"
   },
-  "runtimeIsolation": {
-    "boundary": "shell-ui",
-    "supportsDegradedMode": true,
-    "requiresReviewedGrant": false
+  "id": "addon.augmentor-connector-example",
+  "installHooks": {},
+  "name": "Augmentor Connector Example",
+  "provenance": {
+    "signed": false,
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified"
   },
   "providerRequirements": {
     "sharedProfiles": [],
     "supportsPrivateCredentials": false
   },
-  "archiveIntegration": {
-    "readScopes": [],
-    "intakeWriteScopes": [],
-    "canRequestIngest": false,
-    "canWriteKnowledgePages": false
-  },
-  "health": {
-    "strategy": "none"
-  },
-  "installHooks": {},
-  "connectors": [
+  "publisher": "local",
+  "requestedCapabilities": [
     {
-      "id": "mcp.third-party-kb",
-      "name": "Third-Party Knowledge Base",
-      "type": "mcp-server",
-      "description": "Query a third-party knowledge base over MCP with user-configured credentials.",
-      "requiredCapabilities": ["network"],
-      "configScope": "user-config"
+      "capability": "network",
+      "granted": false,
+      "revocationBehavior": "hard-stop",
+      "scope": "shared"
     }
   ],
-  "augmentorExtension": {
-    "kind": "connector",
-    "compatible": {
-      "augmentorVersions": ["^0.1.0"],
-      "sdkVersions": ["^0.1.0"]
-    },
-    "requiredTools": [],
-    "requiredCapabilities": ["network"],
-    "workflowPhases": [],
-    "approvalGates": ["human-approval"],
-    "contextPolicy": {
-      "read": [],
-      "write": []
-    },
-    "verificationHooks": [],
-    "failureBehavior": "fail-closed",
-    "revocationBehavior": "cancel",
-    "auditLogRequired": true,
-    "producesDelegationPackets": false
+  "runtimeIsolation": {
+    "boundary": "shell-ui",
+    "requiresReviewedGrant": false,
+    "supportsDegradedMode": true
   },
-  "compatibility": {
-    "shellVersion": "^0.1.0",
-    "platforms": ["macOS", "linux", "windows"]
-  }
+  "runtimeType": "ui-module",
+  "sdkVersion": "^2.0.x",
+  "surfaces": [
+    {
+      "description": "Dockable panel proving a connector extension can declare a shell surface.",
+      "id": "augmentor-connector-example-panel",
+      "label": "Augmentor Connector Example",
+      "shellNavigation": {
+        "dockIcon": "augmentor-connector-example",
+        "eyebrow": "Augmentor",
+        "order": 504,
+        "sectionId": "augmentor-connector-example"
+      },
+      "type": "panel"
+    }
+  ],
+  "version": "0.1.0"
 }
