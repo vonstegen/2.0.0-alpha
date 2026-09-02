@@ -113,8 +113,8 @@ fresh session resume work without re-deriving context.
 | Child usage rolls up into parent budget + hard ceilings | `done` | `rollUpChildUsage` + `remainingBudget` + `isBudgetExhausted` — deterministic roll-up with exceeded-dimension reporting |
 | Priority/queue/preemption/checkpoint/budget-exhaustion events | `done` | `GovernorEvent` (admitted/queued/rejected/preempted/checkpointed/budget-exhausted) + `admissionEvent` overloads (admit/queue/reject → typed event) |
 | Reserve capacity for interactive Augmentor + Ground-0 | `done` | `ReservedCapacity` (`interactive-augmentor` | `ground-zero`) + `optionalWorkHeadroom` (remaining headroom minus the reserved amount; fully-reserved dimensions omitted) |
-| Integrate with ADR-032 compute jobs (no duplication) | `seeded` | ADR-032 + `src/core/compute-fabric.ts` types exist; deferred, per doc 13 |
-| UI: executor/budget/usage/status/stop | `not-started` | — |
+| Integrate with ADR-032 compute jobs (no duplication) | `done` | ADR-032 + `src/core/compute-fabric.ts` types exist; CP-6 wires the resource-governor mirror into every harness dispatch — opencode/pi/host-command transports call `governedAuthority.admissionDecision` via `makeResourceGovernor({governedAuthority, auditSink})` (`browser-first/host/resource-governor.mjs`) before opening a session. 11 governor primitives tests + 5 dispatch integration tests pass. ADR-032 node execution remains the host's responsibility; the governor consumes it. |
+| UI: executor/budget/usage/status/stop | `done` | `src/modules/strategist/resource-governor-panel.ts` pure selectors (`buildResourceGovernorPanel` + `planStopMutation`) project the governor snapshot into executor/budget/usage/status rows plus fair-share ranking; the Stop mutation path plans `cancelTask` + `revoke` + `release` in one mutation channel. 4 selector tests pass. |
 
 ## Phase 7 — Trusted continuity and context exchange (CP-7) — *in-progress*
 
