@@ -42,7 +42,8 @@ const manifest = (): AddOnManifest => ({
   archiveIntegration: { readScopes: [], intakeWriteScopes: [], canRequestIngest: false, canWriteKnowledgePages: false },
   health: { strategy: "none" },
   installHooks: {},
-  compatibility: { shellVersion: "^0.1.0", platforms: ["macOS"] },
+  sdkVersion: "^2.0.x",
+  compatibility: { shellVersion: "2.0.0-beta.1", platforms: ["macOS"] },
 });
 
 const installed = (addon: AddOnManifest, grants: CapabilityGrant[]): AddOnInstallation => ({

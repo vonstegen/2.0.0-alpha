@@ -1,54 +1,58 @@
 {
-  "id": "addon.hello-resonant",
-  "name": "Hello Resonant",
-  "version": "0.1.0",
-  "publisher": "local",
+  "archiveIntegration": {
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false,
+    "intakeWriteScopes": [],
+    "readScopes": []
+  },
   "author": "Resonant Alpha",
   "category": "tool",
-  "sdkVersion": "0.1.0",
-  "description": "Minimal declarative smoke-test add-on that verifies the Add-on SDK create path end-to-end in the browser-first host.",
-  "runtimeType": "ui-module",
-  "surfaces": [
-    {
-      "id": "hello-resonant-panel",
-      "type": "panel",
-      "label": "Hello Resonant",
-      "description": "A placeholder shell panel proving a third-party add-on can declare a dockable surface.",
-      "shellNavigation": {
-        "sectionId": "hello-resonant",
-        "dockIcon": "hello-resonant",
-        "eyebrow": "SDK",
-        "order": 500
-      }
-    }
-  ],
-  "requestedCapabilities": [],
-  "provenance": {
-    "tier": "sideloaded-unverified",
-    "verificationState": "unverified",
-    "signed": false
+  "compatibility": {
+    "platforms": [
+      "macOS",
+      "linux",
+      "windows"
+    ],
+    "shellVersion": "2.0.0-beta.1"
   },
-  "runtimeIsolation": {
-    "boundary": "shell-ui",
-    "supportsDegradedMode": true,
-    "requiresReviewedGrant": false
+  "description": "Minimal declarative smoke-test add-on that verifies the Add-on SDK create path end-to-end in the browser-first host.",
+  "health": {
+    "strategy": "none"
+  },
+  "id": "addon.hello-resonant",
+  "installHooks": {},
+  "name": "Hello Resonant",
+  "provenance": {
+    "signed": false,
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified"
   },
   "providerRequirements": {
     "sharedProfiles": [],
     "supportsPrivateCredentials": false
   },
-  "archiveIntegration": {
-    "readScopes": [],
-    "intakeWriteScopes": [],
-    "canRequestIngest": false,
-    "canWriteKnowledgePages": false
+  "publisher": "local",
+  "requestedCapabilities": [],
+  "runtimeIsolation": {
+    "boundary": "shell-ui",
+    "requiresReviewedGrant": false,
+    "supportsDegradedMode": true
   },
-  "health": {
-    "strategy": "none"
-  },
-  "installHooks": {},
-  "compatibility": {
-    "shellVersion": "^0.1.0",
-    "platforms": ["macOS", "linux", "windows"]
-  }
+  "runtimeType": "ui-module",
+  "sdkVersion": "^2.0.x",
+  "surfaces": [
+    {
+      "description": "A placeholder shell panel proving a third-party add-on can declare a dockable surface.",
+      "id": "hello-resonant-panel",
+      "label": "Hello Resonant",
+      "shellNavigation": {
+        "dockIcon": "hello-resonant",
+        "eyebrow": "SDK",
+        "order": 500,
+        "sectionId": "hello-resonant"
+      },
+      "type": "panel"
+    }
+  ],
+  "version": "0.1.0"
 }
