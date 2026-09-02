@@ -29,7 +29,7 @@ const validManifest = (overrides: Partial<AddOnManifest> = {}): AddOnManifest =>
   ],
   provenance: {
     tier: "curated-signed",
-    verificationState: "verified",
+    verificationState: "unverified",
     signed: true,
     signer: "ResonantOS test catalog",
   },

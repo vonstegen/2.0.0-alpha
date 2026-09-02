@@ -161,5 +161,10 @@
     "verificationState": "verified",
     "signed": true,
     "signer": "ResonantOS bundled catalog"
+  },
+  "manifestSignature": {
+    "algorithm": "ed25519",
+    "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"ZqZOkm5DbEYWr1aWBOI8UoLOn2NevwCLCUha4fQncmE\",\"kty\":\"OKP\"}",
+    "signature": "qd9tF0c/uP0ifL9GIvGSSJAlzh/0BXNeNWWA3ThAWRxFW/t07Iq6p7dtnnl+Wunt1Ed8WlCU+pat91zf79zsAw=="
   }
 }

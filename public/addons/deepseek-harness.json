@@ -99,5 +99,10 @@
     "resourceHints": { "cpu": "remote", "network": "self", "costTier": "paid-per-call" },
     "cancellationSemantics": "cancel",
     "sandboxStrength": "host-mediated"
+  },
+  "manifestSignature": {
+    "algorithm": "ed25519",
+    "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"ZqZOkm5DbEYWr1aWBOI8UoLOn2NevwCLCUha4fQncmE\",\"kty\":\"OKP\"}",
+    "signature": "a0zR+MdS8bsfFr8/OdWSWhPY3Cxz/BGn8HJCYSRTwtbMfzY0EhjmynOfxIXUFoMGuClgoUJyNEQfnBugOwDQDQ=="
   }
 }
