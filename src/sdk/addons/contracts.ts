@@ -21,10 +21,27 @@ import type {
   Capability,
 } from "../../core/contracts";
 
-export const ADDON_SDK_VERSION = "0.1.0";
+// CP-7.5.1 (Manifest Signing). Bumped from 0.1.0 to 2.0.5 — see the
+// CP-7.5 continuation prompt. 7.5.2 will read this constant via the
+// manifestVersionRange gate.
+export const ADDON_SDK_VERSION = "2.0.5";
+
+// CP-7.5.1 (Manifest Signing). An Ed25519 signature over the canonical JSON
+// body of the manifest (recursively sorted object keys, no whitespace) with
+// the `manifestSignature` key excluded from the payload. Required by the
+// validator whenever the manifest's provenance.verificationState is
+// "verified". Tampered or unsigned "verified" manifests are rejected.
+export const MANIFEST_SIGNATURE_ALGORITHM = "ed25519" as const;
+
+export type AddOnManifestSignature = {
+  algorithm: typeof MANIFEST_SIGNATURE_ALGORITHM;
+  publicKey: string;
+  signature: string;
+};
 
 export type AddOnSdkManifest = AddOnManifest & {
   sdkVersion: string;
+  manifestSignature?: AddOnManifestSignature;
   service?: AddOnLocalServiceDefinition;
   tools?: AddOnToolDefinition[];
   workflowBoundaries?: AddOnWorkflowBoundary[];
