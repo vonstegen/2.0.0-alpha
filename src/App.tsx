@@ -60,6 +60,7 @@ import {
 } from "./core/runtime";
 import {
   AddOnPermissionEscalationRequired,
+  AddOnRegistryIdCollisionError,
   executeSideloadManifest,
   grantAddonCapabilities,
   runAddonLogicianHook,
@@ -70,6 +71,7 @@ import {
 } from "./modules/addons/controller";
 
 import { PermissionDiffPrompt } from "./modules/addons/PermissionDiffPrompt";
+import { InstallConflictPrompt } from "./modules/addons/InstallConflictPrompt";
 import {
   executeArchiveIngestProbe,
   executeArchiveSearch,
@@ -298,6 +300,17 @@ export function App() {
   const [permissionDiffPrompt, setPermissionDiffPrompt] = useState<
     { addonKey: string; hardChanges: Array<{ path: string; kind: string; capability?: string }> } | null
   >(null);
+
+  // CP-7.5 §7.5.4 (deferred UI): pending install-conflict prompt. Set
+  // when executeSideloadManifest throws AddOnRegistryIdCollisionError;
+  // cleared on Allow / Cancel / successful retry.
+  const [installConflictPrompt, setInstallConflictPrompt] = useState<{
+    collidingAddonKey: string;
+    existingName: string;
+    existingVersion: string;
+    catalog: "bundled" | "sideloaded";
+    incomingPath: string;
+  } | null>(null);
   const [selectedAddonId, setSelectedAddonId] = useState<string>("");
   const [firstRunSelections, setFirstRunSelections] = useState<Record<string, boolean>>({});
   const [archiveFocusTarget, setArchiveFocusTarget] = useState<"review" | null>(null);
@@ -1240,6 +1253,20 @@ export function App() {
         setPermissionDiffPrompt({
           addonKey: filename,
           hardChanges: error.hardChanges,
+        });
+        return;
+      }
+      // CP-7.5 §7.5.4 (deferred UI): surface the id@publisher collision
+      // as a modal prompt instead of a flat error banner. The user
+      // must Allow (→ retry with forceOverride, shadow existing) or
+      // Cancel (→ reject, no catalog change).
+      if (error instanceof AddOnRegistryIdCollisionError && !options.forceOverride) {
+        setInstallConflictPrompt({
+          collidingAddonKey: error.collidingAddonKey,
+          existingName: error.existingName,
+          existingVersion: error.existingVersion,
+          catalog: error.catalog,
+          incomingPath: sideloadPath,
         });
         return;
       }
@@ -2874,6 +2901,20 @@ export function App() {
             void handleSideload({ forceOverride: true });
           }}
           onCancel={() => setPermissionDiffPrompt(null)}
+        />
+      )}
+      {installConflictPrompt && (
+        <InstallConflictPrompt
+          collidingAddonKey={installConflictPrompt.collidingAddonKey}
+          existingName={installConflictPrompt.existingName}
+          existingVersion={installConflictPrompt.existingVersion}
+          catalog={installConflictPrompt.catalog}
+          incomingPath={installConflictPrompt.incomingPath}
+          onAllow={() => {
+            setInstallConflictPrompt(null);
+            void handleSideload({ forceOverride: true });
+          }}
+          onCancel={() => setInstallConflictPrompt(null)}
         />
       )}
     </>
