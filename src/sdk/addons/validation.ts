@@ -1364,6 +1364,7 @@ export const validateAddOnManifest = (
     candidate,
     options.runtimeShellVersion ?? resolveRuntimeShellVersion(),
   );
+  validateAddOnRuntimeBlocks(issues, candidate);
 
   return {
     valid: issues.every((issue) => issue.severity !== "error"),
@@ -1603,5 +1604,113 @@ export const validateManifestVersionRange = (
       "compatibility.shellVersion",
       `Manifest requires shellVersion "${shellVersion}" but runtime is "${runtimeShellVersion}".`,
     );
+  }
+};
+
+// CP-7.5.3 (Runtime Block Validation). Community add-on manifests must NOT
+// declare `agents[].trustTier === "core"` (the core tier is reserved for
+// in-tree code only; the type-level `Exclude<TrustTier, "core">` covers
+// typed callers but does not gate JSON manifests). Community add-on
+// manifests must ALSO declare `delegation.requiresHumanApprovalBeforeExecution
+// === true` — the host gates every delegation call on this flag, and a
+// `false` value would silently bypass the human prompt (the §7.5.5
+// permission-diff wiring builds on this invariant).
+//
+// Bundled + verified manifests are still subject to the same gate: the
+// `core` tier is reserved for code that ships in the same repository,
+// never for add-on manifest declarations. Bundled manifests (e.g.
+// browser.json) that previously declared `requiresHumanApprovalBeforeExecution
+// === false` must be patched as part of this work.
+const RUNTIME_BLOCK_TRUST_TIERS: readonly string[] = ["addon", "external"];
+
+export const validateAddOnRuntimeBlocks = (
+  issues: AddOnValidationIssue[],
+  candidate: Record<string, unknown>,
+): void => {
+  // agents[]: trust-tier exclusion (no `core`).
+  const agents = candidate.agents;
+  if (agents !== undefined) {
+    if (!Array.isArray(agents)) {
+      pushIssue(
+        issues,
+        "error",
+        "runtime-agents-array",
+        "agents",
+        "agents must be an array.",
+      );
+    } else {
+      for (let i = 0; i < agents.length; i++) {
+        const agent = agents[i];
+        if (!isRecord(agent)) {
+          pushIssue(
+            issues,
+            "error",
+            "runtime-agent-shape",
+            `agents[${i}]`,
+            "agents[i] must be an object.",
+          );
+          continue;
+        }
+        const trustTier = agent.trustTier;
+        if (typeof trustTier !== "string") {
+          pushIssue(
+            issues,
+            "error",
+            "runtime-agent-trust-tier-missing",
+            `agents[${i}].trustTier`,
+            `agents[${i}].trustTier must be a string.`,
+          );
+        } else if (trustTier === "core") {
+          pushIssue(
+            issues,
+            "error",
+            "runtime-agent-trust-tier-core",
+            `agents[${i}].trustTier`,
+            `agents[${i}].trustTier "core" is reserved for in-tree code; add-on manifests must use "addon" or "external".`,
+          );
+        } else if (!RUNTIME_BLOCK_TRUST_TIERS.includes(trustTier)) {
+          pushIssue(
+            issues,
+            "error",
+            "runtime-agent-trust-tier-unknown",
+            `agents[${i}].trustTier`,
+            `agents[${i}].trustTier "${trustTier}" is not one of the known tiers (${RUNTIME_BLOCK_TRUST_TIERS.join(", ")}).`,
+          );
+        }
+      }
+    }
+  }
+
+  // delegation: requiresHumanApprovalBeforeExecution must be true.
+  const delegation = candidate.delegation;
+  if (delegation !== undefined) {
+    if (!isRecord(delegation)) {
+      pushIssue(
+        issues,
+        "error",
+        "runtime-delegation-shape",
+        "delegation",
+        "delegation must be an object.",
+      );
+      return;
+    }
+    const flag = delegation.requiresHumanApprovalBeforeExecution;
+    if (typeof flag !== "boolean") {
+      pushIssue(
+        issues,
+        "error",
+        "runtime-delegation-flag-missing",
+        "delegation.requiresHumanApprovalBeforeExecution",
+        "delegation.requiresHumanApprovalBeforeExecution must be a boolean (true is required for add-on manifests).",
+      );
+    } else if (flag === false) {
+      pushIssue(
+        issues,
+        "error",
+        "runtime-delegation-flag-bypassed",
+        "delegation.requiresHumanApprovalBeforeExecution",
+        'delegation.requiresHumanApprovalBeforeExecution is false; add-on manifests MUST require human approval before delegating to their agents. This is the §7.5.3 community-ready trust gate.',
+      );
+    }
   }
 };
