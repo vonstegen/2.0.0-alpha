@@ -4,6 +4,7 @@
 import { Suspense, lazy, startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import type {
+  AddOnInstallAuditRecord,
   AddOnManifest,
   ArchiveAiMemoryBuildJobSummary,
   ArchiveAiMemoryBuildResult,
@@ -637,6 +638,23 @@ export function App() {
     const nextState = updater(cloneState(currentReadyStateRef.current ?? state));
     commitReadyState(nextState);
   };
+  // CP-7.5.4 / §7.5.5 (ADR-039 audit-ledger, deferred piece). Append an
+  // `AddOnInstallAuditRecord` to the in-memory ledger. The controller +
+  // the prompt `onCancel` paths feed this; it stamps `id`/`createdAt` and
+  // prepends so the newest decision reads first (mirrors transcriptLedger).
+  const recordAddonInstallAudit = (
+    record: Omit<AddOnInstallAuditRecord, "id" | "createdAt">,
+  ) => {
+    updateRuntimeState((draft) => {
+      const next: AddOnInstallAuditRecord = {
+        ...record,
+        id: `addon-install-audit-${Date.now()}-${draft.addonInstallAudit.length + 1}`,
+        createdAt: new Date().toISOString(),
+      };
+      draft.addonInstallAudit = [next, ...draft.addonInstallAudit];
+      return draft;
+    });
+  };
   const {
     allManifests,
     filteredManifests,
@@ -1241,6 +1259,7 @@ export function App() {
         setSideloadPath,
         setErrorState: (message) => setLoadState({ phase: "error", message }),
         errorMessageOf,
+        recordAddonInstallAudit,
         forceOverride: options.forceOverride,
       });
       setPermissionDiffPrompt(null);
@@ -2474,6 +2493,7 @@ export function App() {
                 sideloadPath={sideloadPath}
                 filteredManifests={filteredManifests}
                 installations={state.installations}
+                addonInstallAudit={state.addonInstallAudit}
                 selectedManifest={selectedManifest}
                 selectedInstallation={selectedInstallation}
                 onSearchChange={(value) => {
@@ -2900,7 +2920,15 @@ export function App() {
             setPermissionDiffPrompt(null);
             void handleSideload({ forceOverride: true });
           }}
-          onCancel={() => setPermissionDiffPrompt(null)}
+          onCancel={() => {
+            recordAddonInstallAudit({
+              addonKey: permissionDiffPrompt.addonKey,
+              outcome: "permission-escalation-denied",
+              hardChangeCount: permissionDiffPrompt.hardChanges.length,
+              hardChangePaths: permissionDiffPrompt.hardChanges.map((c) => c.path),
+            });
+            setPermissionDiffPrompt(null);
+          }}
         />
       )}
       {installConflictPrompt && (
@@ -2914,7 +2942,19 @@ export function App() {
             setInstallConflictPrompt(null);
             void handleSideload({ forceOverride: true });
           }}
-          onCancel={() => setInstallConflictPrompt(null)}
+          onCancel={() => {
+            recordAddonInstallAudit({
+              addonKey: installConflictPrompt.collidingAddonKey,
+              outcome: "collision-shadow-denied",
+              hardChangeCount: 0,
+              hardChangePaths: [],
+              existingName: installConflictPrompt.existingName,
+              existingVersion: installConflictPrompt.existingVersion,
+              catalog: installConflictPrompt.catalog,
+              incomingPath: installConflictPrompt.incomingPath,
+            });
+            setInstallConflictPrompt(null);
+          }}
         />
       )}
     </>

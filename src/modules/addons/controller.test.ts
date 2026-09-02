@@ -777,4 +777,101 @@ describe("executeSideloadManifest", () => {
     expect(setErrorState).not.toHaveBeenCalled();
     expect(setReadyState).toHaveBeenCalled();
   });
+
+  // CP-7.5.4 / §7.5.5 (ADR-039 audit-ledger, deferred piece). The
+  // controller emits an `AddOnInstallAuditRecord` (minus id/createdAt)
+  // on every successful install, tagged by which gate was bypassed.
+  it("records a collision-shadow-approved audit row when forceOverride shadows a bundled entry", async () => {
+    const bundled = [createHermesManifest()];
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const recordAddonInstallAudit = vi.fn();
+
+    await executeSideloadManifest({
+      sideloadPath: "/path/to/hermes.json",
+      bundled,
+      sideloaded: [],
+      setReadyState: vi.fn(),
+      setSelectedAddonId: vi.fn(),
+      setSideloadPath: vi.fn(),
+      setErrorState: vi.fn(),
+      errorMessageOf: (_e, fallback) => fallback,
+      forceOverride: true,
+      recordAddonInstallAudit,
+    });
+
+    expect(recordAddonInstallAudit).toHaveBeenCalledTimes(1);
+    expect(recordAddonInstallAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addonKey: "addon.hermes@local",
+        outcome: "collision-shadow-approved",
+        hardChangeCount: 0,
+        existingName: "Hermes",
+        existingVersion: "0.1.0",
+        catalog: "bundled",
+        incomingPath: "/path/to/hermes.json",
+      }),
+    );
+  });
+
+  it("records a permission-escalation-approved audit row when forceOverride bypasses the diff gate", async () => {
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const recordAddonInstallAudit = vi.fn();
+
+    await executeSideloadManifest({
+      sideloadPath: "/path/to/hermes.json",
+      bundled: [],
+      sideloaded: [],
+      setReadyState: vi.fn(),
+      setSelectedAddonId: vi.fn(),
+      setSideloadPath: vi.fn(),
+      setErrorState: vi.fn(),
+      errorMessageOf: (_e, fallback) => fallback,
+      forceOverride: true,
+      recordAddonInstallAudit,
+    });
+
+    expect(recordAddonInstallAudit).toHaveBeenCalledTimes(1);
+    expect(recordAddonInstallAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addonKey: "addon.hermes@local",
+        outcome: "permission-escalation-approved",
+        hardChangeCount: 0,
+        hardChangePaths: [],
+      }),
+    );
+  });
+
+  it("records an installed audit row for a plain sideload with no gate", async () => {
+    const manifest = createMinimalManifest("addon.sideloaded", "Sideloaded");
+    runtimeMocks.sideloadManifest.mockResolvedValue(manifest);
+    runtimeMocks.hydrateState.mockResolvedValue(buildDefaultState([manifest]));
+    runtimeMocks.loadProviderCredentialStatuses.mockResolvedValue([]);
+
+    const recordAddonInstallAudit = vi.fn();
+
+    await executeSideloadManifest({
+      sideloadPath: "/path/to/addon.json",
+      bundled: [],
+      sideloaded: [],
+      setReadyState: vi.fn(),
+      setSelectedAddonId: vi.fn(),
+      setSideloadPath: vi.fn(),
+      setErrorState: vi.fn(),
+      errorMessageOf: (_e, fallback) => fallback,
+      recordAddonInstallAudit,
+    });
+
+    expect(recordAddonInstallAudit).toHaveBeenCalledTimes(1);
+    expect(recordAddonInstallAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addonKey: "addon.sideloaded@local",
+        outcome: "installed",
+        hardChangeCount: 0,
+        existingName: undefined,
+        existingVersion: undefined,
+      }),
+    );
+  });
 });
