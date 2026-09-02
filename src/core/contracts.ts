@@ -2952,6 +2952,48 @@ export interface ResonantShellState {
   goalWorkspaces: GoalWorkspace[];
   recoverySession: RecoverySession;
   installations: Record<string, AddOnInstallation>;
+  addonInstallAudit: AddOnInstallAuditRecord[];
   uiPreferences: UiPreferences;
   distributionModel: "curated-plus-sideload";
+}
+
+/**
+ * CP-7.5 §7.5.4 / §7.5.5 (ADR-039 audit ledger — deferred piece). A
+ * human-approval event for a sideload install gate. Every hard change
+ * (permission escalation) or id@publisher collision decision is
+ * logged here regardless of outcome, so a future audit can replay the
+ * approval chain (per ADR-039 "Rules": the host MUST log hard-change
+ * length / ids and MUST refuse applying without an explicit approval
+ * row).
+ *
+ * This is the React-host in-memory append-only ledger (persisted via
+ * `save_runtime_state`), mirroring the `transcriptLedger` /
+ * `computeFabric.audit` pattern. It is NOT the bridge call ledger
+ * (`bridge-audit-ledger.mjs`), which records governed request/decision/
+ * effect rows with a different shape and lives out of reach of the
+ * React install controller.
+ */
+export type AddOnInstallAuditOutcome =
+  | "installed"
+  | "collision-shadow-approved"
+  | "collision-shadow-denied"
+  | "permission-escalation-approved"
+  | "permission-escalation-denied";
+
+export interface AddOnInstallAuditRecord {
+  id: string;
+  createdAt: string;
+  addonKey: string;
+  outcome: AddOnInstallAuditOutcome;
+  /** Hard-change count for permission-escalation rows (0 otherwise). */
+  hardChangeCount: number;
+  /** Dotted JSON paths for hard changes (empty for collision rows). */
+  hardChangePaths: string[];
+  /** Existing entry name/version when shadowing/denying a collision. */
+  existingName?: string;
+  existingVersion?: string;
+  /** "bundled" | "sideloaded" catalog of the collided entry. */
+  catalog?: "bundled" | "sideloaded";
+  /** Incoming manifest path that triggered the gate. */
+  incomingPath?: string;
 }

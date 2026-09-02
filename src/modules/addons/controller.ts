@@ -5,6 +5,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type {
   AddOnHookDefinition,
   AddOnInstallation,
+  AddOnInstallAuditRecord,
   AddOnManifest,
   AddOnScriptDefinition,
   CapabilityGrant,
@@ -24,6 +25,14 @@ type SideloadControllerInput = {
   setSideloadPath: Dispatch<SetStateAction<string>>;
   setErrorState: (message: string) => void;
   errorMessageOf: (error: unknown, fallback: string) => string;
+  /**
+   * CP-7.5.4 / §7.5.5 (ADR-039 audit-ledger, deferred piece). Called
+   * once per human-approval decision (approve / deny / plain install)
+   * so the host can append an `AddOnInstallAuditRecord` to the
+   * in-memory ledger. The controller supplies the outcome + gate
+   * metadata; the host owns the ledger slice and persistence.
+   */
+  recordAddonInstallAudit?: (record: Omit<AddOnInstallAuditRecord, "id" | "createdAt">) => void;
   /**
    * CP-7.5.4 (Cross-manifest id-collision detection). When true, the
    * install path allows the new manifest to shadow an existing
@@ -149,6 +158,7 @@ export const executeSideloadManifest = async ({
   setSideloadPath,
   setErrorState,
   errorMessageOf,
+  recordAddonInstallAudit,
   forceOverride = false,
 }: SideloadControllerInput): Promise<void> => {
   if (!sideloadPath.trim()) {
@@ -195,6 +205,26 @@ export const executeSideloadManifest = async ({
     const priorGranted: CapabilityGrant[] =
       priorEntry?.requestedCapabilities?.map((grant) => ({ ...grant, granted: false })) ?? [];
     applyPermissionDiffGate(priorGranted, manifest, { forceOverride });
+
+    // CP-7.5.4 / §7.5.5 (ADR-039 audit-ledger, deferred piece). Record
+    // the approved / plain-install outcome. A denied outcome is recorded
+    // by the host UI's `onCancel`; the controller only reaches this point
+    // on success, where forceOverride means the human already approved
+    // the collision or the permission-escalation gate.
+    recordAddonInstallAudit?.({
+      addonKey: newKey,
+      outcome: hasCollision
+        ? "collision-shadow-approved"
+        : forceOverride
+          ? "permission-escalation-approved"
+          : "installed",
+      hardChangeCount: 0,
+      hardChangePaths: [],
+      existingName: hasCollision ? (bundledCollision ?? sideloadedCollision)?.name : undefined,
+      existingVersion: hasCollision ? (bundledCollision ?? sideloadedCollision)?.version : undefined,
+      catalog: hasCollision ? (bundledCollision ? "bundled" : "sideloaded") : undefined,
+      incomingPath: sideloadPath,
+    });
 
     const nextSideloaded = [...sideloaded, manifest].filter(
       (item, index, array) => array.findIndex((candidate) => candidate.id === item.id) === index,

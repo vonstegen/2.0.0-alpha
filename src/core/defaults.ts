@@ -927,6 +927,7 @@ export const buildDefaultState = (manifests: AddOnManifest[]): ResonantShellStat
     goalWorkspaces: [],
     recoverySession,
     installations,
+    addonInstallAudit: [],
     uiPreferences: {
       activeSection: "overview",
       activeChatThreadId: "thread-main-desktop",
