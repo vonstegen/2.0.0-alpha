@@ -116,6 +116,23 @@ fresh session resume work without re-deriving context.
 | Integrate with ADR-032 compute jobs (no duplication) | `seeded` | ADR-032 + `src/core/compute-fabric.ts` types exist; deferred, per doc 13 |
 | UI: executor/budget/usage/status/stop | `not-started` | — |
 
+## Phase 7.5 — Add-on SDK hardening (CP-7.5) — *done*
+
+CP-7.5 closes the five SDK hardening gaps Tom flagged in his framework-stack feedback. All five §7.5.x sub-areas landed on `feat/dev-external-agent-runtimes-panel` via separate PRs.
+
+| Item | Status | Evidence / gap |
+| --- | --- | --- |
+| Manifest signing / hash verification | `done` | CP-7.5 §7.5.1 — PR #9. `signManifest` + `verifyManifestSignature` + `validateManifestSignature` in `src/sdk/addons/validation.ts`; canonical-JSON body (recursively sorted keys, no whitespace, `manifestSignature` field excluded). Required whenever `provenance.verificationState === "verified"`. All 20 bundled manifests re-signed with `scripts/.bundled-test-signer.json` (deterministic Ed25519 keypair, seed `5b8e2c1f...`); 6 tests in `signing.test.ts`. |
+| Enforced sdkVersion / shellVersion | `done` | CP-7.5 §7.5.2 — PR #10. `validateManifestVersionRange` checks `manifest.sdkVersion` (semver range that `ADDON_SDK_VERSION` satisfies) and `manifest.compatibility.shellVersion` (semver range that runtime shell `package.json#version` satisfies). Issues: `manifest-version-range-invalid` (range parse error / missing field), `manifest-version-mismatch` (range excludes runtime). 7 tests in `sdk-version-validation.test.ts`; bundled + example manifests patched. |
+| Runtime validation of `agents[]` and `delegation` blocks | `done` | CP-7.5 §7.5.3 — PR #11. `validateAddOnRuntimeBlocks` rejects `agents[].trustTier === "core"` (the runtime equivalent of the type-level `Exclude<TrustTier,"core">` guard) and `delegation.requiresHumanApprovalBeforeExecution === false` (the §7.5.3 community-ready trust gate — community add-ons can NEVER silently bypass the human prompt; §7.5.5 builds on this invariant). 8 tests in `runtime-blocks-validation.test.ts`; `browser.json` patched (delegation flag flipped to `true`, re-signed). |
+| Cross-manifest id-collision detection | `done` | CP-7.5 §7.5.4 — PR #12. `detectRegistryIdCollisions` walks bundled + sideloaded sets and emits one collision per `id@publisher` pair seen 2+ times (worker key = `id@publisher` per `buildWorkerKey`; same `id` with different publishers is NOT a collision). First-wins policy: bundled wins. `AddOnRegistrySnapshot.idCollisions` is non-mutating; the install path (`executeSideloadManifest`) gates with `forceOverride?: boolean`. 9 tests (6 unit + 3 controller-level). |
+| Wire `permission-diff` escalation into install path | `done` | CP-7.5 §7.5.5 — PR #13. `applyPermissionDiffGate` builds a synthetic prior manifest from `installation.grantedCapabilities` and diffs against the new manifest using the canonical `diffAddOnManifest` from `packages/addon-sdk-testing/src/permission-diff.ts`. Throws `AddOnPermissionEscalationRequired` on hard changes (add / widen / weaken / revocation-strengthen / scope-narrow-then-allow) without `forceOverride`. Fresh installs with non-empty `requestedCapabilities` are also gated per ADR-039. 11 tests (9 unit + 2 controller-level). |
+| `npm run validate:manifest` is real | `done` | CP-5 follow-up `cp5-fu-decision-3-and-4`: `scripts/validate-addon-manifest.mjs` wraps `src/sdk/addons/validation.ts::validateAddOnManifest`. CP-7.5 §7.5.1/§7.5.2/§7.5.3 extend it; do not replace. |
+| Contribution path in CONTRIBUTING / AGENTS / Change-to-Check / Project-2 | `done` | CP-5 follow-up `cp5-fu-doc-pr`: AGENTS.md + CONTRIBUTING.md add-on rows + Project 2 `Add-on SDK` area. Confirm in the verify gate. |
+| Ship the actual `@resonantos/addon-sdk` package | `not-started` | not on this branch; the maintainer's #327 (#335 MERGED) is the upstream home. CP-7.5 only owns the in-repo governance work. |
+| ADR-055 — ADR-056 ↔ #321 reconciliation | `done` | CP-5 follow-up `cp5-fu-adr-055`: in-repo governance anchor; points the maintainer's ADR-056 policy floor at ADR-053 (architectural home). |
+| Final cutover (tracking + doc 14 + verify gate) | `done` | this commit — CP-7.5 bookkeeping. `IMPLEMENTATION_TRACKING.md` Phase 7.5 section + `14-master-phased-implementation-checklist.md` Phase 7.5 checkboxes marked done. The React prompt-UI component for ADR-039 (human-approved confirmation flow per §7.5.5) is the only remaining piece; out of scope for the CP-7.5 backend hardening batch. |
+
 ## Phase 7 — Trusted continuity and context exchange (CP-7) — *in-progress*
 
 | Item | Status | Evidence / gap |
