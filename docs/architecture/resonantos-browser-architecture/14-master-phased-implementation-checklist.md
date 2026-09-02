@@ -74,15 +74,14 @@ This checklist is ordered to preserve the current working system. Each phase has
 **Exit gate:** at least three provider shapes use the contract without vendor-specific authority exceptions.
 
 ## Phase 6 — Multi-harness concurrency and resource governor
-
-- [ ] Add per-task resource budgets and reservations.
-- [ ] Add global/per-harness concurrency limits and fair scheduling.
-- [ ] Add workspace, browser-session, GPU, provider-route, and external-account leases.
-- [ ] Roll child usage into parent budget and enforce hard ceilings.
-- [ ] Add priority, queue, preemption, checkpoint, and budget-exhaustion events.
-- [ ] Reserve capacity for interactive Augmentor and Ground-0.
-- [ ] Integrate with ADR-032 Compute Jobs where applicable; do not duplicate execution.
-- [ ] Show executor, budget, usage, status, and stop controls in the UI.
+- [x] Add per-task resource budgets and reservations.
+- [x] Add global/per-harness concurrency limits and fair scheduling.
+- [x] Add workspace, browser-session, GPU, provider-route, and external-account leases.
+- [x] Roll child usage into parent budget and enforce hard ceilings.
+- [x] Add priority, queue, preemption, checkpoint, and budget-exhaustion events.
+- [x] Reserve capacity for interactive Augmentor and Ground-0.
+- [x] Integrate with ADR-032 Compute Jobs where applicable; do not duplicate execution.
+- [x] Show executor, budget, usage, status, and stop controls in the UI.
 
 **Exit gate:** Hermes and OpenCode can run concurrently without workspace/grant leakage; cancellation and budget exhaustion are deterministic.
 
