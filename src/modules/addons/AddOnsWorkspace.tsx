@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type {
+  AddOnInstallAuditRecord,
   AddOnInstallation,
   AddOnHookDefinition,
   AddOnManifest,
@@ -26,6 +27,7 @@ type AddOnsWorkspaceProps = {
   sideloadPath: string;
   filteredManifests: AddOnManifest[];
   installations: Record<string, AddOnInstallation>;
+  addonInstallAudit: AddOnInstallAuditRecord[];
   selectedManifest: AddOnManifest | null;
   selectedInstallation: AddOnInstallation | null;
   onSearchChange: (value: string) => void;
@@ -207,6 +209,29 @@ export function AddOnsWorkspace(props: AddOnsWorkspaceProps) {
           })}
         </div>
       </Panel>
+
+      {props.addonInstallAudit.length > 0 && (
+        <Panel
+          title="Install audit ledger"
+          subtitle="Every sideload approval, denial, and collision shadowing decision, append-only."
+        >
+          <ul className="addon-audit-list" data-testid="addon-install-audit-list">
+            {props.addonInstallAudit.map((record) => (
+              <li key={record.id} data-testid={`addon-install-audit-${record.id}`}>
+                <span className="addon-audit-outcome">{record.outcome.replaceAll("-", " ")}</span>
+                <code>{record.addonKey}</code>
+                {record.hardChangeCount > 0 ? (
+                  <span className="addon-audit-hard">
+                    {record.hardChangeCount} hard change{record.hardChangeCount === 1 ? "" : "s"}
+                  </span>
+                ) : null}
+                {record.catalog ? <span className="addon-audit-catalog">{record.catalog}</span> : null}
+                <span className="addon-audit-time">{record.createdAt}</span>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
 
       {props.selectedManifest && props.selectedInstallation && (
         <AddOnDetailPanel

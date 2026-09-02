@@ -27,6 +27,8 @@ const logicianMocks = vi.hoisted(() => ({
 
 vi.mock("../../core/logician", () => logicianMocks);
 import {
+  AddOnPermissionEscalationRequired,
+  AddOnRegistryIdCollisionError,
   executeSideloadManifest,
   grantAddonCapabilities,
   runAddonLogicianHook,
@@ -544,5 +546,332 @@ describe("executeSideloadManifest", () => {
     });
 
     expect(setErrorState).toHaveBeenCalledWith("Failed to sideload manifest.");
+  });
+
+  // CP-7.5.4 (Cross-manifest id-collision detection).
+  it("rejects a sideload that collides with a bundled entry when forceOverride is false", async () => {
+    const bundled = [createHermesManifest()]; // addon.hermes / local
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const setErrorState = vi.fn();
+    const setReadyState = vi.fn();
+    // Mirror the real App.tsx errorMessageOf so the underlying error.message
+    // is preserved (not just the fallback).
+    const errorMessageOf = (e: unknown, fallback: string) =>
+      e instanceof Error ? e.message : fallback;
+
+    let captured: unknown = null;
+    try {
+      await executeSideloadManifest({
+        sideloadPath: "/path/to/hermes.json",
+        bundled,
+        sideloaded: [],
+        setReadyState,
+        setSelectedAddonId: vi.fn(),
+        setSideloadPath: vi.fn(),
+        setErrorState,
+        errorMessageOf,
+      });
+    } catch (error) {
+      captured = error;
+    }
+
+    expect(setReadyState).not.toHaveBeenCalled();
+    // CP-7.5.4 follow-on: typed error must escape so App.tsx can
+    // catch it and surface the §7.5.4 install-conflict prompt.
+    expect(captured).toBeInstanceOf(AddOnRegistryIdCollisionError);
+    const collision = captured as AddOnRegistryIdCollisionError;
+    expect(collision.collidingAddonKey).toBe("addon.hermes@local");
+    expect(collision.catalog).toBe("bundled");
+    expect(collision.message).toContain("addon.hermes@local");
+    expect(collision.message).toContain("bundled catalog");
+    expect(collision.message).toContain("forceOverride=true");
+    expect(setErrorState).not.toHaveBeenCalled();
+  });
+
+  it("accepts a sideload that collides with a bundled entry when forceOverride is true", async () => {
+    const bundled = [createHermesManifest()];
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const setErrorState = vi.fn();
+    const setReadyState = vi.fn();
+
+    await executeSideloadManifest({
+      sideloadPath: "/path/to/hermes.json",
+      bundled,
+      sideloaded: [],
+      setReadyState,
+      setSelectedAddonId: vi.fn(),
+      setSideloadPath: vi.fn(),
+      setErrorState,
+      errorMessageOf: (_e, fallback) => fallback,
+      forceOverride: true,
+    });
+
+    expect(setErrorState).not.toHaveBeenCalled();
+    expect(setReadyState).toHaveBeenCalled();
+  });
+
+  it("rejects a sideload that collides with an existing sideloaded entry", async () => {
+    const existing = createHermesManifest();
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const setErrorState = vi.fn();
+    const setReadyState = vi.fn();
+    const errorMessageOf = (e: unknown, fallback: string) =>
+      e instanceof Error ? e.message : fallback;
+
+    let captured: unknown = null;
+    try {
+      await executeSideloadManifest({
+        sideloadPath: "/path/to/hermes.json",
+        bundled: [],
+        sideloaded: [existing],
+        setReadyState,
+        setSelectedAddonId: vi.fn(),
+        setSideloadPath: vi.fn(),
+        setErrorState,
+        errorMessageOf,
+      });
+    } catch (error) {
+      captured = error;
+    }
+
+    expect(setReadyState).not.toHaveBeenCalled();
+    expect(captured).toBeInstanceOf(AddOnRegistryIdCollisionError);
+    const collision = captured as AddOnRegistryIdCollisionError;
+    expect(collision.catalog).toBe("sideloaded");
+    expect(collision.message).toContain("sideloaded catalog");
+    expect(setErrorState).not.toHaveBeenCalled();
+  });
+
+  // CP-7.5.4 follow-on: the collision error must be a typed
+  // AddOnRegistryIdCollisionError so the host UI (App.tsx) can
+  // catch it and surface the §7.5.4 install-conflict prompt
+  // (per ADR-039). The error message, addon key, existing
+  // name + version, and catalog must be preserved on the typed
+  // instance.
+  it("throws AddOnRegistryIdCollisionError when a sideload collides with a bundled entry", async () => {
+    const bundled = [createHermesManifest()]; // addon.hermes / local
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const setErrorState = vi.fn();
+    let captured: unknown = null;
+    try {
+      await executeSideloadManifest({
+        sideloadPath: "/path/to/hermes.json",
+        bundled,
+        sideloaded: [],
+        setReadyState: vi.fn(),
+        setSelectedAddonId: vi.fn(),
+        setSideloadPath: vi.fn(),
+        setErrorState,
+        errorMessageOf: (e, fallback) => (e instanceof Error ? e.message : fallback),
+      });
+    } catch (error) {
+      captured = error;
+    }
+
+    // The typed error must escape the controller (it is the contract
+    // the host UI's `handleSideload` catch relies on). The flat
+    // banner path (setErrorState) must NOT be triggered.
+    expect(captured).toBeInstanceOf(AddOnRegistryIdCollisionError);
+    const collision = captured as AddOnRegistryIdCollisionError;
+    expect(collision.collidingAddonKey).toBe("addon.hermes@local");
+    expect(collision.catalog).toBe("bundled");
+    expect(collision.existingName).toBe("Hermes");
+    expect(collision.existingVersion).toBe("0.1.0");
+    expect(collision.message).toContain("addon.hermes@local");
+    expect(collision.message).toContain("bundled catalog");
+    expect(setErrorState).not.toHaveBeenCalled();
+  });
+
+  it("throws AddOnRegistryIdCollisionError when a sideload collides with an existing sideloaded entry", async () => {
+    const existing = createHermesManifest();
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const setErrorState = vi.fn();
+    let captured: unknown = null;
+    try {
+      await executeSideloadManifest({
+        sideloadPath: "/path/to/hermes.json",
+        bundled: [],
+        sideloaded: [existing],
+        setReadyState: vi.fn(),
+        setSelectedAddonId: vi.fn(),
+        setSideloadPath: vi.fn(),
+        setErrorState,
+        errorMessageOf: (e, fallback) => (e instanceof Error ? e.message : fallback),
+      });
+    } catch (error) {
+      captured = error;
+    }
+
+    expect(captured).toBeInstanceOf(AddOnRegistryIdCollisionError);
+    const collision = captured as AddOnRegistryIdCollisionError;
+    expect(collision.collidingAddonKey).toBe("addon.hermes@local");
+    expect(collision.catalog).toBe("sideloaded");
+    expect(setErrorState).not.toHaveBeenCalled();
+  });
+
+  // CP-7.5.5 (permission-diff wiring). The sideload path calls
+  // applyPermissionDiffGate before hydrating state; a fresh install with
+  // non-empty requestedCapabilities must surface a typed error so the
+  // host UI can prompt per ADR-039.
+  it("throws AddOnPermissionEscalationRequired when a fresh sideload introduces non-empty requestedCapabilities", async () => {
+    // No existing sideloaded manifest with this id@publisher; sideloaded is
+    // empty. The new manifest has non-empty requestedCapabilities — §7.5.5
+    // treats a fresh install's capability set as a hard change that needs
+    // human approval (per ADR-039).
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const setErrorState = vi.fn();
+    const setReadyState = vi.fn();
+    const errorMessageOf = (e: unknown, fallback: string) =>
+      e instanceof Error ? e.message : fallback;
+
+    let captured: unknown = null;
+    try {
+      await executeSideloadManifest({
+        sideloadPath: "/path/to/hermes.json",
+        bundled: [],
+        sideloaded: [],
+        setReadyState,
+        setSelectedAddonId: vi.fn(),
+        setSideloadPath: vi.fn(),
+        setErrorState,
+        errorMessageOf,
+      });
+    } catch (error) {
+      captured = error;
+    }
+
+    // The typed error must escape the controller; the flat banner
+    // path (setErrorState) must NOT be triggered.
+    expect(captured).toBeInstanceOf(AddOnPermissionEscalationRequired);
+    const escalation = captured as AddOnPermissionEscalationRequired;
+    expect(escalation.hardChanges.length).toBeGreaterThan(0);
+    expect(escalation.message).toContain("hard change");
+    expect(setErrorState).not.toHaveBeenCalled();
+    expect(setReadyState).not.toHaveBeenCalled();
+  });
+
+  it("accepts a fresh sideload with non-empty requestedCapabilities when forceOverride is set (the human-approved path)", async () => {
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const setErrorState = vi.fn();
+    const setReadyState = vi.fn();
+
+    await executeSideloadManifest({
+      sideloadPath: "/path/to/hermes.json",
+      bundled: [],
+      sideloaded: [],
+      setReadyState,
+      setSelectedAddonId: vi.fn(),
+      setSideloadPath: vi.fn(),
+      setErrorState,
+      errorMessageOf: (_e, fallback) => fallback,
+      forceOverride: true,
+    });
+
+    expect(setErrorState).not.toHaveBeenCalled();
+    expect(setReadyState).toHaveBeenCalled();
+  });
+
+  // CP-7.5.4 / §7.5.5 (ADR-039 audit-ledger, deferred piece). The
+  // controller emits an `AddOnInstallAuditRecord` (minus id/createdAt)
+  // on every successful install, tagged by which gate was bypassed.
+  it("records a collision-shadow-approved audit row when forceOverride shadows a bundled entry", async () => {
+    const bundled = [createHermesManifest()];
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const recordAddonInstallAudit = vi.fn();
+
+    await executeSideloadManifest({
+      sideloadPath: "/path/to/hermes.json",
+      bundled,
+      sideloaded: [],
+      setReadyState: vi.fn(),
+      setSelectedAddonId: vi.fn(),
+      setSideloadPath: vi.fn(),
+      setErrorState: vi.fn(),
+      errorMessageOf: (_e, fallback) => fallback,
+      forceOverride: true,
+      recordAddonInstallAudit,
+    });
+
+    expect(recordAddonInstallAudit).toHaveBeenCalledTimes(1);
+    expect(recordAddonInstallAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addonKey: "addon.hermes@local",
+        outcome: "collision-shadow-approved",
+        hardChangeCount: 0,
+        existingName: "Hermes",
+        existingVersion: "0.1.0",
+        catalog: "bundled",
+        incomingPath: "/path/to/hermes.json",
+      }),
+    );
+  });
+
+  it("records a permission-escalation-approved audit row when forceOverride bypasses the diff gate", async () => {
+    runtimeMocks.sideloadManifest.mockResolvedValue(createHermesManifest());
+
+    const recordAddonInstallAudit = vi.fn();
+
+    await executeSideloadManifest({
+      sideloadPath: "/path/to/hermes.json",
+      bundled: [],
+      sideloaded: [],
+      setReadyState: vi.fn(),
+      setSelectedAddonId: vi.fn(),
+      setSideloadPath: vi.fn(),
+      setErrorState: vi.fn(),
+      errorMessageOf: (_e, fallback) => fallback,
+      forceOverride: true,
+      recordAddonInstallAudit,
+    });
+
+    expect(recordAddonInstallAudit).toHaveBeenCalledTimes(1);
+    expect(recordAddonInstallAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addonKey: "addon.hermes@local",
+        outcome: "permission-escalation-approved",
+        hardChangeCount: 0,
+        hardChangePaths: [],
+      }),
+    );
+  });
+
+  it("records an installed audit row for a plain sideload with no gate", async () => {
+    const manifest = createMinimalManifest("addon.sideloaded", "Sideloaded");
+    runtimeMocks.sideloadManifest.mockResolvedValue(manifest);
+    runtimeMocks.hydrateState.mockResolvedValue(buildDefaultState([manifest]));
+    runtimeMocks.loadProviderCredentialStatuses.mockResolvedValue([]);
+
+    const recordAddonInstallAudit = vi.fn();
+
+    await executeSideloadManifest({
+      sideloadPath: "/path/to/addon.json",
+      bundled: [],
+      sideloaded: [],
+      setReadyState: vi.fn(),
+      setSelectedAddonId: vi.fn(),
+      setSideloadPath: vi.fn(),
+      setErrorState: vi.fn(),
+      errorMessageOf: (_e, fallback) => fallback,
+      recordAddonInstallAudit,
+    });
+
+    expect(recordAddonInstallAudit).toHaveBeenCalledTimes(1);
+    expect(recordAddonInstallAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        addonKey: "addon.sideloaded@local",
+        outcome: "installed",
+        hardChangeCount: 0,
+        existingName: undefined,
+        existingVersion: undefined,
+      }),
+    );
   });
 });

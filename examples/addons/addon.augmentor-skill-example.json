@@ -1,101 +1,131 @@
 {
-  "id": "addon.augmentor-skill-example",
-  "name": "Augmentor Skill Example",
-  "version": "0.1.0",
-  "publisher": "local",
+  "archiveIntegration": {
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false,
+    "intakeWriteScopes": [],
+    "readScopes": []
+  },
+  "augmentorExtension": {
+    "approvalGates": [
+      "human-approval"
+    ],
+    "auditLogRequired": true,
+    "compatible": {
+      "augmentorVersions": [
+        "^0.1.0"
+      ],
+      "sdkVersions": [
+        "^0.1.0"
+      ]
+    },
+    "contextPolicy": {
+      "read": [],
+      "write": []
+    },
+    "failureBehavior": "fail-closed",
+    "kind": "skill",
+    "producesDelegationPackets": false,
+    "requiredCapabilities": [
+      "archive-read"
+    ],
+    "requiredTools": [
+      "augmentor.organize"
+    ],
+    "revocationBehavior": "cancel",
+    "verificationHooks": [],
+    "workflowPhases": [
+      "survey",
+      "propose"
+    ]
+  },
   "author": "Resonant Alpha",
   "category": "orchestration",
-  "sdkVersion": "0.1.0",
-  "description": "Conformance example: a focused Augmentor extension of kind skill that proposes a workspace organization plan under a human approval gate. Demonstrates the extensionClass/augmentorExtension manifest contract (doc 04).",
-  "runtimeType": "ui-module",
-  "extensionClass": "augmentor-extension",
-  "surfaces": [
-    {
-      "id": "augmentor-skill-example-panel",
-      "type": "panel",
-      "label": "Augmentor Skill Example",
-      "description": "Dockable panel proving a skill extension can declare a shell surface.",
-      "shellNavigation": {
-        "sectionId": "augmentor-skill-example",
-        "dockIcon": "augmentor-skill-example",
-        "eyebrow": "Augmentor",
-        "order": 502
-      }
-    }
-  ],
-  "requestedCapabilities": [
-    { "capability": "archive-read", "granted": false, "scope": "shared", "revocationBehavior": "degrade" }
-  ],
-  "provenance": {
-    "tier": "sideloaded-unverified",
-    "verificationState": "unverified",
-    "signed": false
+  "compatibility": {
+    "platforms": [
+      "macOS",
+      "linux",
+      "windows"
+    ],
+    "shellVersion": "2.0.0-beta.1"
   },
-  "runtimeIsolation": {
-    "boundary": "shell-ui",
-    "supportsDegradedMode": true,
-    "requiresReviewedGrant": false
+  "description": "Conformance example: a focused Augmentor extension of kind skill that proposes a workspace organization plan under a human approval gate. Demonstrates the extensionClass/augmentorExtension manifest contract (doc 04).",
+  "extensionClass": "augmentor-extension",
+  "health": {
+    "strategy": "none"
+  },
+  "id": "addon.augmentor-skill-example",
+  "installHooks": {},
+  "name": "Augmentor Skill Example",
+  "provenance": {
+    "signed": false,
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified"
   },
   "providerRequirements": {
     "sharedProfiles": [],
     "supportsPrivateCredentials": false
   },
-  "archiveIntegration": {
-    "readScopes": [],
-    "intakeWriteScopes": [],
-    "canRequestIngest": false,
-    "canWriteKnowledgePages": false
-  },
-  "health": {
-    "strategy": "none"
-  },
-  "installHooks": {},
-  "tools": [
+  "publisher": "local",
+  "requestedCapabilities": [
     {
-      "name": "augmentor.organize",
-      "description": "Propose a workspace organization plan.",
-      "requiredCapabilities": ["archive-read"],
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "workspaceTree": { "type": "string" }
-        }
-      },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "plan": { "type": "string" }
-        }
-      },
-      "audit": {
-        "logRequest": false,
-        "logResult": false,
-        "artifactTypes": ["summary"]
-      }
+      "capability": "archive-read",
+      "granted": false,
+      "revocationBehavior": "degrade",
+      "scope": "shared"
     }
   ],
-  "augmentorExtension": {
-    "kind": "skill",
-    "compatible": {
-      "augmentorVersions": ["^0.1.0"],
-      "sdkVersions": ["^0.1.0"]
-    },
-    "requiredTools": ["augmentor.organize"],
-    "requiredCapabilities": ["archive-read"],
-    "workflowPhases": ["survey", "propose"],
-    "approvalGates": ["human-approval"],
-    "contextPolicy": {
-      "read": [],
-      "write": []
-    },
-    "verificationHooks": [],
-    "failureBehavior": "fail-closed",
-    "revocationBehavior": "cancel",
-    "auditLogRequired": true,
-    "producesDelegationPackets": false
+  "runtimeIsolation": {
+    "boundary": "shell-ui",
+    "requiresReviewedGrant": false,
+    "supportsDegradedMode": true
   },
-  "compatibility": {
-    "shellVersion": "^0.1.0",
-    "platforms": ["macOS", "linux", "windows"]
-  }
+  "runtimeType": "ui-module",
+  "sdkVersion": "^2.0.x",
+  "surfaces": [
+    {
+      "description": "Dockable panel proving a skill extension can declare a shell surface.",
+      "id": "augmentor-skill-example-panel",
+      "label": "Augmentor Skill Example",
+      "shellNavigation": {
+        "dockIcon": "augmentor-skill-example",
+        "eyebrow": "Augmentor",
+        "order": 502,
+        "sectionId": "augmentor-skill-example"
+      },
+      "type": "panel"
+    }
+  ],
+  "tools": [
+    {
+      "audit": {
+        "artifactTypes": [
+          "summary"
+        ],
+        "logRequest": false,
+        "logResult": false
+      },
+      "description": "Propose a workspace organization plan.",
+      "inputSchema": {
+        "properties": {
+          "workspaceTree": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "augmentor.organize",
+      "outputSchema": {
+        "properties": {
+          "plan": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "archive-read"
+      ]
+    }
+  ],
+  "version": "0.1.0"
 }

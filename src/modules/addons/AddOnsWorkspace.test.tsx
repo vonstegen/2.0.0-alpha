@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import type { AddOnManifest, CapabilityGrant, LogicianExecutionArtifact } from "../../core/contracts";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AddOnInstallAuditRecord, AddOnManifest, CapabilityGrant, LogicianExecutionArtifact } from "../../core/contracts";
 import { buildDefaultState } from "../../core/defaults";
 import { AddOnsWorkspace } from "./AddOnsWorkspace";
 
@@ -18,6 +18,8 @@ vi.mock("../../core/runtime", () => ({
   })),
   requestBrowserInstallEngine: vi.fn(),
 }));
+
+afterEach(cleanup);
 
 const capability = (name: CapabilityGrant["capability"]): CapabilityGrant => ({
   capability: name,
@@ -121,6 +123,7 @@ describe("AddOnsWorkspace Hermes grants", () => {
         sideloadPath=""
         filteredManifests={[toolManifest]}
         installations={state.installations}
+        addonInstallAudit={[]}
         selectedManifest={null}
         selectedInstallation={null}
         onSearchChange={vi.fn()}
@@ -155,6 +158,7 @@ describe("AddOnsWorkspace Hermes grants", () => {
         sideloadPath=""
         filteredManifests={[hermesManifest]}
         installations={state.installations}
+        addonInstallAudit={[]}
         selectedManifest={null}
         selectedInstallation={null}
         onSearchChange={vi.fn()}
@@ -248,6 +252,7 @@ describe("AddOnsWorkspace Hermes grants", () => {
         sideloadPath=""
         filteredManifests={[hermesManifest]}
         installations={state.installations}
+        addonInstallAudit={[]}
         selectedManifest={hermesManifest}
         selectedInstallation={state.installations[hermesManifest.id]}
         onSearchChange={vi.fn()}
@@ -376,6 +381,7 @@ describe("AddOnsWorkspace Hermes grants", () => {
         sideloadPath=""
         filteredManifests={[hermesManifest]}
         installations={state.installations}
+        addonInstallAudit={[]}
         selectedManifest={hermesManifest}
         selectedInstallation={state.installations[hermesManifest.id]}
         onSearchChange={vi.fn()}
@@ -398,5 +404,97 @@ describe("AddOnsWorkspace Hermes grants", () => {
     expect(screen.getByText(/Hermes profile requires review/i)).toBeTruthy();
     expect(screen.getByText(/host-reported: 1/i)).toBeTruthy();
     expect(screen.getByText(/command-degraded/i)).toBeTruthy();
+  });
+});
+
+describe("AddOnsWorkspace install audit ledger", () => {
+  it("renders an audit ledger when sideload decisions have been recorded", () => {
+    const hermesManifest = createHermesManifest();
+    const state = buildDefaultState([hermesManifest]);
+    const auditRows: AddOnInstallAuditRecord[] = [
+      {
+        id: "audit-1",
+        createdAt: "2026-09-02T00:00:00.000Z",
+        addonKey: "addon.hermes@local",
+        outcome: "collision-shadow-approved",
+        hardChangeCount: 0,
+        hardChangePaths: [],
+        existingName: "Hermes",
+        existingVersion: "0.1.0",
+        catalog: "bundled",
+      },
+      {
+        id: "audit-2",
+        createdAt: "2026-09-02T00:01:00.000Z",
+        addonKey: "addon.custom@local",
+        outcome: "permission-escalation-denied",
+        hardChangeCount: 2,
+        hardChangePaths: ["requestedCapabilities", "runtimeIsolation.boundary"],
+      },
+    ];
+
+    render(
+      <AddOnsWorkspace
+        search=""
+        sideloadPath=""
+        filteredManifests={[hermesManifest]}
+        installations={state.installations}
+        addonInstallAudit={auditRows}
+        selectedManifest={null}
+        selectedInstallation={null}
+        onSearchChange={vi.fn()}
+        onSideloadPathChange={vi.fn()}
+        onSideload={vi.fn()}
+        onSelectManifest={vi.fn()}
+        onToggleAddonInstall={vi.fn()}
+        onToggleGrant={vi.fn()}
+        onGrantCapabilities={vi.fn()}
+        onUpdateAddonConfig={vi.fn()}
+        onRunLogicianScript={vi.fn()}
+        onRunLogicianHook={vi.fn()}
+        onAskAugmentor={vi.fn(async () => undefined)}
+        onOpenArchiveReview={vi.fn()}
+        onOpenSurface={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("addon-install-audit-list")).toBeTruthy();
+    expect(screen.getByText("collision shadow approved")).toBeTruthy();
+    expect(screen.getByText("permission escalation denied")).toBeTruthy();
+    expect(screen.getByText("addon.hermes@local")).toBeTruthy();
+    expect(screen.getByText("2 hard changes")).toBeTruthy();
+    expect(screen.getByText("bundled")).toBeTruthy();
+  });
+
+  it("omits the audit ledger when no decisions have been recorded", () => {
+    const hermesManifest = createHermesManifest();
+    const state = buildDefaultState([hermesManifest]);
+
+    render(
+      <AddOnsWorkspace
+        search=""
+        sideloadPath=""
+        filteredManifests={[hermesManifest]}
+        installations={state.installations}
+        addonInstallAudit={[]}
+        selectedManifest={null}
+        selectedInstallation={null}
+        onSearchChange={vi.fn()}
+        onSideloadPathChange={vi.fn()}
+        onSideload={vi.fn()}
+        onSelectManifest={vi.fn()}
+        onToggleAddonInstall={vi.fn()}
+        onToggleGrant={vi.fn()}
+        onGrantCapabilities={vi.fn()}
+        onUpdateAddonConfig={vi.fn()}
+        onRunLogicianScript={vi.fn()}
+        onRunLogicianHook={vi.fn()}
+        onAskAugmentor={vi.fn(async () => undefined)}
+        onOpenArchiveReview={vi.fn()}
+        onOpenSurface={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId("addon-install-audit-list")).toBeNull();
   });
 });

@@ -4,6 +4,7 @@
 import { Suspense, lazy, startTransition, useDeferredValue, useEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import type {
+  AddOnInstallAuditRecord,
   AddOnManifest,
   ArchiveAiMemoryBuildJobSummary,
   ArchiveAiMemoryBuildResult,
@@ -59,6 +60,8 @@ import {
   subscribeRuntimeStateUpdates,
 } from "./core/runtime";
 import {
+  AddOnPermissionEscalationRequired,
+  AddOnRegistryIdCollisionError,
   executeSideloadManifest,
   grantAddonCapabilities,
   runAddonLogicianHook,
@@ -67,6 +70,9 @@ import {
   toggleAddonInstallation,
   updateAddonConfig,
 } from "./modules/addons/controller";
+
+import { PermissionDiffPrompt } from "./modules/addons/PermissionDiffPrompt";
+import { InstallConflictPrompt } from "./modules/addons/InstallConflictPrompt";
 import {
   executeArchiveIngestProbe,
   executeArchiveSearch,
@@ -289,6 +295,23 @@ export function App() {
   const currentReadyStateRef = useRef<ResonantShellState | null>(null);
   const [search, setSearch] = useState("");
   const [sideloadPath, setSideloadPath] = useState("");
+  // CP-7.5 §7.5.5 (deferred UI): pending permission-diff prompt. Set when
+  // executeSideloadManifest throws AddOnPermissionEscalationRequired;
+  // cleared on Allow / Cancel / successful retry.
+  const [permissionDiffPrompt, setPermissionDiffPrompt] = useState<
+    { addonKey: string; hardChanges: Array<{ path: string; kind: string; capability?: string }> } | null
+  >(null);
+
+  // CP-7.5 §7.5.4 (deferred UI): pending install-conflict prompt. Set
+  // when executeSideloadManifest throws AddOnRegistryIdCollisionError;
+  // cleared on Allow / Cancel / successful retry.
+  const [installConflictPrompt, setInstallConflictPrompt] = useState<{
+    collidingAddonKey: string;
+    existingName: string;
+    existingVersion: string;
+    catalog: "bundled" | "sideloaded";
+    incomingPath: string;
+  } | null>(null);
   const [selectedAddonId, setSelectedAddonId] = useState<string>("");
   const [firstRunSelections, setFirstRunSelections] = useState<Record<string, boolean>>({});
   const [archiveFocusTarget, setArchiveFocusTarget] = useState<"review" | null>(null);
@@ -614,6 +637,23 @@ export function App() {
   const updateRuntimeState = (updater: (current: ResonantShellState) => ResonantShellState) => {
     const nextState = updater(cloneState(currentReadyStateRef.current ?? state));
     commitReadyState(nextState);
+  };
+  // CP-7.5.4 / §7.5.5 (ADR-039 audit-ledger, deferred piece). Append an
+  // `AddOnInstallAuditRecord` to the in-memory ledger. The controller +
+  // the prompt `onCancel` paths feed this; it stamps `id`/`createdAt` and
+  // prepends so the newest decision reads first (mirrors transcriptLedger).
+  const recordAddonInstallAudit = (
+    record: Omit<AddOnInstallAuditRecord, "id" | "createdAt">,
+  ) => {
+    updateRuntimeState((draft) => {
+      const next: AddOnInstallAuditRecord = {
+        ...record,
+        id: `addon-install-audit-${Date.now()}-${draft.addonInstallAudit.length + 1}`,
+        createdAt: new Date().toISOString(),
+      };
+      draft.addonInstallAudit = [next, ...draft.addonInstallAudit];
+      return draft;
+    });
   };
   const {
     allManifests,
@@ -1208,17 +1248,49 @@ export function App() {
     });
   };
 
-  const handleSideload = async () => {
-    await executeSideloadManifest({
-      sideloadPath,
-      bundled,
-      sideloaded,
-      setReadyState: (nextState, nextSideloaded) => commitReadyState(nextState, nextSideloaded),
-      setSelectedAddonId,
-      setSideloadPath,
-      setErrorState: (message) => setLoadState({ phase: "error", message }),
-      errorMessageOf,
-    });
+  const handleSideload = async (options: { forceOverride?: boolean } = {}) => {
+    try {
+      await executeSideloadManifest({
+        sideloadPath,
+        bundled,
+        sideloaded,
+        setReadyState: (nextState, nextSideloaded) => commitReadyState(nextState, nextSideloaded),
+        setSelectedAddonId,
+        setSideloadPath,
+        setErrorState: (message) => setLoadState({ phase: "error", message }),
+        errorMessageOf,
+        recordAddonInstallAudit,
+        forceOverride: options.forceOverride,
+      });
+      setPermissionDiffPrompt(null);
+    } catch (error) {
+      // CP-7.5 §7.5.5 (deferred UI): surface the hard-change list as a
+      // modal prompt instead of a flat error banner. The user must
+      // Allow (→ retry with forceOverride) or Cancel (→ reject).
+      if (error instanceof AddOnPermissionEscalationRequired && !options.forceOverride) {
+        const filename = sideloadPath.split(/[\\/]/).pop() ?? sideloadPath;
+        setPermissionDiffPrompt({
+          addonKey: filename,
+          hardChanges: error.hardChanges,
+        });
+        return;
+      }
+      // CP-7.5 §7.5.4 (deferred UI): surface the id@publisher collision
+      // as a modal prompt instead of a flat error banner. The user
+      // must Allow (→ retry with forceOverride, shadow existing) or
+      // Cancel (→ reject, no catalog change).
+      if (error instanceof AddOnRegistryIdCollisionError && !options.forceOverride) {
+        setInstallConflictPrompt({
+          collidingAddonKey: error.collidingAddonKey,
+          existingName: error.existingName,
+          existingVersion: error.existingVersion,
+          catalog: error.catalog,
+          incomingPath: sideloadPath,
+        });
+        return;
+      }
+      throw error;
+    }
   };
 
   const sendStrategistMessage = async (overrideMessage?: string) => {
@@ -1919,7 +1991,8 @@ export function App() {
     : navItems;
 
   return (
-    <div className="app-zoom-viewport" style={zoomStyle}>
+    <>
+      <div className="app-zoom-viewport" style={zoomStyle}>
       <div className="app-zoom-stage">
         <div
           className={`shell ${effectiveChatOpen ? "chat-open" : "chat-closed"} ${chatInterfaceAvailable ? "" : "chat-unavailable"} ${isFloatingChatSurface ? "floating-chat-surface" : ""} ${homeChatSurface ? "home-chat-surface" : ""} ${centerWorkspaceOwnsAgentChat ? "center-chat-owner" : ""} layout-${state.uiPreferences.workspaceLayout}`}
@@ -2420,6 +2493,7 @@ export function App() {
                 sideloadPath={sideloadPath}
                 filteredManifests={filteredManifests}
                 installations={state.installations}
+                addonInstallAudit={state.addonInstallAudit}
                 selectedManifest={selectedManifest}
                 selectedInstallation={selectedInstallation}
                 onSearchChange={(value) => {
@@ -2838,6 +2912,52 @@ export function App() {
         </div>
       </div>
     </div>
+      {permissionDiffPrompt && (
+        <PermissionDiffPrompt
+          addonKey={permissionDiffPrompt.addonKey}
+          hardChanges={permissionDiffPrompt.hardChanges}
+          onAllow={() => {
+            setPermissionDiffPrompt(null);
+            void handleSideload({ forceOverride: true });
+          }}
+          onCancel={() => {
+            recordAddonInstallAudit({
+              addonKey: permissionDiffPrompt.addonKey,
+              outcome: "permission-escalation-denied",
+              hardChangeCount: permissionDiffPrompt.hardChanges.length,
+              hardChangePaths: permissionDiffPrompt.hardChanges.map((c) => c.path),
+            });
+            setPermissionDiffPrompt(null);
+          }}
+        />
+      )}
+      {installConflictPrompt && (
+        <InstallConflictPrompt
+          collidingAddonKey={installConflictPrompt.collidingAddonKey}
+          existingName={installConflictPrompt.existingName}
+          existingVersion={installConflictPrompt.existingVersion}
+          catalog={installConflictPrompt.catalog}
+          incomingPath={installConflictPrompt.incomingPath}
+          onAllow={() => {
+            setInstallConflictPrompt(null);
+            void handleSideload({ forceOverride: true });
+          }}
+          onCancel={() => {
+            recordAddonInstallAudit({
+              addonKey: installConflictPrompt.collidingAddonKey,
+              outcome: "collision-shadow-denied",
+              hardChangeCount: 0,
+              hardChangePaths: [],
+              existingName: installConflictPrompt.existingName,
+              existingVersion: installConflictPrompt.existingVersion,
+              catalog: installConflictPrompt.catalog,
+              incomingPath: installConflictPrompt.incomingPath,
+            });
+            setInstallConflictPrompt(null);
+          }}
+        />
+      )}
+    </>
   );
 }
 
