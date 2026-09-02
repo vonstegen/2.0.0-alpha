@@ -26,6 +26,7 @@ fresh session resume work without re-deriving context.
 - [`prompts/cp4-generic-lifecycle-extraction.md`](../../../prompts/cp4-generic-lifecycle-extraction.md) — ready-to-run prompt for CP-4 generic lifecycle extraction.
 - [`CP5-PHASE5-CONTINUATION.md`](./CP5-PHASE5-CONTINUATION.md) — Phase 5 continuation prompt for CP-5 reference harness migration.
 - [`TOM-FEEDBACK-CROSS-REFERENCE.md`](./TOM-FEEDBACK-CROSS-REFERENCE.md) — cross-reference of Tom's three new maintainer feedback docs against the current branch state.
+- [`CP75-PHASE75-CONTINUATION.md`](./CP75-PHASE75-CONTINUATION.md) — Phase 7.5 continuation prompt for the Add-on SDK hardening workstream.
 
 ## Phase 0 — Ratify scope and vocabulary (CP-0) — *done*
 
@@ -115,8 +116,21 @@ fresh session resume work without re-deriving context.
 | Child usage rolls up into parent budget + hard ceilings | `done` | `rollUpChildUsage` + `remainingBudget` + `isBudgetExhausted` — deterministic roll-up with exceeded-dimension reporting |
 | Priority/queue/preemption/checkpoint/budget-exhaustion events | `done` | `GovernorEvent` (admitted/queued/rejected/preempted/checkpointed/budget-exhausted) + `admissionEvent` overloads (admit/queue/reject → typed event) |
 | Reserve capacity for interactive Augmentor + Ground-0 | `done` | `ReservedCapacity` (`interactive-augmentor` | `ground-zero`) + `optionalWorkHeadroom` (remaining headroom minus the reserved amount; fully-reserved dimensions omitted) |
-| Integrate with ADR-032 compute jobs (no duplication) | `seeded` | ADR-032 + `src/core/compute-fabric.ts` types exist; deferred, per doc 13 |
 | UI: executor/budget/usage/status/stop | `not-started` | — |
+
+## Phase 7.5 — Add-on SDK hardening (CP-7.5) — *not-started*
+
+| Item | Status | Evidence / gap |
+| --- | --- | --- |
+| Manifest signing / hash verification | `not-started` | provenance tiers are self-attested today; the registry trusts `signed:true` labels as-is. CP-7.5 §7.5.1 |
+| Enforced sdkVersion / shellVersion | `not-started` | currently accepted without checking. CP-7.5 §7.5.2 |
+| Runtime validation of `agents[]` and `delegation` blocks | `not-started` | `Exclude<TrustTier,"core">` guard is compile-time only. CP-7.5 §7.5.3 |
+| Cross-manifest id-collision detection | `not-started` | within-manifest duplicate checks exist; cross- does not. CP-7.5 §7.5.4 |
+| Wire `permission-diff` escalation into install path | `not-started` | gate is built and tested but not wired. CP-7.5 §7.5.5 |
+| `npm run validate:manifest` is real | `done` | CP-5 follow-up `cp5-fu-decision-3-and-4`: `scripts/validate-addon-manifest.mjs` wraps `src/sdk/addons/validation.ts::validateAddOnManifest`. CP-7.5 extends it with version checks; do not replace. |
+| Contribution path in CONTRIBUTING / AGENTS / Change-to-Check / Project-2 | `done` | CP-5 follow-up `cp5-fu-doc-pr`: AGENTS.md + CONTRIBUTING.md add-on rows + Project 2 `Add-on SDK` area. Confirm in the verify gate. |
+| Ship the actual `@resonantos/addon-sdk` package | `not-started` | not on this branch; the maintainer's #327 (#335 MERGED) is the upstream home. CP-7.5 only owns the in-repo governance work. |
+| ADR-055 — ADR-056 ↔ #321 reconciliation | `done` | CP-5 follow-up `cp5-fu-adr-055`: in-repo governance anchor; points the maintainer's ADR-056 policy floor at ADR-053 (architectural home). |
 
 ## Phase 7 — Trusted continuity and context exchange (CP-7) — *in-progress*
 
