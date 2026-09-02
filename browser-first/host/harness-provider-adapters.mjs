@@ -264,6 +264,7 @@ function opencodeRuntimeDispatch({
   command,
   directory,
   baseUrl,
+  leaseRegistry = null,
 }) {
   return async (packet, grant) => {
     if (!governedAuthority) {
@@ -281,16 +282,71 @@ function opencodeRuntimeDispatch({
     if (!decision.ok) {
       return { outcome: "deny", reason: decision.reason, detail: `governed request rejected: ${decision.reason}` };
     }
-    const server = await ensureServer({ fetchImpl, spawnImpl, command, directory });
-    const client = createClient({ fetchImpl, baseUrl: server.baseUrl ?? baseUrl, directory });
-    const session = await client.createSession(packet.taskId);
-    await client.prompt(session.id, packet.intent);
-    return { outcome: "allow", response: session, sessionId: session.id };
+    // CP-6 unified LeaseRegistry — acquire a workspace lease for this task
+    // so a concurrent task against the same workspace gets a `conflict`
+    // verdict (the same acquire contract serves all 5 LeaseKinds).
+    let leaseHandle = null;
+    if (leaseRegistry && typeof leaseRegistry.acquire === "function") {
+      const workspaceRoot = packet.workspaceRoots?.[0] ?? "/tmp";
+      const acquired = leaseRegistry.acquire({
+        resourceKind: "workspace",
+        resourceId: workspaceRoot,
+        holderPrincipalId: packet.executorPrincipalId ?? null,
+        taskId: packet.taskId,
+      });
+      if (!acquired.ok) {
+        return {
+          outcome: "deny",
+          reason: "workspace-lease-conflict",
+          detail: `another task holds the workspace lease (${acquired.conflictingWith})`,
+        };
+      }
+      leaseHandle = acquired.leaseId;
+    }
+    try {
+      const server = await ensureServer({ fetchImpl, spawnImpl, command, directory });
+      const client = createClient({ fetchImpl, baseUrl: server.baseUrl ?? baseUrl, directory });
+      const session = await client.createSession(packet.taskId);
+      await client.prompt(session.id, packet.intent);
+      return { outcome: "allow", response: session, sessionId: session.id, leaseId: leaseHandle };
+    } finally {
+      if (leaseHandle && typeof leaseRegistry?.release === "function") {
+        leaseRegistry.release(leaseHandle);
+      }
+    }
   };
 }
 
 
+// CP-6 unified LeaseRegistry — wrap the opencode dispatch so every
+// `opencode.run` task acquires a workspace lease before the session
+// opens. The same acquire contract serves the other four LeaseKinds
+// (browser / gpu / provider-route / external-account).
+export function createOpenCodeProviderAdapter(options = {}) {
+  const diagnose = async () => {
+    const diag = opencodeRuntimeDiagnostics({ homeDir: options.homeDir });
+    return {
+      status: diag.installed ? "ok" : "unavailable",
+      providerId: "opencode",
+      message: diag.installed ? undefined : "OpenCode CLI not found",
+      command: diag.command ?? undefined,
+    };
+  };
+  return createHarnessProviderAdapter({
+    providerId: "opencode",
+    cancellationSemantics: "finish-atomic",
+    sandboxStrength: "sandboxed-outer-boundary",
+    onRunEnded: options.onRunEnded,
+    diagnose,
+    dispatch: opencodeRuntimeDispatch({ ...options }),
+    resourceGovernor: options.resourceGovernor ?? null,
+    concurrentLimit: options.concurrentLimit ?? null,
+    leaseRegistry: options.leaseRegistry ?? null,
+  });
+}
 // Pi transport (stdio-json-rpc): validate the governed envelope, then drive
+// a single --prompt-style JSON-RPC exchange against the pi CLI. Authority
+// is the governed envelope; the effect is the spawned `pi` process.
 function piRuntimeDispatch({ governedAuthority, command, provider, model, env, timeoutMs, runPrompt = runPiPrompt }) {
   return async (packet, grant) => {
     if (!governedAuthority) {
@@ -343,27 +399,7 @@ function hostCommandRuntimeDispatch({ governedAuthority, addonId, tool, command,
   };
 }
 
-export function createOpenCodeProviderAdapter(options = {}) {
-  const diagnose = async () => {
-    const diag = opencodeRuntimeDiagnostics({ homeDir: options.homeDir });
-    return {
-      status: diag.installed ? "ok" : "unavailable",
-      providerId: "opencode",
-      message: diag.installed ? undefined : "OpenCode CLI not found",
-      command: diag.command ?? undefined,
-    };
-  };
-  return createHarnessProviderAdapter({
-    providerId: "opencode",
-    cancellationSemantics: "finish-atomic",
-    sandboxStrength: "sandboxed-outer-boundary",
-    onRunEnded: options.onRunEnded,
-    diagnose,
-    dispatch: opencodeRuntimeDispatch({ ...options }),
-    resourceGovernor: options.resourceGovernor ?? null,
-    concurrentLimit: options.concurrentLimit ?? null,
-  });
-}
+
 
 export function createHermesProviderAdapter(options = {}) {
   const diagnose = async () => {
