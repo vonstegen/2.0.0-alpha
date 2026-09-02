@@ -432,3 +432,145 @@ test("createHarnessHealthCheck resumes only ok harnesses and always-healthy core
   assert.equal(await healthCheck("extension:augmentor-effect"), true);
   assert.equal(await healthCheck("archive-ingest"), true);
 });
+
+import { makeResourceGovernor } from "../host/resource-governor.mjs";
+
+test("startTask enters the governor and the audit sink sees a GovernorEvent", async () => {
+  const events = [];
+  const governor = makeResourceGovernor({
+    auditSink: (event) => events.push(event),
+    now: () => T0,
+  });
+  let dispatchCalled = false;
+  const adapter = createHarnessProviderAdapter({
+    providerId: "hermes",
+    cancellationSemantics: "cancel",
+    sandboxStrength: "host-mediated",
+    diagnose: async () => ({ status: "ok", providerId: "hermes" }),
+    dispatch: async () => { dispatchCalled = true; return { outcome: "allow" }; },
+    resourceGovernor: governor,
+  });
+  await adapter.startTask(packet(), "grant-1");
+  assert.equal(dispatchCalled, true);
+  assert.equal(events[0].kind, "admitted");
+  assert.equal(events[0].taskId, "task-1");
+});
+
+test("startTask fails when the governor queues the run, leaving the dispatch untouched", async () => {
+  const governor = makeResourceGovernor({ now: () => T0 });
+  // Pre-admit a different task from the same principal at concurrentLimit=1 so
+ // the principal's share is already saturated.
+  governor.admit({
+    taskId: "task-0",
+    principalId: "hermes-1",
+    budget: { hardCeiling: { tokens: 100 } },
+    concurrentLimit: 1,
+  });
+  let dispatchCalled = false;
+  const adapter = createHarnessProviderAdapter({
+    providerId: "hermes",
+    cancellationSemantics: "cancel",
+    sandboxStrength: "host-mediated",
+    diagnose: async () => ({ status: "ok", providerId: "hermes" }),
+    dispatch: async () => { dispatchCalled = true; return { outcome: "allow" }; },
+    resourceGovernor: governor,
+    concurrentLimit: 1,
+  });
+  const run = await adapter.startTask(packet(), "grant-1");
+  const state = await adapter.getTask(run.runId);
+  assert.equal(state.status, "failed");
+  assert.match(state.detail, /governor-/);
+  assert.equal(dispatchCalled, false);
+});
+
+test("opencode startTask honors a per-harness concurrentLimit=1 and queues the second concurrent startTask", async () => {
+  const authority = createGovernedAuthority({ now: () => T0 });
+  const s = governedScope();
+  recordLeaf(authority, s);
+  const handle = authority.mintGrant({ grantId: "g-1", scope: s });
+  const governor = makeResourceGovernor({ now: () => T0 });
+  const ensureCalls = [];
+  const adapter = createOpenCodeProviderAdapter({
+    homeDir: mkdtempSync(join(tmpdir(), "o-")),
+    governedAuthority: authority,
+    resourceGovernor: governor,
+    concurrentLimit: 1,
+    ensureServer: async () => { ensureCalls.push("ensure"); return { baseUrl: "http://test" }; },
+    createClient: () => ({
+      createSession: async () => ({ id: "sess" }),
+      // Block the in-flight opencode session long enough so the concurrent
+      // second startTask consults the governor with running = 1 and queues.
+      prompt: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      },
+    }),
+  });
+  const siblingScope = governedScope({ taskId: "task-2" });
+  recordLeaf(authority, siblingScope);
+  const siblingHandle = authority.mintGrant({ grantId: "g-2", scope: siblingScope });
+  // Fire both runs without awaiting — the first one occupies the opencode
+  // session; the second one consults the governor with running = 1 and
+  // queues at concurrentLimit = 1.
+  const firstP = adapter.startTask(packet(), handle);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const queued = await adapter.startTask({ ...packet(), taskId: "task-2" }, siblingHandle);
+  await firstP;
+  const state2 = await adapter.getTask(queued.runId);
+  assert.equal(state2.status, "failed");
+  assert.match(state2.detail, /governor-/);
+});
+test("parent with ResourceBudget=5 admits five child turns then rejects the 6th via isBudgetExhausted", async () => {
+  const governor = makeResourceGovernor({ now: () => T0 });
+  const budget = { hardCeiling: { tokens: 5 } };
+  // Admit a parent task to bind the budget into the governor's bookkeeping.
+  const parent = governor.admit({
+    taskId: "parent",
+    principalId: "user",
+    budget,
+    concurrentLimit: 1,
+  });
+  assert.equal(parent.decision, "admitted");
+  // Five child turns against the parent — each rolls up 1 token.
+  for (let i = 0; i < 5; i += 1) {
+    const rollup = governor.rollUp({
+      parentTaskId: "parent",
+      childTaskId: `turn-${i}`,
+      childUsage: { tokens: 1 },
+    });
+    assert.equal(rollup.exhausted, false, `turn ${i} should not yet exhaust`);
+  }
+  // The cumulative 5 tokens bring the parent up to ceiling; isBudgetExhausted
+  // is now true even though exceededDimensions is empty (>= vs >).
+  const inspected = governor.inspectTask("parent");
+  assert.equal(inspected.exhausted, true);
+  // The next admit gate from the SDK's admissionDecision contract: it must
+  // reject now that the budget is exhausted.
+  const sixth = governor.admit({
+    taskId: "parent",
+    principalId: "user",
+    budget,
+    concurrentLimit: 1,
+  });
+  assert.equal(sixth.decision, "rejected");
+});
+
+test("cancelTask releases the governor's reservation and emits a preempted event", async () => {
+  const events = [];
+  const governor = makeResourceGovernor({
+    auditSink: (event) => events.push(event),
+    now: () => T0,
+  });
+  const adapter = createHarnessProviderAdapter({
+    providerId: "hermes",
+    cancellationSemantics: "cancel",
+    sandboxStrength: "host-mediated",
+    diagnose: async () => ({ status: "ok", providerId: "hermes" }),
+    dispatch: null,
+    resourceGovernor: governor,
+  });
+  const run = await adapter.startTask(packet(), "grant-1");
+  await adapter.cancelTask(run.runId, "user abort");
+  const evicted = events.find((e) => e.kind === "preempted");
+  assert.ok(evicted, "expected a preempted GovernorEvent");
+  assert.equal(evicted.taskId, "task-1");
+});
