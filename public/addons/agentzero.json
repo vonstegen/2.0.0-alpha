@@ -49,5 +49,10 @@
     "resourceHints": { "cpu": "shared", "network": "self" },
     "cancellationSemantics": "cancel",
     "sandboxStrength": "sandboxed-outer-boundary"
+  },
+  "manifestSignature": {
+    "algorithm": "ed25519",
+    "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"ZqZOkm5DbEYWr1aWBOI8UoLOn2NevwCLCUha4fQncmE\",\"kty\":\"OKP\"}",
+    "signature": "i+aQgd/QDUzabxS38hLddrqyHkmNIglLEFtLf5Qydmxkmo6LH8PL1PIzB3ZOBHpnKakB5Ls7lpSwj1hBpO/5Cg=="
   }
 }

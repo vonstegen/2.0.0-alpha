@@ -50,5 +50,10 @@
     "resourceHints": { "cpu": "local", "network": "self" },
     "cancellationSemantics": "finish-atomic",
     "sandboxStrength": "host-mediated"
+  },
+  "manifestSignature": {
+    "algorithm": "ed25519",
+    "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"ZqZOkm5DbEYWr1aWBOI8UoLOn2NevwCLCUha4fQncmE\",\"kty\":\"OKP\"}",
+    "signature": "eqKgCbWwPnnTB3Mmb3xjlROBPMMhMDUAk9MPDGgQCo3C6fstUrkBWIjHaBxJzbIaJ1JkP2dTQrukzp41H7WyCw=="
   }
 }
