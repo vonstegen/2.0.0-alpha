@@ -158,6 +158,12 @@ async function writeFakeHermesPythonRuntime(root, output) {
   await chmod(fakePython, 0o755).catch(() => undefined);
   return fakeHermes;
 }
+export const __test = Object.freeze({
+  writeFakeHermesPythonRuntime,
+  writeFakeOpenCodeCli: fakeOpenCodeCliScript,
+  writeFakeCli: fakeCliScript,
+  writeFakeHermesPython: fakeHermesPythonScript,
+});
 
 export async function runBrowserFirstSelfTest(context) {
   const {

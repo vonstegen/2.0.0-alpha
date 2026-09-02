@@ -63,12 +63,12 @@ This checklist is ordered to preserve the current working system. Each phase has
 
 ## Phase 5 — Migrate reference harnesses
 
-- [ ] Migrate Hermes to the generic adapter and manifest class.
-- [ ] Migrate OpenCode and enforce workspace lease/isolation semantics.
-- [ ] Validate OpenClaw or another structurally different harness against the same contract.
-- [ ] Keep existing installs/configuration intact and approval-gate installation.
+- [x] Migrate Hermes to the generic adapter and manifest class.
+- [x] Migrate OpenCode and enforce workspace lease/isolation semantics.
+- [x] Validate OpenClaw or another structurally different harness against the same contract.
+- [ ] Keep existing installs/configuration intact and approval-gate installation. (Phase 6)
 - [x] Verify assistant-only output filtering and deterministic smoke tests.
-- [ ] Verify archive reads are scoped/cited and writes remain intake-only.
+- [x] Verify archive reads are scoped/cited and writes remain intake-only.
 - [x] Remove duplicated provider-specific lifecycle logic only after parity tests pass (Phase 4 cutover — Hermes + OpenCode lifecycles moved to `addon-delegation-adapter-bridge.mjs`; 4 new seam parity tests + 1197 pre-existing tests still pass).
 
 **Exit gate:** at least three provider shapes use the contract without vendor-specific authority exceptions.

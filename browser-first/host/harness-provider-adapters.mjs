@@ -15,6 +15,8 @@ import { hermesRuntimeDiagnostics } from "./hermes-runtime.mjs";
 import { opencodeRuntimeDiagnostics } from "./opencode-runtime.mjs";
 import { dispatchGovernedExternalAgentRuntime, findAddonManifest } from "./external-agent-runtime-dispatcher.mjs";
 import { createOpencodeHttpClient, ensureOpencodeServer } from "./opencode-client.mjs";
+import { openclawGatewayRuntimeDispatch } from "./openclaw-gateway-client.mjs";
+import { defaultRegistry as defaultWorkspaceLeaseRegistry } from "./workspace-lease.mjs";
 import { spawnSync } from "node:child_process";
 import { runPiPrompt } from "./pi-rpc-client.mjs";
 
@@ -195,6 +197,13 @@ function governedRuntimeDispatch({ addonId, toolName, governedAuthority, fetchIm
  * envelope, then drive a real `opencode serve` session via the injected client
  * (`ensureOpencodeServer` + `createOpencodeHttpClient`). Authority is still the
  * governed envelope; the effect is the OpenCode HTTP/SSE session, not Cordis.
+ *
+ * Phase 5 row 99: a workspace lease is acquired around the serve session so
+ * the bridge cannot drive two `opencode serve` sessions against the same
+ * workspace at once (the server would race on the workspace directory). The
+ * lease is acquired AFTER the governed-envelope check (authority still wins)
+ * and released in `finally` so a downstream error or transport crash does not
+ * leak the lease.
  */
 function opencodeRuntimeDispatch({
   governedAuthority,
@@ -205,6 +214,9 @@ function opencodeRuntimeDispatch({
   command,
   directory,
   baseUrl,
+  workspaceLeaseRegistry = defaultWorkspaceLeaseRegistry,
+  leaseHolder,
+  leaseTtlMs,
 }) {
   return async (packet, grant) => {
     if (!governedAuthority) {
@@ -222,11 +234,32 @@ function opencodeRuntimeDispatch({
     if (!decision.ok) {
       return { outcome: "deny", reason: decision.reason, detail: `governed request rejected: ${decision.reason}` };
     }
-    const server = await ensureServer({ fetchImpl, spawnImpl, command, directory });
-    const client = createClient({ fetchImpl, baseUrl: server.baseUrl ?? baseUrl, directory });
-    const session = await client.createSession(packet.taskId);
-    await client.prompt(session.id, packet.intent);
-    return { outcome: "allow", response: session, sessionId: session.id };
+    const resourceId = directory ?? packet.workspaceRoots?.[0] ?? packet.taskId;
+    const holder = leaseHolder ?? `task:${packet.taskId}`;
+    const lease = workspaceLeaseRegistry.acquire({ resourceId, holder, ttlMs: leaseTtlMs });
+    if (!lease.ok) {
+      return {
+        outcome: "deny",
+        reason: "workspace-lease-unavailable",
+        detail: `workspace lease for ${resourceId} unavailable: ${lease.reason} (${lease.detail ?? ""})`.trim(),
+        currentHolder: lease.currentHolder,
+        leaseExpiresAt: lease.expiresAt,
+      };
+    }
+    try {
+      const server = await ensureServer({ fetchImpl, spawnImpl, command, directory });
+      const client = createClient({ fetchImpl, baseUrl: server.baseUrl ?? baseUrl, directory });
+      const session = await client.createSession(packet.taskId);
+      await client.prompt(session.id, packet.intent);
+      return {
+        outcome: "allow",
+        response: session,
+        sessionId: session.id,
+        workspaceLease: { leaseId: lease.leaseId, resourceId, expiresAt: lease.expiresAt },
+      };
+    } finally {
+      workspaceLeaseRegistry.release(lease.leaseId);
+    }
   };
 }
 
@@ -347,19 +380,33 @@ export function createOpenClawProviderAdapter(options = {}) {
       message: manifest ? "runtime-gateway manifest present" : "OpenClaw manifest not found",
     };
   };
+  // Phase 5 row 100: when a gatewayClient is provided, the OpenClaw
+  // adapter drives a real MCP gateway transport. The bridge still
+  // owns the CP-2 governed envelope; the gateway is the only
+  // authority path for the child actor. When no gatewayClient is
+  // provided, fall back to the legacy host-command transport so
+  // existing tests and call sites that drive `openclaw` directly
+  // keep working until they migrate.
+  const dispatch = options.gatewayClient
+    ? openclawGatewayRuntimeDispatch({
+        governedAuthority: options.governedAuthority,
+        gatewayClient: options.gatewayClient,
+        requestIdFactory: options.requestIdFactory,
+      })
+    : hostCommandRuntimeDispatch({
+        ...options,
+        addonId: "addon.openclaw",
+        tool: "openclaw.delegate",
+        command: options.command ?? "openclaw",
+        buildArgs: (packet) => ["agent", "--local", "--agent", options.agent ?? "main", "-m", packet.intent, "--json"],
+      });
   return createHarnessProviderAdapter({
     providerId: "openclaw",
     cancellationSemantics: "quarantine",
     sandboxStrength: "sandboxed-outer-boundary",
     onRunEnded: options.onRunEnded,
     diagnose,
-    dispatch: hostCommandRuntimeDispatch({
-      ...options,
-      addonId: "addon.openclaw",
-      tool: "openclaw.delegate",
-      command: options.command ?? "openclaw",
-      buildArgs: (packet) => ["agent", "--local", "--agent", options.agent ?? "main", "-m", packet.intent, "--json"],
-    }),
+    dispatch,
   });
 }
 
