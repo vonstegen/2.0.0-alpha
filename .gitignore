@@ -77,3 +77,7 @@ browser-first/certs/
 .vscode/
 *.swp
 docs/code-forge-architecture/
+
+# Local agent scratch directory (test artifacts, signing keys, scratch
+# notebooks). Not part of the build.
+.craft/
