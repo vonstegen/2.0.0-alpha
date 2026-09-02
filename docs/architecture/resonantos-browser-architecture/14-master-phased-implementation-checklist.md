@@ -86,6 +86,20 @@ This checklist is ordered to preserve the current working system. Each phase has
 
 **Exit gate:** Hermes and OpenCode can run concurrently without workspace/grant leakage; cancellation and budget exhaustion are deterministic.
 
+## Phase 7.5 — Add-on SDK hardening
+
+- [x] Enforce Ed25519 signature over the canonicalized manifest body when `provenance.verificationState === "verified"` (CP-7.5 §7.5.1, PR #9).
+- [x] Enforce `sdkVersion` + `compatibility.shellVersion"\` as semver ranges that the runtime SDK and shell satisfy (CP-7.5 §7.5.2, PR #10).
+- [x] Runtime validation of `agents[]` (no `core` trust tier) and `delegation` (requires human approval before execution) blocks (CP-7.5 §7.5.3, PR #11).
+- [x] Cross-manifest id-collision detection on the `id@publisher` worker key (CP-7.5 §7.5.4, PR #12).
+- [x] Wire `permission-diff` escalation into the install path with `forceOverride` opt-out (CP-7.5 §7.5.5, PR #13).
+- [x] Run the full `engineer:verify` gate after each §7.5.x commit (docs:check / tsc / vitest / validate:manifest / extension tests all green across the five PRs).
+- [x] Land the bookkeeping PR with the Phase 7.5 section in `IMPLEMENTATION_TRACKING.md` and the Phase 7.5 checkboxes in this checklist (this commit).
+
+**Out of scope (deferred):** the React prompt-UI component for ADR-039 (human-approved confirmation flow that surfaces hard-change lists to the user). §7.5.5 exposes `forceOverride`; the UI is follow-on work.
+
+**Exit gate:** all five SDK hardening gaps Tom flagged are closed. The bundled test catalog (20 manifests) validates at HEAD. `npm run validate:manifest -- --all` returns 20/20 valid.
+
 ## Phase 7 — Trusted continuity and context exchange
 
 - [ ] Implement typed context envelopes with provenance, sensitivity, freshness, purpose, and retention.
