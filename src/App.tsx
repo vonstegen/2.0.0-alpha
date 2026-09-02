@@ -59,6 +59,7 @@ import {
   subscribeRuntimeStateUpdates,
 } from "./core/runtime";
 import {
+  AddOnPermissionEscalationRequired,
   executeSideloadManifest,
   grantAddonCapabilities,
   runAddonLogicianHook,
@@ -67,6 +68,8 @@ import {
   toggleAddonInstallation,
   updateAddonConfig,
 } from "./modules/addons/controller";
+
+import { PermissionDiffPrompt } from "./modules/addons/PermissionDiffPrompt";
 import {
   executeArchiveIngestProbe,
   executeArchiveSearch,
@@ -289,6 +292,12 @@ export function App() {
   const currentReadyStateRef = useRef<ResonantShellState | null>(null);
   const [search, setSearch] = useState("");
   const [sideloadPath, setSideloadPath] = useState("");
+  // CP-7.5 §7.5.5 (deferred UI): pending permission-diff prompt. Set when
+  // executeSideloadManifest throws AddOnPermissionEscalationRequired;
+  // cleared on Allow / Cancel / successful retry.
+  const [permissionDiffPrompt, setPermissionDiffPrompt] = useState<
+    { addonKey: string; hardChanges: Array<{ path: string; kind: string; capability?: string }> } | null
+  >(null);
   const [selectedAddonId, setSelectedAddonId] = useState<string>("");
   const [firstRunSelections, setFirstRunSelections] = useState<Record<string, boolean>>({});
   const [archiveFocusTarget, setArchiveFocusTarget] = useState<"review" | null>(null);
@@ -1208,17 +1217,34 @@ export function App() {
     });
   };
 
-  const handleSideload = async () => {
-    await executeSideloadManifest({
-      sideloadPath,
-      bundled,
-      sideloaded,
-      setReadyState: (nextState, nextSideloaded) => commitReadyState(nextState, nextSideloaded),
-      setSelectedAddonId,
-      setSideloadPath,
-      setErrorState: (message) => setLoadState({ phase: "error", message }),
-      errorMessageOf,
-    });
+  const handleSideload = async (options: { forceOverride?: boolean } = {}) => {
+    try {
+      await executeSideloadManifest({
+        sideloadPath,
+        bundled,
+        sideloaded,
+        setReadyState: (nextState, nextSideloaded) => commitReadyState(nextState, nextSideloaded),
+        setSelectedAddonId,
+        setSideloadPath,
+        setErrorState: (message) => setLoadState({ phase: "error", message }),
+        errorMessageOf,
+        forceOverride: options.forceOverride,
+      });
+      setPermissionDiffPrompt(null);
+    } catch (error) {
+      // CP-7.5 §7.5.5 (deferred UI): surface the hard-change list as a
+      // modal prompt instead of a flat error banner. The user must
+      // Allow (→ retry with forceOverride) or Cancel (→ reject).
+      if (error instanceof AddOnPermissionEscalationRequired && !options.forceOverride) {
+        const filename = sideloadPath.split(/[\\/]/).pop() ?? sideloadPath;
+        setPermissionDiffPrompt({
+          addonKey: filename,
+          hardChanges: error.hardChanges,
+        });
+        return;
+      }
+      throw error;
+    }
   };
 
   const sendStrategistMessage = async (overrideMessage?: string) => {
@@ -1919,7 +1945,8 @@ export function App() {
     : navItems;
 
   return (
-    <div className="app-zoom-viewport" style={zoomStyle}>
+    <>
+      <div className="app-zoom-viewport" style={zoomStyle}>
       <div className="app-zoom-stage">
         <div
           className={`shell ${effectiveChatOpen ? "chat-open" : "chat-closed"} ${chatInterfaceAvailable ? "" : "chat-unavailable"} ${isFloatingChatSurface ? "floating-chat-surface" : ""} ${homeChatSurface ? "home-chat-surface" : ""} ${centerWorkspaceOwnsAgentChat ? "center-chat-owner" : ""} layout-${state.uiPreferences.workspaceLayout}`}
@@ -2838,6 +2865,18 @@ export function App() {
         </div>
       </div>
     </div>
+      {permissionDiffPrompt && (
+        <PermissionDiffPrompt
+          addonKey={permissionDiffPrompt.addonKey}
+          hardChanges={permissionDiffPrompt.hardChanges}
+          onAllow={() => {
+            setPermissionDiffPrompt(null);
+            void handleSideload({ forceOverride: true });
+          }}
+          onCancel={() => setPermissionDiffPrompt(null)}
+        />
+      )}
+    </>
   );
 }
 
