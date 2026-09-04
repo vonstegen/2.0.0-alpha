@@ -4,7 +4,7 @@
 
 - Decision status: Accepted
 - Alpha applicability: Applies
-- Superseded by: ADR-053 (primary-agent slot)
+- Superseded by: None
 - Owner: Core and add-ons
 - Decision date: 2026-04-30
 - Alpha note: Replaceable chat, memory-system, and add-on boundaries apply to

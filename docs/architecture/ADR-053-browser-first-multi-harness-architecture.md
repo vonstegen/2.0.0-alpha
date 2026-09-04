@@ -8,6 +8,7 @@
 - Amends: ADR-006, ADR-018, ADR-026, ADR-010 (through the checkpoint ADRs listed below; see [Amends](#amends))
 - Owner: Core architecture
 - Decision date: 2026-08-27
+- Rejected proposal (2026-09-04): the §"primary-agent" role claims in this ADR are **rejected proposals** per the issue #336 maintainer decision, not governing corollaries. See ADR-057.
 
 ## Decision
 
@@ -53,7 +54,7 @@ never become effectively root.
 
 **Augmentor is not an add-on, Harness Provider, or replaceable `primary-agent`
 provider.** It is a permanent, fused component of ResonantOS and the authoritative
-orchestration harness inside the ResonantOS environment.
+orchestration harness inside the ResonantOS environment. **[Rejected proposal — issue #336 maintainer decision, 2026-09-04.]**
 
 This aligns with ADR-051, which already declares the integrated harness "fused to
 the shell — not a plug-in, not even a bundled add-on." ADR-053 names that
@@ -91,7 +92,7 @@ This prevents the word "orchestrator" from becoming ambiguous.
 | ResonantOS Core | Non-optional policy, identity, lifecycle, audit, and recovery authority |
 | Browser shell | MV3 extension surfaces and shell-owned navigation |
 | Platform service | Host-mediated implementation behind an authenticated route |
-| Augmentor | Permanent, fused native ResonantOS AI orchestration harness; occupies the `primary-agent` role and cannot be displaced, replaced, or reassigned by an add-on or harness provider |
+| Augmentor | Permanent, fused native ResonantOS AI orchestration harness; occupies the `primary-agent` role and cannot be displaced, replaced, or reassigned by an add-on or harness provider **[Rejected proposal — issue #336 maintainer decision, 2026-09-04.]** |
 | Augmentor extension | Focused capability or workflow used within Augmentor |
 | Harness provider | Adapter for a complete external AI harness with its own loop, tools, and agents |
 | System add-on | Capability (memory, browser, channel, compute) that is neither of the above |
@@ -103,7 +104,7 @@ This prevents the word "orchestrator" from becoming ambiguous.
 `primary-agent` remains the stable system-slot id. The slot is **permanently
 occupied by Augmentor**. Its role is system-wide AI orchestration. Harness
 Providers may execute and internally orchestrate their own work, but they cannot
-claim, replace, alias, or displace the ResonantOS `primary-agent` role.
+claim, replace, alias, or displace the ResonantOS `primary-agent` role. **[Rejected proposal — issue #336 maintainer decision, 2026-09-04.]**
 
 No `orchestrator` alias is introduced. ADR-051's vocabulary term `orchestrator`
 ("coordinates multiple agents") describes the role, not a new slot.
@@ -136,7 +137,7 @@ likely to have caused the failure. Formalized in the CP-8 ADR (ADR-010 amendment
 - UI visibility, enablement, a prompt, or an Augmentor decision does not itself authorize an operation.
 - Provider secrets, browser credentials, filesystem roots, and external-account authority remain host-mediated.
 - The local bridge defaults to loopback and rejects unauthenticated requests.
-- A harness provider cannot become or displace the primary agent; the `primary-agent` role is permanently Augmentor.
+- A harness provider cannot become or displace the primary agent; the `primary-agent` role is permanently Augmentor. **[Rejected proposal — issue #336 maintainer decision, 2026-09-04.]**
 - Augmentor does not govern authority; Core does. Orchestration primacy is not security primacy.
 
 ### Explicit exclusion
@@ -152,7 +153,7 @@ This ADR records the amendment targets; the checkpoint ADRs execute them:
 
 | Amended | By | Change |
 | --- | --- | --- |
-| ADR-026 | ADR-053 (this) | `primary-agent` slot is permanently occupied by Augmentor (not a replaceable provider); `chat-interface` and `memory-system` remain replaceable slots |
+| ADR-026 | ADR-053 (this) | `primary-agent` slot is permanently occupied by Augmentor (not a replaceable provider); `chat-interface` and `memory-system` remain replaceable slots **[Rejected proposal — issue #336 maintainer decision, 2026-09-04.]** |
 | ADR-006 | CP-3/CP-4 ADR | add extension classes (`augmentor-extension`, `harness-provider`, `system-addon`), the nested authority rule, and temporal/task grant semantics |
 | ADR-018 | CP-3/CP-4 ADR | define `AugmentorExtensionManifest` and `HarnessProviderAdapter` protocols; typed task/event/result/resource contracts |
 | ADR-010 | CP-8 ADR | introduce Ground-0 state beneath the recovery ladder; Ground-0 contains Augmentor; quarantine optional executable state |
@@ -174,7 +175,7 @@ their granted task envelopes.
 
 ## Rules
 
-- `primary-agent` is permanently occupied by Augmentor; no add-on or harness provider may claim, replace, alias, or displace it.
+- `primary-agent` is permanently occupied by Augmentor; no add-on or harness provider may claim, replace, alias, or displace it. **[Rejected proposal — issue #336 maintainer decision, 2026-09-04.]**
 - Augmentor is not an add-on and not a replaceable provider; it is a permanent, fused component.
 - Core governs authority; Augmentor governs orchestration; harnesses govern their own internal execution.
 - `strategist` remains a shell section id; it is not the agent implementation's name.

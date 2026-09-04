@@ -22,8 +22,8 @@ The Executive Summary is excluded per your note — this response only touches t
 
 | Tom's point | What to decide |
 |---|---|
-| "ADR-056 ↔ #321" boundary reconciliation | **ADR-056 doesn't exist in this repo** (only ADR-001 through ADR-054, plus ADR-017 and the supersession chain into ADR-053). Tom's ADR-056 is on his side. Before Phase 7+ work, decide: (a) bring ADR-056 across as the governing policy doc, (b) point #321 at our ADR-053 (browser-first multi-harness architecture) as the policy anchor, or (c) write a new ADR-055 in this repo that bridges both. **My recommendation: (b)** — ADR-053 is the canonical multi-harness boundary doc and supersedes ADR-026's primary-agent slot work; #321 should reference it directly. |
-| #334 adopts our #252 (`@tab` referencing) | **Action: review-and-adopt on my side.** Tom built the @tab feature as PR #334; I should pull + merge it into `feat/dev-external-agent-runtimes-panel` once Phase 5 lands. |
+| "ADR-056 ↔ #321" boundary reconciliation | **ADR-056 doesn't exist in this repo** (only ADR-001 through ADR-054, plus ADR-017 and the supersession chain into ADR-053). vonstegen's (Andrew's) ADR-056 is on his side. Before Phase 7+ work, decide: (a) bring ADR-056 across as the governing policy doc, (b) point #321 at our ADR-053 (browser-first multi-harness architecture) as the policy anchor, or (c) write a new ADR-057 in this repo that bridges both. **My recommendation: (b)** — ADR-053 is the canonical multi-harness boundary doc and supersedes ADR-026's primary-agent slot work; #321 should reference it directly. |
+| #334 adopts our #252 (`@tab` referencing) | **Action: review-and-adopt on my side.** vonstegen (Andrew) built the @tab feature as PR #334; I should pull + merge it into `feat/dev-external-agent-runtimes-panel` once Phase 5 lands. |
 | beta.1 vs beta.2 timing question | **Owed to Tom.** Phase 5 is alpha-2.0; Phase 6 (resource governor) is the next gate. Phase 7 (continuity) is what unblocks beta.1; Phase 8 (Ground-0) is beta.2. I'll write back with the alpha-2.0 release plan in the reconciliation thread. |
 | `backup/tab-referencing-pre-split` vs `#331 release-mirror split` | Already settled in my head — `backup/tab-referencing-pre-split` is the `#327 → #334` split, not the release-mirror split. The release-mirror work (browser-first/release/ as a build-output) is genuinely separate and belongs in beta.2 with the alpha-build gate cleanup. |
 
@@ -133,7 +133,7 @@ Confirmed by `bridge-server.mjs:98,288` (token minting) + `bridge-capability-tok
 
 | # | Decision | Default if you say nothing |
 |---|---|---|
-| 1 | Adopt #334 (Tom's @tab feature) into `feat/dev-external-agent-runtimes-panel`? | Hold until Phase 6 cuts; we have time. |
+| 1 | Adopt #334 (vonstegen's (Andrew's) @tab feature) into `feat/dev-external-agent-runtimes-panel`? | Hold until Phase 6 cuts; we have time. |
 | 2 | ADR-056 ↔ #321 reconciliation: bring ADR-056 across, or point #321 at ADR-053? | Point #321 at ADR-053. ADR-053 already is the multi-harness boundary doc. |
 | 3 | F1 credential-exfiltration fixture: add to hygiene content-allowlist? | Yes — clean fix. |
 | 4 | `npm run validate:manifest` — scope the work (does the CLI module exist)? | I'll read `packages/addon-sdk/package.json` and report back. |
