@@ -43,7 +43,7 @@ const manifest = (): AddOnManifest => ({
   health: { strategy: "none" },
   installHooks: {},
   sdkVersion: "^2.0.x",
-  compatibility: { shellVersion: "2.0.0-beta.1", platforms: ["macOS"] },
+  compatibility: { shellVersion: "^2.0.0-beta.1", platforms: ["macOS"] },
 });
 
 const installed = (addon: AddOnManifest, grants: CapabilityGrant[]): AddOnInstallation => ({

@@ -88,7 +88,7 @@ const validManifest = (overrides: Partial<AddOnManifest> = {}): AddOnManifest =>
   },
   sdkVersion: "^2.0.x",
   compatibility: {
-    shellVersion: "2.0.0-beta.1",
+    shellVersion: "^2.0.0-beta.1",
     platforms: ["macOS", "windows", "linux"],
   },
   ...overrides,

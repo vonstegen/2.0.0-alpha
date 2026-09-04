@@ -43,7 +43,7 @@
       "linux",
       "windows"
     ],
-    "shellVersion": "2.0.0-beta.1"
+    "shellVersion": "^2.0.0-beta.1"
   },
   "description": "Conformance example: a focused Augmentor extension of kind tool that summarizes a file diff into a review note under a human approval gate.",
   "extensionClass": "augmentor-extension",

@@ -36,7 +36,7 @@ const baseManifest = (overrides: Record<string, unknown>): AddOnManifest => ({
   health: { strategy: "ready" },
   installHooks: {},
   sdkVersion: "^2.0.x",
-  compatibility: { shellVersion: "2.0.0-beta.1", platforms: ["darwin"] },
+  compatibility: { shellVersion: "^2.0.0-beta.1", platforms: ["darwin"] },
   ...overrides,
 });
 

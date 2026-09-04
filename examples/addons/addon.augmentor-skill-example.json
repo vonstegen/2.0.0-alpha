@@ -46,7 +46,7 @@
       "linux",
       "windows"
     ],
-    "shellVersion": "2.0.0-beta.1"
+    "shellVersion": "^2.0.0-beta.1"
   },
   "description": "Conformance example: a focused Augmentor extension of kind skill that proposes a workspace organization plan under a human approval gate. Demonstrates the extensionClass/augmentorExtension manifest contract (doc 04).",
   "extensionClass": "augmentor-extension",

@@ -13,7 +13,7 @@
       "linux",
       "windows"
     ],
-    "shellVersion": "2.0.0-beta.1"
+    "shellVersion": "^2.0.0-beta.1"
   },
   "description": "Simple SDK-built test add-on: declares a dockable panel and one hello.greet tool, to exercise the create -> connect -> validate -> test workflow a future add-on builder follows.",
   "health": {

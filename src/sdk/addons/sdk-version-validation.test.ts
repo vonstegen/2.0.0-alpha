@@ -13,8 +13,9 @@
 // Plus regression coverage for:
 //   - missing sdkVersion (hard error)
 //   - missing compatibility.shellVersion (hard error)
-//   - prerelease shell ("2.0.0-beta.1") satisfies a `^2.0.0` range
-//     when includePrerelease is honored.
+//   - the bundled caret prerelease range ("^2.0.0-beta.1") accepting the
+//     current beta, later beta prereleases, and stable 2.0.0 when
+//     includePrerelease is honored.
 
 import { describe, expect, it } from "vitest";
 
@@ -110,10 +111,27 @@ describe("CP-7.5 §7.5.2 sdkVersion + shellVersion enforcement", () => {
     expect(issue).toBeDefined();
   });
 
+  it("accepts the bundled caret prerelease range across beta.x and stable 2.x", () => {
+    // The bundled manifests declare `compatibility.shellVersion: "^2.0.0-beta.1"`.
+    // The validator coerces the runtime shell (includePrerelease honored) and
+    // checks it against the range, so this must accept the current beta
+    // prereleases, later beta prereleases, and stable graduation to 2.0.0.
+    for (const runtime of ["2.0.0-beta.1", "2.0.0-beta.2", "2.0.0"]) {
+      const result = validateAddOnManifest(
+        withSdk(`^${RUNTIME_SDK.split(".")[0]}.x`, "^2.0.0-beta.1"),
+        { runtimeShellVersion: runtime },
+      );
+      const mismatch = result.issues.find(
+        (i) => i.code === "manifest-version-mismatch" && i.path === "compatibility.shellVersion",
+      );
+      expect(mismatch, `runtime shell ${runtime} should satisfy ^2.0.0-beta.1`).toBeUndefined();
+    }
+  });
+
   it("accepts a fixed-version shellVersion that matches the runtime shell", () => {
-    // The bundled manifests declare `shellVersion: "2.0.0-beta.1"` (a fixed
-    // version, not a range). When the runtime shell is the same, the
-    // validator accepts. This is the production-realistic case.
+    // Backward compatibility: a fixed shell version is itself a valid
+    // single-version semver range. When the runtime shell matches, the
+    // validator accepts.
     const result = validateAddOnManifest(withSdk(`^${RUNTIME_SDK.split(".")[0]}.x`, "2.0.0-beta.1"), { runtimeShellVersion: "2.0.0-beta.1" });
     const mismatch = result.issues.find((i) => i.code === "manifest-version-mismatch");
     expect(mismatch).toBeUndefined();

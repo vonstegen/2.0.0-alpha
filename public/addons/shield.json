@@ -1,1 +1,141 @@
-{"archiveIntegration":{"canRequestIngest":false,"canWriteKnowledgePages":false,"intakeWriteScopes":[],"readScopes":[]},"author":"Resonant Alpha","category":"security","compatibility":{"platforms":["macOS","linux"],"shellVersion":"2.0.0-beta.1"},"connectors":[{"configScope":"user-config","description":"Observes scoped filesystem paths and reports security-relevant events.","id":"filesystem-guard","name":"Filesystem guard","requiredCapabilities":["filesystem"],"type":"filesystem"}],"description":"Local protection layer for capability enforcement, filesystem control, and security telemetry.","health":{"strategy":"local-daemon"},"hooks":[{"event":"before-enable","failurePolicy":"block","handlerRef":"shield-guard-preflight","id":"shield-enable-check","requiredCapabilities":["filesystem"]}],"id":"addon.shield","installHooks":{"onEnable":"start-guardian"},"name":"Shield","provenance":{"signed":true,"signer":"ResonantOS bundled catalog","tier":"bundled-core","verificationState":"verified"},"providerRequirements":{"sharedProfiles":[],"supportsPrivateCredentials":false},"publisher":"local","requestedCapabilities":[{"capability":"filesystem","granted":false,"revocationBehavior":"hard-stop","scope":"system"},{"capability":"notifications","granted":false,"revocationBehavior":"degrade","scope":"shared"}],"runtimeIsolation":{"boundary":"host-mediated-service","requiresReviewedGrant":true,"supportsDegradedMode":true},"runtimeType":"local-service","scripts":[{"commandRef":"shield.guard_preflight","description":"Verify local guard configuration before enabling protection flows.","deterministic":true,"id":"shield-guard-preflight","name":"Shield guard preflight","producesArtifacts":["diagnostic-report"],"requiredCapabilities":["filesystem"],"requiresHumanApproval":false,"runPolicy":"preflight"}],"sdkVersion":"^2.0.x","skills":[{"description":"Explain capability, filesystem, and telemetry findings in human-actionable language.","documentPath":"docs/architecture/addon-skills/shield/SECURITY_POSTURE_REVIEW.md","id":"security-posture-review","invocation":"agent-suggested","name":"Security posture review","requiredCapabilities":["filesystem","notifications"],"requiredTools":[]}],"surfaces":[{"description":"Inspect file guard, permissions, and security status.","id":"shield-page","label":"Shield Monitor","type":"page"}],"version":"0.1.0","workflowBoundaries":[{"id":"local-protection-layer","jobToBeDone":"Monitor capability-sensitive local operations and surface security telemetry to the human.","label":"Local protection layer","nonGoals":["Take custody of provider or wallet secrets","Approve risky add-on behavior automatically","Replace host capability enforcement"],"owner":"engineer","repeatability":"workflow-package","userValue":"The human can inspect security posture and receive warnings without handing add-ons blanket trust."}],"manifestSignature":{"algorithm":"ed25519","publicKey":"{\"crv\":\"Ed25519\",\"x\":\"EsZYEa4u5S9MyBn5fiODyxmOnICG-8LuwoSDPFYwNhg\",\"kty\":\"OKP\"}","signature":"qCgjnBv83nVKTlLe88+2qsDTfGQFf96msBljlOCj23UipUbShJw/iQAYxA35u3NiMQNhskC9dY5uhytHDGaPCQ=="}}
+{
+  "archiveIntegration": {
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false,
+    "intakeWriteScopes": [],
+    "readScopes": []
+  },
+  "author": "Resonant Alpha",
+  "category": "security",
+  "compatibility": {
+    "platforms": [
+      "macOS",
+      "linux"
+    ],
+    "shellVersion": "^2.0.0-beta.1"
+  },
+  "connectors": [
+    {
+      "configScope": "user-config",
+      "description": "Observes scoped filesystem paths and reports security-relevant events.",
+      "id": "filesystem-guard",
+      "name": "Filesystem guard",
+      "requiredCapabilities": [
+        "filesystem"
+      ],
+      "type": "filesystem"
+    }
+  ],
+  "description": "Local protection layer for capability enforcement, filesystem control, and security telemetry.",
+  "health": {
+    "strategy": "local-daemon"
+  },
+  "hooks": [
+    {
+      "event": "before-enable",
+      "failurePolicy": "block",
+      "handlerRef": "shield-guard-preflight",
+      "id": "shield-enable-check",
+      "requiredCapabilities": [
+        "filesystem"
+      ]
+    }
+  ],
+  "id": "addon.shield",
+  "installHooks": {
+    "onEnable": "start-guardian"
+  },
+  "name": "Shield",
+  "provenance": {
+    "signed": true,
+    "signer": "ResonantOS bundled catalog",
+    "tier": "bundled-core",
+    "verificationState": "verified"
+  },
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "publisher": "local",
+  "requestedCapabilities": [
+    {
+      "capability": "filesystem",
+      "granted": false,
+      "revocationBehavior": "hard-stop",
+      "scope": "system"
+    },
+    {
+      "capability": "notifications",
+      "granted": false,
+      "revocationBehavior": "degrade",
+      "scope": "shared"
+    }
+  ],
+  "runtimeIsolation": {
+    "boundary": "host-mediated-service",
+    "requiresReviewedGrant": true,
+    "supportsDegradedMode": true
+  },
+  "runtimeType": "local-service",
+  "scripts": [
+    {
+      "commandRef": "shield.guard_preflight",
+      "description": "Verify local guard configuration before enabling protection flows.",
+      "deterministic": true,
+      "id": "shield-guard-preflight",
+      "name": "Shield guard preflight",
+      "producesArtifacts": [
+        "diagnostic-report"
+      ],
+      "requiredCapabilities": [
+        "filesystem"
+      ],
+      "requiresHumanApproval": false,
+      "runPolicy": "preflight"
+    }
+  ],
+  "sdkVersion": "^2.0.x",
+  "skills": [
+    {
+      "description": "Explain capability, filesystem, and telemetry findings in human-actionable language.",
+      "documentPath": "docs/architecture/addon-skills/shield/SECURITY_POSTURE_REVIEW.md",
+      "id": "security-posture-review",
+      "invocation": "agent-suggested",
+      "name": "Security posture review",
+      "requiredCapabilities": [
+        "filesystem",
+        "notifications"
+      ],
+      "requiredTools": []
+    }
+  ],
+  "surfaces": [
+    {
+      "description": "Inspect file guard, permissions, and security status.",
+      "id": "shield-page",
+      "label": "Shield Monitor",
+      "type": "page"
+    }
+  ],
+  "version": "0.1.0",
+  "workflowBoundaries": [
+    {
+      "id": "local-protection-layer",
+      "jobToBeDone": "Monitor capability-sensitive local operations and surface security telemetry to the human.",
+      "label": "Local protection layer",
+      "nonGoals": [
+        "Take custody of provider or wallet secrets",
+        "Approve risky add-on behavior automatically",
+        "Replace host capability enforcement"
+      ],
+      "owner": "engineer",
+      "repeatability": "workflow-package",
+      "userValue": "The human can inspect security posture and receive warnings without handing add-ons blanket trust."
+    }
+  ],
+  "manifestSignature": {
+    "algorithm": "ed25519",
+    "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"EsZYEa4u5S9MyBn5fiODyxmOnICG-8LuwoSDPFYwNhg\",\"kty\":\"OKP\"}",
+    "signature": "lpOPtrfkdFxy9lg8YWBUSUg2V+53l5olGIEMIP6jguCng+V+F8eq5F/+m5ZXWJrJxXHavF+4rRq7+XxC+AzWAg=="
+  }
+}

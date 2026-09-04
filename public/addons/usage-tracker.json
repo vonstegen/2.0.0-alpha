@@ -1,1 +1,154 @@
-{"archiveIntegration":{"canRequestIngest":false,"canWriteKnowledgePages":false,"intakeWriteScopes":[],"readScopes":[]},"author":"Resonant Alpha","category":"integration","compatibility":{"platforms":["macOS","linux","windows"],"shellVersion":"2.0.0-beta.1"},"description":"Persistent token and cost tracking across all agents. Listens for LLM output events and appends per-call usage entries (input tokens, output tokens, cache read/write, model, provider) to a JSONL ledger file for analysis and budgeting.","grantPresets":[{"description":"Enable token usage logging with workspace filesystem access for the JSONL ledger file.","grants":[{"capability":"filesystem","granted":true,"revocationBehavior":"degrade","scope":"workspace"}],"id":"recommended-usage-tracking","label":"Recommended usage tracking"}],"health":{"strategy":"local-daemon"},"id":"addon.usage-tracker","install":{"auditLogRequired":false,"credentialSetup":"none","expectedArtifacts":["log"],"mode":"bundled","preservesExistingUserConfig":true,"requiredCapabilities":[],"requiresHumanApprovalBeforeInstall":false},"installHooks":{},"name":"Usage Tracker","provenance":{"signed":true,"signer":"ResonantOS bundled catalog","tier":"bundled-core","verificationState":"verified"},"providerRequirements":{"sharedProfiles":[],"supportsPrivateCredentials":false},"publisher":"local","requestedCapabilities":[{"capability":"filesystem","granted":false,"revocationBehavior":"degrade","scope":"workspace"}],"runtimeIsolation":{"boundary":"host-mediated-service","requiresReviewedGrant":false,"supportsDegradedMode":true},"runtimeType":"local-service","sdkVersion":"^2.0.x","surfaces":[{"description":"Background monitor showing cumulative token usage, per-model breakdowns, and recent usage entries.","id":"usage-tracker-monitor","label":"Usage Tracker Monitor","type":"background-task-monitor"}],"tools":[{"audit":{"artifactTypes":["log"],"logRequest":true,"logResult":true},"description":"Read the usage JSONL ledger and return aggregate token counts grouped by model and provider, with optional date range filtering.","inputSchema":{"properties":{"groupBy":{"description":"Grouping dimension: model, provider, or agent. Defaults to model.","type":"string"},"since":{"description":"ISO-8601 date to start aggregation from. Defaults to all time.","type":"string"}},"type":"object"},"name":"usage_tracker.summary","outputSchema":{"properties":{"groups":{"items":{"properties":{"input":{"type":"number"},"key":{"type":"string"},"output":{"type":"number"}},"type":"object"},"type":"array"},"totalCacheRead":{"type":"number"},"totalCacheWrite":{"type":"number"},"totalInput":{"type":"number"},"totalOutput":{"type":"number"}},"type":"object"},"requiredCapabilities":["filesystem"]}],"version":"0.1.0","manifestSignature":{"algorithm":"ed25519","publicKey":"{\"crv\":\"Ed25519\",\"x\":\"EsZYEa4u5S9MyBn5fiODyxmOnICG-8LuwoSDPFYwNhg\",\"kty\":\"OKP\"}","signature":"+jNfC2AHEoW6K81uSNPLOEnNJ5RDdOf6wcSdeMfLCtcN4qAo4eCtfKtGHwhpmaTN3ubQ1cPCdF5iHQk4bNeaAg=="}}
+{
+  "archiveIntegration": {
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false,
+    "intakeWriteScopes": [],
+    "readScopes": []
+  },
+  "author": "Resonant Alpha",
+  "category": "integration",
+  "compatibility": {
+    "platforms": [
+      "macOS",
+      "linux",
+      "windows"
+    ],
+    "shellVersion": "^2.0.0-beta.1"
+  },
+  "description": "Persistent token and cost tracking across all agents. Listens for LLM output events and appends per-call usage entries (input tokens, output tokens, cache read/write, model, provider) to a JSONL ledger file for analysis and budgeting.",
+  "grantPresets": [
+    {
+      "description": "Enable token usage logging with workspace filesystem access for the JSONL ledger file.",
+      "grants": [
+        {
+          "capability": "filesystem",
+          "granted": true,
+          "revocationBehavior": "degrade",
+          "scope": "workspace"
+        }
+      ],
+      "id": "recommended-usage-tracking",
+      "label": "Recommended usage tracking"
+    }
+  ],
+  "health": {
+    "strategy": "local-daemon"
+  },
+  "id": "addon.usage-tracker",
+  "install": {
+    "auditLogRequired": false,
+    "credentialSetup": "none",
+    "expectedArtifacts": [
+      "log"
+    ],
+    "mode": "bundled",
+    "preservesExistingUserConfig": true,
+    "requiredCapabilities": [],
+    "requiresHumanApprovalBeforeInstall": false
+  },
+  "installHooks": {},
+  "name": "Usage Tracker",
+  "provenance": {
+    "signed": true,
+    "signer": "ResonantOS bundled catalog",
+    "tier": "bundled-core",
+    "verificationState": "verified"
+  },
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "publisher": "local",
+  "requestedCapabilities": [
+    {
+      "capability": "filesystem",
+      "granted": false,
+      "revocationBehavior": "degrade",
+      "scope": "workspace"
+    }
+  ],
+  "runtimeIsolation": {
+    "boundary": "host-mediated-service",
+    "requiresReviewedGrant": false,
+    "supportsDegradedMode": true
+  },
+  "runtimeType": "local-service",
+  "sdkVersion": "^2.0.x",
+  "surfaces": [
+    {
+      "description": "Background monitor showing cumulative token usage, per-model breakdowns, and recent usage entries.",
+      "id": "usage-tracker-monitor",
+      "label": "Usage Tracker Monitor",
+      "type": "background-task-monitor"
+    }
+  ],
+  "tools": [
+    {
+      "audit": {
+        "artifactTypes": [
+          "log"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "Read the usage JSONL ledger and return aggregate token counts grouped by model and provider, with optional date range filtering.",
+      "inputSchema": {
+        "properties": {
+          "groupBy": {
+            "description": "Grouping dimension: model, provider, or agent. Defaults to model.",
+            "type": "string"
+          },
+          "since": {
+            "description": "ISO-8601 date to start aggregation from. Defaults to all time.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "usage_tracker.summary",
+      "outputSchema": {
+        "properties": {
+          "groups": {
+            "items": {
+              "properties": {
+                "input": {
+                  "type": "number"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "output": {
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "totalCacheRead": {
+            "type": "number"
+          },
+          "totalCacheWrite": {
+            "type": "number"
+          },
+          "totalInput": {
+            "type": "number"
+          },
+          "totalOutput": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "filesystem"
+      ]
+    }
+  ],
+  "version": "0.1.0",
+  "manifestSignature": {
+    "algorithm": "ed25519",
+    "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"EsZYEa4u5S9MyBn5fiODyxmOnICG-8LuwoSDPFYwNhg\",\"kty\":\"OKP\"}",
+    "signature": "rrL80+6Jqx2MoEljut1+v0ovmVhRdzuEcFlbhJ+nS87Za6aQJeoNJvGelohe4XxSD3X07oJSISbMkzTxJMNRAw=="
+  }
+}

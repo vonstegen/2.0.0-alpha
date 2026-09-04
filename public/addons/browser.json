@@ -15,7 +15,7 @@
       "linux",
       "windows"
     ],
-    "shellVersion": "2.0.0-beta.1"
+    "shellVersion": "^2.0.0-beta.1"
   },
   "connectors": [
     {
@@ -804,6 +804,6 @@
   "manifestSignature": {
     "algorithm": "ed25519",
     "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"EsZYEa4u5S9MyBn5fiODyxmOnICG-8LuwoSDPFYwNhg\",\"kty\":\"OKP\"}",
-    "signature": "hJFFRXMESv+gDxV8hK5hj1oTeBjL6A7gJhD9vLqyd6KL9RSO+cH4k+VxpxN6FVd7NIeGhahPElIroxBTHOt6Cg=="
+    "signature": "8IzQMrNgR7KMvd322w5QH7DAoQsn6RRB3FJYBuVwN9WzIvopnWK+r7eaEGcXLKbOLSwOrsge3pF5gfGbtsnKBA=="
   }
 }

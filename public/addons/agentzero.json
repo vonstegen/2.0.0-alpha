@@ -1,1 +1,91 @@
-{"archiveIntegration":{"canRequestIngest":false,"canWriteKnowledgePages":false,"intakeWriteScopes":[],"readScopes":[]},"author":"Resonant Alpha","category":"agent","compatibility":{"platforms":["macOS","linux","windows"],"shellVersion":"2.0.0-beta.1"},"description":"Mount the AgentZero containerized agent framework as a harness provider under ResonantOS supervision.","extensionClass":"harness-provider","harnessProvider":{"adapterProtocol":"http-json","cancellationSemantics":"cancel","childActorPolicy":{"containerized":true,"sandboxed":true},"contextPolicy":{"bounded":true,"workspaceScoped":true},"eventContract":{"description":"Ordered agent progress and artifact events.","protocol":"agentzero-events"},"resourceHints":{"cpu":"shared","network":"self"},"resultContract":{"description":"Final artifact bundle with exit status.","protocol":"agentzero-result"},"sandboxStrength":"sandboxed-outer-boundary","taskContract":{"description":"Delegated task spec for a containerized agent.","protocol":"agentzero-task"}},"health":{"strategy":"container-orchestrator-ready"},"id":"addon.agentzero","installHooks":{"onInstall":"register-agent-framework"},"name":"AgentZero","provenance":{"signed":true,"signer":"ResonantOS bundled catalog","tier":"bundled-core","verificationState":"verified"},"providerRequirements":{"sharedProfiles":[],"supportsPrivateCredentials":true},"publisher":"local","requestedCapabilities":[{"capability":"network","granted":false,"revocationBehavior":"hard-stop","scope":"self"},{"capability":"shell","granted":false,"revocationBehavior":"hard-stop","scope":"workspace"}],"runtimeType":"agent-addon","sdkVersion":"^2.0.x","surfaces":[],"version":"0.1.0","manifestSignature":{"algorithm":"ed25519","publicKey":"{\"crv\":\"Ed25519\",\"x\":\"EsZYEa4u5S9MyBn5fiODyxmOnICG-8LuwoSDPFYwNhg\",\"kty\":\"OKP\"}","signature":"wdO/6CwxfPdS/SbyACcteGUAjyX69jv8Vmff3loMpbSUXTiPO5dU1zW5H80gIakohSnM8vZKyhxG1VnSLv35BQ=="}}
+{
+  "archiveIntegration": {
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false,
+    "intakeWriteScopes": [],
+    "readScopes": []
+  },
+  "author": "Resonant Alpha",
+  "category": "agent",
+  "compatibility": {
+    "platforms": [
+      "macOS",
+      "linux",
+      "windows"
+    ],
+    "shellVersion": "^2.0.0-beta.1"
+  },
+  "description": "Mount the AgentZero containerized agent framework as a harness provider under ResonantOS supervision.",
+  "extensionClass": "harness-provider",
+  "harnessProvider": {
+    "adapterProtocol": "http-json",
+    "cancellationSemantics": "cancel",
+    "childActorPolicy": {
+      "containerized": true,
+      "sandboxed": true
+    },
+    "contextPolicy": {
+      "bounded": true,
+      "workspaceScoped": true
+    },
+    "eventContract": {
+      "description": "Ordered agent progress and artifact events.",
+      "protocol": "agentzero-events"
+    },
+    "resourceHints": {
+      "cpu": "shared",
+      "network": "self"
+    },
+    "resultContract": {
+      "description": "Final artifact bundle with exit status.",
+      "protocol": "agentzero-result"
+    },
+    "sandboxStrength": "sandboxed-outer-boundary",
+    "taskContract": {
+      "description": "Delegated task spec for a containerized agent.",
+      "protocol": "agentzero-task"
+    }
+  },
+  "health": {
+    "strategy": "container-orchestrator-ready"
+  },
+  "id": "addon.agentzero",
+  "installHooks": {
+    "onInstall": "register-agent-framework"
+  },
+  "name": "AgentZero",
+  "provenance": {
+    "signed": true,
+    "signer": "ResonantOS bundled catalog",
+    "tier": "bundled-core",
+    "verificationState": "verified"
+  },
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": true
+  },
+  "publisher": "local",
+  "requestedCapabilities": [
+    {
+      "capability": "network",
+      "granted": false,
+      "revocationBehavior": "hard-stop",
+      "scope": "self"
+    },
+    {
+      "capability": "shell",
+      "granted": false,
+      "revocationBehavior": "hard-stop",
+      "scope": "workspace"
+    }
+  ],
+  "runtimeType": "agent-addon",
+  "sdkVersion": "^2.0.x",
+  "surfaces": [],
+  "version": "0.1.0",
+  "manifestSignature": {
+    "algorithm": "ed25519",
+    "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"EsZYEa4u5S9MyBn5fiODyxmOnICG-8LuwoSDPFYwNhg\",\"kty\":\"OKP\"}",
+    "signature": "rVwM/O0lwWNGOk9LYTgqReFeq4jQTL4AGG1fjskksqh7kP3Q+WhoDFwQ1rJUq5UTb1vMoSdfql1pecGHeYPIAw=="
+  }
+}

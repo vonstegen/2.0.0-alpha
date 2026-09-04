@@ -62,7 +62,7 @@
       "macOS",
       "linux"
     ],
-    "shellVersion": "2.0.0-beta.1"
+    "shellVersion": "^2.0.0-beta.1"
   },
   "delegation": {
     "acceptsTasks": true,

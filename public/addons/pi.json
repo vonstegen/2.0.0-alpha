@@ -1,1 +1,102 @@
-{"archiveIntegration":{"canRequestIngest":false,"canWriteKnowledgePages":false,"intakeWriteScopes":[],"readScopes":[]},"author":"Resonant Alpha","category":"agent","compatibility":{"platforms":["macOS","linux"],"shellVersion":"2.0.0-beta.1"},"description":"Mount the pi.dev terminal coding harness (RPC mode) as a harness provider under ResonantOS supervision.","extensionClass":"harness-provider","harnessProvider":{"adapterProtocol":"stdio-json-rpc","cancellationSemantics":"cancel","childActorPolicy":{"sandboxed":false,"terminal":true,"tools":["read","write","edit","bash"]},"contextPolicy":{"bounded":true,"projectScoped":true},"eventContract":{"description":"JSONL session events streamed on stdout.","protocol":"pi-rpc-events"},"resourceHints":{"cpu":"local","network":"self"},"resultContract":{"description":"response command with success/data.","protocol":"pi-rpc-response"},"sandboxStrength":"host-mediated","taskContract":{"description":"pi.dev RPC prompt command (JSONL over stdin/stdout).","protocol":"pi-rpc"}},"health":{"strategy":"stdio-rpc-handshake"},"id":"addon.pi","installHooks":{"onInstall":"register-terminal-harness"},"name":"Pi (pi.dev)","provenance":{"signed":true,"signer":"ResonantOS bundled catalog","tier":"bundled-core","verificationState":"verified"},"providerRequirements":{"sharedProfiles":[],"supportsPrivateCredentials":true},"publisher":"local","requestedCapabilities":[{"capability":"filesystem","granted":false,"revocationBehavior":"hard-stop","scope":"workspace"},{"capability":"shell","granted":false,"revocationBehavior":"hard-stop","scope":"workspace"},{"capability":"network","granted":false,"revocationBehavior":"hard-stop","scope":"self"}],"runtimeType":"agent-addon","sdkVersion":"^2.0.x","surfaces":[],"version":"0.1.0","manifestSignature":{"algorithm":"ed25519","publicKey":"{\"crv\":\"Ed25519\",\"x\":\"EsZYEa4u5S9MyBn5fiODyxmOnICG-8LuwoSDPFYwNhg\",\"kty\":\"OKP\"}","signature":"zQS6VLIbtakerqUVeFHxYbt2VVpcgrD4Bu6pHNfXlZFj2ECNZYb4f/UFv8flfPGxXRtVr21nvuOxODM8WbU+AA=="}}
+{
+  "archiveIntegration": {
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false,
+    "intakeWriteScopes": [],
+    "readScopes": []
+  },
+  "author": "Resonant Alpha",
+  "category": "agent",
+  "compatibility": {
+    "platforms": [
+      "macOS",
+      "linux"
+    ],
+    "shellVersion": "^2.0.0-beta.1"
+  },
+  "description": "Mount the pi.dev terminal coding harness (RPC mode) as a harness provider under ResonantOS supervision.",
+  "extensionClass": "harness-provider",
+  "harnessProvider": {
+    "adapterProtocol": "stdio-json-rpc",
+    "cancellationSemantics": "cancel",
+    "childActorPolicy": {
+      "sandboxed": false,
+      "terminal": true,
+      "tools": [
+        "read",
+        "write",
+        "edit",
+        "bash"
+      ]
+    },
+    "contextPolicy": {
+      "bounded": true,
+      "projectScoped": true
+    },
+    "eventContract": {
+      "description": "JSONL session events streamed on stdout.",
+      "protocol": "pi-rpc-events"
+    },
+    "resourceHints": {
+      "cpu": "local",
+      "network": "self"
+    },
+    "resultContract": {
+      "description": "response command with success/data.",
+      "protocol": "pi-rpc-response"
+    },
+    "sandboxStrength": "host-mediated",
+    "taskContract": {
+      "description": "pi.dev RPC prompt command (JSONL over stdin/stdout).",
+      "protocol": "pi-rpc"
+    }
+  },
+  "health": {
+    "strategy": "stdio-rpc-handshake"
+  },
+  "id": "addon.pi",
+  "installHooks": {
+    "onInstall": "register-terminal-harness"
+  },
+  "name": "Pi (pi.dev)",
+  "provenance": {
+    "signed": true,
+    "signer": "ResonantOS bundled catalog",
+    "tier": "bundled-core",
+    "verificationState": "verified"
+  },
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": true
+  },
+  "publisher": "local",
+  "requestedCapabilities": [
+    {
+      "capability": "filesystem",
+      "granted": false,
+      "revocationBehavior": "hard-stop",
+      "scope": "workspace"
+    },
+    {
+      "capability": "shell",
+      "granted": false,
+      "revocationBehavior": "hard-stop",
+      "scope": "workspace"
+    },
+    {
+      "capability": "network",
+      "granted": false,
+      "revocationBehavior": "hard-stop",
+      "scope": "self"
+    }
+  ],
+  "runtimeType": "agent-addon",
+  "sdkVersion": "^2.0.x",
+  "surfaces": [],
+  "version": "0.1.0",
+  "manifestSignature": {
+    "algorithm": "ed25519",
+    "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"EsZYEa4u5S9MyBn5fiODyxmOnICG-8LuwoSDPFYwNhg\",\"kty\":\"OKP\"}",
+    "signature": "mN65t0kKuxVONV9DdD/cyRdCFGMeOPdLoAygrg6eb926EnqQuz/nI19Xq0o9yhB4yTgGZ/BvpiTcXUsmyOg1Dg=="
+  }
+}

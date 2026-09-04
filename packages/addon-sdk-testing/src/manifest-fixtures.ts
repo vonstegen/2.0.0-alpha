@@ -150,7 +150,7 @@ function buildBase(): AddOnManifest {
       "darwin-arm64",
       "linux-x64"
     ],
-    "shellVersion": "2.0.0-beta.1"
+    "shellVersion": "^2.0.0-beta.1"
   },
   "delegation": {
     "acceptsTasks": true,
@@ -459,7 +459,7 @@ function buildBase(): AddOnManifest {
   "manifestSignature": {
     "algorithm": "ed25519",
     "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"EsZYEa4u5S9MyBn5fiODyxmOnICG-8LuwoSDPFYwNhg\",\"kty\":\"OKP\"}",
-    "signature": "3vFsrjaAnoApBaBlqV0i1SZGwuTs3QKBg3o8qfNIuxJW6FqItrAyGBcgFrV0pxvyk5XksY3XhLxjTqmkwbtqDw=="
+    "signature": "P66CSNoUQRmHHAV73u2oL+OSP4yEr7e1j+PrxFC89t1qs87Rst6tvDb42XDYZ4hat1tUa+oPZGx0Kqb0VrtnBw=="
   }
 } as unknown as AddOnManifest;
 }

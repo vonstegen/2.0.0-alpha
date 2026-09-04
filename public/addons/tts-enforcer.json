@@ -1,1 +1,190 @@
-{"archiveIntegration":{"canRequestIngest":false,"canWriteKnowledgePages":false,"intakeWriteScopes":["Memory/INTAKE/tts-violations"],"readScopes":[]},"audit":{"auditLogRequired":true,"checks":["tts-audio-present-before-text","tts-audio-covers-full-text","tts-audio-word-for-word-match"],"remediationPolicy":"suggest-only","requiredCapabilities":["chat-interface"],"tool":"tts_compliance_audit"},"author":"Resonant Alpha","category":"security","compatibility":{"platforms":["macOS","linux","windows"],"shellVersion":"2.0.0-beta.1"},"description":"Mechanically enforces the rule that every agent response must include TTS audio first (full text, word-for-word), then text. Audits outbound messages for compliance and logs violations.","grantPresets":[{"description":"Enable TTS compliance auditing with chat observation, violation logging to intake, and notification on violations.","grants":[{"capability":"chat-interface","granted":true,"revocationBehavior":"hard-stop","scope":"shared"},{"capability":"archive-intake-write","granted":true,"revocationBehavior":"degrade","scope":"intake-only"},{"capability":"notifications","granted":true,"revocationBehavior":"degrade","scope":"shared"}],"id":"recommended-tts-enforcement","label":"Recommended TTS enforcement"}],"health":{"strategy":"local-daemon"},"id":"addon.tts-enforcer","install":{"auditLogRequired":true,"credentialSetup":"none","expectedArtifacts":["log"],"mode":"bundled","preservesExistingUserConfig":true,"requiredCapabilities":[],"requiresHumanApprovalBeforeInstall":false},"installHooks":{"onEnable":"start-tts-enforcement"},"name":"TTS Enforcer","provenance":{"signed":true,"signer":"ResonantOS bundled catalog","tier":"bundled-core","verificationState":"verified"},"providerRequirements":{"sharedProfiles":[],"supportsPrivateCredentials":false},"publisher":"local","requestedCapabilities":[{"capability":"chat-interface","granted":false,"revocationBehavior":"hard-stop","scope":"shared"},{"capability":"archive-intake-write","granted":false,"revocationBehavior":"degrade","scope":"intake-only"},{"capability":"notifications","granted":false,"revocationBehavior":"degrade","scope":"shared"}],"runtimeIsolation":{"boundary":"host-mediated-service","requiresReviewedGrant":false,"supportsDegradedMode":true},"runtimeType":"local-service","sdkVersion":"^2.0.x","surfaces":[{"description":"Background monitor showing TTS enforcement status and recent violation history.","id":"tts-enforcer-monitor","label":"TTS Compliance Monitor","type":"background-task-monitor"}],"tools":[{"audit":{"artifactTypes":["log"],"logRequest":true,"logResult":true},"description":"Audit a specific agent response or recent response history for TTS compliance. Checks whether TTS audio was included before text, whether it covers the full text word-for-word, and reports violations.","inputSchema":{"properties":{"messageId":{"description":"Optional message id to audit. If omitted, audits the most recent agent response.","type":"string"},"windowSize":{"description":"Number of recent messages to audit when messageId is omitted. Defaults to 1.","type":"number"}},"type":"object"},"name":"tts_compliance_audit","outputSchema":{"properties":{"auditedCount":{"type":"number"},"compliant":{"description":"Whether all audited messages pass TTS compliance.","type":"boolean"},"violations":{"items":{"properties":{"messageId":{"type":"string"},"reason":{"type":"string"},"severity":{"type":"string"}},"type":"object"},"type":"array"}},"type":"object"},"requiredCapabilities":["chat-interface"]}],"version":"0.1.0","manifestSignature":{"algorithm":"ed25519","publicKey":"{\"crv\":\"Ed25519\",\"x\":\"EsZYEa4u5S9MyBn5fiODyxmOnICG-8LuwoSDPFYwNhg\",\"kty\":\"OKP\"}","signature":"+vDs4ivudLfuQD0PIllEti6C8c6pqUh6x6Dv9TBqcYkmmSFBNqzJmR25bF6JibUUecTnKPaF08O29ezMDSOJCg=="}}
+{
+  "archiveIntegration": {
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false,
+    "intakeWriteScopes": [
+      "Memory/INTAKE/tts-violations"
+    ],
+    "readScopes": []
+  },
+  "audit": {
+    "auditLogRequired": true,
+    "checks": [
+      "tts-audio-present-before-text",
+      "tts-audio-covers-full-text",
+      "tts-audio-word-for-word-match"
+    ],
+    "remediationPolicy": "suggest-only",
+    "requiredCapabilities": [
+      "chat-interface"
+    ],
+    "tool": "tts_compliance_audit"
+  },
+  "author": "Resonant Alpha",
+  "category": "security",
+  "compatibility": {
+    "platforms": [
+      "macOS",
+      "linux",
+      "windows"
+    ],
+    "shellVersion": "^2.0.0-beta.1"
+  },
+  "description": "Mechanically enforces the rule that every agent response must include TTS audio first (full text, word-for-word), then text. Audits outbound messages for compliance and logs violations.",
+  "grantPresets": [
+    {
+      "description": "Enable TTS compliance auditing with chat observation, violation logging to intake, and notification on violations.",
+      "grants": [
+        {
+          "capability": "chat-interface",
+          "granted": true,
+          "revocationBehavior": "hard-stop",
+          "scope": "shared"
+        },
+        {
+          "capability": "archive-intake-write",
+          "granted": true,
+          "revocationBehavior": "degrade",
+          "scope": "intake-only"
+        },
+        {
+          "capability": "notifications",
+          "granted": true,
+          "revocationBehavior": "degrade",
+          "scope": "shared"
+        }
+      ],
+      "id": "recommended-tts-enforcement",
+      "label": "Recommended TTS enforcement"
+    }
+  ],
+  "health": {
+    "strategy": "local-daemon"
+  },
+  "id": "addon.tts-enforcer",
+  "install": {
+    "auditLogRequired": true,
+    "credentialSetup": "none",
+    "expectedArtifacts": [
+      "log"
+    ],
+    "mode": "bundled",
+    "preservesExistingUserConfig": true,
+    "requiredCapabilities": [],
+    "requiresHumanApprovalBeforeInstall": false
+  },
+  "installHooks": {
+    "onEnable": "start-tts-enforcement"
+  },
+  "name": "TTS Enforcer",
+  "provenance": {
+    "signed": true,
+    "signer": "ResonantOS bundled catalog",
+    "tier": "bundled-core",
+    "verificationState": "verified"
+  },
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "publisher": "local",
+  "requestedCapabilities": [
+    {
+      "capability": "chat-interface",
+      "granted": false,
+      "revocationBehavior": "hard-stop",
+      "scope": "shared"
+    },
+    {
+      "capability": "archive-intake-write",
+      "granted": false,
+      "revocationBehavior": "degrade",
+      "scope": "intake-only"
+    },
+    {
+      "capability": "notifications",
+      "granted": false,
+      "revocationBehavior": "degrade",
+      "scope": "shared"
+    }
+  ],
+  "runtimeIsolation": {
+    "boundary": "host-mediated-service",
+    "requiresReviewedGrant": false,
+    "supportsDegradedMode": true
+  },
+  "runtimeType": "local-service",
+  "sdkVersion": "^2.0.x",
+  "surfaces": [
+    {
+      "description": "Background monitor showing TTS enforcement status and recent violation history.",
+      "id": "tts-enforcer-monitor",
+      "label": "TTS Compliance Monitor",
+      "type": "background-task-monitor"
+    }
+  ],
+  "tools": [
+    {
+      "audit": {
+        "artifactTypes": [
+          "log"
+        ],
+        "logRequest": true,
+        "logResult": true
+      },
+      "description": "Audit a specific agent response or recent response history for TTS compliance. Checks whether TTS audio was included before text, whether it covers the full text word-for-word, and reports violations.",
+      "inputSchema": {
+        "properties": {
+          "messageId": {
+            "description": "Optional message id to audit. If omitted, audits the most recent agent response.",
+            "type": "string"
+          },
+          "windowSize": {
+            "description": "Number of recent messages to audit when messageId is omitted. Defaults to 1.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "name": "tts_compliance_audit",
+      "outputSchema": {
+        "properties": {
+          "auditedCount": {
+            "type": "number"
+          },
+          "compliant": {
+            "description": "Whether all audited messages pass TTS compliance.",
+            "type": "boolean"
+          },
+          "violations": {
+            "items": {
+              "properties": {
+                "messageId": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "severity": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "requiredCapabilities": [
+        "chat-interface"
+      ]
+    }
+  ],
+  "version": "0.1.0",
+  "manifestSignature": {
+    "algorithm": "ed25519",
+    "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"EsZYEa4u5S9MyBn5fiODyxmOnICG-8LuwoSDPFYwNhg\",\"kty\":\"OKP\"}",
+    "signature": "wWLi6ztqpqP4cDu4RFBxbAHAR46hoRjpKiTMLXxwGE2AEkfZ1M/ZnFlfdqygwNDSkVgosYYl7ugxb0M8HGmkDA=="
+  }
+}
