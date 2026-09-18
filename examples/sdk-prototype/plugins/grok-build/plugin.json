@@ -1,0 +1,23 @@
+{
+  "id": "addon.grok-build",
+  "name": "Grok Build",
+  "version": "0.1.0",
+  "author": "Community Leader (via OMP)",
+  "category": "agent",
+  "description": "Preinstalled Grok-Build external-agent-runtime add-on: dispatches chat completions to a local Grok-compatible (OpenAI) service through a host-mediated loopback service.",
+  "runtimeType": "agent-addon",
+  "entry": "./plugin.mjs",
+  "requestedCapabilities": ["network", "providers", "agent-delegation"],
+  "tools": [
+    {
+      "name": "grok_build.status",
+      "description": "Read the local Grok-compatible runtime health and availability.",
+      "requiredCapabilities": ["network"]
+    },
+    {
+      "name": "grok_build.run_task",
+      "description": "Run a delegated prompt through the local Grok-compatible runtime and return the completion (prepare/propose — a human approves the commit).",
+      "requiredCapabilities": ["network", "providers", "agent-delegation"]
+    }
+  ]
+}

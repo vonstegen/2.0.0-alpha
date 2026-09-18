@@ -1,0 +1,23 @@
+{
+  "id": "plugin.hello-resonant",
+  "name": "Hello Resonant",
+  "version": "1.0.0",
+  "author": "OMP (oh-my-pi)",
+  "category": "tool",
+  "description": "A minimal demo plugin: greets the community and, when the notifications capability is granted, emits a notification.",
+  "runtimeType": "local-module",
+  "entry": "./plugin.mjs",
+  "requestedCapabilities": ["notifications"],
+  "tools": [
+    {
+      "name": "hello-resonant.hello",
+      "description": "Return a greeting. No capability required.",
+      "requiredCapabilities": []
+    },
+    {
+      "name": "hello-resonant.notify",
+      "description": "Emit a notification. Requires the notifications capability.",
+      "requiredCapabilities": ["notifications"]
+    }
+  ]
+}
