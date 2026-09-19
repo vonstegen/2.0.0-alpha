@@ -33,9 +33,10 @@ not the old "Augmentor Chat".
 - **9 / 9 tests pass.**
 - The preinstalled first-party add-on is the **Augmentor** (Manolo's DeepSeek
   Harness, `addon.augmentor`), NOT the old Augmentor Chat.
-- In each `run-demo` scenario, deny-by-default holds: ungated tools are blocked,
-  Public-only grants let Public tools run while Privileged tools stay blocked, and
-  `run_task` stops at `"proposed"` (prepare, not commit).
+- In each `run-demo` scenario, deny-by-default holds: gated tools are blocked
+  without their grant (ungated tools run), Public-only grants let Public tools run
+  while Privileged tools stay blocked, and `run_task` stops at `"proposed"`
+  (prepare, not commit).
 - The backend is a **simulated loopback** on `127.0.0.1:3080`; no live API call is
   made and no credential is used.
 

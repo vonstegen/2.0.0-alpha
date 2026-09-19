@@ -2,9 +2,9 @@
 
 A minimal, self-contained, runnable **add-on harness** that ships preinstalled
 with ResonantOS. It comes with the one first-party **Augmentor** — Manolo's
-DeepSeek Harness (`addon.augmentor`) — already preinstalled and pre-granted. A
-developer then hands this harness (the SDK) to an agentic AI agent, and the agent
-authors a third-party add-on for another provider (the worked example is
+DeepSeek Harness (`addon.augmentor`) — preinstalled (first-party). A developer
+then hands this harness (the SDK) to an agentic AI agent, and the agent authors
+a third-party add-on for another provider (the worked example is
 **Grok-Build**).
 
 > This is a **demo prototype** of the preinstalled harness, not the production SDK.
@@ -27,9 +27,10 @@ authors a third-party add-on for another provider (the worked example is
 ## Demo scenario (community leader)
 
 1. **Preinstalled first-party add-on** — the **Augmentor** (`plugins/augmentor/`),
-   which is Manolo's DeepSeek Harness, is already installed and pre-granted via
-   the `recommended-primary-chat` preset (Public `network` + `agent-delegation`;
-   Privileged `providers` requires a separate reviewed grant).
+   which is Manolo's DeepSeek Harness, is already installed. Capabilities are
+   granted by the host at runtime: Public `network` + `agent-delegation` are
+   safe to grant, while Privileged `providers` requires a separate reviewed
+   grant.
 2. **A developer builds a second provider** — the agent is given the harness and
    the [SDK demo prompt](../../prompts/sdk-demo-prompt.md), then authors
    `plugins/grok-build/` (the worked example): `status` needs `network` (Public);
@@ -45,7 +46,7 @@ authors a third-party add-on for another provider (the worked example is
 | `sdk.mjs`                 | The harness runtime: `loadPlugin`, `runTool`, `validateManifest`, `capabilityClass`. |
 | `run-demo.mjs`            | CLI demo that loads a plugin across three grant scenarios.                           |
 | `sdk.test.mjs`            | Deterministic tests (`node --test`).                                                 |
-| `plugins/augmentor/`      | The Augmentor (Manolo's DeepSeek Harness), preinstalled and pre-granted.             |
+| `plugins/augmentor/`      | The Augmentor (Manolo's DeepSeek Harness), preinstalled (first-party).           |
 | `plugins/grok-build/`     | A third-party provider add-on authored through the SDK (the demo target).            |
 | `plugins/hello-resonant/` | A minimal getting-started reference plugin.                                          |
 

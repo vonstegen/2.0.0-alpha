@@ -27,9 +27,10 @@ node examples/sdk-prototype/run-demo.mjs examples/sdk-prototype/plugins/grok-bui
 Confirm:
 
 - **9 / 9 tests pass.**
-- In each `run-demo` run, deny-by-default holds: ungated tools are blocked,
-  Public-only grants let Public tools run while Privileged tools stay blocked,
-  and consequential work stops at `propose` (prepare, not commit).
+- In each `run-demo` run, deny-by-default holds: gated tools are blocked without
+  their grant (ungated tools run), Public-only grants let Public tools run while
+  Privileged tools stay blocked, and consequential work stops at `propose`
+  (prepare, not commit).
 
 ## 2. Present the demo
 
@@ -47,7 +48,7 @@ harness with deny-by-default capability enforcement, and it must mirror the
 production harness contract for that provider.
 
 Context: the harness already ships with the one first-party **Augmentor**
-(`addon.augmentor`) — Manolo's DeepSeek Harness — preinstalled and pre-granted.
+(`addon.augmentor`) — Manolo's DeepSeek Harness — preinstalled (first-party).
 You are adding a new, third-party add-on beside it — not replacing it.
 
 ### Provider naming
@@ -94,7 +95,7 @@ Create the plugin with these two tools (using the tool prefix above):
 
 - `<prefix>.status` — reports the local provider runtime health/availability.
   Requires `network` (Public).
-- `<prefix>.run_task` — runs a delegated prompt and returns the completion.
+- `<prefix>.run_task` — runs a delegated prompt and proposes the completion.
   Requires `network` (Public) + `providers` (Privileged) +
   `agent-delegation` (Public). It must stop at the **prepare/propose** boundary
   (`context.propose(...)`), never "commit" directly.

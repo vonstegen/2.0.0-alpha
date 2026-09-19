@@ -14,17 +14,17 @@ export default {
     return {
       tools: {
         "augmentor.status": async () => ({
-          online: true,
+          online: "simulated",
           endpoint,
           model: "deepseek-chat",
-          mode: "demo (simulated loopback service)",
+          mode: "demo (simulated loopback service — no live health check)",
         }),
         "augmentor.run_task": async ({ prompt }) => {
           const proposal = context.propose({
             type: "deepseek-completion",
             prompt,
             endpoint,
-            dispatch: "host-mediated loopback service",
+            transport: "simulated loopback (propose only — no live dispatch)",
           });
           return {
             status: "proposed",

@@ -13,17 +13,17 @@ export default {
     return {
       tools: {
         "grok_build.status": async () => ({
-          online: true,
+          online: "simulated",
           endpoint,
           model: "grok-build",
-          mode: "demo (simulated loopback service)",
+          mode: "demo (simulated loopback service — no live health check)",
         }),
         "grok_build.run_task": async ({ prompt }) => {
           const proposal = context.propose({
             type: "grok-completion",
             prompt,
             endpoint,
-            dispatch: "host-mediated loopback service",
+            transport: "simulated loopback (propose only — no live dispatch)",
           });
           return {
             status: "proposed",

@@ -4,17 +4,10 @@
   "version": "0.1.0",
   "author": "Manolo's DeepSeek Harness (preinstalled first-party add-on)",
   "category": "agent",
-  "description": "The ResonantOS Augmentor: Manolo's DeepSeek Harness, the product's one first-party agent. Dispatches chat completions to a local DeepSeek-compatible (OpenAI) service through a host-mediated loopback service. Preinstalled and pre-granted.",
+  "description": "The ResonantOS Augmentor: Manolo's DeepSeek Harness, the product's one first-party agent. Proposes chat completions to a local DeepSeek-compatible (OpenAI) service through a simulated loopback. Preinstalled (first-party); capabilities are granted by the host at runtime.",
   "runtimeType": "agent-addon",
   "entry": "./plugin.mjs",
   "requestedCapabilities": ["network", "providers", "agent-delegation"],
-  "grantPresets": [
-    {
-      "id": "recommended-primary-chat",
-      "label": "Recommended primary chat (Augmentor)",
-      "grants": ["network", "agent-delegation"]
-    }
-  ],
   "tools": [
     {
       "name": "augmentor.status",
@@ -23,7 +16,7 @@
     },
     {
       "name": "augmentor.run_task",
-      "description": "Run a delegated prompt through the local DeepSeek-compatible runtime and return the completion (prepare/propose — a human approves the commit).",
+      "description": "Run a delegated prompt through the local DeepSeek-compatible runtime and propose the completion (prepare/propose — a human approves the commit).",
       "requiredCapabilities": ["network", "providers", "agent-delegation"]
     }
   ]

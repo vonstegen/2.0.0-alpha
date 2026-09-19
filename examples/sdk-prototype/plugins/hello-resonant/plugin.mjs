@@ -16,9 +16,13 @@ export default {
           const proposal = context.propose({
             type: "notification",
             payload: message,
-            reviewedBy: "host",
           });
-          return { delivered: true, message, proposal };
+          return {
+            status: "proposed",
+            note: "prepare is not commit — human approval required before delivery",
+            message,
+            proposal,
+          };
         },
       },
       async onEnable() {

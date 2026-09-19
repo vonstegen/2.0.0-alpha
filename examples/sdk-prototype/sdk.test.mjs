@@ -88,7 +88,8 @@ test("runTool runs a granted tool", async () => {
   const plugin = await loadPlugin(exampleDir, { grantedCapabilities: ["notifications"] });
   const result = await runTool(plugin, "hello-resonant.notify", { message: "demo" });
   assert.equal(result.ok, true);
-  assert.equal(result.result.delivered, true);
+  assert.equal(result.result.status, "proposed");
+  assert.equal(result.result.delivered, undefined);
 });
 
 test("augmentor status runs with Public network, run_task blocked without providers", async () => {
@@ -99,7 +100,7 @@ test("augmentor status runs with Public network, run_task blocked without provid
 
   const status = await runTool(plugin, "augmentor.status");
   assert.equal(status.ok, true);
-  assert.equal(status.result.online, true);
+  assert.equal(status.result.online, "simulated");
   assert.equal(status.result.model, "deepseek-chat");
 
   const blocked = await runTool(plugin, "augmentor.run_task", {
