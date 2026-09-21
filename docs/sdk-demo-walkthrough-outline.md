@@ -8,8 +8,9 @@ conversation (Manolo + Tom).
 
 - Checkout on `demo/sdk-prototype`.
 - Confirm a clean run: `node --test examples/sdk-prototype/sdk.test.mjs` → **9 / 9**.
-- Have the three `run-demo` commands and their expected output in a terminal,
-  ready to run live (don't rely on memory).
+- Have `node examples/sdk-prototype/present-demo.mjs` ready to run — it walks
+  both add-ons through the three scenarios with step headers and
+  Enter-to-continue pauses. (`--auto` runs it hands-free.)
 - Have `examples/sdk-prototype/plugins/augmentor/plugin.json` open — you'll point
   at it.
 
@@ -40,12 +41,18 @@ Walk the three questions, pointing at code:
 
 ## Demonstrate (10 min) — the three scenarios
 
-Run the Augmentor (Manolo's own harness), then Grok-Build (the third-party
-add-on built through the same contract):
+Run the presenter once — it walks the Augmentor (Manolo's own harness), then
+Grok-Build (the third-party add-on built through the same contract), pausing on
+each scenario:
+
+```bash
+node examples/sdk-prototype/present-demo.mjs
+```
+
+Raw alternative (one add-on at a time, no pacing):
 
 ```bash
 node examples/sdk-prototype/run-demo.mjs examples/sdk-prototype/plugins/augmentor
-node examples/sdk-prototype/run-demo.mjs examples/sdk-prototype/plugins/grok-build
 ```
 
 Point at the three scenarios in each run:
@@ -88,10 +95,10 @@ and the note "prepare is not commit — human approval required".
 
 ## Timing summary
 
-| Section | Time |
-| --- | --- |
-| Frame + boundaries | 2 min |
-| The contract | 5 min |
-| Three scenarios | 10 min |
-| Landing point | 3–5 min |
-| Hand off to the privilege split | 2 min |
+| Section                         | Time    |
+| ------------------------------- | ------- |
+| Frame + boundaries              | 2 min   |
+| The contract                    | 5 min   |
+| Three scenarios                 | 10 min  |
+| Landing point                   | 3–5 min |
+| Hand off to the privilege split | 2 min   |
