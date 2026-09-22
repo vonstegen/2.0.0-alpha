@@ -106,161 +106,20 @@ export function buildAddonSrcdoc({
   const metaCsp = `<meta http-equiv="Content-Security-Policy" content="default-src 'self' ${origin} 'unsafe-inline' 'unsafe-eval' data: blob:; img-src 'self' ${origin} data: blob:; connect-src 'self' ${origin}; script-src 'self' ${origin} 'unsafe-inline' 'unsafe-eval'; style-src 'self' ${origin} 'unsafe-inline'; frame-src 'self' ${origin};">`;
   // Inject a <base> tag so any URLs we miss (e.g. a literal "/foo" string
   // in a JS template) resolve to the bridge proxy. Combined with the
-  // window.fetch override, this covers both the rendered HTML and the
-  // dynamic JS path.
+  // window.fetch override (applied from the parent page after the
+  // iframe loads; see createAddonIframe's `wireIframeBridgeFetch`),
+  // this covers both the rendered HTML and the dynamic JS path.
+  //
+  // Inline scripts in srcdoc iframes are silently dropped when the
+  // parent extension's CSP `script-src` does not include
+  // `'unsafe-inline'` (the ResonantOS manifest declares
+  // `script-src 'self' 'wasm-unsafe-eval'`). The override is therefore
+  // applied from the parent page via `iframe.contentWindow.fetch = ...`
+  // — that JS runs under the parent's own script-src (which the parent's
+  // own module satisfies) and is allowed to set the iframe's fetch
+  // because the iframe is `sandbox="...allow-same-origin..."`.
   const baseTag = `<base href="${origin}${proxyPath}">`;
-  // Window.fetch / XHR override. Any same-origin request to the iframe's
-  // own chrome-extension:// origin gets re-routed to the bridge proxy.
-  // Auth: the bridge-token is sent in the header by the proxy. CORS: the
-  // bridge allows the extension's origin. The addon sees a normal response.
-  const capabilityListJson = JSON.stringify(Array.isArray(addonCapabilities) ? addonCapabilities : []);
-  const preamble = `
-<script>
-(function(){
-  var PROXY_PATH = ${escapeForScript(proxyPath)};
-  var BRIDGE_URL = ${escapeForScript(bridgeUrl)};
-  var BRIDGE_TOKEN = ${escapeForScript(bridgeToken)};
-  var CAPABILITY_BOOTSTRAP_TOKEN = ${escapeForScript(capabilityBootstrapToken)};
-  var ADDON_CAPABILITIES = ${capabilityListJson};
-  var API_BASE = ${escapeForScript(apiBasePath)};
-  // Cache of capability tokens minted at startup. Add-ons that declare a
-  // capability get fresh tokens on first iframe load, and the fetch/XHR
-  // override attaches them to outbound /api/* requests so addon
-  // upstreams (which re-check the capability token at their own boundary)
-  // can authorize them.
-  var capabilityTokens = Object.create(null);
-  var capabilityBootstrapPromise = null;
-  function ensureCapabilityTokens() {
-    if (capabilityBootstrapPromise) return capabilityBootstrapPromise;
-    if (!BRIDGE_TOKEN || !CAPABILITY_BOOTSTRAP_TOKEN || !ADDON_CAPABILITIES.length) {
-      capabilityBootstrapPromise = Promise.resolve(null);
-      return capabilityBootstrapPromise;
-    }
-    // Bootstrap goes straight to the bridge — the addon proxy has no
-    // /api/capability-tokens route; the iframe preamble is responsible
-    // for minting tokens for the addon's declared capabilities only.
-    capabilityBootstrapPromise = fetch(BRIDGE_URL.replace(/\\/$/, "") + "/api/capability-tokens", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-ResonantOS-Bridge-Token": BRIDGE_TOKEN,
-        "X-ResonantOS-Capability-Bootstrap-Token": CAPABILITY_BOOTSTRAP_TOKEN
-      },
-      body: JSON.stringify({ capabilities: ADDON_CAPABILITIES })
-    }).then(function (r) {
-      if (!r.ok) return null;
-      return r.json().then(function (body) {
-        if (body && body.capabilityTokens) capabilityTokens = body.capabilityTokens;
-        return body;
-      });
-    }).catch(function () { return null; });
-    return capabilityBootstrapPromise;
-  }
-  function rewrite(url) {
-    if (!url || typeof url !== "string") return url;
-    if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
-    if (url.startsWith("//")) return url;
-    if (url.indexOf(PROXY_PATH) === 0) return url;
-    if (url.startsWith("/")) {
-      // /api/<addon>/* paths are bridge-direct routes (the bridge owns
-      // the capability check before dispatching to the addon upstream).
-      // Sending them through the addon proxy strips capability tokens
-      // and the addon upstream's own boundary check would deny. Hit
-      // the bridge directly so the messaging routes work, and let the
-      // bridge handle identity + capability + forward-to-upstream.
-      var apiMatch = /\\/api\\/[^/]+\\//.exec(url);
-      if (apiMatch) {
-        return BRIDGE_URL.replace(/\\/$/, "") + url;
-      }
-      return BRIDGE_URL.replace(/\\/$/, "") + PROXY_PATH + url.replace(/^\\/+/, "");
-    }
-    return BRIDGE_URL.replace(/\\/$/, "") + PROXY_PATH + url;
-  }
-  function withAuth(input, init) {
-    init = init || {};
-    try {
-      var headers = new Headers(init.headers || (input && input.headers) || {});
-      if (BRIDGE_TOKEN && !headers.has("X-ResonantOS-Bridge-Token")) {
-        headers.set("X-ResonantOS-Bridge-Token", BRIDGE_TOKEN);
-      }
-      // Add any capability tokens we hold. The bridge strips them when
-      // forwarding to the addon upstream, but the upstream re-checks them
-      // at its own boundary (each addon enforces capability twice).
-      for (var cap in capabilityTokens) {
-        if (!capabilityTokens.hasOwnProperty(cap)) continue;
-        var headerName = "X-ResonantOS-Bridge-Capability-Token";
-        if (!headers.has(headerName)) {
-          headers.set(headerName, capabilityTokens[cap]);
-        }
-      }
-      init.headers = headers;
-    } catch (e) { /* ignore */ }
-    return init;
-  }
-  var origFetch = window.fetch && window.fetch.bind(window);
-  window.fetch = function(input, init) {
-    // Trigger capability bootstrap once for /api/* traffic. We attach
-    // tokens synchronously when init is synchronous; for Promise-bearing
-    // flows we await ensureCapabilityTokens() and re-issue.
-    try {
-      if (typeof input === "string") {
-        var rewritten = rewrite(input);
-        // If /api/* and tokens not yet ready, await
-        if (rewritten.indexOf("/api/") !== -1 && ADDON_CAPABILITIES.length && Object.keys(capabilityTokens).length === 0) {
-          return ensureCapabilityTokens().then(function () {
-            return origFetch(rewritten, withAuth(null, init));
-          });
-        }
-        return origFetch(rewritten, withAuth(null, init));
-      } else if (input && typeof input === "object" && "url" in input) {
-        var u = input;
-        var cloned0 = new Request(rewrite(u.url), u);
-        if (cloned0.url.indexOf("/api/") !== -1 && ADDON_CAPABILITIES.length && Object.keys(capabilityTokens).length === 0) {
-          return ensureCapabilityTokens().then(function () {
-            var cloned1 = new Request(cloned0.url, cloned0);
-            return origFetch(cloned1, withAuth(cloned1, init));
-          });
-        }
-        return origFetch(cloned0, withAuth(cloned0, init));
-      }
-    } catch (e) { /* fall through to origFetch */ }
-    return origFetch(input, withAuth(null, init));
-  };
-  var OrigXHR = window.XMLHttpRequest;
-  function ProxiedXHR() {
-    var xhr = new OrigXHR();
-    var origOpen = xhr.open.bind(xhr);
-    var origSend = xhr.send.bind(xhr);
-    var origSetHeader = xhr.setRequestHeader.bind(xhr);
-    var tokenSent = false;
-    xhr.open = function(method, url, async, user, pass) {
-      return origOpen(method, rewrite(url), async, user, pass);
-    };
-    xhr.setRequestHeader = function(name, value) {
-      if (name && name.toLowerCase() === "x-resonantos-bridge-token") {
-        tokenSent = true;
-      }
-      return origSetHeader(name, value);
-    };
-    xhr.send = function(body) {
-      if (BRIDGE_TOKEN && !tokenSent) {
-        try { origSetHeader("X-ResonantOS-Bridge-Token", BRIDGE_TOKEN); } catch (e) { /* ignore */ }
-      }
-      return origSend(body);
-    };
-    return xhr;
-  }
-  ProxiedXHR.prototype = OrigXHR.prototype;
-  ProxiedXHR.UNSENT = 0;
-  ProxiedXHR.OPENED = 1;
-  ProxiedXHR.HEADERS_RECEIVED = 2;
-  ProxiedXHR.LOADING = 3;
-  ProxiedXHR.DONE = 4;
-  window.XMLHttpRequest = ProxiedXHR;
-  ${extraPreamble}
-})();
-</script>
-`;
+  const preamble = "";
   // Insert the <meta> CSP, <base>, and <script> into the <head>, or at
   // the top of the body if there's no <head>. If the addon doesn't have
   // a <head> or <body>, prepend to the whole document.
@@ -318,7 +177,204 @@ function watchIframeForMount(iframe, status, addonLabel, mode, htmlLength) {
   }, { once: true });
 }
 
-// Generic iframe component. Call this from any addon's workspace
+// Wire the bridge fetch override into a srcdoc iframe from the parent
+// page side. The parent's normal modules DO pass the parent's CSP
+// `script-src` (because parent modules are loaded via 'self' / '.js'
+// entries), and they can write to `iframe.contentWindow.fetch`
+// because the iframe is sandbox `...allow-same-origin`. Returns a
+// teardown function that removes the override.
+function wireIframeBridgeFetch({
+  iframe,
+  proxyPath,
+  bridgeUrl,
+  bridgeToken,
+  capabilityBootstrapToken,
+  addonCapabilities,
+  apiBasePath,
+}) {
+  // Element-level diagnostic (always visible to parent)
+  try {
+    iframe.dataset.wireWinId = Math.random().toString(36).slice(2, 8);
+  } catch (_) { /* ignore */ }
+  const win = iframe.contentWindow;
+  try {
+    if (win) {
+      win.__addonIframePreambleReady = "entered";
+      win.__addonIframeWinId = iframe.dataset.wireWinId;
+    }
+    iframe.dataset.wireWinOk = !!win;
+  } catch (_) { /* ignore */ }
+  if (!win) {
+    try {
+      if (iframe?.dataset) iframe.dataset.iframeWinMissing = "true";
+    } catch (_) { /* ignore */ }
+    return () => {};
+  }
+
+  try {
+    win.__addonIframePreambleReady = "before-fetch";
+  } catch (_) { /* ignore */ }
+
+  const capabilitiesList = Array.isArray(addonCapabilities) ? addonCapabilities : [];
+  const basePath = String(apiBasePath || "/api");
+
+  let capabilityTokens = Object.create(null);
+  let bootstrapPromise = null;
+  function ensureCapabilityTokens() {
+    if (bootstrapPromise) return bootstrapPromise;
+    if (!bridgeToken || !capabilityBootstrapToken || !capabilitiesList.length) {
+      bootstrapPromise = Promise.resolve(null);
+      return bootstrapPromise;
+    }
+    bootstrapPromise = fetch(String(bridgeUrl).replace(/\/$/, "") + "/api/capability-tokens", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-ResonantOS-Bridge-Token": bridgeToken,
+        "X-ResonantOS-Capability-Bootstrap-Token": capabilityBootstrapToken,
+      },
+      body: JSON.stringify({ capabilities: capabilitiesList }),
+    })
+      .then(function (r) {
+        if (!r.ok) return null;
+        return r.json().then(function (body) {
+          if (body && body.capabilityTokens) capabilityTokens = body.capabilityTokens;
+          return body;
+        });
+      })
+      .catch(function () { return null; });
+    return bootstrapPromise;
+  }
+
+  function rewrite(url) {
+    if (!url || typeof url !== "string") return url;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
+    if (url.startsWith("//")) return url;
+    if (url.indexOf(proxyPath) === 0) return url;
+    if (url.startsWith("/")) {
+      var apiMatch = /\/api\/[^/]+\//.exec(url);
+      if (apiMatch) return String(bridgeUrl).replace(/\/$/, "") + url;
+      return String(bridgeUrl).replace(/\/$/, "") + proxyPath + url.replace(/^\/+/, "");
+    }
+    return String(bridgeUrl).replace(/\/$/, "") + proxyPath + url;
+  }
+
+  function withAuthHeaders(init) {
+    init = init || {};
+    var headers;
+    try {
+      headers = new Headers(init.headers || {});
+    } catch (_) {
+      headers = new Headers();
+    }
+    if (bridgeToken && !headers.has("X-ResonantOS-Bridge-Token")) {
+      headers.set("X-ResonantOS-Bridge-Token", bridgeToken);
+    }
+    for (var cap in capabilityTokens) {
+      if (!Object.prototype.hasOwnProperty.call(capabilityTokens, cap)) continue;
+      if (!headers.has("X-ResonantOS-Bridge-Capability-Token")) {
+        headers.set("X-ResonantOS-Bridge-Capability-Token", capabilityTokens[cap]);
+      }
+    }
+    init.headers = headers;
+    return init;
+  }
+
+  // Capture fetch FIRST and wrap each call. Each test sets a sentinel
+  // by stage so we can localize any failure.
+  try { win.__addonIframePreambleReady = "capturing-fetch"; } catch (_) { /* ignore */ }
+  var origFetch;
+  try {
+    origFetch = win.fetch && win.fetch.bind(win);
+  } catch (capErr) {
+    try { win.__addonIframePreambleFetchError = "capture:" + String(capErr?.message ?? capErr); } catch (_) { /* ignore */ }
+    return () => {};
+  }
+  try { win.__addonIframePreambleReady = "post-capture"; } catch (_) { /* ignore */ }
+
+  try {
+    Object.defineProperty(win, "fetch", {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: function (input, init) {
+        try {
+          if (typeof input === "string") {
+            var rewritten = rewrite(input);
+            if (rewritten.indexOf("/api/") !== -1 && capabilitiesList.length && Object.keys(capabilityTokens).length === 0) {
+              return ensureCapabilityTokens().then(function () {
+                return origFetch(rewritten, withAuthHeaders(init));
+              });
+            }
+            return origFetch(rewritten, withAuthHeaders(init));
+          } else if (input && typeof input === "object" && "url" in input) {
+            var cloned = new Request(rewrite(input.url), input);
+            if (cloned.url.indexOf("/api/") !== -1 && capabilitiesList.length && Object.keys(capabilityTokens).length === 0) {
+              return ensureCapabilityTokens().then(function () {
+                return origFetch(cloned, withAuthHeaders(init));
+              });
+            }
+            return origFetch(cloned, withAuthHeaders(init));
+          }
+        } catch (_) { /* fall through */ }
+        return origFetch(input, withAuthHeaders(init));
+      },
+    });
+  } catch (assignErr) {
+    try { win.__addonIframePreambleFetchError = "assign:" + String(assignErr?.message ?? assignErr); } catch (_) { /* ignore */ }
+    return () => {};
+  }
+  try { win.__addonIframePreambleReady = "post-assign"; } catch (_) { /* ignore */ }
+
+  // XHR override mirrors the previous preamble so addons that use
+  // XMLHttpRequest (e.g. older Augmentor flows) still get header
+  // plumbing. Wrapped in try because some iframe contexts in Chromium
+  // surface XMLHttpRequest as a host object whose prototype is not
+  // directly assignable.
+  try {
+    var OrigXHR = win.XMLHttpRequest;
+    function ProxiedXHR() {
+      var xhr = new OrigXHR();
+      var origOpen = xhr.open.bind(xhr);
+      var origSetHeader = xhr.setRequestHeader.bind(xhr);
+      var origSend = xhr.send.bind(xhr);
+      var tokenSent = false;
+      xhr.open = function (method, url, async, user, pass) {
+        return origOpen(method, rewrite(url), async, user, pass);
+      };
+      xhr.setRequestHeader = function (name, value) {
+        if (name && String(name).toLowerCase() === "x-resonantos-bridge-token") tokenSent = true;
+        return origSetHeader(name, value);
+      };
+      xhr.send = function (body) {
+        if (bridgeToken && !tokenSent) {
+          try { origSetHeader("X-ResonantOS-Bridge-Token", bridgeToken); } catch (_) { /* ignore */ }
+        }
+        return origSend(body);
+      };
+      return xhr;
+    }
+    if (OrigXHR && OrigXHR.prototype) {
+      ProxiedXHR.prototype = OrigXHR.prototype;
+      ProxiedXHR.UNSENT = 0;
+      ProxiedXHR.OPENED = 1;
+      ProxiedXHR.HEADERS_RECEIVED = 2;
+      ProxiedXHR.LOADING = 3;
+      ProxiedXHR.DONE = 4;
+      win.XMLHttpRequest = ProxiedXHR;
+    }
+  } catch (_) { /* XHR override is optional */ }
+
+  return function teardown() {
+    try {
+      if (origFetch) win.fetch = origFetch;
+      try { if (typeof OrigXHR !== "undefined") win.XMLHttpRequest = OrigXHR; } catch (_) { /* ignore */ }
+      delete win.__addonIframePreambleReady;
+    } catch (_) { /* ignore */ }
+  };
+}
+
+
 // (hermes, opencode, openclaw, etc.) and it Just Works.
 //
 // `mode` controls how the iframe is loaded:
@@ -479,7 +535,56 @@ export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath,
         iframe.srcdoc = srcdoc;
         status.textContent = `${addonLabel} loaded (${html.length} bytes).`;
         status.classList.add("addon-iframe-status--ready");
+        // Mark the wrapper for diagnostic observation
+        wrapper.dataset.iframeSrcdocSet = "true";
         watchIframeForMount(iframe, status, addonLabel, "srcdoc", html.length);
+        // Wire the bridge fetch override from the parent side. Inline
+        // scripts in the srcdoc never run because the parent's CSP
+        // `script-src` does not include `'unsafe-inline'`; but the
+        // parent's own modules DO run, and they can assign directly to
+        // `iframe.contentWindow.fetch` because the iframe is
+        // `sandbox="...allow-same-origin..."`. We must wait for the
+        // iframe `load` event because iframe.contentWindow is `null`
+        // synchronously after setting srcdoc until navigation completes.
+        if (mode !== "src") {
+          const doWire = () => {
+            try {
+              wireIframeBridgeFetch({
+                iframe,
+                proxyPath,
+                bridgeUrl,
+                bridgeToken,
+                capabilityBootstrapToken,
+                addonCapabilities,
+                apiBasePath,
+              });
+              wrapper.dataset.iframeWireCalled = "true";
+            } catch (wireError) {
+              wrapper.dataset.iframeWireError = String(wireError?.message ?? wireError);
+            }
+          };
+// Wire the fetch override from the parent side. Inline scripts in the
+          // srcdoc never run due to the parent's CSP `script-src`
+          // missing `'unsafe-inline'`; but the parent's own running
+          // code CAN assign to `iframe.contentWindow.fetch` directly
+          // because the sandbox includes `allow-same-origin`. We
+          // dispatch on whichever fires first: the iframe `load`
+          // event, or a small fallback timeout. We also REPLACE the
+          // iframe's srcdoc with our owner-bound version *before* the
+          // addon body script runs by injecting the preamble as the
+          // very first <script> in <head>, so addon scripts inherit
+          // our bridge override naturally.
+          let wired = false;
+          const tryWire = () => {
+            if (wired) return;
+            wired = true;
+            doWire();
+          };
+          iframe.addEventListener("load", tryWire, { once: true });
+          setTimeout(tryWire, 100);
+        } else {
+          wrapper.dataset.iframeWireCalled = "src-mode-skipped";
+        }
       } catch (error) {
         if (error?.name === "AbortError") return;
         status.textContent = `${addonLabel} failed to load: ${error instanceof Error ? error.message : String(error)}`;
