@@ -839,7 +839,7 @@ function emptyHero() {
   return hero;
 }
 
-function renderMessages() {
+async function renderMessages() {
   transcript.replaceChildren();
   if (activeWorkspace === "hermes") {
     renderHermesWorkspace();
