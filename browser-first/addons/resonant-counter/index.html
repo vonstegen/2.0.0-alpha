@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Resonant Counter — SDK Reference</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+      }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #0d0f12;
+        color: #e6e6e6;
+        height: 100%;
+      }
+      .root {
+        padding: 24px;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }
+      h1 { font-size: 18px; margin: 0; color: #f0c674; }
+      .panel {
+        background: #15181d;
+        border: 1px solid #2a2e36;
+        border-radius: 6px;
+        padding: 16px;
+      }
+      .count {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 32px;
+        color: #b5bd68;
+        margin: 8px 0;
+      }
+      button {
+        background: #2c313a;
+        color: #e6e6e6;
+        border: 1px solid #3a3f48;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font: inherit;
+        margin-right: 8px;
+      }
+      button:hover { background: #3a3f48; }
+      .log {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        color: #969896;
+        max-height: 180px;
+        overflow-y: auto;
+      }
+      .log .ok { color: #b5bd68; }
+      .log .err { color: #cc6666; }
+    </style>
+  </head>
+  <body>
+    <div class="root">
+      <h1>Resonant Counter — SDK Reference #2</h1>
+
+      <section class="panel" id="status">
+        <div>Bridge identity: <code id="bridge-id">unknown</code></div>
+        <div>Capability token: <code id="cap-token">unknown</code></div>
+        <div>Upstream port: <code id="upstream-port">47422</code></div>
+      </section>
+
+      <section class="panel">
+        <div class="count" id="count">0</div>
+        <button id="inc">+1</button>
+        <button id="read">Refresh</button>
+      </section>
+
+      <section class="panel">
+        <h2 style="font-size:13px;margin:0 0 8px 0;color:#cc6666;">Cross-boundary log</h2>
+        <div class="log" id="log"></div>
+      </section>
+    </div>
+    <script type="module">
+      const log = document.getElementById("log");
+      const countEl = document.getElementById("count");
+      const bridgeIdEl = document.getElementById("bridge-id");
+      const capTokenEl = document.getElementById("cap-token");
+      const base = "/api/counter";
+      function appendLog(level, text) {
+        const entry = document.createElement("div");
+        entry.className = level;
+        const ts = new Date().toISOString().slice(11, 23);
+        entry.textContent = `${ts} [${level}] ${text}`;
+        log.appendChild(entry);
+        log.scrollTop = log.scrollHeight;
+      }
+      async function bridgeCapabilityTokens() {
+        // The capability-token endpoint is exposed at the bridge root by the
+        // workspace add-on host. The iframe resolves relative URLs against
+        // the bridge origin thanks to the addon-iframe preamble.
+        const response = await fetch("/api/capability-tokens", {
+          method: "POST",
+          headers: { "x-resonantos-capability-bootstrap-token": window.__RESONANTOS_BOOTSTRAP_TOKEN__ ?? "" },
+          body: JSON.stringify({ capabilities: ["harness-messaging"] })
+        });
+        if (!response.ok) {
+          appendLog("err", `token request failed: HTTP ${response.status}`);
+          return null;
+        }
+        const payload = await response.json();
+        return payload.capabilityTokens ?? {};
+      }
+      async function call(method, path, body) {
+        const tokens = await bridgeCapabilityTokens();
+        if (!tokens || !tokens["harness-messaging"]) {
+          appendLog("err", "no harness-messaging token issued");
+          return null;
+        }
+        capTokenEl.textContent = tokens["harness-messaging"].slice(0, 12) + "…";
+        const response = await fetch(base + path, {
+          method,
+          headers: {
+            "content-type": "application/json",
+            "x-resonantos-bridge-capability-token": tokens["harness-messaging"]
+          },
+          body: body ? JSON.stringify(body) : undefined
+        });
+        const text = await response.text();
+        let parsed = null;
+        try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
+        if (!response.ok) {
+          appendLog("err", `${method} ${path} → ${response.status} ${parsed?.error ?? ""}`);
+          return null;
+        }
+        appendLog("ok", `${method} ${path} → ${response.status}`);
+        return parsed;
+      }
+      async function refreshCount() {
+        const read = await call("GET", "/read");
+        if (read && typeof read.count === "number") {
+          countEl.textContent = String(read.count);
+        }
+      }
+      document.getElementById("inc").addEventListener("click", async () => {
+        const result = await call("POST", "/increment", { delta: 1 });
+        if (result && typeof result.count === "number") {
+          countEl.textContent = String(result.count);
+          if (result.bridgeIdentity) bridgeIdEl.textContent = result.bridgeIdentity;
+          appendLog("ok", `count → ${result.count}`);
+        }
+      });
+      document.getElementById("read").addEventListener("click", refreshCount);
+      // Initial read so the counter reflects upstream state without clicking.
+      refreshCount();
+      appendLog("ok", "Resonant Counter workspace booted");
+    </script>
+  </body>
+</html>

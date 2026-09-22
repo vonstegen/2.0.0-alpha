@@ -118,6 +118,8 @@ const BRIDGE_ROUTE_CAPABILITIES = Object.freeze({
   "POST /addons/user-data/list": "addon-record-read",
   "POST /addons/user-data/delete": "addon-record-write",
   "POST /goals": "addon-record-write",
+  "POST /api/echo/message": "harness-messaging",
+  "GET /api/echo/status": "harness-messaging",
   "GET /settings/extension-prefs": "extension-prefs-read",
   "POST /settings/extension-prefs": "extension-prefs-write",
 });

@@ -185,3 +185,38 @@ export function createAddonDelegationHostService(handlers = {}) {
     ],
   };
 }
+
+// Build route definitions for workspace add-ons discovered via
+// `loadWorkspaceAddonManifests()`. Each manifest declares its own
+// `messaging.routes`, which we honour verbatim — capability tokens
+// are required per route. The `executeWorkspaceAddonRequest` handler
+// is supplied by the launcher; it dispatches the request to the
+// appropriate upstream port derived from the manifest entry's
+// `upstreamPortEnvVar` / `upstreamPort`.
+//
+// Returns an array of route objects compatible with `createBridgeRequestHandler`.
+export function buildWorkspaceAddonRoutes({ workspaceAddons = [], executeWorkspaceAddonRequest } = {}) {
+  if (typeof executeWorkspaceAddonRequest !== "function") {
+    throw new Error("buildWorkspaceAddonRoutes requires an executeWorkspaceAddonRequest function.");
+  }
+  const routes = [];
+  for (const addon of workspaceAddons) {
+    if (!addon || !addon.id) continue;
+    if (!Array.isArray(addon.messaging?.routes)) continue;
+    for (const route of addon.messaging.routes) {
+      if (!route?.path || !route?.requiredCapability) continue;
+      routes.push({
+        method: String(route.method ?? "POST").toUpperCase(),
+        path: route.path,
+        requiredCapability: route.requiredCapability,
+        handler: (payload, request) => executeWorkspaceAddonRequest({
+          addon,
+          route,
+          payload,
+          request
+        })
+      });
+    }
+  }
+  return routes;
+}

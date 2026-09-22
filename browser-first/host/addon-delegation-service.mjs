@@ -426,6 +426,104 @@ export function createAddonDelegationService(dependencies) {
     return path.join(browserFirstRoot(), "Settings", "addon-governance-audit.jsonl");
   }
 
+  function addonsRoot() {
+    return path.join(browserFirstRoot(), "addons");
+  }
+
+  function isWorkspaceAddonManifest(manifest = {}) {
+    if (!manifest || typeof manifest !== "object") return false;
+    const workspace = manifest.contributions?.workspace;
+    return Boolean(workspace && typeof workspace === "object" && workspace.type === "iframe");
+  }
+
+  async function loadWorkspaceAddonManifests() {
+    const root = addonsRoot();
+    let entries;
+    try {
+      entries = await fsPromises.readdir(root, { withFileTypes: true });
+    } catch (error) {
+      if (error && error.code === "ENOENT") return [];
+      throw error;
+    }
+    const manifests = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const manifestPath = path.join(root, entry.name, "addon.json");
+      if (!existsSync(manifestPath)) continue;
+      let manifest;
+      try {
+        manifest = JSON.parse(await fsPromises.readFile(manifestPath, "utf8"));
+      } catch {
+        continue;
+      }
+      if (!isWorkspaceAddonManifest(manifest)) continue;
+      manifests.push({ addonDirName: entry.name, manifestPath, manifest });
+    }
+    manifests.sort((left, right) =>
+      String(left.manifest?.id ?? "").localeCompare(String(right.manifest?.id ?? ""))
+    );
+    return manifests;
+  }
+
+  function buildWorkspaceAddonRegistryEntry({ manifest, bridgePublicUrl, isolationFs: fsApi }) {
+    const workspace = manifest.contributions.workspace ?? {};
+    const proxyPath = String(workspace.proxyPath ?? "").trim();
+    const entryPath = String(manifest.entry ?? workspace.entry ?? "").trim();
+    const addonRootDir = path.dirname(path.join(addonsRoot(), ""));
+    const upstreamPortEnvVar = String(workspace.upstreamPortEnvVar ?? "")
+      .trim();
+    const requestedCapabilities = Array.isArray(manifest.requestedCapabilities)
+      ? manifest.requestedCapabilities
+      : Array.isArray(manifest.capabilities)
+        ? manifest.capabilities
+        : [];
+    const grantedCapabilities = Array.isArray(manifest.grantedCapabilities)
+      ? manifest.grantedCapabilities
+      : [];
+    const deniedCapabilities = Array.isArray(manifest.deniedCapabilities)
+      ? manifest.deniedCapabilities
+      : [];
+    const messagingRoutes = Array.isArray(manifest.messaging?.routes)
+      ? manifest.messaging.routes
+      : [];
+    return {
+      id: String(manifest.id ?? ""),
+      name: String(manifest.name ?? manifest.id ?? "Unnamed add-on"),
+      version: String(manifest.version ?? "0.0.0"),
+      description: String(manifest.description ?? ""),
+      author: String(manifest.author ?? ""),
+      available: true,
+      mode: String(manifest.mode ?? "workspace-addon"),
+      trust: String(manifest.trust ?? "sdk-reference"),
+      registrySource: "workspace-addon-manifest",
+      addonRootDir,
+      entryPath,
+      proxyPath,
+      apiBasePath: String(workspace.apiBasePath ?? "/api"),
+      iframeMode: workspace.iframeMode === "src" ? "src" : "srcdoc",
+      mirrorPaths: Array.isArray(workspace.mirrorPaths)
+        ? workspace.mirrorPaths
+        : [],
+      upstreamPortEnvVar: upstreamPortEnvVar || null,
+      upstreamPort: upstreamPortEnvVar ? Number(process.env[upstreamPortEnvVar] ?? 0) || null : null,
+      bridgePublicUrl,
+      requestedCapabilities,
+      grantedCapabilities,
+      deniedCapabilities,
+      boundary: String(manifest.boundary ?? ""),
+      messaging: {
+        channel: String(manifest.messaging?.channel ?? ""),
+        requestCapability: String(manifest.messaging?.requestCapability ?? ""),
+        routes: messagingRoutes.map((route) => ({
+          method: String(route?.method ?? "POST").toUpperCase(),
+          path: String(route?.path ?? ""),
+          requiredCapability: String(route?.requiredCapability ?? ""),
+          description: String(route?.description ?? "")
+        }))
+      }
+    };
+  }
+
   function defaultAddonExecutionSettings() {
     return {
       hermes: { localCliExecution: false },
@@ -2654,6 +2752,11 @@ except BaseException as exc:
 
   async function executeAddonsStatus() {
     const executionSettings = await readAddonExecutionSettings();
+    const workspaceAddonEntries = await loadWorkspaceAddonManifests().catch(() => []);
+    const publicUrl = typeof bridgePublicUrl === "function" ? bridgePublicUrl() : null;
+    const workspaceAddons = workspaceAddonEntries.map(({ manifest }) =>
+      buildWorkspaceAddonRegistryEntry({ manifest, bridgePublicUrl: publicUrl, isolationFs })
+    );
     return {
       addons: [
         {
@@ -2719,6 +2822,7 @@ except BaseException as exc:
           deniedCapabilities: ["external-schedule"],
           boundary: "Draft packets only. Google Calendar handoff opens an event template for human review; ResonantOS does not schedule events.",
         },
+        ...workspaceAddons,
       ],
     };
   }
@@ -2878,5 +2982,8 @@ except BaseException as exc:
     executeHermesDashboardStatus,
     executeHermesDashboardStart,
     executeHermesDashboardStop,
+    loadWorkspaceAddonManifests,
+    buildWorkspaceAddonRegistryEntry,
+    addonsRoot,
   };
 }

@@ -27,12 +27,22 @@ function workspaceForAddon(addon) {
   if (addon.id === "addon.hermes") return "hermes";
   if (addon.id === "addon.opencode") return "opencode";
   if (addon.id === "addon.living-archive") return "memory";
+  // Generic workspace add-ons declare their contribution in the manifest.
+  // The bridge uses `proxyPath` as both the iframe path and the workspace
+  // ID, so a generic registry-driven add-on lights up without any Core
+  // ID-specific code.
+  const proxyPath = addon?.contributions?.workspace?.proxyPath;
+  if (typeof proxyPath === "string" && proxyPath.trim()) {
+    return `addon:${addon.id}`;
+  }
   return "";
 }
 
 function addonExecutionKey(addon) {
   if (addon.id === "addon.hermes") return "hermes";
   if (addon.id === "addon.opencode") return "opencode";
+  // Generic workspace add-ons do not currently toggle local CLI execution.
+  // They are iframe workspaces with deterministic backends, not CLI runners.
   return "";
 }
 
@@ -215,7 +225,7 @@ function createDelegationCard(delegation, actions = {}) {
   return card;
 }
 
-export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeRequest, onOpenProviderHandoff, onOpenWorkspace }) {
+export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeRequest, onOpenProviderHandoff, onOpenWorkspace, onRegistryRefresh = null }) {
   // Resolve at call time. The module-level `bridgeRequest` may be
   // null at construction (rebind still in flight); the getter lets
   // us re-read the current value on every call.
@@ -416,6 +426,14 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
     try {
       const result = await bridge()("/addons/status", { method: "GET" });
       const addons = Array.isArray(result.addons) ? result.addons : [];
+      if (typeof onRegistryRefresh === "function") {
+        try {
+          onRegistryRefresh(addons);
+        } catch {
+          // Best-effort: registry refresh is a UI nicety; never break the
+          // Add-ons card list if the workspace can't consume the data.
+        }
+      }
       grid.replaceChildren();
       addons.forEach((addon) => grid.append(createAddonCard(addon, {
         onOpenWorkspace,

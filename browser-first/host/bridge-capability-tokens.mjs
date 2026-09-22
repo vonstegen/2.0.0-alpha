@@ -43,6 +43,7 @@ export const BRIDGE_CAPABILITY_TOKEN_SPECS = Object.freeze([
   { capability: "addon-execution-settings-write", arg: "addon-execution-settings-token", env: "RESONANTOS_BROWSER_FIRST_ADDON_EXECUTION_SETTINGS_TOKEN" },
   { capability: "addon-runtime-read", arg: "addon-runtime-read-token", env: "RESONANTOS_BROWSER_FIRST_ADDON_RUNTIME_READ_TOKEN" },
   { capability: "addon-runtime-control", arg: "addon-runtime-control-token", env: "RESONANTOS_BROWSER_FIRST_ADDON_RUNTIME_CONTROL_TOKEN" },
+  { capability: "harness-messaging", arg: "harness-messaging-token", env: "RESONANTOS_BROWSER_FIRST_HARNESS_MESSAGING_TOKEN" },
   { capability: "addon-record-read", arg: "addon-record-read-token", env: "RESONANTOS_BROWSER_FIRST_ADDON_RECORD_READ_TOKEN" },
   { capability: "addon-record-write", arg: "addon-record-write-token", env: "RESONANTOS_BROWSER_FIRST_ADDON_RECORD_WRITE_TOKEN" },
   { capability: "extension-prefs-read", arg: "extension-prefs-read-token", env: "RESONANTOS_BROWSER_FIRST_EXTENSION_PREFS_READ_TOKEN" },

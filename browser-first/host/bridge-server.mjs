@@ -540,7 +540,7 @@ function matchMirrorPath(pathPart, mirrorPaths) {
 //   - same CORS echoing for the iframe path
 //   - upstream host/port are pluggable (read fresh on each request so a
 //     launcher that brings the upstream up/down at runtime is observed)
-function createAddonProxyHandler({
+export function createAddonProxyHandler({
   bridgeToken,
   extensionOrigin,
   allowedOrigins,

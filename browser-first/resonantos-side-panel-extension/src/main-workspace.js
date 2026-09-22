@@ -18,6 +18,7 @@ import {
 import { applyAppearancePreferences } from "./lib/settings/appearance-section.js";
 import { renderAddOnsWorkspace } from "./lib/main-workspace-addons.js";
 import { renderArtifactsWorkspace } from "./lib/main-workspace-artifacts.js";
+import { createAddonIframe } from "./lib/addon-iframe.js";
 import { createMainWorkspaceBrowserJobController } from "./lib/main-workspace-browser-job-controller.js";
 import {
   mainBrowserJobSnapshot,
@@ -199,6 +200,31 @@ let initialSettingsSection = "overview";
 let messageActions = null;
 const allowedWorkspaces = new Set(["answer", "artifacts", "addons", "memory", "hermes", "opencode", "settings"]);
 
+// Generic registry for workspace add-ons. Modules may call
+// `setWorkspaceAddonRegistry(addons)` after fetching /addons/status;
+// entries with `contributions.workspace.proxyPath` are then dispatchable
+// as `addon:<id>` workspaces.
+let workspaceAddonRegistry = new Map();
+let workspaceAddonRegistryResolver = null;
+
+function isGenericAddonWorkspaceId(id) {
+  return typeof id === "string" && id.startsWith("addon:");
+}
+
+function getWorkspaceAddonById(id) {
+  if (!isGenericAddonWorkspaceId(id)) return null;
+  const addonId = id.slice("addon:".length);
+  if (workspaceAddonRegistry.has(addonId)) return workspaceAddonRegistry.get(addonId);
+  if (workspaceAddonRegistryResolver) return workspaceAddonRegistryResolver(addonId) ?? null;
+  return null;
+}
+
+function isWorkspaceAllowed(id) {
+  if (allowedWorkspaces.has(id)) return true;
+  if (isGenericAddonWorkspaceId(id) && getWorkspaceAddonById(id)) return true;
+  return false;
+}
+
 function normalizeRegenerationMode(value) {
   return value === "overwrite" ? "overwrite" : "branch";
 }
@@ -214,6 +240,9 @@ function parseWorkspaceDeepLink(hash = window.location.hash) {
     };
   }
   if (allowedWorkspaces.has(workspace)) {
+    return { workspace };
+  }
+  if (isGenericAddonWorkspaceId(workspace) && getWorkspaceAddonById(workspace)) {
     return { workspace };
   }
   return null;
@@ -638,7 +667,7 @@ if (railResize) {
 }
 
 function setActiveWorkspace(workspaceId, { bindSession = false, persist = false } = {}) {
-  activeWorkspace = allowedWorkspaces.has(workspaceId) ? workspaceId : "answer";
+  activeWorkspace = isWorkspaceAllowed(workspaceId) ? workspaceId : "answer";
   document.body.dataset.workspace = activeWorkspace;
   commandForm.hidden = activeWorkspace !== "answer";
   if (persist) {
@@ -665,8 +694,8 @@ async function hydrateActiveWorkspace() {
     return;
   }
   const settings = await chrome.storage?.local?.get?.([STORAGE_KEYS.activeWorkspace]).catch(() => ({}));
-  activeWorkspace = allowedWorkspaces.has(settings?.[STORAGE_KEYS.activeWorkspace])
-    ? settings[STORAGE_KEYS.activeWorkspace]
+  activeWorkspace = isWorkspaceAllowed(settings?.[STORAGE_KEYS.activeWorkspace])
+    ? settings?.[STORAGE_KEYS.activeWorkspace]
     : "answer";
 }
 
@@ -703,6 +732,27 @@ async function setRegenerationModePreference(mode) {
   await chrome.storage?.local?.set?.({
     [STORAGE_KEYS.regenerationMode]: normalized
   }).catch(() => undefined);
+}
+
+async function hydrateWorkspaceAddonRegistry() {
+  const bridge = () => (typeof getBridgeRequest === "function" ? getBridgeRequest() : currentBridgeRequest);
+  const bridgeFn = bridge();
+  if (typeof bridgeFn !== "function") {
+    workspaceAddonRegistry = new Map();
+    return;
+  }
+  try {
+    const result = await bridgeFn("/addons/status", { method: "GET" });
+    const addons = Array.isArray(result?.addons) ? result.addons : [];
+    const next = new Map();
+    for (const addon of addons) {
+      if (!addon?.contributions?.workspace?.proxyPath) continue;
+      next.set(addon.id, addon);
+    }
+    workspaceAddonRegistry = next;
+  } catch {
+    workspaceAddonRegistry = new Map();
+  }
 }
 
 function renderAttachments() {
@@ -827,6 +877,14 @@ function renderMessages() {
       onOpenWorkspace: async (workspaceId) => {
         setActiveWorkspace(workspaceId, { persist: true });
         renderAll();
+      },
+      onRegistryRefresh: (addons) => {
+        const next = new Map();
+        for (const addon of addons) {
+          if (!addon?.contributions?.workspace?.proxyPath) continue;
+          next.set(addon.id, addon);
+        }
+        workspaceAddonRegistry = next;
       }
     });
     return;
@@ -865,7 +923,68 @@ function renderMessages() {
     });
     return;
   }
+  if (isGenericAddonWorkspaceId(activeWorkspace)) {
+    const addon = getWorkspaceAddonById(activeWorkspace);
+    if (addon) {
+      await renderGenericAddonWorkspace({ addon, container: transcript });
+      return;
+    }
+  }
   chatRenderers.renderMessages();
+}
+
+async function renderGenericAddonWorkspace({ addon, container }) {
+  const section = document.createElement("section");
+  section.className = "generic-addon-workspace";
+  section.setAttribute("aria-label", `${addon.name} workspace`);
+
+  const header = document.createElement("header");
+  header.className = "addon-workspace-header";
+  const title = document.createElement("strong");
+  title.textContent = addon.name;
+  const meta = document.createElement("small");
+  meta.textContent = `${addon.id} · v${addon.version} · ${addon.mode} · ${addon.trust}`;
+  header.append(title, meta);
+  const boundary = document.createElement("p");
+  boundary.className = "addon-workspace-boundary";
+  boundary.textContent = addon.boundary || "Replaceable capability add-on.";
+  section.append(header, boundary);
+
+  const status = document.createElement("div");
+  status.className = "addon-workspace-status";
+  status.textContent = `Loading ${addon.name}…`;
+  section.append(status);
+
+  const frame = document.createElement("div");
+  frame.className = "addon-workspace-frame";
+  section.append(frame);
+
+  container.replaceChildren(section);
+
+  const rawFetch = typeof fetch === "function" ? fetch.bind(globalThis) : async () => {
+    throw new Error("global fetch is not available in this context");
+  };
+  let bridgeConfig;
+  try {
+    const mod = await import("../../bridge-config.generated.js");
+    bridgeConfig = mod.default ?? mod;
+  } catch {
+    status.textContent = `${addon.name} cannot start: bridge config not generated yet. Run \`npm run browser-first:bridge\`.`;
+    status.dataset.tone = "error";
+    return;
+  }
+
+  const renderIframe = createAddonIframe({
+    addonId: addon.id,
+    proxyPath: addon.contributions.workspace.proxyPath,
+    addonLabel: addon.name,
+    apiBasePath: addon.contributions.workspace.apiBasePath ?? "/api",
+    rawFetch,
+    bridgeUrl: bridgeConfig.bridgeUrl,
+    bridgeToken: bridgeConfig.bridgeToken ?? "",
+    mode: addon.contributions.workspace.iframeMode === "src" ? "src" : "srcdoc"
+  });
+  renderIframe({ container: frame });
 }
 
 async function forkFromMessage(messageId) {
@@ -1124,7 +1243,8 @@ await Promise.all([
   hydrateAppearancePreferences(),
   hydrateStarterPromptPreference(),
   hydrateRegenerationModePreference(),
-  hydrateActiveWorkspace()
+  hydrateActiveWorkspace(),
+  hydrateWorkspaceAddonRegistry()
 ]);
 const requestedDeepLink = parseWorkspaceDeepLink();
 if (!requestedDeepLink) {

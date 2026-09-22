@@ -1,0 +1,39 @@
+{
+  "id": "addon.resonant-counter",
+  "name": "Resonant Counter",
+  "version": "0.1.0",
+  "description": "Second reference SDK workspace add-on. Counts deterministic increments across /api/counter/increment and /api/counter/read. Proves a new add-on can register through the same generic manifest mechanism as addon.resonant-echo.",
+  "author": "ResonantOS SDK Reference",
+  "mode": "workspace-addon",
+  "trust": "sdk-reference",
+  "boundary": "Replaceable. Demonstrates that adding a second workspace add-on requires NO Core ID-specific code.",
+  "capabilities": ["harness-messaging"],
+  "entry": "index.html",
+  "contributions": {
+    "workspace": {
+      "type": "iframe",
+      "proxyPath": "/counter/",
+      "apiBasePath": "/api/counter",
+      "iframeMode": "srcdoc",
+      "entry": "index.html",
+      "upstreamPortEnvVar": "RESONANTOS_BROWSER_FIRST_RESONANT_COUNTER_PORT",
+      "mirrorPaths": [
+        { "bridge": "/counter", "upstream": "" },
+        { "bridge": "/api/counter", "upstream": "/api/counter" }
+      ],
+      "runtime": {
+        "command": "node",
+        "args": ["server.mjs"],
+        "port": 47422
+      }
+    }
+  },
+  "messaging": {
+    "channel": "addon.resonant-counter",
+    "requestCapability": "harness-messaging",
+    "routes": [
+      { "method": "POST", "path": "/api/counter/increment", "requiredCapability": "harness-messaging" },
+      { "method": "GET", "path": "/api/counter/read", "requiredCapability": "harness-messaging" }
+    ]
+  }
+}

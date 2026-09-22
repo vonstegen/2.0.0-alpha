@@ -11,6 +11,7 @@ import {
   getBridgePublicUrl,
   startBridgeServerWithFallback,
   writeBridgeConfig,
+  createAddonProxyHandler,
 } from "./bridge-server.mjs";
 import { createBridgeRouteSelfTestInvoker } from "./bridge-self-test-invoker.mjs";
 import {
@@ -35,6 +36,7 @@ import { createAgentControlHostService } from "./agent-control-host-service.mjs"
 import { buildBridgeCapabilityTokens } from "./bridge-capability-tokens.mjs";
 import { createAddonDelegationHostService } from "./addon-delegation-host-service.mjs";
 import { createAddonDelegationService } from "./addon-delegation-service.mjs";
+import { startWorkspaceAddons } from "./workspace-addon-launcher.mjs";
 import { createOpencodeHttpClient, ensureOpencodeServer } from "./opencode-client.mjs";
 import { createOpencodeSessionHandlers, createOpencodeSessionHostService } from "./opencode-session-host-service.mjs";
 import { createArchiveReviewHostService } from "./archive-review-host-service.mjs";
@@ -376,6 +378,25 @@ const { agentControlRoutes } = createAgentControlHostService({
 
 const { extensionPrefsRoutes, flushPendingExtensionPrefs } = createExtensionPrefsHostService({ userRoot });
 
+const bridgeToken = args.get("bridge-token") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? createBridgeToken();
+const capabilityBootstrapToken = args.get("capability-bootstrap-token") ??
+  process.env.RESONANTOS_BROWSER_FIRST_CAPABILITY_BOOTSTRAP_TOKEN ??
+  createBridgeToken();
+const bridgeCapabilityTokens = buildBridgeCapabilityTokens({ args, mint: createBridgeToken });
+
+// Generic workspace add-ons (SDK reference harness, etc.). Discovered
+// from `browser-first/addons/<id>/addon.json` with `contributions.workspace.runtime`.
+// Spawned here so routes can be added to `bridgeRoutes` before the server
+// starts accepting traffic.
+const workspaceAddonManifests = await addonDelegationService.loadWorkspaceAddonManifests().catch(() => []);
+const workspaceAddons = await startWorkspaceAddons({
+  browserFirstRoot,
+  workspaceAddonManifests,
+  bridgeCapabilityTokens,
+  bridgePublicUrl: getBridgePublicUrlValue(),
+  parentEnv: process.env
+});
+
 const bridgeRoutes = [
   ...browserDiagnosticsRoutes,
   ...providerBridgeRoutes,
@@ -384,13 +405,8 @@ const bridgeRoutes = [
   ...addonDelegationRoutes,
   ...opencodeSessionRoutes,
   ...extensionPrefsRoutes,
+  ...workspaceAddons.routes
 ];
-
-const bridgeToken = args.get("bridge-token") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? createBridgeToken();
-const capabilityBootstrapToken = args.get("capability-bootstrap-token") ??
-  process.env.RESONANTOS_BROWSER_FIRST_CAPABILITY_BOOTSTRAP_TOKEN ??
-  createBridgeToken();
-const bridgeCapabilityTokens = buildBridgeCapabilityTokens({ args, mint: createBridgeToken });
 
 const invokeBridgeRouteForSelfTest = createBridgeRouteSelfTestInvoker({
   bridgeToken,
@@ -425,6 +441,41 @@ if (!existsSync(path.join(resonantExtension, "manifest.json"))) {
   process.exit(1);
 }
 
+// Build a custom proxy handler that serves any registered workspace add-on
+// (e.g. Resonant Echo) under their declared `proxyPath`. The handler uses
+// `bridge-server`'s existing `createAddonProxyHandler` once per add-on and
+// routes by longest mirror-prefix match.
+const workspaceAddonProxyEntries = workspaceAddons.runtimeState
+  ? Array.from(workspaceAddons.runtimeState.entries()).map(([id, state]) => ({
+      id,
+      proxyPath: state.manifest?.contributions?.workspace?.proxyPath,
+      mirrorPaths: state.manifest?.contributions?.workspace?.mirrorPaths,
+      port: state.port,
+      host: "127.0.0.1"
+    }))
+  : [];
+const workspaceAddonProxyHandlers = workspaceAddonProxyEntries
+  .filter((entry) => entry.proxyPath && Array.isArray(entry.mirrorPaths) && entry.mirrorPaths.length > 0)
+  .map((entry) =>
+    createAddonProxyHandler({
+      bridgeToken,
+      extensionOrigin: resonantExtensionOrigin,
+      allowedOrigins: [resonantExtensionOrigin, "http://127.0.0.1:47773", "https://127.0.0.1:47774"],
+      openPathPrefixes: [entry.proxyPath.replace(/\/$/, "")],
+      upstreamHostname: () => entry.host,
+      upstreamPort: () => entry.port,
+      addonId: entry.id,
+      addonLabel: `${entry.id} workspace`,
+      notRunningHint: () => `${entry.id} is not running on ${entry.host}:${entry.port}.`,
+      mirrorPaths: entry.mirrorPaths
+    })
+  );
+const workspaceAddonProxyHandler = (request, response) => {
+  for (const handler of workspaceProxyHandlers) {
+    handler(request, response);
+  }
+};
+
 const bridgePort = Number(args.get("bridge-port") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_PORT ?? defaultBridgePort);
 const bridgeInfo = await startBridgeServerWithFallback({
   port: bridgePort,
@@ -434,6 +485,9 @@ const bridgeInfo = await startBridgeServerWithFallback({
   extensionOrigin: resonantExtensionOrigin,
   routes: bridgeRoutes,
   host: getBridgeHost(),
+  dashboardProxyHandler: workspaceAddonProxyHandlers.length > 0
+    ? workspaceAddonProxyHandler
+    : undefined
 });
 
 const activeBridgePort = bridgeInfo.actualPort;

@@ -1,0 +1,67 @@
+{
+  "id": "addon.resonant-echo",
+  "name": "Resonant Echo",
+  "version": "0.1.0",
+  "description": "SDK reference harness. Deterministic echo of user messages — proves the bridge boundary and capability contract without any provider dependency.",
+  "author": "ResonantOS SDK-DEMO-001",
+  "mode": "workspace-addon",
+  "trust": "sdk-reference-harness",
+  "entry": "index.html",
+  "contentScripts": [],
+  "commands": [],
+  "messageChannel": "addon.resonant-echo",
+  "capabilities": [
+    "harness-messaging"
+  ],
+  "requestedCapabilities": [
+    "harness-messaging"
+  ],
+  "grantedCapabilities": [
+    "harness-messaging"
+  ],
+  "deniedCapabilities": [
+    "wallet-signing",
+    "provider-secret-read",
+    "trusted-memory-write",
+    "filesystem-write"
+  ],
+  "requires": [],
+  "boundary": "Replaceable SDK reference harness. No provider secrets, no wallet authority, no trusted memory writes. All requests cross the ResonantOS bridge boundary; capability tokens are enforced at the host.",
+  "contributions": {
+    "workspace": {
+      "type": "iframe",
+      "proxyPath": "/echo/",
+      "apiBasePath": "/api/echo",
+      "iframeMode": "srcdoc",
+      "entry": "index.html",
+      "mirrorPaths": [
+        { "bridge": "/echo", "upstream": "" },
+        { "bridge": "/api/echo", "upstream": "/api/echo" }
+      ],
+      "runtime": {
+        "command": "node",
+        "args": ["server.mjs"],
+        "port": 47321,
+        "host": "127.0.0.1"
+      }
+    }
+  },
+  "messaging": {
+    "channel": "addon.resonant-echo",
+    "requestCapability": "harness-messaging",
+    "routes": [
+      {
+        "method": "POST",
+        "path": "/api/echo/message",
+        "requiredCapability": "harness-messaging",
+        "description": "Deterministic echo of the user message. No inference, no provider."
+      },
+      {
+        "method": "GET",
+        "path": "/api/echo/status",
+        "requiredCapability": "harness-messaging",
+        "description": "Echo runtime status (running, message count, bridge identity)."
+      }
+    ]
+  }
+}
