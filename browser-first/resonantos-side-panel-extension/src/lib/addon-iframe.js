@@ -336,7 +336,7 @@ function watchIframeForMount(iframe, status, addonLabel, mode, htmlLength) {
 //             same-origin to the extension (i.e. extension-local). Used
 //             for the OpenCode stack where the JS is loaded from
 //             chrome-extension://…/src/lib/… (same origin as parent).
-export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath, rawFetch, bridgeUrl, bridgeToken = "", capabilityBootstrapToken = "", addonCapabilities = [], mode = "src" }) {
+export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath, rawFetch, bridgeUrl = "", bridgeToken = "", capabilityBootstrapToken = "", addonCapabilities = [], mode = "src" }) {
   let currentRequest = null;
   return function renderAddonIframe({ container }) {
     const wrapper = document.createElement("section");
@@ -375,11 +375,16 @@ export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath,
       // raw fetch from the extension page would resolve it against the
       // extension origin and 404 — combine it with the bridge origin
       // so the fetch hits the bridge proxy (which reverse-proxies to
-      // the addon's localhost port).
-      const bridgeOrigin = bridgeUrl.replace(/\/+$/, "");
+      // the addon's localhost port). If bridgeUrl is missing (a test
+      // or call site that did not pass it through), fall back to the
+      // relative proxyPath and let the caller surface that as a
+      // connection failure rather than throwing in this loader.
+      const bridgeOrigin = String(bridgeUrl || "").replace(/\/+$/, "");
       const proxyFetchUrl = proxyPath.startsWith("http")
         ? proxyPath
-        : `${bridgeOrigin}${proxyPath.startsWith("/") ? "" : "/"}${proxyPath}`;
+        : bridgeOrigin
+          ? `${bridgeOrigin}${proxyPath.startsWith("/") ? "" : "/"}${proxyPath}`
+          : proxyPath;
       try {
         if (mode === "src") {
           // src mode: just point the iframe at the bridge proxy. The
