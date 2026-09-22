@@ -1230,26 +1230,32 @@ window.addEventListener("hashchange", () => {
   renderAll();
 });
 
-await hydrateProviderModelOptions({
-  bridgeRequest: currentBridgeRequest,
-  getBridgeRequest,
-  getPreferredModel: () => modelSelect.value,
-  modelSelect,
-  setStatus: updateConnectionLine
-});
-await Promise.all([
-  hydratePersonalizationSettings(),
-  chatSessionStore.hydrate(),
-  hydrateAppearancePreferences(),
-  hydrateStarterPromptPreference(),
-  hydrateRegenerationModePreference(),
-  hydrateActiveWorkspace(),
-  hydrateWorkspaceAddonRegistry()
-]);
-const requestedDeepLink = parseWorkspaceDeepLink();
-if (!requestedDeepLink) {
-  await chatSessionStore.ensureFreshSession({ workspaceId: "answer" });
-  activeWorkspace = "answer";
+try {
+  await hydrateProviderModelOptions({
+    bridgeRequest: currentBridgeRequest,
+    getBridgeRequest,
+    getPreferredModel: () => modelSelect.value,
+    modelSelect,
+    setStatus: updateConnectionLine
+  });
+  await Promise.all([
+    hydratePersonalizationSettings(),
+    chatSessionStore.hydrate(),
+    hydrateAppearancePreferences(),
+    hydrateStarterPromptPreference(),
+    hydrateRegenerationModePreference(),
+    hydrateActiveWorkspace(),
+    hydrateWorkspaceAddonRegistry()
+  ]);
+  const requestedDeepLink = parseWorkspaceDeepLink();
+  if (!requestedDeepLink) {
+    await chatSessionStore.ensureFreshSession({ workspaceId: "answer" });
+    activeWorkspace = "answer";
+  }
+  await persistActiveWorkspace();
+} catch (error) {
+  // SDK-DEMO-001B: surface init failures so the workspace UI still renders.
+  console.error("[main-workspace] init chain failed:", error);
 }
-await persistActiveWorkspace();
+// Always render so the workspace UI is reachable even if hydration failed.
 renderAll();
