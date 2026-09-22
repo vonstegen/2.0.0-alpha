@@ -75,6 +75,8 @@ export function buildAddonSrcdoc({
   proxyPath,
   bridgeUrl,
   bridgeToken = "",
+  capabilityBootstrapToken = "",
+  addonCapabilities = [],
   addonLabel = "addon",
   apiBasePath = DEFAULT_API_BASE_PATH,
   upstreamHtml = "",
@@ -111,19 +113,67 @@ export function buildAddonSrcdoc({
   // own chrome-extension:// origin gets re-routed to the bridge proxy.
   // Auth: the bridge-token is sent in the header by the proxy. CORS: the
   // bridge allows the extension's origin. The addon sees a normal response.
+  const capabilityListJson = JSON.stringify(Array.isArray(addonCapabilities) ? addonCapabilities : []);
   const preamble = `
 <script>
 (function(){
   var PROXY_PATH = ${escapeForScript(proxyPath)};
   var BRIDGE_URL = ${escapeForScript(bridgeUrl)};
   var BRIDGE_TOKEN = ${escapeForScript(bridgeToken)};
+  var CAPABILITY_BOOTSTRAP_TOKEN = ${escapeForScript(capabilityBootstrapToken)};
+  var ADDON_CAPABILITIES = ${capabilityListJson};
   var API_BASE = ${escapeForScript(apiBasePath)};
+  // Cache of capability tokens minted at startup. Add-ons that declare a
+  // capability get fresh tokens on first iframe load, and the fetch/XHR
+  // override attaches them to outbound /api/* requests so addon
+  // upstreams (which re-check the capability token at their own boundary)
+  // can authorize them.
+  var capabilityTokens = Object.create(null);
+  var capabilityBootstrapPromise = null;
+  function ensureCapabilityTokens() {
+    if (capabilityBootstrapPromise) return capabilityBootstrapPromise;
+    if (!BRIDGE_TOKEN || !CAPABILITY_BOOTSTRAP_TOKEN || !ADDON_CAPABILITIES.length) {
+      capabilityBootstrapPromise = Promise.resolve(null);
+      return capabilityBootstrapPromise;
+    }
+    // Bootstrap goes straight to the bridge — the addon proxy has no
+    // /api/capability-tokens route; the iframe preamble is responsible
+    // for minting tokens for the addon's declared capabilities only.
+    capabilityBootstrapPromise = fetch(BRIDGE_URL.replace(/\\/$/, "") + "/api/capability-tokens", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-ResonantOS-Bridge-Token": BRIDGE_TOKEN,
+        "X-ResonantOS-Capability-Bootstrap-Token": CAPABILITY_BOOTSTRAP_TOKEN
+      },
+      body: JSON.stringify({ capabilities: ADDON_CAPABILITIES })
+    }).then(function (r) {
+      if (!r.ok) return null;
+      return r.json().then(function (body) {
+        if (body && body.capabilityTokens) capabilityTokens = body.capabilityTokens;
+        return body;
+      });
+    }).catch(function () { return null; });
+    return capabilityBootstrapPromise;
+  }
   function rewrite(url) {
     if (!url || typeof url !== "string") return url;
     if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
     if (url.startsWith("//")) return url;
     if (url.indexOf(PROXY_PATH) === 0) return url;
-    if (url.startsWith("/")) return BRIDGE_URL.replace(/\\/$/, "") + PROXY_PATH + url.replace(/^\\/+/, "");
+    if (url.startsWith("/")) {
+      // /api/<addon>/* paths are bridge-direct routes (the bridge owns
+      // the capability check before dispatching to the addon upstream).
+      // Sending them through the addon proxy strips capability tokens
+      // and the addon upstream's own boundary check would deny. Hit
+      // the bridge directly so the messaging routes work, and let the
+      // bridge handle identity + capability + forward-to-upstream.
+      var apiMatch = /\\/api\\/[^/]+\\//.exec(url);
+      if (apiMatch) {
+        return BRIDGE_URL.replace(/\\/$/, "") + url;
+      }
+      return BRIDGE_URL.replace(/\\/$/, "") + PROXY_PATH + url.replace(/^\\/+/, "");
+    }
     return BRIDGE_URL.replace(/\\/$/, "") + PROXY_PATH + url;
   }
   function withAuth(input, init) {
@@ -133,19 +183,45 @@ export function buildAddonSrcdoc({
       if (BRIDGE_TOKEN && !headers.has("X-ResonantOS-Bridge-Token")) {
         headers.set("X-ResonantOS-Bridge-Token", BRIDGE_TOKEN);
       }
+      // Add any capability tokens we hold. The bridge strips them when
+      // forwarding to the addon upstream, but the upstream re-checks them
+      // at its own boundary (each addon enforces capability twice).
+      for (var cap in capabilityTokens) {
+        if (!capabilityTokens.hasOwnProperty(cap)) continue;
+        var headerName = "X-ResonantOS-Bridge-Capability-Token";
+        if (!headers.has(headerName)) {
+          headers.set(headerName, capabilityTokens[cap]);
+        }
+      }
       init.headers = headers;
     } catch (e) { /* ignore */ }
     return init;
   }
   var origFetch = window.fetch && window.fetch.bind(window);
   window.fetch = function(input, init) {
+    // Trigger capability bootstrap once for /api/* traffic. We attach
+    // tokens synchronously when init is synchronous; for Promise-bearing
+    // flows we await ensureCapabilityTokens() and re-issue.
     try {
       if (typeof input === "string") {
-        return origFetch(rewrite(input), withAuth(null, init));
+        var rewritten = rewrite(input);
+        // If /api/* and tokens not yet ready, await
+        if (rewritten.indexOf("/api/") !== -1 && ADDON_CAPABILITIES.length && Object.keys(capabilityTokens).length === 0) {
+          return ensureCapabilityTokens().then(function () {
+            return origFetch(rewritten, withAuth(null, init));
+          });
+        }
+        return origFetch(rewritten, withAuth(null, init));
       } else if (input && typeof input === "object" && "url" in input) {
         var u = input;
-        var cloned = new Request(rewrite(u.url), u);
-        return origFetch(cloned, withAuth(cloned, init));
+        var cloned0 = new Request(rewrite(u.url), u);
+        if (cloned0.url.indexOf("/api/") !== -1 && ADDON_CAPABILITIES.length && Object.keys(capabilityTokens).length === 0) {
+          return ensureCapabilityTokens().then(function () {
+            var cloned1 = new Request(cloned0.url, cloned0);
+            return origFetch(cloned1, withAuth(cloned1, init));
+          });
+        }
+        return origFetch(cloned0, withAuth(cloned0, init));
       }
     } catch (e) { /* fall through to origFetch */ }
     return origFetch(input, withAuth(null, init));
@@ -260,7 +336,7 @@ function watchIframeForMount(iframe, status, addonLabel, mode, htmlLength) {
 //             same-origin to the extension (i.e. extension-local). Used
 //             for the OpenCode stack where the JS is loaded from
 //             chrome-extension://…/src/lib/… (same origin as parent).
-export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath, rawFetch, bridgeUrl, bridgeToken = "", mode = "src" }) {
+export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath, rawFetch, bridgeUrl, bridgeToken = "", capabilityBootstrapToken = "", addonCapabilities = [], mode = "src" }) {
   let currentRequest = null;
   return function renderAddonIframe({ container }) {
     const wrapper = document.createElement("section");
@@ -295,6 +371,15 @@ export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath,
       currentRequest?.abort();
       const ac = new AbortController();
       currentRequest = ac;
+      // proxyPath is almost always a relative path (e.g. "/echo/"). The
+      // raw fetch from the extension page would resolve it against the
+      // extension origin and 404 — combine it with the bridge origin
+      // so the fetch hits the bridge proxy (which reverse-proxies to
+      // the addon's localhost port).
+      const bridgeOrigin = bridgeUrl.replace(/\/+$/, "");
+      const proxyFetchUrl = proxyPath.startsWith("http")
+        ? proxyPath
+        : `${bridgeOrigin}${proxyPath.startsWith("/") ? "" : "/"}${proxyPath}`;
       try {
         if (mode === "src") {
           // src mode: just point the iframe at the bridge proxy. The
@@ -302,7 +387,7 @@ export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath,
           // upstream's CSP / CORS is in charge. We still probe the
           // proxy first to surface auth/connectivity errors as a status
           // banner — a full HTTP error here means the addon is dead.
-          const response = await rawFetch(proxyPath, { signal: ac.signal });
+          const response = await rawFetch(proxyFetchUrl, { signal: ac.signal });
           if (!response.ok) {
             let body = "";
             try { body = await response.text(); } catch { /* ignore */ }
@@ -354,7 +439,7 @@ export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath,
           }, 20000);
           return;
         }
-        const response = await rawFetch(proxyPath, { signal: ac.signal });
+        const response = await rawFetch(proxyFetchUrl, { signal: ac.signal });
         if (!response.ok) {
           let body = "";
           try { body = await response.text(); } catch { /* ignore */ }
@@ -367,7 +452,7 @@ export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath,
           const text = await response.text();
           status.textContent = `${addonLabel} returned ${contentType}, ${text.length} bytes — open in a new tab to view.`;
           const link = document.createElement("a");
-          link.href = proxyPath;
+          link.href = proxyFetchUrl;
           link.target = "_blank";
           link.rel = "noopener noreferrer";
           link.textContent = `Open ${addonLabel} in a new tab`;
@@ -380,6 +465,8 @@ export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath,
           proxyPath,
           bridgeUrl,
           bridgeToken,
+          capabilityBootstrapToken,
+          addonCapabilities,
           addonLabel,
           apiBasePath,
           upstreamHtml: html,

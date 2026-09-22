@@ -28,10 +28,11 @@ function workspaceForAddon(addon) {
   if (addon.id === "addon.opencode") return "opencode";
   if (addon.id === "addon.living-archive") return "memory";
   // Generic workspace add-ons declare their contribution in the manifest.
-  // The bridge uses `proxyPath` as both the iframe path and the workspace
-  // ID, so a generic registry-driven add-on lights up without any Core
-  // ID-specific code.
-  const proxyPath = addon?.contributions?.workspace?.proxyPath;
+  // The bridge flattens `proxyPath` at the addon root on /addons/status,
+  // so a generic registry-driven add-on lights up without any Core
+  // ID-specific code. Falls back to a nested shape if the bridge ever
+  // moves to that representation.
+  const proxyPath = addon?.proxyPath ?? addon?.contributions?.workspace?.proxyPath;
   if (typeof proxyPath === "string" && proxyPath.trim()) {
     return `addon:${addon.id}`;
   }

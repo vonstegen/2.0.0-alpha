@@ -12,6 +12,7 @@ import {
   startBridgeServerWithFallback,
   writeBridgeConfig,
   createAddonProxyHandler,
+  setDashboardProxyExtraMirrorPaths,
 } from "./bridge-server.mjs";
 import { createBridgeRouteSelfTestInvoker } from "./bridge-self-test-invoker.mjs";
 import {
@@ -471,10 +472,62 @@ const workspaceAddonProxyHandlers = workspaceAddonProxyEntries
     })
   );
 const workspaceAddonProxyHandler = (request, response) => {
-  for (const handler of workspaceProxyHandlers) {
-    handler(request, response);
+  // Pick the handler whose mirrorPaths have the longest prefix
+  // match for the request path. Multiple addons (Resonant Echo,
+  // Resonant Counter, future ones) are all proxied by this single
+  // dispatcher; only the one that actually owns the prefix should
+  // forward upstream or write its own 404. The previous "fire each
+  // handler in turn" loop had a race where the first non-matching
+  // handler would 404 the request before the matching handler ever
+  // got a chance to dispatch upstream.
+  const pathPart = (request.url ?? "/").split("?")[0] ?? "/";
+  let chosen = null;
+  let chosenBridgePrefixLength = -1;
+  for (const candidate of workspaceAddonProxyEntries) {
+    const mirrors = Array.isArray(candidate.mirrorPaths) ? candidate.mirrorPaths : [];
+    let bestEntry = null;
+    let bestLength = -1;
+    for (const entry of mirrors) {
+      const b = entry?.bridge;
+      if (typeof b !== "string" || !b) continue;
+      const prefix = b.endsWith("/") ? b : `${b}/`;
+      if (pathPart === b || pathPart.startsWith(prefix)) {
+        if (b.length > bestLength) {
+          bestEntry = entry;
+          bestLength = b.length;
+        }
+      }
+    }
+    if (bestEntry && bestLength > chosenBridgePrefixLength) {
+      chosen = candidate;
+      chosenBridgePrefixLength = bestLength;
+    }
   }
+  if (chosen) {
+    const idx = workspaceAddonProxyEntries.indexOf(chosen);
+    workspaceAddonProxyHandlers[idx](request, response);
+    return;
+  }
+  // No addon owns this path. Try the next handler in order so its
+  // 404 surfaces the canonical "addon.resonant-X workspace proxy
+  // path not under any mirror prefix." message and (where upstream
+  // is missing) the "addon is not running" hint. We let the first
+  // handler take the 404 — the dispatcher's job is to avoid both
+  // the upstream fetch (no chosen entry → no upstream call) and
+  // the cross-handler race, not to fabricate a new error.
+  if (workspaceAddonProxyHandlers.length > 0) {
+    workspaceAddonProxyHandlers[0](request, response);
+    return;
+  }
+  response.writeHead(404, { "Content-Type": "application/json" });
+  response.end(JSON.stringify({ ok: false, error: "No workspace add-on owns this path." }));
 };
+
+// Push addon mirror paths into the bridge-server's gate registry so
+// /echo/, /counter/, etc. route through the proxy dispatch (instead of
+// falling through to the JSON route evaluator, which returns
+// "Unknown browser-first bridge route." for non-API paths).
+setDashboardProxyExtraMirrorPaths(workspaceAddonProxyEntries);
 
 const bridgePort = Number(args.get("bridge-port") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_PORT ?? defaultBridgePort);
 const bridgeInfo = await startBridgeServerWithFallback({

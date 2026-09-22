@@ -746,7 +746,10 @@ async function hydrateWorkspaceAddonRegistry() {
     const addons = Array.isArray(result?.addons) ? result.addons : [];
     const next = new Map();
     for (const addon of addons) {
-      if (!addon?.contributions?.workspace?.proxyPath) continue;
+      // The bridge flattens `proxyPath` at the addon root; fall back to
+      // the nested contributions.workspace shape if the bridge ever moves.
+      const proxyPath = addon?.proxyPath ?? addon?.contributions?.workspace?.proxyPath;
+      if (typeof proxyPath !== "string" || !proxyPath.trim()) continue;
       next.set(addon.id, addon);
     }
     workspaceAddonRegistry = next;
@@ -881,7 +884,10 @@ async function renderMessages() {
       onRegistryRefresh: (addons) => {
         const next = new Map();
         for (const addon of addons) {
-          if (!addon?.contributions?.workspace?.proxyPath) continue;
+          // The bridge flattens `proxyPath` at the addon root; fall back
+          // to the nested contributions.workspace shape if it ever moves.
+          const proxyPath = addon?.proxyPath ?? addon?.contributions?.workspace?.proxyPath;
+          if (typeof proxyPath !== "string" || !proxyPath.trim()) continue;
           next.set(addon.id, addon);
         }
         workspaceAddonRegistry = next;
@@ -964,27 +970,51 @@ async function renderGenericAddonWorkspace({ addon, container }) {
   const rawFetch = typeof fetch === "function" ? fetch.bind(globalThis) : async () => {
     throw new Error("global fetch is not available in this context");
   };
-  let bridgeConfig;
-  try {
-    const mod = await import("../../bridge-config.generated.js");
-    bridgeConfig = mod.default ?? mod;
-  } catch {
+  // main-workspace.html loads bridge-config.generated.js via a <script>
+  // tag before this module runs, so the config is already on globalThis.
+  const bridgeConfig = globalThis.__RESONANTOS_BRIDGE_CONFIG__;
+  if (!bridgeConfig || !bridgeConfig.bridgeUrl) {
     status.textContent = `${addon.name} cannot start: bridge config not generated yet. Run \`npm run browser-first:bridge\`.`;
     status.dataset.tone = "error";
     return;
   }
 
+  // The bridge flattens workspace metadata at the addon root on
+  // /addons/status. Fall back to nested contributions.workspace if
+  // the bridge ever moves.
+  const proxyPath = addon.proxyPath ?? addon.contributions?.workspace?.proxyPath;
+  const apiBasePath = addon.apiBasePath ?? addon.contributions?.workspace?.apiBasePath ?? "/api";
+  const iframeMode = addon.iframeMode ?? addon.contributions?.workspace?.iframeMode;
+
+  // Capability tokens minted inside the iframe need to flow through to
+  // the addon's own boundary check. /addons/status returns the
+  // addon's requested capabilities (host-mediated; not self-declared).
+  // We pass those straight through so the iframe's preamble can
+  // bootstrap them and forward them with /api/* fetch overrides.
+  const addonCapabilities = Array.isArray(addon?.requestedCapabilities)
+    ? addon.requestedCapabilities
+    : Array.isArray(addon?.capabilities)
+      ? addon.capabilities
+      : [];
+
   const renderIframe = createAddonIframe({
     addonId: addon.id,
-    proxyPath: addon.contributions.workspace.proxyPath,
+    proxyPath,
     addonLabel: addon.name,
-    apiBasePath: addon.contributions.workspace.apiBasePath ?? "/api",
+    apiBasePath,
     rawFetch,
     bridgeUrl: bridgeConfig.bridgeUrl,
     bridgeToken: bridgeConfig.bridgeToken ?? "",
-    mode: addon.contributions.workspace.iframeMode === "src" ? "src" : "srcdoc"
+    capabilityBootstrapToken: bridgeConfig.capabilityBootstrapToken ?? "",
+    addonCapabilities,
+    mode: iframeMode === "src" ? "src" : "srcdoc"
   });
-  renderIframe({ container: frame });
+  // Trigger the iframe's own async load. Without this call, the
+  // iframe is created with an empty src/srcdoc and stays "Loading"
+  // forever — createAddonIframe returns the renderer and reload
+  // handles the actual fetch + src/srcdoc assignment.
+  const { reload: reloadIframe } = renderIframe({ container: frame });
+  await reloadIframe();
 }
 
 async function forkFromMessage(messageId) {

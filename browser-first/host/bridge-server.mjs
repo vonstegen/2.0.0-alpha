@@ -123,7 +123,34 @@ export const DASHBOARD_PROXY_MIRROR_PATHS = Object.freeze([
 ]);
 
 function dashboardProxyPathMatches(pathPart) {
-  return matchMirrorPath(pathPart, DASHBOARD_PROXY_MIRROR_PATHS) !== null;
+  if (matchMirrorPath(pathPart, DASHBOARD_PROXY_MIRROR_PATHS) !== null) {
+    return true;
+  }
+  if (Array.isArray(dashboardProxyExtraMirrorPaths) && dashboardProxyExtraMirrorPaths.length > 0) {
+    // Flatten addon { addonId, mirrorPaths[] } entries into the flat
+    // mirror-path shape the matcher expects.
+    const flattened = [];
+    for (const entry of dashboardProxyExtraMirrorPaths) {
+      const mir = Array.isArray(entry?.mirrorPaths) ? entry.mirrorPaths : [];
+      for (const m of mir) flattened.push(m);
+    }
+    return matchMirrorPath(pathPart, flattened) !== null;
+  }
+  return false;
+}
+
+// Registry of dynamic (addon-supplied) mirror paths. Populated by
+// startBridgeServerWithFallback via `setDashboardProxyExtraMirrorPaths`.
+// Used by the proxy gate at bridge-server.mjs:1151 to allow addon
+// proxy paths to route through the same dispatch logic.
+let dashboardProxyExtraMirrorPaths = null;
+export function setDashboardProxyExtraMirrorPaths(extraMirrorPaths) {
+  dashboardProxyExtraMirrorPaths = Array.isArray(extraMirrorPaths) && extraMirrorPaths.length > 0
+    ? extraMirrorPaths
+    : null;
+}
+export function getDashboardProxyExtraMirrorPaths() {
+  return dashboardProxyExtraMirrorPaths;
 }
 
 export function getDashboardProxyPathPrefix() {
@@ -1365,6 +1392,7 @@ export async function startBridgeServerWithFallback({
   httpsPort,
   fallbackPorts = [0],
   openPathPrefixes,
+  dashboardProxyHandler = null,
 }) {
   const attempts = [port, ...fallbackPorts].filter((candidate, index, list) =>
     Number.isInteger(Number(candidate)) && list.indexOf(candidate) === index
@@ -1374,7 +1402,7 @@ export async function startBridgeServerWithFallback({
     try {
       const httpsPortAttempts = tls
         ? [httpsPort, ...fallbackPorts].filter((p, i, list) =>
-            p !== undefined && Number.isInteger(Number(p)) && list.indexOf(p) === i
+            p !== undefined && Number.isInteger(Number(p)) && list.indexOf(p) === index
           )
         : [];
       const result = await startBridgeServersWithTls({
@@ -1390,6 +1418,7 @@ export async function startBridgeServerWithFallback({
         allowedOrigins,
         allowedCidrs,
         openPathPrefixes,
+        dashboardProxyHandler,
       });
       return {
         server: result.httpServer,
