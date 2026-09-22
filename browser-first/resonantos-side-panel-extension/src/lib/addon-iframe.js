@@ -562,6 +562,46 @@ export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath,
             } catch (wireError) {
               wrapper.dataset.iframeWireError = String(wireError?.message ?? wireError);
             }
+            // The addon's `void probeStatus()` runs at parse time
+            // (synchronously, before our wire is installed), so its
+            // initial GET /api/echo/status is unauthenticated and
+            // either fails or hangs. Once our wire is in place, the
+            // addon UI is still wedged at "connecting…" — which
+            // blocks the user from typing-and-clicking. We can't
+            // patch into probeStatus from outside (closure-scoped),
+            // so we re-fire the same fetch here once the override is
+            // live. If the iframe's #status-pill element exists and is
+            // still showing the initial "connecting…" text, we
+            // update it to reflect the new request's outcome.
+            try {
+              const iframeDoc = iframe.contentDocument;
+              if (!iframeDoc) return;
+              const statusPill = iframeDoc.getElementById("status-pill");
+              const responseEl = iframeDoc.getElementById("response");
+              const sendBtn = iframeDoc.getElementById("send");
+              if (!statusPill || !responseEl || !sendBtn) return;
+              if (!statusPill.textContent.includes("connecting")) return;
+              // Use the overridden fetch (now installed). Resolves
+              // against the addon messaging routes which the bridge
+              // owns and the upstream re-checks against its capability.
+              const win = iframe.contentWindow;
+              win.fetch(`${String(bridgeUrl).replace(/\/$/, "")}/api/echo/status`, {
+                method: "GET",
+              })
+                .then(function (r) {
+                  return r.json();
+                })
+                .then(function (body) {
+                  if (body && body.body && body.body.ok) {
+                    statusPill.textContent = "status: connected";
+                    statusPill.classList.add("ok");
+                    sendBtn.disabled = false;
+                    responseEl.textContent = "Resonant Echo ready. The message round-trip below crosses:\n  workspace  →  iframe srcdoc  →  bridge proxy  →  ResonantOS host  →  deterministic responder.";
+                    responseEl.classList.remove("muted");
+                  }
+                })
+                .catch(function () { /* unchanged */ });
+            } catch (_) { /* best effort */ }
           };
 // Wire the fetch override from the parent side. Inline scripts in the
           // srcdoc never run due to the parent's CSP `script-src`
