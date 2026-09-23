@@ -106,6 +106,26 @@ const server = http.createServer(async (req, res) => {
   const pathPart = url.split("?")[0] ?? "/";
   const capabilityToken = String(req.headers["x-resonantos-bridge-capability-token"] ?? "");
 
+  // SDK-DEMO-002-FIX: CORS for opaque-origin sandboxed iframe. The
+  // workspaceCrossOrigin renderer puts the add-on's own HTML inside
+  // a sandbox="allow-scripts" iframe (no allow-same-origin), so the
+  // iframe's origin is opaque. To let the iframe's own <script>
+  // fetch /api/<addon>/* from its own URL, the upstream must allow
+  // `Origin: null` (Chrome's serialization of opaque-origin
+  // contexts). Without this header the browser blocks the fetch as
+  // a CORS violation and the UI surfaces "Failed to fetch".
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "access-control-allow-origin": "null",
+      "access-control-allow-methods": "GET, POST, OPTIONS",
+      "access-control-allow-headers": "content-type, x-resonantos-bridge-capability-token",
+      "access-control-max-age": "600"
+    });
+    res.end();
+    return;
+  }
+  res.setHeader("access-control-allow-origin", "null");
+
   // Capability gate. The bridge passes through the host's capability
   // header, so this is a real upstream-side authorization check. A
   // missing or mismatched token returns 403 — equivalent to the

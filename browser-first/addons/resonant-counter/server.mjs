@@ -123,6 +123,25 @@ const server = http.createServer(async (req, res) => {
   const url = req.url ?? "/";
   const urlPath = url.split("?")[0] ?? "/";
 
+  // SDK-DEMO-002-FIX: CORS for opaque-origin sandboxed iframe. The
+  // workspaceCrossOrigin renderer puts the add-on's own HTML inside
+  // a sandbox="allow-scripts" iframe (no allow-same-origin), so the
+  // iframe's origin is opaque. To let the iframe's own <script>
+  // fetch /api/<addon>/* from its own URL, the upstream must allow
+  // `Origin: null` (Chrome's serialization of opaque-origin
+  // contexts).
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "access-control-allow-origin": "null",
+      "access-control-allow-methods": "GET, POST, OPTIONS",
+      "access-control-allow-headers": "content-type, x-resonantos-bridge-capability-token",
+      "access-control-max-age": "600"
+    });
+    res.end();
+    return;
+  }
+  res.setHeader("access-control-allow-origin", "null");
+
   // Static entry HTML — served at / and /index.html so a sandboxed
   // cross-origin iframe can load the upstream directly. Capability
   // enforcement is intentionally NOT applied here: the add-on UI must

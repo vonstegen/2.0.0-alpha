@@ -124,17 +124,28 @@ function capabilityGateOk(req) {
   return Boolean(EXPECTED_TOKEN) && constantTimeEqual(token, EXPECTED_TOKEN);
 }
 
-function constantTimeEqual(a, b) {
-  if (typeof a !== "string" || typeof b !== "string") return false;
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i += 1) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return mismatch === 0;
-}
-
 const server = http.createServer(async (req, res) => {
   const url = req.url ?? "/";
   const path = url.split("?")[0] ?? "/";
+
+  // SDK-DEMO-002-FIX: CORS for opaque-origin sandboxed iframe. The
+  // workspaceCrossOrigin renderer puts the add-on's own HTML inside
+  // a sandbox="allow-scripts" iframe (no allow-same-origin), so the
+  // iframe's origin is opaque. To let the iframe's own <script>
+  // fetch /api/<addon>/* from its own URL, the upstream must allow
+  // `Origin: null` (Chrome's serialization of opaque-origin
+  // contexts).
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "access-control-allow-origin": "null",
+      "access-control-allow-methods": "GET, POST, OPTIONS",
+      "access-control-allow-headers": "content-type, x-resonantos-bridge-capability-token",
+      "access-control-max-age": "600"
+    });
+    res.end();
+    return;
+  }
+  res.setHeader("access-control-allow-origin", "null");
 
   // SDK-DEMO-002: serve the add-on HTML at root so a sandboxed cross-
   // origin iframe can load this upstream directly. Capability
