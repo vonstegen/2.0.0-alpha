@@ -78,11 +78,28 @@
       </section>
     </div>
     <script type="module">
+      // SDK-DEMO-002: the Counter now loads cross-origin from its own
+      // upstream origin (http://127.0.0.1:<port>/) inside a sandboxed
+      // opaque-origin iframe. Its own <script> executes (the historical
+      // srcdoc CSP gap is gone). API calls go to the add-on's OWN
+      // origin via /api/counter/* (apiBasePath comes from the manifest
+      // via /bootstrap — no hardcode anywhere).
+      //
+      // Auth model:
+      //   1. On load, fetch /bootstrap (capability-gated). /bootstrap
+      //      returns { apiBasePath, bridgeToken, capabilityTokens:
+      //      { "harness-messaging": "..." }, bridgeIdentity }.
+      //   2. Use the returned capability token on every /api/<base>/*
+      //      request. The upstream enforces it — same authorization
+      //      boundary as the bridge did historically, but enforced
+      //      one layer closer to the add-on.
       const log = document.getElementById("log");
       const countEl = document.getElementById("count");
       const bridgeIdEl = document.getElementById("bridge-id");
       const capTokenEl = document.getElementById("cap-token");
-      const base = "/api/counter";
+      let apiBasePath = "/api";
+      let bootstrapCapabilityToken = "";
+
       function appendLog(level, text) {
         const entry = document.createElement("div");
         entry.className = level;
@@ -91,34 +108,43 @@
         log.appendChild(entry);
         log.scrollTop = log.scrollHeight;
       }
-      async function bridgeCapabilityTokens() {
-        // The capability-token endpoint is exposed at the bridge root by the
-        // workspace add-on host. The iframe resolves relative URLs against
-        // the bridge origin thanks to the addon-iframe preamble.
-        const response = await fetch("/api/capability-tokens", {
-          method: "POST",
-          headers: { "x-resonantos-capability-bootstrap-token": window.__RESONANTOS_BOOTSTRAP_TOKEN__ ?? "" },
-          body: JSON.stringify({ capabilities: ["harness-messaging"] })
-        });
+
+      async function loadBootstrap() {
+        const headers = {
+          "x-resonantos-bridge-capability-token":
+            window.__RESONANTOS_BOOTSTRAP_TOKEN__ ?? ""
+        };
+        const response = await fetch("/bootstrap", { method: "GET", headers });
         if (!response.ok) {
-          appendLog("err", `token request failed: HTTP ${response.status}`);
+          appendLog("err", `/bootstrap → ${response.status}`);
           return null;
         }
         const payload = await response.json();
-        return payload.capabilityTokens ?? {};
+        if (payload.bridgeIdentity) bridgeIdEl.textContent = payload.bridgeIdentity;
+        return payload;
       }
-      async function call(method, path, body) {
-        const tokens = await bridgeCapabilityTokens();
-        if (!tokens || !tokens["harness-messaging"]) {
-          appendLog("err", "no harness-messaging token issued");
-          return null;
+
+      async function ensureBootstrap() {
+        if (bootstrapCapabilityToken) return true;
+        const payload = await loadBootstrap();
+        if (!payload) return false;
+        apiBasePath = String(payload.apiBasePath ?? "/api");
+        bootstrapCapabilityToken = String(payload.capabilityTokens?.["harness-messaging"] ?? "");
+        if (!bootstrapCapabilityToken) {
+          appendLog("err", "no harness-messaging token issued by /bootstrap");
+          return false;
         }
-        capTokenEl.textContent = tokens["harness-messaging"].slice(0, 12) + "…";
-        const response = await fetch(base + path, {
+        capTokenEl.textContent = bootstrapCapabilityToken.slice(0, 12) + "…";
+        return true;
+      }
+
+      async function call(method, path, body) {
+        if (!await ensureBootstrap()) return null;
+        const response = await fetch(`${apiBasePath.replace(/\/+$/, "")}${path}`, {
           method,
           headers: {
             "content-type": "application/json",
-            "x-resonantos-bridge-capability-token": tokens["harness-messaging"]
+            "x-resonantos-bridge-capability-token": bootstrapCapabilityToken
           },
           body: body ? JSON.stringify(body) : undefined
         });
@@ -148,8 +174,9 @@
       });
       document.getElementById("read").addEventListener("click", refreshCount);
       // Initial read so the counter reflects upstream state without clicking.
-      refreshCount();
-      appendLog("ok", "Resonant Counter workspace booted");
+      refreshCount().then(() => {
+        appendLog("ok", "Resonant Counter workspace booted (cross-origin sandboxed)");
+      });
     </script>
   </body>
 </html>

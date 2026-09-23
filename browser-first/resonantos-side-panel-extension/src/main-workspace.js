@@ -985,6 +985,17 @@ async function renderGenericAddonWorkspace({ addon, container }) {
   const proxyPath = addon.proxyPath ?? addon.contributions?.workspace?.proxyPath;
   const apiBasePath = addon.apiBasePath ?? addon.contributions?.workspace?.apiBasePath ?? "/api";
   const iframeMode = addon.iframeMode ?? addon.contributions?.workspace?.iframeMode;
+  // SDK-DEMO-002: workspace add-ons declare an upstream port via
+  // `upstreamPortEnvVar` / `runtime.port`. The bridge flattens this
+  // to `upstreamPort` on /addons/status. When both are present we
+  // route the iframe through the cross-origin sandboxed renderer
+  // (workspaceCrossOrigin) so the add-on's OWN code runs in an
+  // opaque origin and cannot reach the extension. Legacy / bundled
+  // add-ons that declare iframeMode="src" but no upstreamPort keep
+  // the existing same-host src path (Hermes).
+  const upstreamPort = Number(addon?.upstreamPort ?? 0) || 0;
+  const upstreamOrigin = upstreamPort > 0 ? `http://127.0.0.1:${upstreamPort}` : "";
+  const renderMode = upstreamPort > 0 ? "workspaceCrossOrigin" : (iframeMode === "src" ? "src" : "srcdoc");
 
   // Capability tokens minted inside the iframe need to flow through to
   // the addon's own boundary check. /addons/status returns the
@@ -1007,7 +1018,8 @@ async function renderGenericAddonWorkspace({ addon, container }) {
     bridgeToken: bridgeConfig.bridgeToken ?? "",
     capabilityBootstrapToken: bridgeConfig.capabilityBootstrapToken ?? "",
     addonCapabilities,
-    mode: iframeMode === "src" ? "src" : "srcdoc"
+    mode: renderMode,
+    upstreamOrigin
   });
   // Trigger the iframe's own async load. Without this call, the
   // iframe is created with an empty src/srcdoc and stays "Loading"

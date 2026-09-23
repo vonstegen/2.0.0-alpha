@@ -392,7 +392,21 @@ function wireIframeBridgeFetch({
 //             same-origin to the extension (i.e. extension-local). Used
 //             for the OpenCode stack where the JS is loaded from
 //             chrome-extension://…/src/lib/… (same origin as parent).
-export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath, rawFetch, bridgeUrl = "", bridgeToken = "", capabilityBootstrapToken = "", addonCapabilities = [], mode = "src" }) {
+//   - "workspaceCrossOrigin" (SDK-DEMO-002): set iframe.src directly to
+//             the workspace add-on's upstream origin (e.g.
+//             `http://127.0.0.1:47321/`). The iframe is sandboxed with
+//             `allow-scripts` only — no `allow-same-origin`, so the
+//             iframe runs in an OPAQUE origin and cannot read or write
+//             the extension's chrome-extension:// origin. The add-on's
+//             server.mjs is expected to serve its index.html at root
+//             and expose a `/bootstrap` endpoint that returns the
+//             bridge token + capability tokens + apiBasePath, so the
+//             add-on's own script can authenticate its /api/<addon>/*
+//             calls. This is the cross-origin + isolated mode used by
+//             third-party workspace add-ons (Echo, Counter, and any
+//             future SDK add-on). `upstreamOrigin` MUST be supplied
+//             (e.g. `http://127.0.0.1:47321`).
+export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath, rawFetch, bridgeUrl = "", bridgeToken = "", capabilityBootstrapToken = "", addonCapabilities = [], mode = "src", upstreamOrigin = "" }) {
   let currentRequest = null;
   return function renderAddonIframe({ container }) {
     const wrapper = document.createElement("section");
@@ -405,7 +419,18 @@ export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath,
     frame.className = "addon-iframe-frame";
     const iframe = document.createElement("iframe");
     iframe.className = "addon-iframe";
-    if (mode !== "src") {
+    if (mode === "workspaceCrossOrigin") {
+      // SDK-DEMO-002: workspace add-ons render cross-origin with the
+      // strictest sane sandbox. NO allow-same-origin (the iframe must
+      // not be able to read or write the extension's chrome-extension://
+      // origin), NO allow-forms/popups/modals (the add-on must request
+      // these via its manifest if it needs them). allow-scripts is the
+      // floor — without it the add-on's <script> tags are dead. The
+      // resulting origin is OPAQUE: the iframe cannot reach
+      // chrome.* APIs, extension storage, or the bridge (it talks
+      // directly to its own http://127.0.0.1:<port>/ origin only).
+      iframe.setAttribute("sandbox", "allow-scripts");
+    } else if (mode !== "src") {
       // srcdoc mode: keep the sandbox. The upstream HTML is untrusted
       // enough to warrant it (it can contain arbitrary JS via the
       // bridge-token-injecting preamble).
@@ -442,6 +467,70 @@ export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath,
           ? `${bridgeOrigin}${proxyPath.startsWith("/") ? "" : "/"}${proxyPath}`
           : proxyPath;
       try {
+        if (mode === "workspaceCrossOrigin") {
+          // SDK-DEMO-002: load the upstream origin directly inside a
+          // sandboxed (allow-scripts only) opaque-origin iframe. The
+          // upstream is expected to serve its index.html at root and
+          // expose a /bootstrap endpoint that hands the iframe its
+          // bridge token + capability tokens + apiBasePath.
+          //
+          // Security notes:
+          //   - The iframe is OPAQUE-origin. It cannot reach
+          //     chrome-extension:// APIs or extension storage.
+          //   - The add-on's /api/<addon>/* calls hit the upstream
+          //     directly (cross-origin from the iframe's perspective
+          //     back to itself = same-origin, so no preflight needed
+          //     for same-origin GETs/POSTs). The upstream enforces the
+          //     capability token.
+          //   - We probe http://127.0.0.1:<port>/ via the extension
+          //     page's rawFetch first to surface auth/connectivity
+          //     errors as a status banner — a full HTTP error here
+          //     means the upstream is dead. This probe is allowed by
+          //     the extension manifest's `connect-src` (which already
+          //     includes `http://127.0.0.1:*`).
+          if (!upstreamOrigin || !/^https?:\/\//i.test(upstreamOrigin)) {
+            status.textContent = `${addonLabel} missing upstreamOrigin for workspaceCrossOrigin mode.`;
+            status.classList.add("addon-iframe-status--error");
+            return;
+          }
+          const probeUrl = `${upstreamOrigin.replace(/\/+$/, "")}/`;
+          const probeResponse = await rawFetch(probeUrl, { signal: ac.signal });
+          if (!probeResponse.ok) {
+            let body = "";
+            try { body = await probeResponse.text(); } catch { /* ignore */ }
+            status.textContent = `${addonLabel} upstream returned HTTP ${probeResponse.status}: ${body.slice(0, 200)}`;
+            status.classList.add("addon-iframe-status--error");
+            return;
+          }
+          try { await probeResponse.text(); } catch { /* ignore */ }
+          iframe.src = probeUrl;
+          wrapper.dataset.iframeSrcMode = "workspaceCrossOrigin";
+          wrapper.dataset.iframeUpstreamOrigin = upstreamOrigin;
+          status.textContent = `${addonLabel} loading (cross-origin sandboxed)...`;
+          status.classList.add("addon-iframe-status--ready");
+          iframe.addEventListener("load", () => {
+            wrapper.dataset.iframeLoaded = "true";
+            status.textContent = `${addonLabel} ready (cross-origin sandboxed).`;
+            status.classList.add("addon-iframe-status--ready");
+          }, { once: true });
+          // Safety: if the load event doesn't fire within 20s (e.g.
+          // CORS preflight fails — unlikely for an opaque-origin
+          // sandboxed iframe loading same-origin subresources — but
+          // possible if the upstream stalls), surface a hint.
+          setTimeout(() => {
+            if (!iframe.dataset.loaded && iframe.isConnected) {
+              try {
+                const maybeLoaded = iframe.contentWindow?.length !== undefined;
+                if (maybeLoaded) {
+                  wrapper.dataset.iframeLoaded = "true";
+                  status.textContent = `${addonLabel} ready (cross-origin sandboxed).`;
+                  status.classList.add("addon-iframe-status--ready");
+                }
+              } catch { /* ignore */ }
+            }
+          }, 20000);
+          return;
+        }
         if (mode === "src") {
           // src mode: just point the iframe at the bridge proxy. The
           // upstream's session token is embedded in the HTML, and the

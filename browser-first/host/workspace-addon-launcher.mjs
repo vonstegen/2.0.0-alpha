@@ -74,6 +74,15 @@ export async function startWorkspaceAddons({
       .replace(/^_+|_+$/g, "")
       .toUpperCase();
     const addonPrefix = `RESONANTOS_BROWSER_FIRST_${safeId}`;
+    // SDK-DEMO-002: bridgePublicUrl is also exposed via the bridge-token
+    // env (added below) so upstreams can hand the iframe enough auth
+    // material to call /api/<addon>/* directly through their own
+    // origin (not via the bridge proxy). The bridge token is the
+    // bound credential the launcher minted; passing it into the
+    // upstream env is safe because the upstream only forwards it
+    // through its /bootstrap endpoint to the same iframe it is
+    // already embedded by.
+    const addonBridgeToken = parentEnv?.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? "";
     const env = {
       ...(parentEnv ?? {}),
       PATH: (parentEnv?.PATH ?? process.env.PATH ?? "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"),
@@ -85,6 +94,14 @@ export async function startWorkspaceAddons({
       [`${addonPrefix}_HOST`]: "127.0.0.1",
       [`${addonPrefix}_BRIDGE_IDENTITY`]: bridgePublicUrl ?? "bridge",
       [`${addonPrefix}_CAPABILITY_TOKEN`]: bridgeCapabilityTokens[manifest?.messaging?.requestCapability] ?? "",
+      [`${addonPrefix}_ENTRY`]: path.join(addonDir, String(manifest?.contributions?.workspace?.entry ?? "index.html")),
+      [`${addonPrefix}_BRIDGE_TOKEN`]: addonBridgeToken,
+      // SDK-DEMO-002: every upstream also sees the canonical bridge
+      // token name so a generic add-on (Echo, Counter, or any future
+      // workspace add-on) can read the same env var regardless of its
+      // addon-id prefix. This is the variable the bootstrap endpoint
+      // hands to the iframe.
+      RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN: addonBridgeToken,
       // Upstream servers typically key off the canonical capability name
       // (e.g. RESONANTOS_BROWSER_FIRST_HARNESS_MESSAGING_TOKEN) so they
       // can verify the bridge-forwarded capability token without a

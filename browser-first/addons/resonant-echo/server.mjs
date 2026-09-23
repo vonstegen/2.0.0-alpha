@@ -34,6 +34,15 @@ const ENTRY_PATH = process.env.RESONANT_ECHO_ENTRY
 const REQUIRED_CAPABILITY = "harness-messaging";
 const REQUIRED_CAPABILITY_TOKEN = process.env.RESONANT_ECHO_CAPABILITY_TOKEN ?? "";
 const BRIDGE_IDENTITY = process.env.RESONANT_ECHO_BRIDGE_IDENTITY ?? "echo-upstream";
+// SDK-DEMO-002: the launcher passes the bridge token so the add-on's
+// bootstrap endpoint can hand it to the iframe. The iframe needs it to
+// re-authenticate against the bridge (e.g. for capability re-mint).
+// The bridge token is NOT used for /api/<addon>/* calls — those go
+// direct-to-upstream and use the harness-messaging capability token
+// (already enforced below).
+const BRIDGE_TOKEN = process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? "";
+const ADDON_ID = "addon.resonant-echo";
+const API_BASE_PATH = "/api/echo";
 
 const startedAt = new Date().toISOString();
 let messageCount = 0;
@@ -103,6 +112,51 @@ const server = http.createServer(async (req, res) => {
   // bridge's own enforcement, double-checked at the add-on boundary.
   const capabilityOk = REQUIRED_CAPABILITY_TOKEN
     && constantTimeEqual(capabilityToken, REQUIRED_CAPABILITY_TOKEN);
+
+  // SDK-DEMO-002: serve the add-on HTML at root so a sandboxed cross-
+  // origin iframe can load this upstream directly. Capability
+  // enforcement is intentionally NOT applied here: the add-on UI must
+  // render so the user can see the 403 banner when the bootstrap
+  // token exchange fails.
+  if (req.method === "GET" && (pathPart === "/" || pathPart === "/index.html")) {
+    try {
+      const html = await readFile(ENTRY_PATH, "utf8");
+      sendHtml(res, 200, html);
+    } catch (err) {
+      sendText(res, 500, `failed to load entry: ${err.message}`);
+    }
+    return;
+  }
+
+  // SDK-DEMO-002: bootstrap endpoint returns the bridge token + granted
+  // capability tokens + apiBasePath + bridge identity so the add-on's
+  // own script can authenticate its /api/<addon>/* calls directly. The
+  // /bootstrap endpoint itself is capability-gated so a tampered
+  // iframe cannot harvest tokens without first satisfying the bridge
+  // capability check.
+  if (req.method === "GET" && pathPart === "/bootstrap") {
+    if (!capabilityOk) {
+      sendJson(res, 403, {
+        ok: false,
+        error: `Missing or invalid ${REQUIRED_CAPABILITY} capability token.`,
+        bridgeIdentity: BRIDGE_IDENTITY
+      });
+      return;
+    }
+    sendJson(res, 200, {
+      ok: true,
+      addon: ADDON_ID,
+      apiBasePath: API_BASE_PATH,
+      bridgeIdentity: BRIDGE_IDENTITY,
+      bridgeToken: BRIDGE_TOKEN,
+      capabilityTokens: {
+        [REQUIRED_CAPABILITY]: REQUIRED_CAPABILITY_TOKEN
+      }
+    });
+    return;
+  }
+
+  // All /api/echo/* routes require the harness-messaging token.
   if (pathPart.startsWith("/api/echo/")) {
     if (!capabilityOk) {
       sendJson(res, 403, {
@@ -112,16 +166,6 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-  }
-
-  if (req.method === "GET" && (pathPart === "/" || pathPart === "/index.html")) {
-    try {
-      const html = await readFile(ENTRY_PATH, "utf8");
-      sendHtml(res, 200, html);
-    } catch (err) {
-      sendText(res, 500, `failed to load entry: ${err.message}`);
-    }
-    return;
   }
 
   if (req.method === "GET" && pathPart === "/api/echo/status") {
@@ -173,7 +217,9 @@ server.listen(PORT, HOST, () => {
     entryPath: ENTRY_PATH,
     bridgeIdentity: BRIDGE_IDENTITY,
     capabilityEnforced: REQUIRED_CAPABILITY,
-    capabilityTokenSet: Boolean(REQUIRED_CAPABILITY_TOKEN)
+    capabilityTokenSet: Boolean(REQUIRED_CAPABILITY_TOKEN),
+    bridgeTokenSet: Boolean(BRIDGE_TOKEN),
+    apiBasePath: API_BASE_PATH
   }));
 });
 

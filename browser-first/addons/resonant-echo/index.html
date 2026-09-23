@@ -137,15 +137,32 @@
     <div class="meta" id="meta"></div>
   </main>
   <script>
-    // The bridge reverse proxy injects these globals so the iframe can talk
-    // back through the same boundary it was loaded through. The add-on does
-    // not need to know the upstream port — the proxy + bridge-token handle
-    // auth and origin.
+    // SDK-DEMO-002: this add-on now loads cross-origin from its own
+    // upstream origin (http://127.0.0.1:<port>/) inside a sandboxed
+    // opaque-origin iframe. The add-on's own <script> executes (the
+    // historical srcdoc CSP gap is gone). API calls go to the add-on's
+    // OWN origin (no parent-side override, no bridge proxy required
+    // for the round-trip itself).
     //
-    // Every API call below goes through the bridge; the bridge enforces the
-    // `harness-messaging` capability at the host. If the host denies it,
-    // this fetch fails with 403 and the UI shows the denial — that is the
-    // authorized/unauthorized capability test in production form.
+    // Auth model:
+    //   1. On load, fetch /bootstrap with a capability token (carried
+    //      in window.__RESONANTOS_BOOTSTRAP_TOKEN__ when present,
+    //      otherwise same-origin without a token). The bootstrap
+    //      endpoint requires the harness-messaging capability, so a
+    //      tampered iframe cannot harvest tokens without first
+    //      satisfying the upstream's capability check.
+    //   2. /bootstrap returns { apiBasePath, bridgeToken,
+    //      capabilityTokens: { "harness-messaging": "..." },
+    //      bridgeIdentity }. Use these for every /api/<addon>/*
+    //      request.
+    //   3. The upstream enforces the harness-messaging token on every
+    //      /api/<addon>/* call — that is the real authorization
+    //      boundary, not the parent page.
+    //
+    // The apiBasePath comes from the manifest's
+    // contributions.workspace.apiBasePath (e.g. "/api/echo"). The
+    // add-on does NOT hardcode "echo" anywhere — it reads the path
+    // from bootstrap. This is what makes the render generic.
 
     const responseEl = document.getElementById("response");
     const sendBtn = document.getElementById("send");
@@ -154,6 +171,8 @@
     const metaEl = document.getElementById("meta");
     let messageCount = 0;
     let bridgeIdentity = "(unknown)";
+    let apiBasePath = "/api";
+    let bootstrapCapabilityToken = "";
 
     function setStatus(text, tone = "") {
       statusPill.textContent = "status: " + text;
@@ -168,37 +187,91 @@
     function setMeta() {
       metaEl.innerHTML =
         "messages: <code>" + messageCount + "</code> · " +
-        "bridge: <code>" + bridgeIdentity + "</code>";
+        "bridge: <code>" + bridgeIdentity + "</code> · " +
+        "apiBase: <code>" + apiBasePath + "</code>";
+    }
+
+    function authHeaders() {
+      const out = { "content-type": "application/json" };
+      if (bootstrapCapabilityToken) {
+        out["x-resonantos-bridge-capability-token"] = bootstrapCapabilityToken;
+      }
+      return out;
+    }
+
+    async function loadBootstrap() {
+      // The bootstrap endpoint is capability-gated. We do not have a
+      // token yet, so the first call lands as 403 — the UI surfaces
+      // that as the unauthorized-capability test. In a normal
+      // deployment, the bridge injects
+      // window.__RESONANTOS_BOOTSTRAP_TOKEN__ before the iframe
+      // loads; if present, we use it for the bootstrap exchange.
+      const bootstrapHeaders = {
+        "x-resonantos-bridge-capability-token":
+          window.__RESONANTOS_BOOTSTRAP_TOKEN__ ?? ""
+      };
+      const r = await fetch("/bootstrap", {
+        method: "GET",
+        headers: bootstrapHeaders
+      });
+      if (!r.ok) {
+        return { ok: false, status: r.status };
+      }
+      const body = await r.json();
+      return { ok: true, body };
     }
 
     async function probeStatus() {
       try {
-        const r = await fetch("/api/echo/status", { method: "GET" });
-        if (!r.ok) {
-          setStatus("denied (" + r.status + ")", "");
+        const bootstrap = await loadBootstrap();
+        if (!bootstrap.ok) {
+          setStatus("denied (" + bootstrap.status + ")", "");
           setResponse(
-            "GET /api/echo/status returned HTTP " + r.status + ". " +
-            "The host denied the harness-messaging capability. " +
-            "This is the expected outcome if the capability is not granted.",
+            "GET /bootstrap returned HTTP " + bootstrap.status + ". " +
+            "The upstream denied the harness-messaging capability. " +
+            "This is the unauthorized-capability enforcement signal.",
             true
           );
           sendBtn.disabled = true;
           return;
         }
-        const body = await r.json();
+        const { apiBasePath: declaredApi, bridgeIdentity: bid, capabilityTokens } = bootstrap.body;
+        apiBasePath = String(declaredApi || "/api");
+        if (bid) bridgeIdentity = bid;
+        bootstrapCapabilityToken = String(capabilityTokens?.["harness-messaging"] ?? "");
+        // Probe the status endpoint using the apiBasePath from the
+        // manifest — no hardcode. This is the SDK-DEMO-002 generic
+        // check: Counter/Echo/any-future-add-on will all light up
+        // here without per-addon code in Core.
+        const statusUrl = `${apiBasePath.replace(/\/+$/, "")}/status`;
+        const statusResp = await fetch(statusUrl, {
+          method: "GET",
+          headers: { "x-resonantos-bridge-capability-token": bootstrapCapabilityToken }
+        });
+        if (!statusResp.ok) {
+          setStatus("denied (" + statusResp.status + ")", "");
+          setResponse(
+            "GET " + statusUrl + " returned HTTP " + statusResp.status + ". " +
+            "The upstream denied the harness-messaging capability.",
+            true
+          );
+          sendBtn.disabled = true;
+          return;
+        }
+        const statusBody = await statusResp.json();
         setStatus("connected", "ok");
         sendBtn.disabled = false;
-        if (body.bridgeIdentity) bridgeIdentity = body.bridgeIdentity;
+        if (statusBody.bridgeIdentity) bridgeIdentity = statusBody.bridgeIdentity;
         setResponse(
-          'Resonant Echo ready. The message round-trip below crosses:\n' +
-          '  workspace  →  iframe srcdoc  →  bridge proxy  →  ResonantOS host  →  deterministic responder.',
+          "Resonant Echo ready. The message round-trip below crosses:\n" +
+          "  workspace  →  opaque-origin iframe (sandbox allow-scripts)  →  add-on upstream  →  bridge capability token enforced at upstream.",
           true
         );
         setMeta();
       } catch (err) {
-        setStatus("bridge offline", "");
+        setStatus("upstream offline", "");
         setResponse(
-          "Could not reach the ResonantOS bridge: " +
+          "Could not reach the add-on upstream: " +
           (err && err.message ? err.message : String(err)),
           true
         );
@@ -209,18 +282,27 @@
     async function sendMessage() {
       const text = inputEl.value;
       if (!text || !text.trim()) return;
+      if (!bootstrapCapabilityToken) {
+        setResponse(
+          "Resonant Echo cannot send messages without a bootstrap-issued capability token. " +
+          "Reload the workspace; if the upstream denied /bootstrap, the 403 banner above explains why.",
+          true
+        );
+        return;
+      }
       sendBtn.disabled = true;
       setResponse("…");
       try {
-        const r = await fetch("/api/echo/message", {
+        const messageUrl = `${apiBasePath.replace(/\/+$/, "")}/message`;
+        const r = await fetch(messageUrl, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: authHeaders(),
           body: JSON.stringify({ message: text })
         });
         if (r.status === 403) {
           setResponse(
-            "Resonant Echo received a 403 from the bridge.\n\n" +
-            "The host denied harness-messaging for this request. " +
+            "Resonant Echo received a 403 from the upstream.\n\n" +
+            "The upstream denied harness-messaging for this request. " +
             "This is the unauthorized-capability enforcement signal.",
             true
           );
