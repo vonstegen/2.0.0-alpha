@@ -32,7 +32,7 @@
       "type": "iframe",
       "proxyPath": "/echo/",
       "apiBasePath": "/api/echo",
-      "iframeMode": "srcdoc",
+      "iframeMode": "src",
       "entry": "index.html",
       "mirrorPaths": [
         { "bridge": "/echo", "upstream": "" },

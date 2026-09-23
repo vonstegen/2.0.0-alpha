@@ -96,7 +96,19 @@ function readJsonBody(req) {
 async function serveEntryHtml(req, res) {
   try {
     const html = await readFile(ENTRY_PATH, "utf8");
-    sendHtml(res, 200, html);
+    // SDK-DEMO-002-FIX: production token delivery. The upstream holds
+    // the capability token via env (the bridge launcher passes it).
+    // Inject it into the served HTML as a global so the add-on's own
+    // <script> sees window.__RESONANTOS_BOOTSTRAP_TOKEN__ BEFORE its
+    // first /bootstrap fetch fires. Exposure limited to loopback HTTP
+    // (upstream only listens on 127.0.0.1); see
+    // docs/architecture/sdk-demo-002-r-and-d-record.md §"Token
+    // delivery: server-template".
+    const bootstrapScript = `<script>window.__RESONANTOS_BOOTSTRAP_TOKEN__=${JSON.stringify(EXPECTED_TOKEN)};window.__RESONANTOS_BRIDGE_IDENTITY__=${JSON.stringify(BRIDGE_PUBLIC_URL)};window.__RESONANTOS_API_BASE_PATH__=${JSON.stringify(API_BASE_PATH)};</script>`;
+    const templated = html.includes("<script")
+      ? html.replace(/(<script\b)/i, `${bootstrapScript}$1`)
+      : `${html}\n${bootstrapScript}`;
+    sendHtml(res, 200, templated);
   } catch (err) {
     sendText(res, 500, `failed to load entry: ${err?.message ?? String(err)}`);
   }

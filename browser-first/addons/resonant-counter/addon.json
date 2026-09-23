@@ -14,7 +14,7 @@
       "type": "iframe",
       "proxyPath": "/counter/",
       "apiBasePath": "/api/counter",
-      "iframeMode": "srcdoc",
+      "iframeMode": "src",
       "entry": "index.html",
       "upstreamPortEnvVar": "RESONANTOS_BROWSER_FIRST_RESONANT_COUNTER_PORT",
       "mirrorPaths": [

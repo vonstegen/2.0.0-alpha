@@ -32,7 +32,7 @@
       "type": "iframe",
       "proxyPath": "/sdk-guide/",
       "apiBasePath": "/api/sdk-guide",
-      "iframeMode": "srcdoc",
+      "iframeMode": "src",
       "entry": "index.html",
       "mirrorPaths": [
         { "bridge": "/sdk-guide", "upstream": "" },

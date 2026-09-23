@@ -121,7 +121,28 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && (pathPart === "/" || pathPart === "/index.html")) {
     try {
       const html = await readFile(ENTRY_PATH, "utf8");
-      sendHtml(res, 200, html);
+      // SDK-DEMO-002-FIX: production token delivery. The upstream
+      // already holds the capability token via env (the bridge launcher
+      // passes it). Inject it into the served HTML as a global so the
+      // add-on's own <script> sees window.__RESONANTOS_BOOTSTRAP_TOKEN__
+      // BEFORE its first /bootstrap fetch fires. The exposure is
+      // limited to loopback HTTP (the upstream only listens on
+      // 127.0.0.1); see docs/architecture/sdk-demo-002-r-and-d-record.md
+      // §"Token delivery: server-template" for the threat-model note.
+      //
+      // We inject right before the first <script ...> tag so the
+      // global is in place before any module evaluates. The
+      // bootstrap token is the bridge-issued capability token for
+      // the harness-messaging capability — the same one /bootstrap
+      // would hand back if the iframe called /bootstrap first.
+      const bootstrapToken = REQUIRED_CAPABILITY_TOKEN;
+      const bootstrapIdentity = BRIDGE_IDENTITY;
+      const bootstrapApiBasePath = API_BASE_PATH;
+      const bootstrapScript = `<script>window.__RESONANTOS_BOOTSTRAP_TOKEN__=${JSON.stringify(bootstrapToken)};window.__RESONANTOS_BRIDGE_IDENTITY__=${JSON.stringify(bootstrapIdentity)};window.__RESONANTOS_API_BASE_PATH__=${JSON.stringify(bootstrapApiBasePath)};</script>`;
+      const templated = html.includes("<script")
+        ? html.replace(/(<script\b)/i, `${bootstrapScript}$1`)
+        : `${html}\n${bootstrapScript}`;
+      sendHtml(res, 200, templated);
     } catch (err) {
       sendText(res, 500, `failed to load entry: ${err.message}`);
     }

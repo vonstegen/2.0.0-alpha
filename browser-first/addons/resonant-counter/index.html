@@ -110,9 +110,32 @@
       }
 
       async function loadBootstrap() {
+        // SDK-DEMO-002-FIX: production token delivery. The upstream
+        // server.mjs templates the capability token into the served
+        // HTML as window.__RESONANTOS_BOOTSTRAP_TOKEN__ before this
+        // script runs. Use that as the primary source so the add-on
+        // lights up without a /bootstrap round-trip. The /bootstrap
+        // endpoint is kept as a defense-in-depth fallback for cases
+        // where the templated global is missing.
+        const templatedToken = typeof window.__RESONANTOS_BOOTSTRAP_TOKEN__ === "string"
+          ? window.__RESONANTOS_BOOTSTRAP_TOKEN__
+          : "";
+        if (templatedToken) {
+          return {
+            apiBasePath:
+              typeof window.__RESONANTOS_API_BASE_PATH__ === "string"
+                ? window.__RESONANTOS_API_BASE_PATH__
+                : "/api",
+            bridgeIdentity:
+              typeof window.__RESONANTOS_BRIDGE_IDENTITY__ === "string"
+                ? window.__RESONANTOS_BRIDGE_IDENTITY__
+                : "unknown",
+            bridgeToken: "",
+            capabilityTokens: { "harness-messaging": templatedToken }
+          };
+        }
         const headers = {
-          "x-resonantos-bridge-capability-token":
-            window.__RESONANTOS_BOOTSTRAP_TOKEN__ ?? ""
+          "x-resonantos-bridge-capability-token": ""
         };
         const response = await fetch("/bootstrap", { method: "GET", headers });
         if (!response.ok) {

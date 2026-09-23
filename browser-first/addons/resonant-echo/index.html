@@ -200,25 +200,48 @@
     }
 
     async function loadBootstrap() {
-      // The bootstrap endpoint is capability-gated. We do not have a
-      // token yet, so the first call lands as 403 — the UI surfaces
-      // that as the unauthorized-capability test. In a normal
-      // deployment, the bridge injects
-      // window.__RESONANTOS_BOOTSTRAP_TOKEN__ before the iframe
-      // loads; if present, we use it for the bootstrap exchange.
-      const bootstrapHeaders = {
-        "x-resonantos-bridge-capability-token":
-          window.__RESONANTOS_BOOTSTRAP_TOKEN__ ?? ""
-      };
+      // SDK-DEMO-002-FIX: production token delivery. The upstream
+      // server.mjs templates the capability token into the served HTML
+      // as window.__RESONANTOS_BOOTSTRAP_TOKEN__ before this script
+      // runs. We use that templated global as the primary source so
+      // the iframe lights up without needing a /bootstrap round-trip.
+      // The /bootstrap endpoint is kept as a defense-in-depth fallback
+      // for cases where the templated global is missing (e.g. the
+      // upstream was started without a capability token env).
+      const templatedToken = typeof window.__RESONANTOS_BOOTSTRAP_TOKEN__ === "string"
+        ? window.__RESONANTOS_BOOTSTRAP_TOKEN__
+        : "";
+      const templatedIdentity = typeof window.__RESONANTOS_BRIDGE_IDENTITY__ === "string"
+        ? window.__RESONANTOS_BRIDGE_IDENTITY__
+        : "";
+      const templatedApiBase = typeof window.__RESONANTOS_API_BASE_PATH__ === "string"
+        ? window.__RESONANTOS_API_BASE_PATH__
+        : "";
+      if (templatedToken) {
+        return {
+          ok: true,
+          body: {
+            apiBasePath: templatedApiBase || "/api",
+            bridgeIdentity: templatedIdentity || "(unknown)",
+            bridgeToken: "",
+            capabilityTokens: { "harness-messaging": templatedToken }
+          },
+          source: "templated"
+        };
+      }
+      // Fallback: hit /bootstrap directly. This path requires the
+      // harness-messaging capability token, which a tampered iframe
+      // does not have — so without the templated global, this 403s and
+      // the UI surfaces the unauthorized-capability banner.
       const r = await fetch("/bootstrap", {
         method: "GET",
-        headers: bootstrapHeaders
+        headers: { "x-resonantos-bridge-capability-token": "" }
       });
       if (!r.ok) {
-        return { ok: false, status: r.status };
+        return { ok: false, status: r.status, source: "bootstrap-403" };
       }
       const body = await r.json();
-      return { ok: true, body };
+      return { ok: true, body, source: "bootstrap" };
     }
 
     async function probeStatus() {

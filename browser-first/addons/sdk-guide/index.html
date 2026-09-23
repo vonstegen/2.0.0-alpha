@@ -327,10 +327,13 @@
   </div>
 
   <script>
-    // ===== Wire to the bridge via the same harness-messaging capability
-    // as Resonant Echo and Resonant Counter. The bridge override is
-    // installed by the parent extension; we just call fetch with a
-    // relative URL and let the override rewrite it to the bridge.
+    // SDK-DEMO-002-FIX: production token delivery. The upstream
+    // server.mjs templates the harness-messaging capability token into
+    // the served HTML as window.__RESONANTOS_BOOTSTRAP_TOKEN__ before
+    // this script runs. We use that global for every /api/<addon>/*
+    // call. Response shape is the upstream's direct shape (no bridge
+    // proxy wrapping): { ok, addon, echo, ... } instead of the
+    // historical { body: { ok, ... } } shape.
     const addonLabel = "SDK Guide";
     const responseEl = (id) => document.getElementById(id);
     const statusPill = document.getElementById("status-pill");
@@ -339,27 +342,50 @@
     const deniedFire = document.getElementById("denied-fire");
     const liveMsg = document.getElementById("live-msg");
 
+    const BOOTSTRAP_TOKEN = typeof window.__RESONANTOS_BOOTSTRAP_TOKEN__ === "string"
+      ? window.__RESONANTOS_BOOTSTRAP_TOKEN__
+      : "";
+    const BRIDGE_IDENTITY = typeof window.__RESONANTOS_BRIDGE_IDENTITY__ === "string"
+      ? window.__RESONANTOS_BRIDGE_IDENTITY__
+      : "";
+    const API_BASE_PATH = typeof window.__RESONANTOS_API_BASE_PATH__ === "string"
+      ? window.__RESONANTOS_API_BASE_PATH__
+      : "/api/sdk-guide";
+
     function setStatus(text, tone) {
       statusPill.textContent = "status: " + text;
       statusPill.classList.remove("ok", "err");
       if (tone) statusPill.classList.add(tone);
     }
 
-    // Auto-refresh the status pill once the parent's bridge wire is
-    // installed. The override is installed via window.fetch replacement
-    // by the parent extension. We ping the same /status endpoint here
-    // (after a short delay so the override has time to land) and flip
-    // the UI based on the result. This mirrors the timing fix used by
-    // Resonant Echo and keeps the user-visible flow consistent.
+    function authHeaders() {
+      const out = { "content-type": "application/json" };
+      if (BOOTSTRAP_TOKEN) {
+        out["x-resonantos-bridge-capability-token"] = BOOTSTRAP_TOKEN;
+      }
+      return out;
+    }
+
+    function apiUrl(path) {
+      return API_BASE_PATH.replace(/\/+$/, "") + path;
+    }
+
+    // Probe the upstream on load. If the templated token is missing,
+    // /api/sdk-guide/status will 403 and we surface the
+    // unauthorized-capability banner.
     function refreshStatus() {
       if (!statusPill.textContent.includes("connecting")) return;
-      fetch("/api/sdk-guide/status", { method: "GET" })
+      if (!BOOTSTRAP_TOKEN) {
+        setStatus("denied (no bootstrap token)", "err");
+        return;
+      }
+      fetch(apiUrl("/status"), { method: "GET", headers: authHeaders() })
         .then(function (r) {
           if (!r.ok) return null;
           return r.json();
         })
         .then(function (body) {
-          if (body && body.body && body.body.ok) {
+          if (body && body.ok) {
             setStatus("connected", "ok");
             liveSend.disabled = false;
             liveReset.disabled = false;
@@ -379,27 +405,26 @@
       ev.classList.remove("err");
       ev.innerHTML = "<pre>sending…</pre>";
       try {
-        const r = await fetch("/api/sdk-guide/message", {
+        const r = await fetch(apiUrl("/message"), {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: authHeaders(),
           body: JSON.stringify({ message: text })
         });
         const body = await r.json();
-        if (r.ok && body.body && body.body.ok) {
-          const inner = body.body;
+        if (r.ok && body && body.ok) {
           ev.innerHTML =
             "<pre>HTTP " + r.status + "\n" +
-            "addon: " + inner.addon + "\n" +
-            "echo: " + JSON.stringify(inner.echo) + "\n" +
-            "bridgeIdentity: " + inner.bridgeIdentity + "\n" +
-            "receivedAt: " + inner.receivedAt + "\n" +
-            "messageCount: " + inner.messageCount + "\n" +
-            "capability: " + inner.capability + "</pre>" +
-            "<pre>" + JSON.stringify(inner.crossBoundaryEvidence, null, 2) + "</pre>";
+            "addon: " + body.addon + "\n" +
+            "echo: " + JSON.stringify(body.echo) + "\n" +
+            "bridgeIdentity: " + body.bridgeIdentity + "\n" +
+            "receivedAt: " + body.receivedAt + "\n" +
+            "messageCount: " + body.messageCount + "\n" +
+            "capability: " + body.capability + "</pre>" +
+            "<pre>" + JSON.stringify(body.crossBoundaryEvidence, null, 2) + "</pre>";
         } else if (r.status === 403) {
           ev.classList.remove("ok");
           ev.classList.add("err");
-          ev.innerHTML = "<pre>HTTP 403 — harness-messaging capability was rejected.\n\n" + (body && body.error ? body.error : "see bridge log") + "</pre>";
+          ev.innerHTML = "<pre>HTTP 403 — harness-messaging capability was rejected.\n\n" + (body && body.error ? body.error : "see upstream log") + "</pre>";
         } else {
           ev.classList.remove("ok");
           ev.classList.add("err");
@@ -430,13 +455,11 @@
       ev.innerHTML = "<pre>requesting unauthorized capability…</pre>";
       try {
         // The add-on tries to invoke a route that requires a capability
-        // it does NOT possess. The bridge returns 403 with the canonical
-        // "Bridge route requires X capability." message. We deliberately
-        // hit our own /api/sdk-guide/denied endpoint which mirrors the
-        // exact shape the bridge would emit for an undeclared capability.
-        const r = await fetch("/api/sdk-guide/denied", {
+        // it does NOT possess. The upstream returns 403 directly with
+        // the canonical "Bridge route requires X capability." message.
+        const r = await fetch(apiUrl("/denied"), {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: authHeaders(),
           body: JSON.stringify({ capability: "wallet-signing" })
         });
         const body = await r.json();
@@ -484,12 +507,11 @@
     showStage(0);
 
     // ===== Initial wire =====
-    // Trigger the parent's bridge override; if it lands, the override's
-    // fetch will replace this fetch and our status probe will succeed.
+    // Direct cross-origin fetch — no bridge proxy wrapping. The upstream
+    // enforces the harness-messaging capability token on every route.
     setTimeout(refreshStatus, 50);
     setTimeout(refreshStatus, 250);
     setTimeout(refreshStatus, 800);
-    setTimeout(refreshStatus, 2000);
   </script>
 </body>
 </html>
