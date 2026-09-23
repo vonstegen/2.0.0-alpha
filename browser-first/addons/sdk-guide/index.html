@@ -327,13 +327,17 @@
   </div>
 
   <script>
-    // SDK-DEMO-002-FIX: production token delivery. The upstream
-    // server.mjs templates the harness-messaging capability token into
-    // the served HTML as window.__RESONANTOS_BOOTSTRAP_TOKEN__ before
-    // this script runs. We use that global for every /api/<addon>/*
-    // call. Response shape is the upstream's direct shape (no bridge
-    // proxy wrapping): { ok, addon, echo, ... } instead of the
-    // historical { body: { ok, ... } } shape.
+    // SDK-DEMO-002-FIX-2: production token delivery via postMessage.
+    // The extension's renderer mints the harness-messaging capability
+    // token via the bridge (POST /api/capability-tokens), then delivers
+    // the bootstrap config to this iframe via postMessage with
+    // targetOrigin = the add-on's own upstream origin. We validate
+    // event.source === window.parent AND event.data.type ===
+    // "resonantos-addon-bootstrap" before trusting the message. The
+    // bridge token is NEVER included in the payload — this add-on does
+    // not need it. /api/<addon>/* calls are same-origin fetches (no
+    // CORS, no ACAO). Response shape is the upstream's direct shape:
+    // { ok, addon, echo, ... }.
     const addonLabel = "SDK Guide";
     const responseEl = (id) => document.getElementById(id);
     const statusPill = document.getElementById("status-pill");
@@ -342,15 +346,9 @@
     const deniedFire = document.getElementById("denied-fire");
     const liveMsg = document.getElementById("live-msg");
 
-    const BOOTSTRAP_TOKEN = typeof window.__RESONANTOS_BOOTSTRAP_TOKEN__ === "string"
-      ? window.__RESONANTOS_BOOTSTRAP_TOKEN__
-      : "";
-    const BRIDGE_IDENTITY = typeof window.__RESONANTOS_BRIDGE_IDENTITY__ === "string"
-      ? window.__RESONANTOS_BRIDGE_IDENTITY__
-      : "";
-    const API_BASE_PATH = typeof window.__RESONANTOS_API_BASE_PATH__ === "string"
-      ? window.__RESONANTOS_API_BASE_PATH__
-      : "/api/sdk-guide";
+    let BOOTSTRAP_TOKEN = "";
+    let BRIDGE_IDENTITY = "";
+    let API_BASE_PATH = "/api/sdk-guide";
 
     function setStatus(text, tone) {
       statusPill.textContent = "status: " + text;
@@ -370,10 +368,36 @@
       return API_BASE_PATH.replace(/\/+$/, "") + path;
     }
 
-    // Probe the upstream on load. If the templated token is missing,
-    // /api/sdk-guide/status will 403 and we surface the
-    // unauthorized-capability banner.
-    function refreshStatus() {
+    function applyBootstrap({ apiBasePath, bridgeIdentity, capabilityTokens }) {
+      API_BASE_PATH = String(apiBasePath || "/api/sdk-guide");
+      if (bridgeIdentity) BRIDGE_IDENTITY = bridgeIdentity;
+      BOOTSTRAP_TOKEN = String((capabilityTokens && capabilityTokens["harness-messaging"]) ?? "");
+    }
+
+    function awaitBootstrap() {
+      // Wait for the parent's postMessage delivery. Validate
+      // event.source AND event.data.type before trusting the
+      // message.
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          window.removeEventListener("message", onMessage);
+          reject(new Error("bootstrap timeout (no postMessage from parent)"));
+        }, 15000);
+        function onMessage(event) {
+          if (event.source !== window.parent) return;
+          const data = event.data;
+          if (!data || typeof data !== "object") return;
+          if (data.type !== "resonantos-addon-bootstrap") return;
+          clearTimeout(timer);
+          window.removeEventListener("message", onMessage);
+          applyBootstrap(data);
+          resolve(data);
+        }
+        window.addEventListener("message", onMessage);
+      });
+    }
+
+    async function refreshStatus() {
       if (!statusPill.textContent.includes("connecting")) return;
       if (!BOOTSTRAP_TOKEN) {
         setStatus("denied (no bootstrap token)", "err");
@@ -507,11 +531,22 @@
     showStage(0);
 
     // ===== Initial wire =====
-    // Direct cross-origin fetch — no bridge proxy wrapping. The upstream
-    // enforces the harness-messaging capability token on every route.
-    setTimeout(refreshStatus, 50);
-    setTimeout(refreshStatus, 250);
-    setTimeout(refreshStatus, 800);
+    // Same-origin fetch — no CORS, no ACAO. The upstream enforces the
+    // harness-messaging capability token on every route. Wait for the
+    // parent's bootstrap postMessage before lighting up.
+    awaitBootstrap()
+      .then(function () {
+        // Re-probe status a few times in case the upstream was slow.
+        refreshStatus();
+        setTimeout(refreshStatus, 250);
+        setTimeout(refreshStatus, 800);
+      })
+      .catch(function (err) {
+        setStatus("bootstrap timeout", "err");
+        liveSend.disabled = true;
+        liveReset.disabled = true;
+        deniedFire.disabled = true;
+      });
   </script>
 </body>
 </html>

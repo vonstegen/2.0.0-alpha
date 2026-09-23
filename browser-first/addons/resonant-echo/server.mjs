@@ -34,13 +34,13 @@ const ENTRY_PATH = process.env.RESONANT_ECHO_ENTRY
 const REQUIRED_CAPABILITY = "harness-messaging";
 const REQUIRED_CAPABILITY_TOKEN = process.env.RESONANT_ECHO_CAPABILITY_TOKEN ?? "";
 const BRIDGE_IDENTITY = process.env.RESONANT_ECHO_BRIDGE_IDENTITY ?? "echo-upstream";
-// SDK-DEMO-002: the launcher passes the bridge token so the add-on's
-// bootstrap endpoint can hand it to the iframe. The iframe needs it to
-// re-authenticate against the bridge (e.g. for capability re-mint).
-// The bridge token is NOT used for /api/<addon>/* calls — those go
-// direct-to-upstream and use the harness-messaging capability token
-// (already enforced below).
-const BRIDGE_TOKEN = process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? "";
+// SDK-DEMO-002-FIX-2: the bridge token is no longer needed by this
+// upstream — capability tokens flow parent → iframe via postMessage
+// (minted by the extension's renderer through the bridge's
+// /api/capability-tokens endpoint). The add-on's own /api/<addon>/*
+// calls are same-origin (no CORS) and authenticated with the
+// capability token, not the bridge token. We deliberately do NOT
+// read RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN here.
 const ADDON_ID = "addon.resonant-echo";
 const API_BASE_PATH = "/api/echo";
 
@@ -106,96 +106,55 @@ const server = http.createServer(async (req, res) => {
   const pathPart = url.split("?")[0] ?? "/";
   const capabilityToken = String(req.headers["x-resonantos-bridge-capability-token"] ?? "");
 
-  // SDK-DEMO-002-FIX: CORS for opaque-origin sandboxed iframe. The
-  // workspaceCrossOrigin renderer puts the add-on's own HTML inside
-  // a sandbox="allow-scripts" iframe (no allow-same-origin), so the
-  // iframe's origin is opaque. To let the iframe's own <script>
-  // fetch /api/<addon>/* from its own URL, the upstream must allow
-  // `Origin: null` (Chrome's serialization of opaque-origin
-  // contexts). Without this header the browser blocks the fetch as
-  // a CORS violation and the UI surfaces "Failed to fetch".
+  // SDK-DEMO-002-FIX-2: OPTIONS is not a CORS preflight — we do not
+  // serve CORS for this upstream. Return 404 immediately so the
+  // browser sees an explicit "no such route" and refuses the
+  // preflight (the iframe's same-origin fetch does not trigger
+  // preflight anyway).
   if (req.method === "OPTIONS") {
-    res.writeHead(204, {
-      "access-control-allow-origin": "null",
-      "access-control-allow-methods": "GET, POST, OPTIONS",
-      "access-control-allow-headers": "content-type, x-resonantos-bridge-capability-token",
-      "access-control-max-age": "600"
-    });
-    res.end();
+    sendText(res, 404, `not found: OPTIONS ${pathPart}`);
     return;
   }
-  res.setHeader("access-control-allow-origin", "null");
 
-  // Capability gate. The bridge passes through the host's capability
-  // header, so this is a real upstream-side authorization check. A
-  // missing or mismatched token returns 403 — equivalent to the
-  // bridge's own enforcement, double-checked at the add-on boundary.
+  // SDK-DEMO-002-FIX-2: no CORS headers. The iframe is sandboxed with
+  // `allow-scripts allow-same-origin`, so the iframe's origin equals
+  // the upstream origin. Same-origin fetches don't trigger CORS — no
+  // ACAO needed. We deliberately do NOT set Access-Control-Allow-Origin
+  // (not even "null"), which means a null-origin iframe (any sandboxed
+  // iframe on any site) cannot read our responses. The bridge
+  // reverse-proxy origin and any other origin also cannot read our
+  // responses. The only context that can read them is an iframe whose
+  // origin is `http://127.0.0.1:<port>` — i.e. the add-on's own
+  // upstream, which is what we want.
+
+  // Capability gate. The add-on's iframe supplies the
+  // harness-messaging token (delivered by postMessage from the
+  // parent). A missing or mismatched token returns 403. This is the
+  // REAL authorization boundary — the parent cannot bypass it because
+  // the parent has no reach into the iframe's same-origin fetch
+  // context.
   const capabilityOk = REQUIRED_CAPABILITY_TOKEN
     && constantTimeEqual(capabilityToken, REQUIRED_CAPABILITY_TOKEN);
 
-  // SDK-DEMO-002: serve the add-on HTML at root so a sandboxed cross-
-  // origin iframe can load this upstream directly. Capability
-  // enforcement is intentionally NOT applied here: the add-on UI must
-  // render so the user can see the 403 banner when the bootstrap
-  // token exchange fails.
+  // SDK-DEMO-002-FIX-2: serve the add-on HTML at root so a sandboxed
+  // cross-origin iframe can load this upstream directly. NO token
+  // templating — the add-on receives its bootstrap config via
+  // postMessage from the parent, not via HTML globals.
   if (req.method === "GET" && (pathPart === "/" || pathPart === "/index.html")) {
     try {
       const html = await readFile(ENTRY_PATH, "utf8");
-      // SDK-DEMO-002-FIX: production token delivery. The upstream
-      // already holds the capability token via env (the bridge launcher
-      // passes it). Inject it into the served HTML as a global so the
-      // add-on's own <script> sees window.__RESONANTOS_BOOTSTRAP_TOKEN__
-      // BEFORE its first /bootstrap fetch fires. The exposure is
-      // limited to loopback HTTP (the upstream only listens on
-      // 127.0.0.1); see docs/architecture/sdk-demo-002-r-and-d-record.md
-      // §"Token delivery: server-template" for the threat-model note.
-      //
-      // We inject right before the first <script ...> tag so the
-      // global is in place before any module evaluates. The
-      // bootstrap token is the bridge-issued capability token for
-      // the harness-messaging capability — the same one /bootstrap
-      // would hand back if the iframe called /bootstrap first.
-      const bootstrapToken = REQUIRED_CAPABILITY_TOKEN;
-      const bootstrapIdentity = BRIDGE_IDENTITY;
-      const bootstrapApiBasePath = API_BASE_PATH;
-      const bootstrapScript = `<script>window.__RESONANTOS_BOOTSTRAP_TOKEN__=${JSON.stringify(bootstrapToken)};window.__RESONANTOS_BRIDGE_IDENTITY__=${JSON.stringify(bootstrapIdentity)};window.__RESONANTOS_API_BASE_PATH__=${JSON.stringify(bootstrapApiBasePath)};</script>`;
-      const templated = html.includes("<script")
-        ? html.replace(/(<script\b)/i, `${bootstrapScript}$1`)
-        : `${html}\n${bootstrapScript}`;
-      sendHtml(res, 200, templated);
+      sendHtml(res, 200, html);
     } catch (err) {
       sendText(res, 500, `failed to load entry: ${err.message}`);
     }
     return;
   }
 
-  // SDK-DEMO-002: bootstrap endpoint returns the bridge token + granted
-  // capability tokens + apiBasePath + bridge identity so the add-on's
-  // own script can authenticate its /api/<addon>/* calls directly. The
-  // /bootstrap endpoint itself is capability-gated so a tampered
-  // iframe cannot harvest tokens without first satisfying the bridge
-  // capability check.
-  if (req.method === "GET" && pathPart === "/bootstrap") {
-    if (!capabilityOk) {
-      sendJson(res, 403, {
-        ok: false,
-        error: `Missing or invalid ${REQUIRED_CAPABILITY} capability token.`,
-        bridgeIdentity: BRIDGE_IDENTITY
-      });
-      return;
-    }
-    sendJson(res, 200, {
-      ok: true,
-      addon: ADDON_ID,
-      apiBasePath: API_BASE_PATH,
-      bridgeIdentity: BRIDGE_IDENTITY,
-      bridgeToken: BRIDGE_TOKEN,
-      capabilityTokens: {
-        [REQUIRED_CAPABILITY]: REQUIRED_CAPABILITY_TOKEN
-      }
-    });
-    return;
-  }
+  // SDK-DEMO-002-FIX-2: /bootstrap endpoint REMOVED. There is no
+  // production path that calls /bootstrap (the add-on's <script>
+  // listens for postMessage from window.parent instead). Keeping the
+  // endpoint would be a confused-deputy surface that could be hit by
+  // any same-origin caller; the right call is to remove it.
 
   // All /api/echo/* routes require the harness-messaging token.
   if (pathPart.startsWith("/api/echo/")) {
@@ -259,7 +218,6 @@ server.listen(PORT, HOST, () => {
     bridgeIdentity: BRIDGE_IDENTITY,
     capabilityEnforced: REQUIRED_CAPABILITY,
     capabilityTokenSet: Boolean(REQUIRED_CAPABILITY_TOKEN),
-    bridgeTokenSet: Boolean(BRIDGE_TOKEN),
     apiBasePath: API_BASE_PATH
   }));
 });

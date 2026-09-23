@@ -392,20 +392,31 @@ function wireIframeBridgeFetch({
 //             same-origin to the extension (i.e. extension-local). Used
 //             for the OpenCode stack where the JS is loaded from
 //             chrome-extension://…/src/lib/… (same origin as parent).
-//   - "workspaceCrossOrigin" (SDK-DEMO-002): set iframe.src directly to
-//             the workspace add-on's upstream origin (e.g.
+//   - "workspaceCrossOrigin" (SDK-DEMO-002-FIX-2): set iframe.src
+//             directly to the workspace add-on's upstream origin (e.g.
 //             `http://127.0.0.1:47321/`). The iframe is sandboxed with
-//             `allow-scripts` only — no `allow-same-origin`, so the
-//             iframe runs in an OPAQUE origin and cannot read or write
-//             the extension's chrome-extension:// origin. The add-on's
-//             server.mjs is expected to serve its index.html at root
-//             and expose a `/bootstrap` endpoint that returns the
-//             bridge token + capability tokens + apiBasePath, so the
-//             add-on's own script can authenticate its /api/<addon>/*
-//             calls. This is the cross-origin + isolated mode used by
-//             third-party workspace add-ons (Echo, Counter, and any
-//             future SDK add-on). `upstreamOrigin` MUST be supplied
-//             (e.g. `http://127.0.0.1:47321`).
+//             `allow-scripts allow-same-origin` — NOT `allow-scripts`
+//             alone, because `allow-same-origin` makes the iframe's
+//             origin equal to its src origin (the upstream), which
+//             (a) lets the iframe's own <script> fetch its own
+//             /api/<addon>/* URLs WITHOUT a CORS preflight (same-
+//             origin fetches don't trigger CORS), and (b) lets the
+//             parent use `iframe.contentWindow.postMessage` to deliver
+//             the bootstrap config (apiBasePath + capabilityTokens +
+//             bridgeIdentity) without an opaque-origin wall.
+//             `allow-same-origin` is SAFE here because the iframe
+//             origin is the upstream origin, NOT the extension
+//             origin — it grants no reach into the extension. The
+//             iframe still cannot reach chrome-extension:// APIs,
+//             extension storage, the bridge origin, or the parent
+//             page DOM. No allow-forms/popups/modals (the add-on
+//             must request these via its manifest if it needs them).
+//             Token delivery is postMessage from parent → iframe with
+//             targetOrigin = the upstream origin; the add-on's
+//             <script> validates event.source === window.parent and
+//             event.data.type === "resonantos-addon-bootstrap". The
+//             add-on NEVER receives the bridge token. `upstreamOrigin`
+//             MUST be supplied (e.g. `http://127.0.0.1:47321`).
 export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath, rawFetch, bridgeUrl = "", bridgeToken = "", capabilityBootstrapToken = "", addonCapabilities = [], mode = "src", upstreamOrigin = "" }) {
   let currentRequest = null;
   return function renderAddonIframe({ container }) {
@@ -420,16 +431,17 @@ export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath,
     const iframe = document.createElement("iframe");
     iframe.className = "addon-iframe";
     if (mode === "workspaceCrossOrigin") {
-      // SDK-DEMO-002: workspace add-ons render cross-origin with the
-      // strictest sane sandbox. NO allow-same-origin (the iframe must
-      // not be able to read or write the extension's chrome-extension://
-      // origin), NO allow-forms/popups/modals (the add-on must request
-      // these via its manifest if it needs them). allow-scripts is the
-      // floor — without it the add-on's <script> tags are dead. The
-      // resulting origin is OPAQUE: the iframe cannot reach
-      // chrome.* APIs, extension storage, or the bridge (it talks
-      // directly to its own http://127.0.0.1:<port>/ origin only).
-      iframe.setAttribute("sandbox", "allow-scripts");
+      // SDK-DEMO-002-FIX-2: workspace add-ons render cross-origin with
+      // `sandbox="allow-scripts allow-same-origin"`. `allow-same-origin`
+      // is safe HERE (unlike the old srcdoc case) because the iframe's
+      // origin becomes the upstream origin, NOT the extension origin —
+      // so it grants no reach into chrome.* APIs, extension storage, or
+      // the parent DOM. It DOES grant: same-origin fetch from the
+      // iframe to its own URL (no CORS needed), and postMessage
+      // delivery of bootstrap config from parent → iframe. No
+      // allow-forms/popups/modals (the add-on must request these via
+      // its manifest if it needs them).
+      iframe.setAttribute("sandbox", "allow-scripts allow-same-origin");
     } else if (mode !== "src") {
       // srcdoc mode: keep the sandbox. The upstream HTML is untrusted
       // enough to warrant it (it can contain arbitrary JS via the
@@ -468,24 +480,30 @@ export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath,
           : proxyPath;
       try {
         if (mode === "workspaceCrossOrigin") {
-          // SDK-DEMO-002: load the upstream origin directly inside a
-          // sandboxed (allow-scripts only) opaque-origin iframe. The
-          // upstream is expected to serve its index.html at root and
-          // expose a /bootstrap endpoint that hands the iframe its
-          // bridge token + capability tokens + apiBasePath.
+          // SDK-DEMO-002-FIX-2: load the upstream origin directly inside
+          // a sandboxed (allow-scripts allow-same-origin) iframe. The
+          // iframe's origin equals the upstream origin — same-origin
+          // fetches to its own /api/<addon>/* need NO CORS preflight.
+          // Token delivery is postMessage from parent → iframe with
+          // targetOrigin = upstreamOrigin (NOT "*"); the add-on's
+          // <script> validates event.source === window.parent and
+          // event.data.type === "resonantos-addon-bootstrap".
           //
           // Security notes:
-          //   - The iframe is OPAQUE-origin. It cannot reach
-          //     chrome-extension:// APIs or extension storage.
-          //   - The add-on's /api/<addon>/* calls hit the upstream
-          //     directly (cross-origin from the iframe's perspective
-          //     back to itself = same-origin, so no preflight needed
-          //     for same-origin GETs/POSTs). The upstream enforces the
-          //     capability token.
+          //   - The iframe's origin is the upstream origin (e.g.
+          //     http://127.0.0.1:47321). It is NOT the extension's
+          //     chrome-extension:// origin, so `allow-same-origin`
+          //     grants NO reach into chrome.* APIs, extension
+          //     storage, or the parent DOM.
+          //   - The add-on's /api/<addon>/* calls are same-origin
+          //     fetches (no preflight, no ACAO needed).
+          //   - The add-on NEVER receives the bridge token. The
+          //     postMessage payload is { apiBasePath, capabilityTokens,
+          //     bridgeIdentity } — the bridge token is omitted by
+          //     design.
           //   - We probe http://127.0.0.1:<port>/ via the extension
           //     page's rawFetch first to surface auth/connectivity
-          //     errors as a status banner — a full HTTP error here
-          //     means the upstream is dead. This probe is allowed by
+          //     errors as a status banner. This probe is allowed by
           //     the extension manifest's `connect-src` (which already
           //     includes `http://127.0.0.1:*`).
           if (!upstreamOrigin || !/^https?:\/\//i.test(upstreamOrigin)) {
@@ -506,25 +524,91 @@ export function createAddonIframe({ addonId, proxyPath, addonLabel, apiBasePath,
           iframe.src = probeUrl;
           wrapper.dataset.iframeSrcMode = "workspaceCrossOrigin";
           wrapper.dataset.iframeUpstreamOrigin = upstreamOrigin;
+          wrapper.dataset.iframeSandboxFlags = "allow-scripts allow-same-origin";
           status.textContent = `${addonLabel} loading (cross-origin sandboxed)...`;
           status.classList.add("addon-iframe-status--ready");
-          iframe.addEventListener("load", () => {
-            wrapper.dataset.iframeLoaded = "true";
-            status.textContent = `${addonLabel} ready (cross-origin sandboxed).`;
-            status.classList.add("addon-iframe-status--ready");
-          }, { once: true });
+
+          // After the iframe loads, mint the add-on's capability
+          // tokens via the bridge (parent side), then deliver them
+          // via postMessage with targetOrigin = upstreamOrigin.
+          // The postMessage payload contains NO bridge token.
+          const deliverBootstrap = () => {
+            try {
+              const iframeWin = iframe.contentWindow;
+              if (!iframeWin) {
+                wrapper.dataset.iframePostMessageDelivered = "no-iframe-window";
+                return;
+              }
+              wrapper.dataset.iframeLoaded = "true";
+              // Mint capability tokens from the parent side.
+              // Use the parent module's fetch (extension origin)
+              // which CAN reach the bridge's
+              // Access-Control-Allow-Origin: <extension origin>
+              // because the bridge allowlists the extension.
+              const capabilities = Array.isArray(addonCapabilities) ? addonCapabilities : [];
+              const mintHeaders = {
+                "Content-Type": "application/json"
+              };
+              if (bridgeToken) {
+                mintHeaders["X-ResonantOS-Bridge-Token"] = bridgeToken;
+              }
+              if (capabilityBootstrapToken) {
+                mintHeaders["X-ResonantOS-Capability-Bootstrap-Token"] = capabilityBootstrapToken;
+              }
+              const mintUrl = `${String(bridgeUrl || "").replace(/\/+$/, "")}/api/capability-tokens`;
+              rawFetch(mintUrl, {
+                method: "POST",
+                headers: mintHeaders,
+                body: JSON.stringify({ capabilities })
+              })
+                .then(async (r) => {
+                  if (!r.ok) {
+                    wrapper.dataset.iframePostMessageDelivered = "mint-" + r.status;
+                    status.textContent = `${addonLabel} bridge returned HTTP ${r.status} for capability mint.`;
+                    status.classList.add("addon-iframe-status--error");
+                    return;
+                  }
+                  const body = await r.json();
+                  const capabilityTokens = (body && body.capabilityTokens) || {};
+                  const payload = {
+                    type: "resonantos-addon-bootstrap",
+                    apiBasePath: String(apiBasePath || "/api"),
+                    bridgeIdentity: String(bridgeUrl || ""),
+                    capabilityTokens
+                    // NOTE: bridgeToken is intentionally NOT in the
+                    // payload. The add-on never needs it; its
+                    // /api/<addon>/* calls go direct-to-upstream and
+                    // the upstream enforces the capability token.
+                  };
+                  iframeWin.postMessage(payload, upstreamOrigin);
+                  wrapper.dataset.iframePostMessageDelivered = "ok";
+                  status.textContent = `${addonLabel} ready (cross-origin sandboxed).`;
+                  status.classList.add("addon-iframe-status--ready");
+                })
+                .catch((err) => {
+                  wrapper.dataset.iframePostMessageDelivered = "mint-error";
+                  status.textContent = `${addonLabel} capability mint failed: ${err && err.message ? err.message : String(err)}`;
+                  status.classList.add("addon-iframe-status--error");
+                });
+            } catch (err) {
+              wrapper.dataset.iframePostMessageDelivered = "exception";
+            }
+          };
+
+          iframe.addEventListener("load", deliverBootstrap, { once: true });
           // Safety: if the load event doesn't fire within 20s (e.g.
-          // CORS preflight fails — unlikely for an opaque-origin
-          // sandboxed iframe loading same-origin subresources — but
-          // possible if the upstream stalls), surface a hint.
+          // the upstream stalls, network error, manifest CSP block),
+          // surface a hint. The mint never happens in this case.
           setTimeout(() => {
             if (!iframe.dataset.loaded && iframe.isConnected) {
               try {
-                const maybeLoaded = iframe.contentWindow?.length !== undefined;
-                if (maybeLoaded) {
-                  wrapper.dataset.iframeLoaded = "true";
-                  status.textContent = `${addonLabel} ready (cross-origin sandboxed).`;
-                  status.classList.add("addon-iframe-status--ready");
+                if (iframe.contentWindow?.length !== undefined) {
+                  // contentWindow exists but load event never fired —
+                  // could be an upstream parsing stall. Do NOT post
+                  // a bootstrap here; rely on the user's manual
+                  // reload (reloadAddonWorkspace).
+                  status.textContent = `${addonLabel} load timed out. Reload the workspace.`;
+                  status.classList.add("addon-iframe-status--error");
                 }
               } catch { /* ignore */ }
             }

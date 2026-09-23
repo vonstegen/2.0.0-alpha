@@ -78,27 +78,34 @@
       </section>
     </div>
     <script type="module">
-      // SDK-DEMO-002: the Counter now loads cross-origin from its own
+      // SDK-DEMO-002-FIX-2: the Counter loads cross-origin from its own
       // upstream origin (http://127.0.0.1:<port>/) inside a sandboxed
-      // opaque-origin iframe. Its own <script> executes (the historical
-      // srcdoc CSP gap is gone). API calls go to the add-on's OWN
-      // origin via /api/counter/* (apiBasePath comes from the manifest
-      // via /bootstrap — no hardcode anywhere).
+      // iframe (sandbox="allow-scripts allow-same-origin"). Its own
+      // <script> executes (the historical srcdoc CSP gap is gone). API
+      // calls go to the add-on's OWN origin via /api/counter/* (no CORS
+      // because same-origin, no ACAO needed).
       //
       // Auth model:
-      //   1. On load, fetch /bootstrap (capability-gated). /bootstrap
-      //      returns { apiBasePath, bridgeToken, capabilityTokens:
-      //      { "harness-messaging": "..." }, bridgeIdentity }.
-      //   2. Use the returned capability token on every /api/<base>/*
-      //      request. The upstream enforces it — same authorization
-      //      boundary as the bridge did historically, but enforced
-      //      one layer closer to the add-on.
+      //   1. The extension's renderer mints the add-on's capability
+      //      tokens via the bridge (POST /api/capability-tokens with
+      //      bridge-token + capability-bootstrap-token).
+      //   2. After the iframe loads, the parent delivers the bootstrap
+      //      config via postMessage with targetOrigin = the add-on's
+      //      own upstream origin. The payload is { type, apiBasePath,
+      //      bridgeIdentity, capabilityTokens }. The bridge token is
+      //      NEVER included.
+      //   3. The add-on validates event.source === window.parent AND
+      //      event.data.type === "resonantos-addon-bootstrap" before
+      //      trusting the message.
+      //   4. The add-on uses the harness-messaging capability token
+      //      for every /api/<addon>/* call. The upstream enforces it.
       const log = document.getElementById("log");
       const countEl = document.getElementById("count");
       const bridgeIdEl = document.getElementById("bridge-id");
       const capTokenEl = document.getElementById("cap-token");
       let apiBasePath = "/api";
-      let bootstrapCapabilityToken = "";
+      let capabilityToken = "";
+      let bootstrapped = false;
 
       function appendLog(level, text) {
         const entry = document.createElement("div");
@@ -109,55 +116,49 @@
         log.scrollTop = log.scrollHeight;
       }
 
-      async function loadBootstrap() {
-        // SDK-DEMO-002-FIX: production token delivery. The upstream
-        // server.mjs templates the capability token into the served
-        // HTML as window.__RESONANTOS_BOOTSTRAP_TOKEN__ before this
-        // script runs. Use that as the primary source so the add-on
-        // lights up without a /bootstrap round-trip. The /bootstrap
-        // endpoint is kept as a defense-in-depth fallback for cases
-        // where the templated global is missing.
-        const templatedToken = typeof window.__RESONANTOS_BOOTSTRAP_TOKEN__ === "string"
-          ? window.__RESONANTOS_BOOTSTRAP_TOKEN__
-          : "";
-        if (templatedToken) {
-          return {
-            apiBasePath:
-              typeof window.__RESONANTOS_API_BASE_PATH__ === "string"
-                ? window.__RESONANTOS_API_BASE_PATH__
-                : "/api",
-            bridgeIdentity:
-              typeof window.__RESONANTOS_BRIDGE_IDENTITY__ === "string"
-                ? window.__RESONANTOS_BRIDGE_IDENTITY__
-                : "unknown",
-            bridgeToken: "",
-            capabilityTokens: { "harness-messaging": templatedToken }
-          };
-        }
-        const headers = {
-          "x-resonantos-bridge-capability-token": ""
-        };
-        const response = await fetch("/bootstrap", { method: "GET", headers });
-        if (!response.ok) {
-          appendLog("err", `/bootstrap → ${response.status}`);
-          return null;
-        }
-        const payload = await response.json();
-        if (payload.bridgeIdentity) bridgeIdEl.textContent = payload.bridgeIdentity;
-        return payload;
+      function applyBootstrap({ apiBasePath: declaredApi, bridgeIdentity, capabilityTokens }) {
+        apiBasePath = String(declaredApi || "/api");
+        if (bridgeIdentity) bridgeIdEl.textContent = bridgeIdentity;
+        capabilityToken = String((capabilityTokens && capabilityTokens["harness-messaging"]) ?? "");
+        if (capabilityToken) capTokenEl.textContent = capabilityToken.slice(0, 12) + "…";
+        bootstrapped = true;
+      }
+
+      function awaitBootstrap() {
+        // Wait for the parent's postMessage delivery. Validate
+        // event.source AND event.data.type before trusting the
+        // message.
+        return new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            window.removeEventListener("message", onMessage);
+            reject(new Error("bootstrap timeout (no postMessage from parent)"));
+          }, 15000);
+          function onMessage(event) {
+            if (event.source !== window.parent) return;
+            const data = event.data;
+            if (!data || typeof data !== "object") return;
+            if (data.type !== "resonantos-addon-bootstrap") return;
+            clearTimeout(timer);
+            window.removeEventListener("message", onMessage);
+            applyBootstrap(data);
+            resolve(data);
+          }
+          window.addEventListener("message", onMessage);
+        });
       }
 
       async function ensureBootstrap() {
-        if (bootstrapCapabilityToken) return true;
-        const payload = await loadBootstrap();
-        if (!payload) return false;
-        apiBasePath = String(payload.apiBasePath ?? "/api");
-        bootstrapCapabilityToken = String(payload.capabilityTokens?.["harness-messaging"] ?? "");
-        if (!bootstrapCapabilityToken) {
-          appendLog("err", "no harness-messaging token issued by /bootstrap");
+        if (bootstrapped && capabilityToken) return true;
+        try {
+          await awaitBootstrap();
+        } catch (err) {
+          appendLog("err", String(err?.message ?? err));
           return false;
         }
-        capTokenEl.textContent = bootstrapCapabilityToken.slice(0, 12) + "…";
+        if (!capabilityToken) {
+          appendLog("err", "no harness-messaging token in parent's bootstrap postMessage");
+          return false;
+        }
         return true;
       }
 
@@ -167,7 +168,7 @@
           method,
           headers: {
             "content-type": "application/json",
-            "x-resonantos-bridge-capability-token": bootstrapCapabilityToken
+            "x-resonantos-bridge-capability-token": capabilityToken
           },
           body: body ? JSON.stringify(body) : undefined
         });

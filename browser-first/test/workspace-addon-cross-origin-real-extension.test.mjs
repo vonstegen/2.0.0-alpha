@@ -80,9 +80,12 @@ function spawnUpstream({ addonDir, env }) {
         ...process.env,
         ...env,
         RESONANTOS_BROWSER_FIRST_HARNESS_MESSAGING_TOKEN: HARNESS_TOKEN,
-        RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN: "browser-test-bridge-token",
         RESONANT_ECHO_CAPABILITY_TOKEN: HARNESS_TOKEN,
         RESONANT_ECHO_BRIDGE_IDENTITY: "bridge://browser-test"
+        // SDK-DEMO-002-FIX-2: NO RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN.
+        // The launcher does not pass the bridge token to addon
+        // upstreams; the add-on's <script> listens for postMessage
+        // from window.parent instead.
       },
       stdio: ["ignore", "pipe", "pipe"]
     }
@@ -184,6 +187,53 @@ async function startMockBridge({ echoPort, counterPort, sdkGuidePort }) {
         ok: true,
         addons: [...bundled, echoAddon, counterAddon, sdkGuideAddon]
       }));
+      return;
+    }
+    // SDK-DEMO-002-FIX-2: the extension's renderer mints capability
+    // tokens via POST /api/capability-tokens with the bridge-token
+    // and capability-bootstrap-token headers. The mock bridge must
+    // accept this so the parent can deliver bootstrap config to the
+    // iframe via postMessage. Returns the requested capabilities
+    // verbatim so the add-on's auth header is satisfied.
+    if (req.method === "POST" && pathPart === "/api/capability-tokens") {
+      // Read the body (best-effort; we don't actually parse it).
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", () => {
+        let requested = [];
+        try {
+          const parsed = body ? JSON.parse(body) : {};
+          requested = Array.isArray(parsed.capabilities) ? parsed.capabilities : [];
+        } catch { /* ignore */ }
+        const capabilityTokens = {};
+        for (const cap of requested) {
+          if (cap === "harness-messaging") capabilityTokens[cap] = HARNESS_TOKEN;
+        }
+        // The parent extension origin (chrome-extension://...) sends
+        // a cross-origin fetch from its privileged context, so we
+        // must echo the Origin header (which the bridge allowlist
+        // would do in production). Mock bridge trusts any origin.
+        const origin = req.headers.origin || "*";
+        res.writeHead(200, {
+          "content-type": "application/json",
+          "access-control-allow-origin": origin === "null" ? "*" : origin,
+          "access-control-allow-credentials": "false",
+          "vary": "Origin"
+        });
+        res.end(JSON.stringify({ ok: true, capabilityTokens }));
+      });
+      return;
+    }
+    if (req.method === "OPTIONS" && pathPart === "/api/capability-tokens") {
+      const origin = req.headers.origin || "*";
+      res.writeHead(204, {
+        "access-control-allow-origin": origin === "null" ? "*" : origin,
+        "access-control-allow-methods": "POST, OPTIONS",
+        "access-control-allow-headers": "content-type, x-resonantos-bridge-token, x-resonantos-capability-bootstrap-token",
+        "access-control-max-age": "600",
+        "vary": "Origin"
+      });
+      res.end();
       return;
     }
     res.writeHead(404, { "content-type": "application/json" });
@@ -473,7 +523,7 @@ test.after(async () => {
   }
 });
 
-test("SDK-DEMO-002-FIX: Echo send round-trip via real extension + workspaceCrossOrigin iframe", async (t) => {
+test("SDK-DEMO-002-FIX-2: Echo send round-trip via real extension + workspaceCrossOrigin iframe", async (t) => {
   const chrome = await launchChromeWithExtension({
     debugPort: DEBUG_PORT,
     extensionDir: EXTENSION_ROOT,
@@ -493,22 +543,84 @@ test("SDK-DEMO-002-FIX: Echo send round-trip via real extension + workspaceCross
     await cdp.send("Page.enable", {}, pageSessionId);
     await cdp.send("Runtime.enable", {}, pageSessionId);
     await navigateToAddonWorkspace(cdp, pageTarget.targetId, pageSessionId, "addon:addon.resonant-echo");
-    // The iframe is created in workspaceCrossOrigin mode: addon-iframe.js
-    // assigns iframe.src = probeUrl then attaches the load listener.
-    // Because src is assigned before the listener is attached, the
-    // load event fires before the listener exists and never updates
-    // the dataset/status text. The reliable signal that the iframe
-    // has loaded is the iframe target appearing in CDP — which is
-    // exactly what attachToIframe waits for.
     const iframeSession = await attachToIframe(cdp, `http://127.0.0.1:${ECHO_PORT}/`);
-    // Wait for SEND to be enabled (proves templated bootstrap token
-    // round-trip succeeded).
+
+    // SDK-DEMO-002-FIX-2 contract assertions (run BEFORE the round-trip):
+    //   (a) iframe sandbox is exactly "allow-scripts allow-same-origin"
+    //       (NO allow-forms/popups/modals; NO allow-scripts alone)
+    //   (b) the iframe's window has NO bridge token (window has no
+    //       bridgeToken global; the add-on never received it)
+    //   (c) the served HTML contained no templated bootstrap globals
+    //       (they come from postMessage, not from the HTML body)
+    const debugIframes = await cdp.send("Runtime.evaluate", {
+      expression: `JSON.stringify(Array.from(document.querySelectorAll('iframe')).map(f => ({ cls: f.className, sandbox: f.getAttribute('sandbox'), src: f.src })))`
+    }, pageSessionId);
+    // CDP returns remote objects by reference when the expression
+    // returns a non-primitive. Wrap in JSON.stringify to force a
+    // string return so result.value contains the data.
+    const sandboxFlags = await cdp.send("Runtime.evaluate", {
+      expression: `JSON.stringify((() => {
+        const iframes = document.querySelectorAll('iframe.addon-iframe');
+        if (!iframes.length) return [];
+        return Array.from(iframes).map(f => f.getAttribute('sandbox') || '');
+      })())`
+    }, pageSessionId);
+    const flags = JSON.parse(String(sandboxFlags.result?.value ?? "[]"));
+    assert.ok(
+      Array.isArray(flags) && flags.some(f => f === "allow-scripts allow-same-origin"),
+      `iframe sandbox must be "allow-scripts allow-same-origin"; got ${JSON.stringify(flags)}`
+    );
+    assert.ok(
+      Array.isArray(flags) && flags.every(f => !f.includes("allow-forms")),
+      "iframe sandbox must NOT include allow-forms"
+    );
+    assert.ok(
+      Array.isArray(flags) && flags.every(f => !f.includes("allow-popups")),
+      "iframe sandbox must NOT include allow-popups"
+    );
+
+    // Verify the bridge token did NOT land in the iframe. The iframe
+    // receives { apiBasePath, capabilityTokens, bridgeIdentity } via
+    // postMessage — NO bridgeToken field. Verify by introspecting the
+    // iframe's window object.
+    const bridgeTokenExposed = await cdp.send("Runtime.evaluate", {
+      expression: `JSON.stringify({
+        bridgeToken: typeof window.bridgeToken,
+        bootstrap: typeof window.__RESONANTOS_BOOTSTRAP_TOKEN__,
+        identity: typeof window.__RESONANTOS_BRIDGE_IDENTITY__,
+        apiBase: typeof window.__RESONANTOS_API_BASE_PATH__
+      })`
+    }, iframeSession);
+    const exposed = JSON.parse(String(bridgeTokenExposed.result?.value ?? "{}"));
+    assert.equal(
+      exposed.bridgeToken,
+      "undefined",
+      `iframe window must NOT expose bridgeToken; got ${JSON.stringify(exposed)}`
+    );
+    assert.equal(
+      exposed.bootstrap,
+      "undefined",
+      `iframe window must NOT expose templated bootstrap token; got ${JSON.stringify(exposed)}`
+    );
+    assert.equal(
+      exposed.identity,
+      "undefined",
+      `iframe window must NOT expose templated bridge identity; got ${JSON.stringify(exposed)}`
+    );
+    assert.equal(
+      exposed.apiBase,
+      "undefined",
+      `iframe window must NOT expose templated apiBasePath; got ${JSON.stringify(exposed)}`
+    );
+
+    // Wait for SEND to be enabled (proves postMessage bootstrap
+    // landed and the harness-messaging capability was minted).
     await waitFor(async () => {
       const r = await cdp.send("Runtime.evaluate", {
         expression: "document.getElementById('send')?.disabled === false"
       }, iframeSession);
       return r.result?.value === true;
-    }, { label: "Echo SEND button to be enabled", timeoutMs: 10000 });
+    }, { label: "Echo SEND button to be enabled (postMessage bootstrap)", timeoutMs: 10000 });
     // Focus the input and type "Hello Manolo" via trusted CDP.
     await cdp.send("Runtime.evaluate", {
       expression: "document.getElementById('msg').focus()"
@@ -548,7 +660,7 @@ test("SDK-DEMO-002-FIX: Echo send round-trip via real extension + workspaceCross
   }
 });
 
-test("SDK-DEMO-002-FIX: Counter +1 increments via real extension + workspaceCrossOrigin iframe", async (t) => {
+test("SDK-DEMO-002-FIX-2: Counter +1 increments via real extension + workspaceCrossOrigin iframe", async (t) => {
   const userDataDir = await mkdtemp(path.join(os.tmpdir(), "sdk-demo-002-real-ext-chrome-counter-"));
   const chrome = await launchChromeWithExtension({
     debugPort: DEBUG_PORT + 1,
@@ -570,13 +682,50 @@ test("SDK-DEMO-002-FIX: Counter +1 increments via real extension + workspaceCros
     await cdp.send("Runtime.enable", {}, pageSessionId);
     await navigateToAddonWorkspace(cdp, pageTarget.targetId, pageSessionId, "addon:addon.resonant-counter");
     const iframeSession = await attachToIframe(cdp, `http://127.0.0.1:${COUNTER_PORT}/`);
-    // Wait for cap-token to populate (proves bootstrap landed).
+
+    // SDK-DEMO-002-FIX-2 contract: iframe sandbox flags. Wrap in
+    // JSON.stringify so CDP returns a string value (not an object
+    // reference).
+    const sandboxFlags = await cdp.send("Runtime.evaluate", {
+      expression: `JSON.stringify((() => {
+        const iframes = document.querySelectorAll('iframe.addon-iframe');
+        if (!iframes.length) return [];
+        return Array.from(iframes).map(f => f.getAttribute('sandbox') || '');
+      })())`
+    }, pageSessionId);
+    const flags = JSON.parse(String(sandboxFlags.result?.value ?? "[]"));
+    assert.ok(
+      Array.isArray(flags) && flags.some(f => f === "allow-scripts allow-same-origin"),
+      `Counter iframe sandbox must be "allow-scripts allow-same-origin"; got ${JSON.stringify(flags)}`
+    );
+
+    // Verify the iframe did NOT receive the bridge token.
+    const bridgeTokenExposed = await cdp.send("Runtime.evaluate", {
+      expression: `JSON.stringify({
+        bridgeToken: typeof window.bridgeToken,
+        bootstrap: typeof window.__RESONANTOS_BOOTSTRAP_TOKEN__
+      })`
+    }, iframeSession);
+    const exposed = JSON.parse(String(bridgeTokenExposed.result?.value ?? "{}"));
+    assert.equal(
+      exposed.bridgeToken,
+      "undefined",
+      `Counter iframe window must NOT expose bridgeToken; got ${JSON.stringify(exposed)}`
+    );
+    assert.equal(
+      exposed.bootstrap,
+      "undefined",
+      `Counter iframe window must NOT expose templated bootstrap token; got ${JSON.stringify(exposed)}`
+    );
+
+    // Wait for cap-token to populate (proves postMessage bootstrap
+    // landed and the harness-messaging capability was minted).
     await waitFor(async () => {
       const r = await cdp.send("Runtime.evaluate", {
         expression: "document.getElementById('cap-token')?.textContent ?? ''"
       }, iframeSession);
       return String(r.result?.value ?? "").includes("…");
-    }, { label: "Counter cap-token to populate", timeoutMs: 10000 });
+    }, { label: "Counter cap-token to populate (postMessage bootstrap)", timeoutMs: 10000 });
     // Click +1 twice. See Echo test for why we use el.click() instead
     // of Input.dispatchMouseEvent.
     for (let i = 0; i < 2; i += 1) {
@@ -599,7 +748,7 @@ test("SDK-DEMO-002-FIX: Counter +1 increments via real extension + workspaceCros
   }
 });
 
-test("SDK-DEMO-002-FIX: SDK Guide live message + denied action via real extension", async (t) => {
+test("SDK-DEMO-002-FIX-2: SDK Guide live message + denied action via real extension", async (t) => {
   const userDataDir = await mkdtemp(path.join(os.tmpdir(), "sdk-demo-002-real-ext-chrome-guide-"));
   const chrome = await launchChromeWithExtension({
     debugPort: DEBUG_PORT + 2,
@@ -621,13 +770,42 @@ test("SDK-DEMO-002-FIX: SDK Guide live message + denied action via real extensio
     await cdp.send("Runtime.enable", {}, pageSessionId);
     await navigateToAddonWorkspace(cdp, pageTarget.targetId, pageSessionId, "addon:addon.sdk-guide");
     const iframeSession = await attachToIframe(cdp, `http://127.0.0.1:${SDK_GUIDE_PORT}/`);
-    // Wait for live-send to be enabled (proves bootstrap landed).
+
+    // SDK-DEMO-002-FIX-2 contract: iframe sandbox flags. Wrap in
+    // JSON.stringify so CDP returns a string value (not an object
+    // reference).
+    const sandboxFlags = await cdp.send("Runtime.evaluate", {
+      expression: `JSON.stringify((() => {
+        const iframes = document.querySelectorAll('iframe.addon-iframe');
+        if (!iframes.length) return [];
+        return Array.from(iframes).map(f => f.getAttribute('sandbox') || '');
+      })())`
+    }, pageSessionId);
+    const flags = JSON.parse(String(sandboxFlags.result?.value ?? "[]"));
+    assert.ok(
+      Array.isArray(flags) && flags.some(f => f === "allow-scripts allow-same-origin"),
+      `SDK Guide iframe sandbox must be "allow-scripts allow-same-origin"; got ${JSON.stringify(flags)}`
+    );
+
+    // Verify the iframe did NOT receive the bridge token or any
+    // templated bootstrap globals.
+    const exposed = await cdp.send("Runtime.evaluate", {
+      expression: `JSON.stringify({
+        bridgeToken: typeof window.bridgeToken,
+        bootstrap: typeof window.__RESONANTOS_BOOTSTRAP_TOKEN__
+      })`
+    }, iframeSession);
+    const parsed = JSON.parse(String(exposed.result?.value ?? "{}"));
+    assert.equal(parsed.bridgeToken, "undefined", "Guide iframe window must NOT expose bridgeToken");
+    assert.equal(parsed.bootstrap, "undefined", "Guide iframe window must NOT expose templated bootstrap token");
+
+    // Wait for live-send to be enabled (proves postMessage bootstrap landed).
     await waitFor(async () => {
       const r = await cdp.send("Runtime.evaluate", {
         expression: "document.getElementById('live-send')?.disabled === false"
       }, iframeSession);
       return r.result?.value === true;
-    }, { label: "Guide live-send to be enabled", timeoutMs: 10000 });
+    }, { label: "Guide live-send to be enabled (postMessage bootstrap)", timeoutMs: 10000 });
     // Click live-send. Default value "hello Manolo" should round-trip.
     await cdp.send("Runtime.evaluate", {
       expression: `document.getElementById('live-send').click()`

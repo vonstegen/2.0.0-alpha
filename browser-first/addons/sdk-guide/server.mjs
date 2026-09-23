@@ -40,7 +40,13 @@ import { fileURLToPath } from "node:url";
 const PORT = Number(process.env.RESONANTOS_BROWSER_FIRST_SDK_GUIDE_PORT ?? 47423);
 const EXPECTED_TOKEN = process.env.RESONANTOS_BROWSER_FIRST_HARNESS_MESSAGING_TOKEN ?? "";
 const BRIDGE_PUBLIC_URL = process.env.RESONANTOS_BROWSER_FIRST_SDK_GUIDE_BRIDGE_IDENTITY ?? "bridge://local";
-const BRIDGE_TOKEN = process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? "";
+// SDK-DEMO-002-FIX-2: the bridge token is no longer needed by this
+// upstream — capability tokens flow parent → iframe via postMessage
+// (minted by the extension's renderer through the bridge's
+// /api/capability-tokens endpoint). The add-on's own /api/<addon>/*
+// calls are same-origin (no CORS) and authenticated with the
+// capability token, not the bridge token. We deliberately do NOT
+// read RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN here.
 const ADDON_ID = "addon.sdk-guide";
 const API_BASE_PATH = "/api/sdk-guide";
 const REQUIRED_CAPABILITY = "harness-messaging";
@@ -101,19 +107,7 @@ function sendHtml(res, status, html) {
 async function serveEntryHtml(req, res) {
   try {
     const html = await readFile(ENTRY_PATH, "utf8");
-    // SDK-DEMO-002-FIX: production token delivery. The upstream holds
-    // the capability token via env. Inject it into the served HTML as
-    // a global so the add-on's own <script> sees
-    // window.__RESONANTOS_BOOTSTRAP_TOKEN__ BEFORE its first
-    // /bootstrap fetch fires. Exposure limited to loopback HTTP (the
-    // upstream only listens on 127.0.0.1); see
-    // docs/architecture/sdk-demo-002-r-and-d-record.md §"Token
-    // delivery: server-template".
-    const bootstrapScript = `<script>window.__RESONANTOS_BOOTSTRAP_TOKEN__=${JSON.stringify(EXPECTED_TOKEN)};window.__RESONANTOS_BRIDGE_IDENTITY__=${JSON.stringify(BRIDGE_PUBLIC_URL)};window.__RESONANTOS_API_BASE_PATH__=${JSON.stringify(API_BASE_PATH)};</script>`;
-    const templated = html.includes("<script")
-      ? html.replace(/(<script\b)/i, `${bootstrapScript}$1`)
-      : `${html}\n${bootstrapScript}`;
-    sendHtml(res, 200, templated);
+    sendHtml(res, 200, html);
   } catch (err) {
     sendText(res, 500, `failed to load entry: ${err?.message ?? String(err)}`);
   }
@@ -128,63 +122,38 @@ const server = http.createServer(async (req, res) => {
   const url = req.url ?? "/";
   const path = url.split("?")[0] ?? "/";
 
-  // SDK-DEMO-002-FIX: CORS for opaque-origin sandboxed iframe. The
-  // workspaceCrossOrigin renderer puts the add-on's own HTML inside
-  // a sandbox="allow-scripts" iframe (no allow-same-origin), so the
-  // iframe's origin is opaque. To let the iframe's own <script>
-  // fetch /api/<addon>/* from its own URL, the upstream must allow
-  // `Origin: null` (Chrome's serialization of opaque-origin
-  // contexts).
+  // SDK-DEMO-002-FIX-2: OPTIONS is not a CORS preflight — we do not
+  // serve CORS for this upstream. Return 404 immediately so the
+  // browser sees an explicit "no such route" and refuses the
+  // preflight (the iframe's same-origin fetch does not trigger
+  // preflight anyway).
   if (req.method === "OPTIONS") {
-    res.writeHead(204, {
-      "access-control-allow-origin": "null",
-      "access-control-allow-methods": "GET, POST, OPTIONS",
-      "access-control-allow-headers": "content-type, x-resonantos-bridge-capability-token",
-      "access-control-max-age": "600"
-    });
-    res.end();
+    sendText(res, 404, `not found: OPTIONS ${path}`);
     return;
   }
-  res.setHeader("access-control-allow-origin", "null");
 
-  // SDK-DEMO-002: serve the add-on HTML at root so a sandboxed cross-
-  // origin iframe can load this upstream directly. Capability
-  // enforcement is intentionally NOT applied here: the add-on UI must
-  // render so the user can see the 403 banner when the bootstrap
-  // token exchange fails. The capability token is templated into the
-  // served HTML (see serveEntryHtml) so the add-on's own <script> can
-  // satisfy the upstream's /api/<addon>/* gates.
+  // SDK-DEMO-002-FIX-2: no CORS headers. The iframe is sandboxed with
+  // `allow-scripts allow-same-origin`, so the iframe's origin equals
+  // the upstream origin. Same-origin fetches don't trigger CORS — no
+  // ACAO needed. We deliberately do NOT set Access-Control-Allow-Origin
+  // (not even "null"). Only an iframe whose origin is
+  // `http://127.0.0.1:<port>` can read our responses — i.e. the
+  // add-on's own upstream, which is what we want.
+
+  // SDK-DEMO-002-FIX-2: serve the add-on HTML at root so a sandboxed
+  // cross-origin iframe can load this upstream directly. NO token
+  // templating — the add-on receives its bootstrap config via
+  // postMessage from the parent.
   if (req.method === "GET" && (path === "/" || path === "/index.html")) {
     await serveEntryHtml(req, res);
     return;
   }
 
-  // SDK-DEMO-002: bootstrap endpoint returns the bridge token + granted
-  // capability tokens + apiBasePath + bridge identity so the add-on's
-  // own script can authenticate its /api/<addon>/* calls directly.
-  // Capability-gated so a tampered iframe cannot harvest tokens
-  // without satisfying the bridge capability check first.
-  if (req.method === "GET" && path === "/bootstrap") {
-    if (!capabilityGateOk(req)) {
-      sendJson(res, 403, {
-        ok: false,
-        error: `Missing or invalid ${REQUIRED_CAPABILITY} capability token.`,
-        bridgeIdentity: BRIDGE_PUBLIC_URL
-      });
-      return;
-    }
-    sendJson(res, 200, {
-      ok: true,
-      addon: ADDON_ID,
-      apiBasePath: API_BASE_PATH,
-      bridgeIdentity: BRIDGE_PUBLIC_URL,
-      bridgeToken: BRIDGE_TOKEN,
-      capabilityTokens: {
-        [REQUIRED_CAPABILITY]: EXPECTED_TOKEN
-      }
-    });
-    return;
-  }
+  // SDK-DEMO-002-FIX-2: /bootstrap endpoint REMOVED. There is no
+  // production path that calls /bootstrap (the add-on's <script>
+  // listens for postMessage from window.parent instead). Keeping the
+  // endpoint would be a confused-deputy surface that could be hit by
+  // any same-origin caller; the right call is to remove it.
 
   // Parse the request body once at the top so every handler below can
   // read it without re-reading the request stream.
@@ -267,12 +236,10 @@ server.listen(PORT, "127.0.0.1", () => {
     bridgeIdentity: BRIDGE_PUBLIC_URL,
     capabilityEnforced: REQUIRED_CAPABILITY,
     capabilityTokenSet: Boolean(EXPECTED_TOKEN),
-    bridgeTokenSet: Boolean(BRIDGE_TOKEN),
     apiBasePath: API_BASE_PATH,
     routes: [
       "GET /",
       "GET /index.html",
-      "GET /bootstrap",
       "GET /api/sdk-guide/status",
       "POST /api/sdk-guide/message",
       "POST /api/sdk-guide/denied"

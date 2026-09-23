@@ -137,32 +137,34 @@
     <div class="meta" id="meta"></div>
   </main>
   <script>
-    // SDK-DEMO-002: this add-on now loads cross-origin from its own
-    // upstream origin (http://127.0.0.1:<port>/) inside a sandboxed
-    // opaque-origin iframe. The add-on's own <script> executes (the
-    // historical srcdoc CSP gap is gone). API calls go to the add-on's
-    // OWN origin (no parent-side override, no bridge proxy required
-    // for the round-trip itself).
+    // SDK-DEMO-002-FIX-2: this add-on now loads cross-origin from its
+    // own upstream origin (http://127.0.0.1:<port>/) inside a
+    // sandboxed iframe (sandbox="allow-scripts allow-same-origin").
+    // The iframe's origin is the upstream origin, so its own
+    // /api/<addon>/* calls are same-origin (no CORS, no ACAO
+    // anywhere). The add-on's own <script> executes (the historical
+    // srcdoc CSP gap is gone).
     //
     // Auth model:
-    //   1. On load, fetch /bootstrap with a capability token (carried
-    //      in window.__RESONANTOS_BOOTSTRAP_TOKEN__ when present,
-    //      otherwise same-origin without a token). The bootstrap
-    //      endpoint requires the harness-messaging capability, so a
-    //      tampered iframe cannot harvest tokens without first
-    //      satisfying the upstream's capability check.
-    //   2. /bootstrap returns { apiBasePath, bridgeToken,
-    //      capabilityTokens: { "harness-messaging": "..." },
-    //      bridgeIdentity }. Use these for every /api/<addon>/*
-    //      request.
-    //   3. The upstream enforces the harness-messaging token on every
-    //      /api/<addon>/* call — that is the real authorization
-    //      boundary, not the parent page.
+    //   1. The extension's renderer mints the add-on's capability
+    //      tokens via the bridge (POST /api/capability-tokens with
+    //      bridge-token + capability-bootstrap-token).
+    //   2. After the iframe loads, the parent delivers the bootstrap
+    //      config via postMessage with targetOrigin = the add-on's
+    //      own upstream origin. The payload is { type, apiBasePath,
+    //      bridgeIdentity, capabilityTokens }. The bridge token is
+    //      NEVER included.
+    //   3. The add-on validates event.source === window.parent AND
+    //      event.data.type === "resonantos-addon-bootstrap" before
+    //      trusting the message.
+    //   4. The add-on uses the harness-messaging capability token
+    //      for every /api/<addon>/* call. The upstream enforces it.
     //
     // The apiBasePath comes from the manifest's
     // contributions.workspace.apiBasePath (e.g. "/api/echo"). The
     // add-on does NOT hardcode "echo" anywhere — it reads the path
-    // from bootstrap. This is what makes the render generic.
+    // from the postMessage payload. This is what makes the render
+    // generic.
 
     const responseEl = document.getElementById("response");
     const sendBtn = document.getElementById("send");
@@ -172,7 +174,8 @@
     let messageCount = 0;
     let bridgeIdentity = "(unknown)";
     let apiBasePath = "/api";
-    let bootstrapCapabilityToken = "";
+    let capabilityToken = "";
+    let bootstrapped = false;
 
     function setStatus(text, tone = "") {
       statusPill.textContent = "status: " + text;
@@ -193,83 +196,59 @@
 
     function authHeaders() {
       const out = { "content-type": "application/json" };
-      if (bootstrapCapabilityToken) {
-        out["x-resonantos-bridge-capability-token"] = bootstrapCapabilityToken;
+      if (capabilityToken) {
+        out["x-resonantos-bridge-capability-token"] = capabilityToken;
       }
       return out;
     }
 
-    async function loadBootstrap() {
-      // SDK-DEMO-002-FIX: production token delivery. The upstream
-      // server.mjs templates the capability token into the served HTML
-      // as window.__RESONANTOS_BOOTSTRAP_TOKEN__ before this script
-      // runs. We use that templated global as the primary source so
-      // the iframe lights up without needing a /bootstrap round-trip.
-      // The /bootstrap endpoint is kept as a defense-in-depth fallback
-      // for cases where the templated global is missing (e.g. the
-      // upstream was started without a capability token env).
-      const templatedToken = typeof window.__RESONANTOS_BOOTSTRAP_TOKEN__ === "string"
-        ? window.__RESONANTOS_BOOTSTRAP_TOKEN__
-        : "";
-      const templatedIdentity = typeof window.__RESONANTOS_BRIDGE_IDENTITY__ === "string"
-        ? window.__RESONANTOS_BRIDGE_IDENTITY__
-        : "";
-      const templatedApiBase = typeof window.__RESONANTOS_API_BASE_PATH__ === "string"
-        ? window.__RESONANTOS_API_BASE_PATH__
-        : "";
-      if (templatedToken) {
-        return {
-          ok: true,
-          body: {
-            apiBasePath: templatedApiBase || "/api",
-            bridgeIdentity: templatedIdentity || "(unknown)",
-            bridgeToken: "",
-            capabilityTokens: { "harness-messaging": templatedToken }
-          },
-          source: "templated"
-        };
-      }
-      // Fallback: hit /bootstrap directly. This path requires the
-      // harness-messaging capability token, which a tampered iframe
-      // does not have — so without the templated global, this 403s and
-      // the UI surfaces the unauthorized-capability banner.
-      const r = await fetch("/bootstrap", {
-        method: "GET",
-        headers: { "x-resonantos-bridge-capability-token": "" }
+    function applyBootstrap({ apiBasePath: declaredApi, bridgeIdentity: bid, capabilityTokens }) {
+      apiBasePath = String(declaredApi || "/api");
+      if (bid) bridgeIdentity = bid;
+      capabilityToken = String((capabilityTokens && capabilityTokens["harness-messaging"]) ?? "");
+      bootstrapped = true;
+    }
+
+    function awaitBootstrap() {
+      // Wait for the parent's postMessage delivery. Validate
+      // event.source AND event.data.type before trusting the
+      // message.
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          window.removeEventListener("message", onMessage);
+          reject(new Error("bootstrap timeout (no postMessage from parent)"));
+        }, 15000);
+        function onMessage(event) {
+          if (event.source !== window.parent) return;
+          const data = event.data;
+          if (!data || typeof data !== "object") return;
+          if (data.type !== "resonantos-addon-bootstrap") return;
+          clearTimeout(timer);
+          window.removeEventListener("message", onMessage);
+          applyBootstrap(data);
+          resolve(data);
+        }
+        window.addEventListener("message", onMessage);
       });
-      if (!r.ok) {
-        return { ok: false, status: r.status, source: "bootstrap-403" };
-      }
-      const body = await r.json();
-      return { ok: true, body, source: "bootstrap" };
     }
 
     async function probeStatus() {
       try {
-        const bootstrap = await loadBootstrap();
-        if (!bootstrap.ok) {
-          setStatus("denied (" + bootstrap.status + ")", "");
+        await awaitBootstrap();
+        if (!capabilityToken) {
+          setStatus("denied (no capability token)", "");
           setResponse(
-            "GET /bootstrap returned HTTP " + bootstrap.status + ". " +
-            "The upstream denied the harness-messaging capability. " +
-            "This is the unauthorized-capability enforcement signal.",
+            "The parent's bootstrap postMessage did not include a harness-messaging capability token. " +
+            "Reload the workspace; the renderer should mint tokens via the bridge.",
             true
           );
           sendBtn.disabled = true;
           return;
         }
-        const { apiBasePath: declaredApi, bridgeIdentity: bid, capabilityTokens } = bootstrap.body;
-        apiBasePath = String(declaredApi || "/api");
-        if (bid) bridgeIdentity = bid;
-        bootstrapCapabilityToken = String(capabilityTokens?.["harness-messaging"] ?? "");
-        // Probe the status endpoint using the apiBasePath from the
-        // manifest — no hardcode. This is the SDK-DEMO-002 generic
-        // check: Counter/Echo/any-future-add-on will all light up
-        // here without per-addon code in Core.
         const statusUrl = `${apiBasePath.replace(/\/+$/, "")}/status`;
         const statusResp = await fetch(statusUrl, {
           method: "GET",
-          headers: { "x-resonantos-bridge-capability-token": bootstrapCapabilityToken }
+          headers: { "x-resonantos-bridge-capability-token": capabilityToken }
         });
         if (!statusResp.ok) {
           setStatus("denied (" + statusResp.status + ")", "");
@@ -287,7 +266,7 @@
         if (statusBody.bridgeIdentity) bridgeIdentity = statusBody.bridgeIdentity;
         setResponse(
           "Resonant Echo ready. The message round-trip below crosses:\n" +
-          "  workspace  →  opaque-origin iframe (sandbox allow-scripts)  →  add-on upstream  →  bridge capability token enforced at upstream.",
+          "  workspace  →  sandboxed iframe (allow-scripts allow-same-origin)  →  add-on upstream  →  bridge capability token enforced at upstream.",
           true
         );
         setMeta();
@@ -305,10 +284,10 @@
     async function sendMessage() {
       const text = inputEl.value;
       if (!text || !text.trim()) return;
-      if (!bootstrapCapabilityToken) {
+      if (!capabilityToken) {
         setResponse(
-          "Resonant Echo cannot send messages without a bootstrap-issued capability token. " +
-          "Reload the workspace; if the upstream denied /bootstrap, the 403 banner above explains why.",
+          "Resonant Echo cannot send messages without a capability token. " +
+          "Reload the workspace; if the parent's bootstrap postMessage did not arrive, the 403 banner above explains why.",
           true
         );
         return;
