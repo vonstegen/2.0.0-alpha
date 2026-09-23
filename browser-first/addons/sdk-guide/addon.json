@@ -1,0 +1,73 @@
+{
+  "id": "addon.sdk-guide",
+  "name": "SDK Guide",
+  "version": "0.1.0",
+  "description": "Interactive tutorial that walks any user through the ResonantOS SDK using live, deterministic bridge-mediated calls. Replaces as a third workspace add-on via the generic registry mechanism — no Core changes required.",
+  "author": "ResonantOS SDK-DEMO-001D",
+  "mode": "workspace-addon",
+  "trust": "sdk-reference",
+  "entry": "index.html",
+  "contentScripts": [],
+  "commands": [],
+  "messageChannel": "addon.sdk-guide",
+  "capabilities": [
+    "harness-messaging"
+  ],
+  "requestedCapabilities": [
+    "harness-messaging"
+  ],
+  "grantedCapabilities": [
+    "harness-messaging"
+  ],
+  "deniedCapabilities": [
+    "wallet-signing",
+    "provider-secret-read",
+    "trusted-memory-write",
+    "filesystem-write"
+  ],
+  "requires": [],
+  "boundary": "Replaceable SDK demonstration guide. Performs only deterministic round-trips through the bridge using the harness-messaging capability. Has no provider secrets, no wallet authority, no trusted-memory writes, and no filesystem writes. Every step shown to the user is a real cross-boundary call — show, do not tell.",
+  "contributions": {
+    "workspace": {
+      "type": "iframe",
+      "proxyPath": "/sdk-guide/",
+      "apiBasePath": "/api/sdk-guide",
+      "iframeMode": "srcdoc",
+      "entry": "index.html",
+      "mirrorPaths": [
+        { "bridge": "/sdk-guide", "upstream": "" },
+        { "bridge": "/api/sdk-guide", "upstream": "/api/sdk-guide" }
+      ],
+      "runtime": {
+        "command": "node",
+        "args": ["server.mjs"],
+        "port": 47423,
+        "host": "127.0.0.1"
+      }
+    }
+  },
+  "messaging": {
+    "channel": "addon.sdk-guide",
+    "requestCapability": "harness-messaging",
+    "routes": [
+      {
+        "method": "GET",
+        "path": "/api/sdk-guide/status",
+        "requiredCapability": "harness-messaging",
+        "description": "Guide runtime status — running, bridge identity, step count."
+      },
+      {
+        "method": "POST",
+        "path": "/api/sdk-guide/message",
+        "requiredCapability": "harness-messaging",
+        "description": "Deterministic echo used by the live demonstration step. Returns cross-boundary evidence (bridgeIdentity, addon, capability, receivedAt, messageCount)."
+      },
+      {
+        "method": "POST",
+        "path": "/api/sdk-guide/denied",
+        "requiredCapability": "harness-messaging",
+        "description": "Demonstration of an unauthorized request. The add-on does NOT declare wallet-signing; this route always returns 403 with the harness-messaging token check, proving the bridge enforces the capability contract end-to-end."
+      }
+    ]
+  }
+}

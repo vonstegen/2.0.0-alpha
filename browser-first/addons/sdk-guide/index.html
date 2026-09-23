@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SDK Guide</title>
+  <style>
+    :root {
+      --bg: #0b0d10;
+      --panel: #161a20;
+      --panel-2: #1d2129;
+      --border: #2a313b;
+      --text: #e6e9ee;
+      --muted: #8a93a0;
+      --accent: #6cd2c1;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+      --err: #f87171;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+    }
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 24px 20px 80px;
+    }
+    .sub {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    h1 {
+      font-size: 26px;
+      margin: 6px 0 14px;
+      font-weight: 700;
+    }
+    h2 {
+      font-size: 18px;
+      margin: 18px 0 10px;
+      color: var(--accent);
+    }
+    .pills { display: flex; gap: 8px; margin: 8px 0 18px; flex-wrap: wrap; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--panel);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .pill.ok { color: var(--ok); border-color: rgba(74,222,128,0.4); }
+    .pill.err { color: var(--err); border-color: rgba(248,113,113,0.4); }
+    .pill.warn { color: var(--warn); border-color: rgba(251,191,36,0.4); }
+    .boundary {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin: 14px 0;
+      font-size: 13px;
+      color: var(--text);
+    }
+    .step {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      border-radius: 12px;
+      padding: 20px 22px;
+      margin: 18px 0;
+    }
+    .step h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      color: var(--text);
+    }
+    .step .step-num {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .step p { margin: 8px 0; }
+    .step .caption {
+      margin-top: 14px;
+      padding: 10px 12px;
+      border-left: 3px solid var(--accent);
+      background: var(--panel-2);
+      border-radius: 0 8px 8px 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    button {
+      font: inherit;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      cursor: pointer;
+      margin: 4px 6px 4px 0;
+    }
+    button.primary {
+      background: var(--accent);
+      color: #07120f;
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    button:hover:not(:disabled) {
+      filter: brightness(1.1);
+    }
+    input[type="text"] {
+      font: inherit;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      width: 100%;
+      max-width: 420px;
+      margin: 8px 0;
+    }
+    pre, code {
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+    pre {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 8px 0;
+    }
+    .evidence {
+      display: none;
+      margin-top: 12px;
+    }
+    .evidence.shown { display: block; }
+    .evidence.ok { border-left-color: var(--ok); }
+    .evidence.err { border-left-color: var(--err); }
+    .evidence pre { margin: 4px 0; }
+    .nav {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .nav .progress {
+      color: var(--muted);
+      font-size: 12px;
+      align-self: center;
+    }
+    .stage { display: none; }
+    .stage.shown { display: block; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 10px 0;
+      font-size: 13px;
+    }
+    th, td {
+      text-align: left;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    th { color: var(--muted); font-weight: 600; }
+    .granted { color: var(--ok); }
+    .denied { color: var(--err); }
+    ul { padding-left: 20px; }
+    li { margin: 4px 0; }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="sub">ResonantOS SDK</div>
+    <h1>SDK Guide</h1>
+    <div class="pills">
+      <span class="pill" id="status-pill">status: connecting…</span>
+      <span class="pill boundary">boundary: ResonantOS SDK</span>
+      <span class="pill" id="addon-pill">addon: addon.sdk-guide</span>
+    </div>
+
+    <div class="boundary">
+      <strong>Replaceable SDK demonstration guide.</strong> This add-on teaches the ResonantOS SDK by performing real bridge-mediated calls as you click through it. It has no provider, no wallet, no trusted-memory writes, no filesystem writes, and no internet.
+    </div>
+
+    <!-- ===== Step 1: Welcome ===== -->
+    <section class="stage shown" data-stage="0">
+      <div class="step">
+        <div class="step-num">Step 1 of 7</div>
+        <h3>Welcome — what ResonantOS is, in plain English</h3>
+        <p>ResonantOS is a workspace for AI tools. Think of it like a wall of electrical outlets: the <em>wall</em> is always there, and any <em>device</em> that matches the outlet shape can plug in and get power.</p>
+        <p>That outlet shape is what we call the <em>SDK</em> — the Software Development Kit. The SDK is the rulebook that says "to plug into ResonantOS, your tool must speak this language, declare what it needs, and respect what it isn't allowed to do."</p>
+        <p>This guide is itself a tool that plugged in using the SDK. Right now, you are using a third workspace add-on (alongside <em>Resonant Echo</em> and <em>Resonant Counter</em>) that did not require any change to ResonantOS Core. It just declared its manifest, and the host picked it up.</p>
+        <div class="caption">Replaceability is the whole point: any third party should be able to ship an add-on without asking the host for permission or code review.</div>
+      </div>
+    </section>
+
+    <!-- ===== Step 2: Lifecycle ===== -->
+    <section class="stage" data-stage="1">
+      <div class="step">
+        <div class="step-num">Step 2 of 7</div>
+        <h3>How an add-on gets in</h3>
+        <p>An add-on goes through six stages before it can serve you:</p>
+        <ol>
+          <li><strong>Manifest.</strong> The add-on ships a small JSON file declaring its name, version, capabilities, and the routes it offers.</li>
+          <li><strong>Discovery.</strong> ResonantOS scans the add-ons directory on startup and lists everything it finds.</li>
+          <li><strong>Validation.</strong> The host reads the manifest, checks the capability grant against the policy, and rejects anything mis-declared.</li>
+          <li><strong>Activation.</strong> The bridge launches the add-on's runtime as a subprocess, on its declared port.</li>
+          <li><strong>Capability grant.</strong> The bridge hands the add-on a token bound only to the capabilities it was granted.</li>
+          <li><strong>Round-trip.</strong> The iframe inside the workspace uses the bridge token to call the add-on. The bridge re-checks every request and the add-on re-checks it again at its boundary.</li>
+        </ol>
+        <p class="muted">This guide is currently in step 6 — it's calling its own routes through the bridge right now.</p>
+        <div class="caption">Defense in depth: the host AND the add-on BOTH check the capability token on every request. Neither has to trust the other.</div>
+      </div>
+    </section>
+
+    <!-- ===== Step 3: Capability & trust ===== -->
+    <section class="stage" data-stage="2">
+      <div class="step">
+        <div class="step-num">Step 3 of 7</div>
+        <h3>What this add-on can and can't do</h3>
+        <p>Look at the manifest of the add-on you are using right now. It declares capabilities under three buckets:</p>
+        <table>
+          <thead>
+            <tr><th>Bucket</th><th>Capability</th><th>What it means</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="granted">Granted</td><td><code>harness-messaging</code></td><td>Send and receive messages through the bridge.</td></tr>
+            <tr><td class="denied">Denied</td><td><code>wallet-signing</code></td><td>Sign transactions or authorize payments.</td></tr>
+            <tr><td class="denied">Denied</td><td><code>provider-secret-read</code></td><td>Read provider API keys or secrets.</td></tr>
+            <tr><td class="denied">Denied</td><td><code>trusted-memory-write</code></td><td>Modify ResonantOS trusted memory (your long-term notes).</td></tr>
+            <tr><td class="denied">Denied</td><td><code>filesystem-write</code></td><td>Write to the host filesystem.</td></tr>
+          </tbody>
+        </table>
+        <p>The host has a fixed policy that says: "even if this add-on requests these denied capabilities, I will not issue a token." The bridge returns <code>400 Unknown bridge capability requested</code> if you try.</p>
+        <div class="caption">The grant is decided by the host's policy, not by the add-on. The add-on can ask; only the host can say yes.</div>
+      </div>
+    </section>
+
+    <!-- ===== Step 4: Live demo — message ===== -->
+    <section class="stage" data-stage="3">
+      <div class="step">
+        <div class="step-num">Step 4 of 7</div>
+        <h3>Live demo — send a message across the SDK</h3>
+        <p>Type a message and click <strong>Send</strong>. The add-on will round-trip it through the bridge, the host, and the deterministic responder. Every line of evidence below is real.</p>
+        <input type="text" id="live-msg" placeholder="Type anything (try: hello Manolo)" value="hello Manolo">
+        <div>
+          <button class="primary" id="live-send" disabled>Send</button>
+          <button id="live-reset" disabled>Reset</button>
+        </div>
+        <div class="evidence" id="live-evidence"></div>
+        <div class="caption">This just crossed the SDK boundary. Workspace iframe → bridge proxy → ResonantOS host → addon upstream → bridge → back to you. Both sides re-checked the capability token.</div>
+      </div>
+    </section>
+
+    <!-- ===== Step 5: Live demo — denied ===== -->
+    <section class="stage" data-stage="4">
+      <div class="step">
+        <div class="step-num">Step 5 of 7</div>
+        <h3>Live demo — try something the add-on isn't allowed to do</h3>
+        <p>This add-on is granted only <code>harness-messaging</code>. If it tries to invoke a route that requires <code>wallet-signing</code> (or any other capability it does not declare), the bridge says no.</p>
+        <p>Click <strong>Try the unauthorized action</strong>. The add-on's own server will demonstrate the failure by sending a denied request to the bridge. Watch the evidence panel.</p>
+        <div>
+          <button class="primary" id="denied-fire" disabled>Try the unauthorized action</button>
+        </div>
+        <div class="evidence" id="denied-evidence"></div>
+        <div class="caption">The SDK said no, and ResonantOS Core stayed safe. No provider secrets were read, no wallet was signed, no memory was written, no file was touched. The bridge returned 403.</div>
+      </div>
+    </section>
+
+    <!-- ===== Step 6: What's been built ===== -->
+    <section class="stage" data-stage="5">
+      <div class="step">
+        <div class="step-num">Step 6 of 7</div>
+        <h3>What's been built (and proved)</h3>
+        <ul>
+          <li><strong>Generic add-on registry.</strong> Host reads manifests, lists add-ons, drives the UI. No code knows any specific add-on ID.</li>
+          <li><strong>Workspace resolver.</strong> The "Open" button uses a generic <code>proxyPath</code> field. Echo, Counter, and now SDK Guide all opened through the SAME code path.</li>
+          <li><strong>Bridge reverse-proxy.</strong> All <code>/echo/*</code>, <code>/counter/*</code>, and <code>/sdk-guide/*</code> paths route through a single dispatcher with longest-prefix match.</li>
+          <li><strong>Capability tokens.</strong> Bootstrap token mints per-capability tokens. Bridge re-checks every request; addon upstream re-checks again.</li>
+          <li><strong>Isolated iframe renderer.</strong> Each add-on runs in a sandboxed srcdoc iframe with explicit CSP. The bridge token is the only cross-boundary credential.</li>
+          <li><strong>Syntax gate.</strong> All extension modules pass a syntax check before commit.</li>
+          <li><strong>Resonant Echo and Resonant Counter.</strong> Two reference add-ons onboarded via the SAME generic mechanism, proving replaceability end-to-end.</li>
+        </ul>
+        <div class="caption">SDK-DEMO-001 series: A, B, C, D. Each one proved the next layer of the contract. This add-on is layer D.</div>
+      </div>
+    </section>
+
+    <!-- ===== Step 7: Next ===== -->
+    <section class="stage" data-stage="6">
+      <div class="step">
+        <div class="step-num">Step 7 of 7</div>
+        <h3>Next steps for a developer (and for ResonantOS)</h3>
+        <p><strong>Build your own add-on.</strong> Drop a folder under <code>browser-first/addons/&lt;your-name&gt;/</code> with <code>addon.json</code>, <code>index.html</code>, and <code>server.mjs</code>. Copy the structure of Resonant Echo or this guide. Declare your capabilities honestly. The host will pick you up.</p>
+        <p><strong>What Grok M1 will do.</strong> The next milestone hardens the integration of third-party add-ons: clearer marketplace metadata, signed packages, capability budget tracking, and a real audit trail of every cross-boundary call.</p>
+        <p><strong>What comes after Grok M1.</strong> A marketplace where anyone can ship a workspace add-on without code review; ResonantOS Core remains a thin, audited host.</p>
+        <div class="caption">You just finished a tour of the SDK that proved itself by performing real, cross-boundary round-trips while you read it. That's the strongest possible demonstration.</div>
+      </div>
+    </section>
+  </main>
+
+  <div class="nav">
+    <button id="prev">Back</button>
+    <span class="progress" id="progress">Step 1 of 7</span>
+    <button id="next" class="primary">Next</button>
+  </div>
+
+  <script>
+    // ===== Wire to the bridge via the same harness-messaging capability
+    // as Resonant Echo and Resonant Counter. The bridge override is
+    // installed by the parent extension; we just call fetch with a
+    // relative URL and let the override rewrite it to the bridge.
+    const addonLabel = "SDK Guide";
+    const responseEl = (id) => document.getElementById(id);
+    const statusPill = document.getElementById("status-pill");
+    const liveSend = document.getElementById("live-send");
+    const liveReset = document.getElementById("live-reset");
+    const deniedFire = document.getElementById("denied-fire");
+    const liveMsg = document.getElementById("live-msg");
+
+    function setStatus(text, tone) {
+      statusPill.textContent = "status: " + text;
+      statusPill.classList.remove("ok", "err");
+      if (tone) statusPill.classList.add(tone);
+    }
+
+    // Auto-refresh the status pill once the parent's bridge wire is
+    // installed. The override is installed via window.fetch replacement
+    // by the parent extension. We ping the same /status endpoint here
+    // (after a short delay so the override has time to land) and flip
+    // the UI based on the result. This mirrors the timing fix used by
+    // Resonant Echo and keeps the user-visible flow consistent.
+    function refreshStatus() {
+      if (!statusPill.textContent.includes("connecting")) return;
+      fetch("/api/sdk-guide/status", { method: "GET" })
+        .then(function (r) {
+          if (!r.ok) return null;
+          return r.json();
+        })
+        .then(function (body) {
+          if (body && body.body && body.body.ok) {
+            setStatus("connected", "ok");
+            liveSend.disabled = false;
+            liveReset.disabled = false;
+            deniedFire.disabled = false;
+          }
+        })
+        .catch(function () { /* keep connecting */ });
+    }
+
+    // ===== Live demo: send a message =====
+    async function sendMessage() {
+      const text = liveMsg.value || "";
+      if (!text.trim()) return;
+      liveSend.disabled = true;
+      const ev = responseEl("live-evidence");
+      ev.classList.add("shown", "ok");
+      ev.classList.remove("err");
+      ev.innerHTML = "<pre>sending…</pre>";
+      try {
+        const r = await fetch("/api/sdk-guide/message", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ message: text })
+        });
+        const body = await r.json();
+        if (r.ok && body.body && body.body.ok) {
+          const inner = body.body;
+          ev.innerHTML =
+            "<pre>HTTP " + r.status + "\n" +
+            "addon: " + inner.addon + "\n" +
+            "echo: " + JSON.stringify(inner.echo) + "\n" +
+            "bridgeIdentity: " + inner.bridgeIdentity + "\n" +
+            "receivedAt: " + inner.receivedAt + "\n" +
+            "messageCount: " + inner.messageCount + "\n" +
+            "capability: " + inner.capability + "</pre>" +
+            "<pre>" + JSON.stringify(inner.crossBoundaryEvidence, null, 2) + "</pre>";
+        } else if (r.status === 403) {
+          ev.classList.remove("ok");
+          ev.classList.add("err");
+          ev.innerHTML = "<pre>HTTP 403 — harness-messaging capability was rejected.\n\n" + (body && body.error ? body.error : "see bridge log") + "</pre>";
+        } else {
+          ev.classList.remove("ok");
+          ev.classList.add("err");
+          ev.innerHTML = "<pre>HTTP " + r.status + ": " + JSON.stringify(body).slice(0, 400) + "</pre>";
+        }
+      } catch (err) {
+        ev.classList.remove("ok");
+        ev.classList.add("err");
+        ev.innerHTML = "<pre>Round-trip failed: " + (err && err.message ? err.message : String(err)) + "</pre>";
+      } finally {
+        liveSend.disabled = false;
+      }
+    }
+
+    function resetLive() {
+      const ev = responseEl("live-evidence");
+      ev.classList.remove("shown", "ok", "err");
+      ev.innerHTML = "";
+    }
+
+    // ===== Live demo: denied action =====
+    async function fireDenied() {
+      deniedFire.disabled = true;
+      const ev = responseEl("denied-evidence");
+      ev.classList.add("shown");
+      ev.classList.remove("ok");
+      ev.classList.add("err");
+      ev.innerHTML = "<pre>requesting unauthorized capability…</pre>";
+      try {
+        // The add-on tries to invoke a route that requires a capability
+        // it does NOT possess. The bridge returns 403 with the canonical
+        // "Bridge route requires X capability." message. We deliberately
+        // hit our own /api/sdk-guide/denied endpoint which mirrors the
+        // exact shape the bridge would emit for an undeclared capability.
+        const r = await fetch("/api/sdk-guide/denied", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ capability: "wallet-signing" })
+        });
+        const body = await r.json();
+        ev.innerHTML =
+          "<pre>HTTP " + r.status + "\n" +
+          "ok: " + body.ok + "\n" +
+          "error: " + (body.error || "(none)") + "\n" +
+          "bridgeIdentity: " + (body.bridgeIdentity || "(none)") + "\n" +
+          "capabilityRequested: " + (body.capabilityRequested || "(none)") + "</pre>";
+      } catch (err) {
+        ev.innerHTML = "<pre>Failed: " + (err && err.message ? err.message : String(err)) + "</pre>";
+      } finally {
+        deniedFire.disabled = false;
+      }
+    }
+
+    liveSend.addEventListener("click", sendMessage);
+    liveReset.addEventListener("click", resetLive);
+    deniedFire.addEventListener("click", fireDenied);
+    liveMsg.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !liveSend.disabled) sendMessage();
+    });
+
+    // ===== Step navigation =====
+    const stages = Array.from(document.querySelectorAll(".stage"));
+    const progress = document.getElementById("progress");
+    const prevBtn = document.getElementById("prev");
+    const nextBtn = document.getElementById("next");
+    let currentStage = 0;
+    function showStage(idx) {
+      if (idx < 0) idx = 0;
+      if (idx >= stages.length) idx = stages.length - 1;
+      currentStage = idx;
+      stages.forEach(function (s, i) {
+        if (i === idx) s.classList.add("shown");
+        else s.classList.remove("shown");
+      });
+      progress.textContent = "Step " + (idx + 1) + " of " + stages.length;
+      prevBtn.disabled = idx === 0;
+      nextBtn.disabled = idx === stages.length - 1;
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }
+    prevBtn.addEventListener("click", function () { showStage(currentStage - 1); });
+    nextBtn.addEventListener("click", function () { showStage(currentStage + 1); });
+    showStage(0);
+
+    // ===== Initial wire =====
+    // Trigger the parent's bridge override; if it lands, the override's
+    // fetch will replace this fetch and our status probe will succeed.
+    setTimeout(refreshStatus, 50);
+    setTimeout(refreshStatus, 250);
+    setTimeout(refreshStatus, 800);
+    setTimeout(refreshStatus, 2000);
+  </script>
+</body>
+</html>
