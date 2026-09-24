@@ -49,6 +49,97 @@ body[data-workspace="hermes"] .hermes-dashboard-workspace {
   color: #4d9c6e;
 }
 
+/* Generic workspace add-on chain (Resonant Echo, SDK Guide, and any
+   other addon loaded via `renderGenericAddonWorkspace`). The default
+   `.answer-thread` (`#transcript`) is `display: grid; align-content:
+   start` with no defined row sizes, so its children only take their
+   natural height — leaving the iframe stuck at the browser's 150px
+   default. For `data-workspace` values starting with `addon:`, switch
+   the transcript to a flex column and propagate full height down
+   through `.generic-addon-workspace` → `.addon-workspace-frame` →
+   `.addon-iframe-wrapper` → `.addon-iframe-frame` → `.addon-iframe`,
+   so the iframe fills the available space and the user can read the
+   add-on body. Mirrors the Hermes-specific rules above. */
+body[data-workspace^="addon:"] #transcript {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+}
+
+.generic-addon-workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.addon-workspace-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* Generic add-on chrome — header (title + meta), boundary prose,
+   loading status. Sits at the top of `.generic-addon-workspace` so
+   the iframe gets the remaining vertical space. Pad inside so the
+   text does not kiss the transcript's left/right borders; separate
+   the title and the meta with a gap so they no longer run together
+   (was: "SDK Guideaddon.sdk-guide · …"). */
+.addon-workspace-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 24px 32px 4px;
+  font-size: 0.92rem;
+}
+
+.addon-workspace-header strong {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: rgba(247, 255, 249, 0.96);
+  letter-spacing: -0.01em;
+}
+
+.addon-workspace-header small {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: rgba(207, 219, 210, 0.62);
+  letter-spacing: 0.02em;
+}
+
+.addon-workspace-boundary {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0 32px 8px;
+  max-width: 78ch;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: rgba(214, 229, 219, 0.78);
+}
+
+.addon-workspace-status {
+  flex: 0 0 auto;
+  padding: 6px 32px 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(207, 219, 210, 0.62);
+}
+
+.addon-workspace-status[data-tone="error"] {
+  color: rgba(255, 154, 138, 0.88);
+}
+
 .addon-iframe-frame {
   flex: 1 1 auto;
   min-height: 0;
