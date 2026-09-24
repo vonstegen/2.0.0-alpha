@@ -505,7 +505,7 @@ export function createAddonDelegationService(dependencies) {
         ? workspace.mirrorPaths
         : [],
       upstreamPortEnvVar: upstreamPortEnvVar || null,
-      upstreamPort: upstreamPortEnvVar ? Number(process.env[upstreamPortEnvVar] ?? 0) || null : null,
+      upstreamPort: Number((upstreamPortEnvVar && process.env[upstreamPortEnvVar]) || workspace.runtime?.port || 0) || null,
       bridgePublicUrl,
       requestedCapabilities,
       grantedCapabilities,
