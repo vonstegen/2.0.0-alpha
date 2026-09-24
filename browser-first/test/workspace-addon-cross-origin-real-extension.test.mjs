@@ -53,6 +53,8 @@ import test from "node:test";
 
 import { chromium } from "playwright";
 
+import { createAddonDelegationService } from "../host/addon-delegation-service.mjs";
+
 const REPO_ROOT = path.join(import.meta.dirname, "..", "..");
 const EXTENSION_ROOT = path.join(REPO_ROOT, "browser-first", "resonantos-side-panel-extension");
 // ResonantOS extension id is fixed by the manifest's "key" field —
@@ -115,32 +117,52 @@ async function waitForUpstream(port, attempts = 100) {
 async function makeAddonEntry({ manifestPath, addonPort }) {
   const manifestRaw = await readFile(manifestPath, "utf8");
   const manifest = JSON.parse(manifestRaw);
-  return {
-    id: manifest.id,
-    name: manifest.name,
-    version: manifest.version,
-    description: manifest.description ?? "",
-    author: manifest.author ?? "",
-    available: true,
-    mode: manifest.mode ?? "workspace-addon",
-    trust: manifest.trust ?? "sdk-reference",
-    registrySource: "workspace-addon-manifest",
-    proxyPath: manifest.contributions.workspace.proxyPath,
-    apiBasePath: manifest.contributions.workspace.apiBasePath,
-    iframeMode: manifest.contributions.workspace.iframeMode === "src" ? "src" : "srcdoc",
-    upstreamPortEnvVar: manifest.contributions.workspace.upstreamPortEnvVar ?? null,
-    upstreamPort: addonPort,
-    bridgePublicUrl: `http://127.0.0.1:${MOCK_BRIDGE_PORT}`,
-    requestedCapabilities: manifest.requestedCapabilities ?? manifest.capabilities ?? [],
-    grantedCapabilities: manifest.grantedCapabilities ?? [],
-    deniedCapabilities: manifest.deniedCapabilities ?? [],
-    boundary: manifest.boundary ?? "",
-    messaging: {
-      channel: manifest.messaging?.channel ?? "",
-      requestCapability: manifest.messaging?.requestCapability ?? "",
-      routes: Array.isArray(manifest.messaging?.routes) ? manifest.messaging.routes : []
-    }
+  // Build the registry entry through the SAME production code path
+  // (`buildWorkspaceAddonRegistryEntry`) instead of hand-rolling a
+  // hardcoded shape. The previous version short-circuited the
+  // upstreamPort derivation by hardcoding `upstreamPort: addonPort`,
+  // which let the SDK-DEMO-002 regression ship undetected. To route
+  // the test's ephemeral port through the derivation, mutate a deep
+  // clone of the manifest's `runtime.port` AND its
+  // `upstreamPortEnvVar` (when present) to the test port. This
+  // mirrors what the runtime launcher does at boot — it sets the
+  // env var to the runtime port value — so the derivation produces
+  // the same result production would.
+  const service = createAddonDelegationService({
+    browserFirstRoot: () => REPO_ROOT,
+    repoRoot: REPO_ROOT,
+    memoryRoot: () => path.join(REPO_ROOT, "Memory"),
+    userRoot: () => path.join(REPO_ROOT, "User"),
+    socketOpen: async () => false,
+    hermesCommand: () => null,
+    opencodeCommand: () => null
+  });
+  const workspace = manifest.contributions?.workspace ?? {};
+  const cloned = JSON.parse(JSON.stringify(manifest));
+  cloned.contributions.workspace.runtime = {
+    ...(workspace.runtime ?? {}),
+    port: addonPort
   };
+  const envVar = workspace.upstreamPortEnvVar;
+  const hadEnvVar = envVar ? Object.prototype.hasOwnProperty.call(process.env, envVar) : false;
+  const previousEnvValue = envVar ? process.env[envVar] : undefined;
+  if (envVar) {
+    process.env[envVar] = String(addonPort);
+  }
+  try {
+    return service.buildWorkspaceAddonRegistryEntry({
+      manifest: cloned,
+      bridgePublicUrl: `http://127.0.0.1:${MOCK_BRIDGE_PORT}`
+    });
+  } finally {
+    if (envVar) {
+      if (hadEnvVar) {
+        process.env[envVar] = previousEnvValue;
+      } else {
+        delete process.env[envVar];
+      }
+    }
+  }
 }
 
 async function startMockBridge({ echoPort, counterPort, sdkGuidePort }) {

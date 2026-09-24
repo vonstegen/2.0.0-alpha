@@ -1305,7 +1305,7 @@ test("settings memory section gates move-on-import behind preflight and confirma
     form.querySelector("select[name='ownership']").value = "human-knowledge";
     form.querySelector("select[name='importMode']").value = "move-on-import";
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitForCondition(() => /Move preflight (ready|blocked)/.test(container.textContent));
 
     assert.ok(calls.some(([route, options]) =>
       route === "/memory/source/move-preflight" &&
@@ -1436,7 +1436,7 @@ test("settings memory section completes real move-on-import and rollback against
     form.querySelector("select[name='ownership']").value = "human-knowledge";
     form.querySelector("select[name='importMode']").value = "move-on-import";
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await waitForCondition(() => /Move preflight (ready|blocked)/.test(container.textContent));
 
     assert.match(container.textContent, /Move preflight ready/);
     assert.match(container.textContent, /2 file\(s\)/);

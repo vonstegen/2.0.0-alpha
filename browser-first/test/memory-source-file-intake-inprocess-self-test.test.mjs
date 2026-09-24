@@ -1,12 +1,59 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:net";
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
 const execFileAsync = promisify(execFile);
 const toPortablePath = (value) => String(value ?? "").replace(/\\/g, "/");
 
-test("source-file intake bridge routes pass in-process deterministic smoke test", async () => {
+// The in-process self-test does NOT actually exercise workspace
+// add-ons, but the bridge still launches them at startup because
+// their manifests declare runtime ports. If a port is held by an
+// external process (a dev bridge, a previous test run, etc.) the
+// add-on fails to bind and the bridge process exits non-zero, which
+// fails this test even though the in-process self-test logic is
+// correct. Probe the ports the bundled workspace add-ons declare and
+// skip when any are unavailable, mirroring how live-sdk-lane skips
+// when the opencode binary is absent.
+async function isPortFree(port) {
+  return await new Promise((resolve) => {
+    const probe = createServer();
+    probe.unref();
+    probe.once("error", () => resolve(false));
+    probe.once("listening", () => probe.close(() => resolve(true)));
+    probe.listen(port, "127.0.0.1");
+  });
+}
+
+async function detectOccupiedWorkspaceAddonPorts() {
+  const addonRoot = path.join(process.cwd(), "browser-first", "addons");
+  const occupied = [];
+  for (const dir of ["resonant-echo", "resonant-counter", "sdk-guide"]) {
+    try {
+      const manifest = JSON.parse(await readFile(path.join(addonRoot, dir, "addon.json"), "utf8"));
+      const port = manifest?.contributions?.workspace?.runtime?.port;
+      if (!Number.isInteger(port) || port <= 0) continue;
+      if (!(await isPortFree(port))) occupied.push({ addon: manifest.id, port });
+    } catch {
+      // Manifest missing or unreadable — not our concern here; the bridge
+      // launcher will report it. Skip the probe.
+    }
+  }
+  return occupied;
+}
+
+test("source-file intake bridge routes pass in-process deterministic smoke test", async (t) => {
+  const occupied = await detectOccupiedWorkspaceAddonPorts();
+  if (occupied.length > 0) {
+    const list = occupied.map((entry) => `${entry.addon}@${entry.port}`).join(", ");
+    t.skip(`workspace addon port(s) already in use on this runner: ${list}. ` +
+      "The in-process self-test does not depend on these upstreams, but the bridge launches them at startup. " +
+      "Stop the holder (e.g. another `npm run browser-first:bridge` instance) and re-run.");
+    return;
+  }
   const { stdout } = await execFileAsync(process.execPath, [
     "browser-first/host/run-browser-first.mjs",
     "--memory-source-file-intake-inprocess-self-test=true",
