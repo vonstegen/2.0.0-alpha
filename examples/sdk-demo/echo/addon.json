@@ -1,0 +1,74 @@
+{
+  "id": "addon.resonant-echo",
+  "name": "Resonant Echo",
+  "version": "0.1.0",
+  "author": "ResonantOS",
+  "category": "tool",
+  "sdkVersion": "0.1.0",
+  "description": "Deterministic local echo add-on that proves the SDK round-trip: a message sent through the host boundary returns a host-mediated echo response.",
+  "runtimeType": "local-service",
+  "surfaces": [
+    {
+      "id": "resonant-echo-workspace",
+      "type": "panel",
+      "label": "Resonant Echo",
+      "description": "Type a message and send it through the host boundary to the local echo service."
+    }
+  ],
+  "requestedCapabilities": [
+    {
+      "capability": "network",
+      "granted": false,
+      "scope": "self",
+      "revocationBehavior": "hard-stop"
+    }
+  ],
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
+  },
+  "runtimeIsolation": {
+    "boundary": "host-mediated-service",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": true
+  },
+  "grantPresets": [
+    {
+      "id": "resonant-echo-local",
+      "label": "Local echo",
+      "description": "Grant the local echo service access to its own loopback endpoint.",
+      "grants": [
+        {
+          "capability": "network",
+          "granted": true,
+          "scope": "self",
+          "revocationBehavior": "hard-stop"
+        }
+      ]
+    }
+  ],
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "http-json",
+    "endpoint": "http://127.0.0.1:47321/health"
+  },
+  "installHooks": {},
+  "service": {
+    "protocol": "http-json",
+    "entrypoint": "http://127.0.0.1:47321"
+  },
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS", "linux", "windows"]
+  }
+}
