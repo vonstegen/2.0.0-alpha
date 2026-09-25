@@ -1014,15 +1014,26 @@ function renderWorkspaceIframeWorkspace() {
     addonLabel: addon.name ?? addon.id,
   });
 
-  // Build the bootstrap envelope. The bootstrap carries the add-on's
-  // grant-preset grants (host-approvable proposals) so the add-on knows its
-  // declared capabilities. P6 will replace this with the live harness
-  // registry snapshot. `apiBasePath` is informational; the add-on makes
-  // same-origin fetches to its own loopback upstream.
+  // Build the bootstrap envelope.
+  //
+  // CONTRACT (SDK-DEMO-003 / P6 gate):
+  //   `capabilityTokens` is currently derived from the manifest's
+  //   `grantPresets` (host-approvable proposals) as a *placeholder* so the
+  //   iframe can be smoke-tested before Phase 3 (P6) lands. Phase 3 MUST
+  //   replace this with the live `harness-registry` snapshot produced by
+  //   `registry.install(manifest, { enabled })` followed by
+  //   `registry.setGrants(addonId, grants, { consent: true })`. Until P6
+  //   ships, treat the bootstrap tokens as **declarative only** — the
+  //   add-on must not rely on them for guarded behavior. The Echo upstream
+  //   is intentionally tolerant of an empty or placeholder envelope so this
+  //   gap does not bypass authorization.
+  //
+  // WORKSPACE-IFRAME NOTE: the iframe is the add-on's own upstream origin
+  // (sandbox=`allow-scripts allow-same-origin`), so the add-on issues
+  // requests directly to its loopback endpoint — no bridge proxy, no API
+  // base-path rewriting. There is therefore no `apiBasePath` field in the
+  // envelope; we only carry capability declarations.
   const capabilityTokens = {};
-  for (const preset of addon.surfaces?.length ? addon.surfaces : []) {
-    void preset;
-  }
   const grantSets = Array.isArray(addon.grantPresets) ? addon.grantPresets : [];
   for (const preset of grantSets) {
     for (const grant of preset.grants ?? []) {
@@ -1036,10 +1047,9 @@ function renderWorkspaceIframeWorkspace() {
     }
   }
 
-  deliverBootstrap({
-    apiBasePath: addon.origin,
-    capabilityTokens,
-  });
+  const bootstrapEnvelope = { capabilityTokens };
+
+  deliverBootstrap(bootstrapEnvelope);
 
   // Re-deliver on the add-on's ready ping so a slow add-on that installs its
   // listener after iframe load still receives the envelope. The add-on
@@ -1047,10 +1057,7 @@ function renderWorkspaceIframeWorkspace() {
   const onMessage = (event) => {
     if (event.source !== iframe.contentWindow) return;
     if (!event.data || event.data.type !== "resonantos-addon-ready") return;
-    deliverBootstrap({
-      apiBasePath: addon.origin,
-      capabilityTokens,
-    });
+    deliverBootstrap(bootstrapEnvelope);
     setStatus(`${addon.name ?? addon.id} handshake complete.`, "ready");
   };
   window.addEventListener("message", onMessage);

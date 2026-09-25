@@ -17,7 +17,7 @@ describe("createWorkspaceAddonIframe (P5 cross-origin renderer)", () => {
     expect(wrapper.querySelector("iframe")).toBe(iframe);
   });
 
-  it("delivers the bootstrap envelope with a pinned targetOrigin", () => {
+  it("delivers the bootstrap envelope with a pinned targetOrigin and no apiBasePath", () => {
     const { iframe, deliverBootstrap } = createWorkspaceAddonIframe({
       addonId: "addon.resonant-echo",
       addonOrigin: "http://127.0.0.1:47321",
@@ -28,11 +28,14 @@ describe("createWorkspaceAddonIframe (P5 cross-origin renderer)", () => {
       value: { postMessage },
       configurable: true,
     });
-    deliverBootstrap({ apiBasePath: "/api", capabilityTokens: { network: "tok" } });
+    deliverBootstrap({ capabilityTokens: { network: "tok" } });
     expect(postMessage).toHaveBeenCalledTimes(1);
     const [message, targetOrigin] = postMessage.mock.calls[0];
     expect(message.type).toBe(WORKSPACE_BOOTSTRAP_TYPE);
-    expect(message.apiBasePath).toBe("/api");
+    // Workspace-iframe bootstrap is declarative only — no apiBasePath is carried
+    // because the iframe is the add-on's own upstream origin (sandboxed
+    // cross-origin) and the add-on issues same-origin fetches directly.
+    expect("apiBasePath" in message).toBe(false);
     expect(message.capabilityTokens).toEqual({ network: "tok" });
     expect(targetOrigin).toBe("http://127.0.0.1:47321");
   });

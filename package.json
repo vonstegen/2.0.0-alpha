@@ -18,6 +18,8 @@
     "test:browser-first:live": "node browser-first/test/agent-control-live.mjs",
     "test:browser-first:settings-shapes": "node browser-first/test/settings-shapes-live.mjs",
     "test:browser-first:live-sdk": "node browser-first/test/live-sdk-lane.mjs",
+    "test:sdk-demo:extension": "node --test --test-concurrency=1 examples/sdk-demo/tests/echo-extension-live.test.mjs",
+    "test:sdk-demo:vitest": "vitest run --config examples/sdk-demo/vitest.config.ts",
     "browser-first:dev": "node run-bridge-minimal.mjs",
     "browser-first:bridge": "node run-bridge-minimal.mjs",
     "health": "node scripts/health-check.mjs",
