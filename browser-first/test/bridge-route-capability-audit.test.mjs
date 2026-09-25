@@ -81,6 +81,14 @@ const addonHandlers = [
   "executeAddonUserDataList",
   "executeAddonUserDataDelete",
   "executeGoalRecord",
+  // Phase 4 (P6/P7) — workspace add-on lifecycle. The audit must enumerate
+  // these so a no-second-trust-path regression cannot silently add a route.
+  "executeWorkspaceAddonInstall",
+  "executeWorkspaceAddonGrants",
+  "executeWorkspaceAddonGrant",
+  "executeWorkspaceAddonRevoke",
+  "executeWorkspaceAddonAdminRevoke",
+  "executeWorkspaceAddonBootstrap",
 ];
 
 const opencodeSessionHandlers = [

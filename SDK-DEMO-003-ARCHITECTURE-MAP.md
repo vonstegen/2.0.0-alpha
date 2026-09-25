@@ -339,3 +339,38 @@ step 8 must report 401, step 9 must report 403, and step 9's direct
 upstream fetch with the bearer after revoke must return 403. No step
 is hard-coded; if any of the boundary guarantees regress, step 8 or 9
 is the first place a red test appears.
+
+## 8. Phase 5 (P8) — adversarial red-team
+
+Every attack on the trust boundaries fails safely; legitimate SDK
+operations continue working. The adversarial suite lives at
+`browser-first/test/sd003-p8-adversarial.test.mjs`; the route audit
+(`bridge-route-capability-audit.test.mjs`) is upgraded to enumerate the
+6 new workspace-addon handlers.
+
+### Attack matrix
+
+| # | Attack | Defensive control | Witness |
+| --- | --- | --- | --- |
+| 1 | Bridge / admin / provider secrets leak to iframe, HTML, URL, or env | Bootstrap envelope carries only the host-minted bearer; HTML/URL carry nothing; no `process.env` inheritance | `Attack 1` (envelope + index.html scan), `Attack 1 cross-add-on` |
+| 2 | Cross-add-on credential reuse (Echo bearer → Counter/Guide) | Per-add-on audience-bound bearer; isolation proof (3-way) | `sdk-guide-roundtrip.test.ts` 3-way isolation group |
+| 3 | Use-after-revoke | Two independent channels (registry + admin); bearer never works again until BOTH restored | `Attack 3` (round-trip), `harness-registry-workspace-addon.test.mjs` durable-journal test |
+| 4 | Self-grant / grant outside `requestedCapabilities` / grant without `consent: true` | Registry throws `permission-denied`; CAS revision prevents drift | `harness-registry-workspace-addon.test.mjs` (consent:false, outside caps, CAS) |
+| 5 | Forged postMessage (wrong source / wrong type) | Iframe rejects `event.source !== window.parent` and `event.data.type !== resonantos-addon-bootstrap`; parent pins `targetOrigin = addonOrigin` (no `"*"`) | `Attack 5` (iframe listener), `Attack 5 parent origin-pin` |
+| 6 | Arbitrary `service.entrypoint` / non-loopback / non local-service runtime | Discovery rejects non-loopback entrypoint + non `local-service` runtime | `Attack 6` (throwaway manifests) |
+| 7 | Honest route-capability audit | New `executeWorkspaceAddon{Install,Grants,Grant,Revoke,AdminRevoke,Bootstrap}` handlers + their exact `addon-runtime-{control,read}` capabilities enumerated; bridge client knows each route | `bridge-route-capability-audit.test.mjs` (5/5), `Attack 11` |
+| 8 | Malformed / missing / case-shifted credentials | Upstreams strict-compare (constant-time); 503 no-bearer / 401 wrong / 200 correct | `Attack 8` |
+| 9 | Add-on crash + bridge restart | Restart re-discovers; registry durable journal preserves grants | `harness-registry-workspace-addon.test.mjs` + `addons-status-grant-regression.test.mjs` |
+| 10 | Port collision between bridge and another process | Bridge launcher's `startBridgeServerWithFallback` may recover to port 0; the manifest entrypoint is NEVER rewritten by the bridge (attacker can't redirect the iframe to a peer-controlled origin) | `Attack 10` (manifest SHA-256 hash before/after) |
+| 11 | Demo add-ons replace or disable Hermes / OpenCode / Living Archive | Three host services still wired and capability-gated alongside the workspace-addon routes; exact capability strings preserved (`addon-runtime-{control,read}`, `archive-read`, `archive-write`) | `Attack 11` (host-service factory construction) |
+
+### Safety guarantee
+
+- No attack is "passed" by weakening a control.
+- No mock bridge skips auth/CORS/origin checks.
+- No token in HTML / URL / env / postMessage wildcards.
+- Hermes / OpenCode / Living Archive are not weakened even after the demo
+  add-on routes ship — they remain present and capability-gated.
+- The P6 regression test (`addons-status-grant-regression.test.mjs`)
+  continues to fail-then-pass the grant-wipe bug, proving the no-second-
+  trust-path guarantee is reasserted.

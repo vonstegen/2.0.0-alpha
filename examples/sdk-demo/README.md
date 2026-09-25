@@ -61,7 +61,7 @@ npm run test:examples:sdk-demo   # (or) npx vitest run examples/sdk-demo/tests
 - **P5 Cross-origin UI** — port the verified sandboxed iframe + postMessage renderer.
 - **P6 Capabilities** — real host grant / deny / revoke. [OK] (shipped)
 - **P7 SDK Guide** — interactive tutorial with a real policy denial. [OK] (shipped)
-- **P8 Adversarial** — red-team the trust boundaries.
+- **P8 Adversarial** — red-team the trust boundaries. [OK] (shipped)
 - **P9 Live demo** — clean-checkout unpacked extension + real bridge.
 - **P10 Integration review** — diff audit, regression, 002-findings disposition.
 

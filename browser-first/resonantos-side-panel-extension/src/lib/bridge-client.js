@@ -85,6 +85,16 @@ const BRIDGE_ROUTE_CAPABILITIES = Object.freeze({
   "POST /addons/enabled": "addon-runtime-control",
   "POST /addons/remove": "addon-runtime-control",
   "POST /addons/slots/assign": "addon-runtime-control",
+  // Phase 4 (P6/P7) — workspace add-on lifecycle. Capability must match
+  // the route definition in addon-delegation-host-service.mjs exactly;
+  // the route audit (`bridge-route-capability-audit.test.mjs`) fails
+  // closed if either side drifts.
+  "POST /addons/workspace/install": "addon-runtime-control",
+  "POST /addons/workspace/grants": "addon-runtime-read",
+  "POST /addons/workspace/grant": "addon-runtime-control",
+  "POST /addons/workspace/revoke": "addon-runtime-control",
+  "POST /addons/workspace/admin-revoke": "addon-runtime-control",
+  "POST /addons/workspace/bootstrap": "addon-runtime-read",
   "POST /agent/session": "addon-runtime-control",
   "POST /agent/turn": "addon-runtime-control",
   "POST /agent/dispose": "addon-runtime-control",
