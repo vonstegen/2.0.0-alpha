@@ -7,17 +7,26 @@
 // Coverage map (mapped to P8 attack checklist):
 //   Attack 1  secrets leak (bootstrap envelope + URL + env)   ← secretsLeak()
 //   Attack 2  cross-add-on credential reuse (already proven 3-way)
-//   Attack 3  use-after-revoke round-trip                      ← useAfterRevoke()
+//   Attack 3  use-after-revoke (admin channel only)           ← useAfterRevokeAdmin()
+//            Both-channel witness (registry + admin) lives in
+//            p6-extension-live.test.mjs.
 //   Attack 4  unauthorized capability acquisition              ← registry path covered by
 //                                                                harness-registry-workspace-addon.test.mjs
-//   Attack 5  forged postMessage (parent + iframe checks)      ← forgedPostMessage()
+//   Attack 5  forged postMessage — static shape check          ← forgedPostMessageGuardShape()
 //   Attack 6  arbitrary runtime / non-loopback entrypoint      ← manifestValidation()
-//   Attack 7  honest route-capability audit                    ← bridge-route-capability-audit.test.mjs
-//                                                                (workspace routes enumerated P8)
-//   Attack 8  malformed credentials + constant-time            ← malformedCredentials()
+//            Note: there is no spawn path (discovery is declarative),
+//            so a `runtime.command` field is inert; we assert the
+//            non-loopback / non-local-service rejection, not command.
+//   Attack 7  honest route-capability audit + no open mirror    ← auditCompleteness() +
+//             (no /addons/workspace/proxy* route asserted)        noWorkspaceProxyRoute()
+//   Attack 8  malformed credentials (rejection, not timing)    ← malformedCredentialsRejected()
+//            Servers do use a constant-time XOR compare — verified
+//            in source — but this test asserts token rejection,
+//            not timing.
 //   Attack 9  crash + bridge restart preserves grants         ← registry durable journal
 //                                                                (harness-registry-workspace-addon.test.mjs)
-//   Attack 10 port collision                                   ← portCollision()
+//   Attack 10 bridge launcher does NOT rewrite the manifest     ← manifestNotRewritten()
+//            entrypoint on port collision (the actual invariant).
 //   Attack 11 Hermes / OpenCode / Living Archive unaffected    ← hermesStillWorks()
 
 import assert from "node:assert/strict";
@@ -127,17 +136,53 @@ test("P8 Attack 1 (cross-add-on): no upstream's HTML carries any other upstream'
   }
 });
 
-test("P8 Attack 3: use-after-revoke round-trip — bearer never works again until both registry + admin are restored", async () => {
-  // The full host-policy lifecycle:
-  //   1. baseline:  valid bearer → 200
-  //   2. registry revoke (set granted:false)  → 200 (operator-side action; no upstream state change yet)
-  //   3. admin /admin/deny {granted:false}     → 403 (host-revoked)
-  //   4. admin /admin/deny {granted:true}      → 200 (admin path restored)
-  //   5. valid bearer still → 403 (registry grant still revoked)
-  //   6. registry grant again                   → 200
-  //   7. revoke again (full lifecycle restart) → 403 again
-  // This proves the two channels are independent and the bearer truly
-  // never works again until BOTH are restored.
+test("P8 Attack 7 (open-mirror negative): no /addons/workspace/proxy* route exists in any host service. (V1 fix: make the open-bridge-prefix rejection explicit, not implicit in the audit.)", async () => {
+  // V1 finding: the P8 go-ahead item 7 ("no manifest-declared open bridge
+  // prefix") was folded into the route-capability audit and never separately
+  // asserted. This test makes it explicit: the demo MUST NOT introduce a
+  // `/addons/workspace/proxy*` route that would forward to whatever the
+  // manifest declares — that would be an open mirror surface. Any such
+  // route in any host service is a regression.
+  //
+  // We read each host service's source and grep for `path: "/addons/...`
+  // because constructing the host service factories requires the full
+  // handler set; this assertion is purely about the route surface.
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const url = await import("node:url");
+  const here = path.dirname(url.fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(here, "..", "..");
+  const hostDir = path.join(repoRoot, "browser-first/host");
+  // Every host service is `*-host-service.mjs` (plus a few non-suffixed
+  // files that also declare routes — bridge-server.mjs and
+  // agent-runtime-endpoint.mjs). Glob them all.
+  const allHostFiles = (await fs.readdir(hostDir)).filter((f) => f.endsWith(".mjs"));
+  const findings = [];
+  for (const f of allHostFiles) {
+    const src = await fs.readFile(path.join(hostDir, f), "utf8");
+    // Capture `path: "/..."` route declarations (single or double quotes).
+    const matches = src.match(/path:\s*["'](\/[^"']+)["']/g) ?? [];
+    for (const m of matches) {
+      const p = /path:\s*["'](\/[^"']+)["']/.exec(m)?.[1];
+      if (!p) continue;
+      // Negative assertion: nothing starting with /addons/workspace/proxy.
+      if (/^\/addons\/workspace\/proxy(\/|$)/.test(p)) {
+        findings.push(`${f}: ${p}`);
+      }
+    }
+  }
+  assert.deepEqual(findings, [], `no /addons/workspace/proxy* route must exist; found ${findings.join(", ")}`);
+});
+
+test("P8 Attack 3 (admin channel only): admin /admin/deny revocation flips the bearer from 200 → 403; restore flips back. (Both-channel registry + admin witness lives in p6-extension-live.test.mjs.)", async () => {
+  // Admin-channel lifecycle (this test drives the /admin/deny path only):
+  //   1. baseline:                 valid bearer → 200
+  //   2. admin /admin/deny {false}: valid bearer → 403
+  //   3. admin /admin/deny {true}:  valid bearer → 200
+  //   4. revoke again:              valid bearer → 403
+  //   5. restore again:             valid bearer → 200
+  // The registry channel is not driven here — see p6-extension-live.test.mjs
+  // for the both-channel round-trip in the real extension.
   const bearer = "attack3-bearer";
   const admin = "attack3-admin";
   const counter = createCounterServer({ port: 0, bearerToken: bearer, adminToken: admin });
@@ -159,22 +204,19 @@ test("P8 Attack 3: use-after-revoke round-trip — bearer never works again unti
     // 1. Baseline
     assert.equal((await ping()).status, 200, "baseline must be 200");
 
-    // 2. Registry "revoke" — we don't drive the registry here, but we can
-    // prove the admin-channel revoke is enough to make the same bearer
-    // return 403.
-    // 3. Admin revoke
+    // 2. Admin revoke
     assert.equal((await flip(false)).status, 200, "admin revoke must be 200");
     assert.equal((await ping()).status, 403, "valid bearer + revoked policy must be 403");
 
-    // 4. Admin restore — channel alone is enough to flip back to 200.
+    // 3. Admin restore
     assert.equal((await flip(true)).status, 200, "admin restore must be 200");
     assert.equal((await ping()).status, 200, "valid bearer + restored policy must be 200");
 
-    // 5. Revoke again to prove round-trip
+    // 4. Revoke again to prove round-trip
     assert.equal((await flip(false)).status, 200, "second admin revoke must be 200");
     assert.equal((await ping()).status, 403, "second revoke must produce 403");
 
-    // 6. Restore
+    // 5. Restore
     assert.equal((await flip(true)).status, 200);
     assert.equal((await ping()).status, 200);
   } finally {
@@ -182,7 +224,7 @@ test("P8 Attack 3: use-after-revoke round-trip — bearer never works again unti
   }
 });
 
-test("P8 Attack 5: iframe rejects forged bootstrap envelope (wrong source or wrong type)", async () => {
+test("P8 Attack 5 (static shape check): iframe's bootstrap listener guards `event.source !== window.parent` and `event.data.type !== \"resonantos-addon-bootstrap\"` (presence of guards in source, not a runtime forgery test)", async () => {
   // Read the iframe HTML from the Echo upstream and execute its message
   // listener logic with three adversarial messages:
   //   - forged type
@@ -230,7 +272,7 @@ test("P8 Attack 5: iframe rejects forged bootstrap envelope (wrong source or wro
   }
 });
 
-test("P8 Attack 5: parent's deliverBootstrap pins targetOrigin to the addon origin (postMessage origin-pinning)", async () => {
+test("P8 Attack 5 (static shape check): parent's deliverBootstrap pins targetOrigin to the addon origin and main-workspace's ready-ping listener checks `event.source !== iframe.contentWindow` (no \"*\")", async () => {
   // Read main-workspace.js and addon-iframe-workspace.js source to
   // confirm: iframe.contentWindow.postMessage(message, addonOrigin) uses
   // an explicit non-wildcard targetOrigin. If the parent ever emits a
@@ -271,7 +313,7 @@ test("P8 Attack 5: parent's deliverBootstrap pins targetOrigin to the addon orig
   );
 });
 
-test("P8 Attack 6: discovery rejects non-loopback entrypoint; runtimes with arbitrary command fields get filtered", async () => {
+test("P8 Attack 6: discovery rejects non-loopback entrypoint and non `local-service` runtimeType. (Note: `runtime.command` is inert — discovery is declarative and there is no spawn path; a manifest carrying an arbitrary `runtime.command` field is silently ignored, not executed.)", async () => {
   // Confirm: a manifest whose service.entrypoint is NOT a loopback
   // http URL is rejected by discovery; a manifest whose runtime is not
   // local-service is rejected.
@@ -331,7 +373,7 @@ test("P8 Attack 6: discovery rejects non-loopback entrypoint; runtimes with arbi
   }
 });
 
-test("P8 Attack 8: malformed credentials — 503 if no bearer, 401 on wrong bearer, 401 on wrong admin; constant-time and case-sensitive", async () => {
+test("P8 Attack 8: malformed credentials are rejected — 503 if no bearer configured, 401 on missing/wrong/case-shifted/appended bearer or admin. (Servers do use a constant-time XOR compare — verified in source — but this test asserts token rejection, not timing.)", async () => {
   const bearer = "attack8-correct-bearer-1234";
   const admin = "attack8-correct-admin-1234";
 
@@ -405,7 +447,7 @@ test("P8 Attack 8: malformed credentials — 503 if no bearer, 401 on wrong bear
   }
 });
 
-test("P8 Attack 10: bridge launcher does NOT rewrite the manifest entrypoint when its requested port is busy", async () => {
+test("P8 Attack 10: bridge launcher does NOT rewrite the manifest entrypoint when its requested port is busy. (Invariant: the manifest is bit-identical before/after, regardless of whether the bridge recovered to a free port, failed closed, or crashed.)", async () => {
   // The bridge launcher's `startBridgeServerWithFallback` may recover to
   // a different port (this is the documented behavior). The attack-relevant
   // invariant is that the bridge NEVER silently rewrites the addon
@@ -478,7 +520,16 @@ test("P8 Attack 10: bridge launcher does NOT rewrite the manifest entrypoint whe
     const entrypointTouched = JSON.parse(afterManifest).service?.entrypoint;
     assert.ok(/^http:\/\/127\.0\.0\.1:47321\/?$/.test(entrypointTouched ?? ""), `entrypoint must remain 47321; got ${entrypointTouched}`);
 
-    void settled; // silence lint
+    // The launcher outcome is recorded but not strictly asserted: timing-
+    // sensitive (6 s cap, completed ~208 ms), so we accept either "ready"
+    // (recovered to free port), "exit" (fail-closed or crash), or "timeout"
+    // (still settling). The strong invariant is the manifest unchanged;
+    // the launcher-outcome assertion would be a different test.
+    assert.ok(
+      settled && ["ready", "exit", "timeout"].includes(settled.kind),
+      `launcher outcome must be one of ready/exit/timeout; got ${JSON.stringify(settled)}`,
+    );
+
     void stderrBuf; // surface only on assertion fail (logged via stdoutBuf)
   } finally {
     hog.close();
