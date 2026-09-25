@@ -185,6 +185,31 @@ test("discoverWorkspaceAddonManifests never invokes the probe with a non-loopbac
   }
 });
 
+// Phase 2 (P4) — Counter is a second independent local-service add-on using
+// the same generic discovery + workspace-addon renderer. We assert the
+// discovery module discovers Counter alongside Echo when both manifests
+// exist under examples/sdk-demo, with separate entrypoints, separate ids,
+// and separate origin ports — confirming the mechanism is genuinely generic
+// and not hard-wired to Echo's id or entrypoint.
+test("discoverWorkspaceAddonManifests surfaces Counter alongside Echo (P4 generic)", async () => {
+  const result = await discoverWorkspaceAddonManifests({
+    repoRoot,
+    probeAvailability: async () => true,
+  });
+  const echo = result.manifests.find((manifest) => manifest.id === "addon.resonant-echo");
+  const counter = result.manifests.find((manifest) => manifest.id === "addon.resonant-counter");
+  assert.ok(echo, "Echo manifest must be discovered");
+  assert.ok(counter, "Counter manifest must be discovered");
+  assert.notEqual(echo.entrypoint, counter.entrypoint, "Echo and Counter must use distinct entrypoints");
+  assert.notEqual(echo.origin, counter.origin, "Echo and Counter must have distinct origins");
+  assert.match(counter.entrypoint, /^http:\/\/127\.0\.0\.1:\d+$/, "Counter entrypoint must be loopback");
+  assert.match(counter.origin, /^http:\/\/127\.0\.0\.1:\d+$/, "Counter origin must be loopback");
+  assert.notEqual(new URL(counter.entrypoint).port, new URL(echo.entrypoint).port, "Counter must use a different port than Echo");
+  // Both manifests carry their own declared capability + grant preset set.
+  assert.equal(echo.requestedCapabilities[0].capability, counter.requestedCapabilities[0].capability);
+  assert.notEqual(echo.grantPresets[0].id, counter.grantPresets[0].id);
+});
+
 test("createLoopbackHealthProbe treats non-2xx responses as unavailable", async () => {
   const fakeFetch = async () => ({ ok: false, status: 500 });
   const probe = createLoopbackHealthProbe({ fetchImpl: fakeFetch });

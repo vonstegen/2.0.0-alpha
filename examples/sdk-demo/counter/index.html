@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Resonant Counter</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; padding: 24px 32px; }
+    main { max-width: 40rem; display: grid; gap: 12px; }
+    h1 { margin: 0; font-size: 1.25rem; }
+    #status { font-size: 0.85rem; opacity: 0.75; }
+    #status.connected { color: #1b5e48; opacity: 1; }
+    .display { font-size: 2rem; font-variant-numeric: tabular-nums; padding: 12px 16px; border: 1px solid #8884; border-radius: 6px; text-align: center; min-width: 6rem; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    button { padding: 8px 16px; border: 0; border-radius: 6px; background: #1b5e48; color: #fff; font: inherit; cursor: pointer; }
+    button.secondary { background: #6a4c93; }
+    button.danger { background: #a13b29; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    #log { margin: 0; padding: 12px; border: 1px solid #8884; border-radius: 6px; min-height: 1.5em; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Resonant Counter</h1>
+    <p id="status">connecting…</p>
+    <div class="display" id="value">0</div>
+    <div class="row">
+      <button id="decrement" type="button" disabled>− 1</button>
+      <button id="increment" type="button" disabled>+ 1</button>
+      <button id="reset" type="button" class="danger" disabled>RESET</button>
+    </div>
+    <pre id="log"></pre>
+  </main>
+  <script>
+    // This page runs in a sandboxed cross-origin iframe whose origin equals
+    // this add-on's own upstream origin. The parent (ResonantOS extension)
+    // delivers capability tokens out-of-band via postMessage; nothing here
+    // needs the bridge token and no token is embedded in this HTML.
+    //
+    // The bootstrap envelope's `capabilityTokens.network.token` is the
+    // operator-pinned Counter bearer token (set via --counter-bearer-token
+    // when the Counter upstream started). Until Phase 3 (P6) the host
+    // derives this from grantPresets; from P6 onward it comes from
+    // harness-registry.setGrants(...) and is host-owned.
+    let bootstrap = null;
+    let counterToken = null;
+
+    const statusEl = document.getElementById("status");
+    const valueEl = document.getElementById("value");
+    const logEl = document.getElementById("log");
+    const buttons = ["decrement", "increment", "reset"].map((id) =>
+      document.getElementById(id),
+    );
+
+    function setStatus(text, cls = "") {
+      statusEl.textContent = text;
+      statusEl.className = cls || "status";
+      if (cls) statusEl.classList.add(cls);
+    }
+
+    function renderValue(v) {
+      valueEl.textContent = String(v);
+    }
+
+    function log(text) {
+      logEl.textContent += (logEl.textContent ? "\n" : "") + text;
+    }
+
+    window.addEventListener("message", (event) => {
+      if (event.source !== window.parent) return;
+      if (!event.data || event.data.type !== "resonantos-addon-bootstrap") return;
+      bootstrap = event.data;
+      counterToken = bootstrap.capabilityTokens?.network?.token ?? null;
+      const ok = counterToken && typeof counterToken === "string";
+      setStatus(
+        ok
+          ? "connected (counter token received)"
+          : "connected — no counter token; mutating routes will be unauthorized",
+        "connected",
+      );
+      for (const btn of buttons) btn.disabled = !ok;
+      if (!ok) {
+        log(
+          "[WARN] No counter token delivered. This is the Phase-2 (P4) placeholder; in Phase-3 (P6) the host mints per-add-on grants via harness-registry.setGrants(...).",
+        );
+      }
+    });
+
+    async function callRoute(path, method, body) {
+      const headers = { "content-type": "application/json" };
+      if (counterToken) headers.authorization = `Bearer ${counterToken}`;
+      const res = await fetch(path, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+      let data;
+      try { data = await res.json(); } catch { data = null; }
+      return { status: res.status, data };
+    }
+
+    async function refreshValue() {
+      const res = await fetch("/api/counter/value");
+      if (!res.ok) return;
+      const { value } = await res.json();
+      renderValue(value);
+    }
+
+    document.getElementById("increment").addEventListener("click", async () => {
+      const { status, data } = await callRoute("/api/counter/increment", "POST");
+      log(`increment → ${status} ${data?.error ?? `value=${data?.value}`}`);
+      if (status === 200) renderValue(data.value);
+    });
+    document.getElementById("decrement").addEventListener("click", async () => {
+      const { status, data } = await callRoute("/api/counter/decrement", "POST");
+      log(`decrement → ${status} ${data?.error ?? `value=${data?.value}`}`);
+      if (status === 200) renderValue(data.value);
+    });
+    document.getElementById("reset").addEventListener("click", async () => {
+      const { status, data } = await callRoute("/api/counter/reset", "POST");
+      log(`reset → ${status} ${data?.error ?? `value=${data?.value}`}`);
+      if (status === 200) renderValue(data.value);
+    });
+
+    // Initial paint so the visible counter still reads 0 before bootstrap.
+    void refreshValue();
+
+    // Signal that the bootstrap listener is installed so the parent can
+    // deliver the envelope (and re-deliver if it races the load event).
+    window.parent.postMessage({ type: "resonantos-addon-ready" }, "*");
+  </script>
+</body>
+</html>

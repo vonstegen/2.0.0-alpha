@@ -509,3 +509,112 @@ test("add-ons workspace disables the Open button when the workspace add-on upstr
   assert.equal(openButton.disabled, true);
   assert.match(openButton.title, /Start the operator-side service/);
 });
+
+// Phase 2 (P4) — the workspace-addons renderer is genuinely generic. With
+// both Echo and Counter manifests discovered, each appears as its own card
+// with its own Open button, its own workspace-addon headline, and its own
+// workspace key on click — there is no per-ID branching in the renderer.
+test("add-ons workspace renders Counter alongside Echo as separate cards (P4 generic)", async () => {
+  const dom = new JSDOM(`<main id="root"></main>`, { url: "https://example.test/" });
+  globalThis.document = dom.window.document;
+  const container = dom.window.document.querySelector("#root");
+  const opened = [];
+  const bridgeRequest = async (route) => {
+    if (route === "/addons/status") {
+      return {
+        addons: [],
+        workspaceAddonManifests: [
+          {
+            id: "addon.resonant-echo",
+            name: "Resonant Echo",
+            version: "0.1.0",
+            manifestPath: "/sdk-demo/echo/addon.json",
+            entrypoint: "http://127.0.0.1:47321",
+            origin: "http://127.0.0.1:47321",
+            runtimeType: "local-service",
+            mode: "workspace-addon",
+            category: "tool",
+            available: true,
+            surfaces: [
+              { id: "resonant-echo-workspace", type: "panel", label: "Resonant Echo", description: "x" },
+            ],
+            requestedCapabilities: [
+              { capability: "network", scope: "self", revocationBehavior: "hard-stop", granted: false },
+            ],
+            grantPresets: [
+              {
+                id: "resonant-echo-local",
+                label: "Local echo",
+                description: "echo grant",
+                grants: [
+                  { capability: "network", scope: "self", revocationBehavior: "hard-stop", granted: true },
+                ],
+              },
+            ],
+            validation: { valid: true, warnings: [] },
+          },
+          {
+            id: "addon.resonant-counter",
+            name: "Resonant Counter",
+            version: "0.1.0",
+            manifestPath: "/sdk-demo/counter/addon.json",
+            entrypoint: "http://127.0.0.1:47322",
+            origin: "http://127.0.0.1:47322",
+            runtimeType: "local-service",
+            mode: "workspace-addon",
+            category: "tool",
+            available: true,
+            surfaces: [
+              { id: "resonant-counter-workspace", type: "panel", label: "Resonant Counter", description: "y" },
+            ],
+            requestedCapabilities: [
+              { capability: "network", scope: "self", revocationBehavior: "hard-stop", granted: false },
+            ],
+            grantPresets: [
+              {
+                id: "resonant-counter-local",
+                label: "Local counter",
+                description: "counter grant",
+                grants: [
+                  { capability: "network", scope: "self", revocationBehavior: "hard-stop", granted: true },
+                ],
+              },
+            ],
+            validation: { valid: true, warnings: [] },
+          },
+        ],
+      };
+    }
+    if (route === "/addons/delegate/list") return { delegations: [] };
+    if (route === "/addons/draft/list") return { drafts: [] };
+    throw new Error(`Unexpected route ${route}`);
+  };
+  renderAddOnsWorkspace({
+    container,
+    bridgeRequest,
+    onOpenWorkspace: (workspace, addon) => opened.push([workspace, addon.id]),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  // Both add-ons must appear as workspace cards.
+  const workspaceCards = [...container.querySelectorAll(".addon-card--workspace")];
+  assert.equal(workspaceCards.length, 2, "Both Echo and Counter must render as workspace add-on cards");
+  const labels = workspaceCards.map((card) => card.querySelector("strong")?.textContent);
+  assert.ok(labels.includes("Resonant Echo"));
+  assert.ok(labels.includes("Resonant Counter"));
+
+  // Status text reports BOTH workspace add-ons are registered.
+  const status = container.querySelector(".addons-status");
+  assert.match(status.textContent, /2 workspace add-ons available/);
+
+  // Each card has its own Open button; clicking each yields a workspace-iframe
+  // key namespaced by the add-on id (proves per-add-on routing, no fallback).
+  const openEcho = workspaceCards.find((c) => c.textContent.includes("Resonant Echo")).querySelector("button");
+  const openCounter = workspaceCards.find((c) => c.textContent.includes("Resonant Counter")).querySelector("button");
+  openEcho.click();
+  openCounter.click();
+  assert.deepEqual(opened, [
+    ["workspace-iframe:addon.resonant-echo", "addon.resonant-echo"],
+    ["workspace-iframe:addon.resonant-counter", "addon.resonant-counter"],
+  ]);
+});

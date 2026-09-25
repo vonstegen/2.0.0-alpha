@@ -1,0 +1,74 @@
+{
+  "id": "addon.resonant-counter",
+  "name": "Resonant Counter",
+  "version": "0.1.0",
+  "author": "ResonantOS",
+  "category": "tool",
+  "sdkVersion": "0.1.0",
+  "description": "Stateful counter add-on. Proves the workspace-add-on renderer is generic: a second independent local-service add-on shares the host's manifest contract, discovery, sandboxed cross-origin iframe, and postMessage bootstrap — but holds its own loopback origin, its own capability boundary, and its own per-route bearer token.",
+  "runtimeType": "local-service",
+  "surfaces": [
+    {
+      "id": "resonant-counter-workspace",
+      "type": "panel",
+      "label": "Resonant Counter",
+      "description": "Increment, decrement, and reset a counter hosted on this add-on's own loopback origin. State is per-upstream, not global."
+    }
+  ],
+  "requestedCapabilities": [
+    {
+      "capability": "network",
+      "granted": false,
+      "scope": "self",
+      "revocationBehavior": "hard-stop"
+    }
+  ],
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
+  },
+  "runtimeIsolation": {
+    "boundary": "host-mediated-service",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": true
+  },
+  "grantPresets": [
+    {
+      "id": "resonant-counter-local",
+      "label": "Local counter",
+      "description": "Grant the local counter service access to its own loopback endpoint.",
+      "grants": [
+        {
+          "capability": "network",
+          "granted": true,
+          "scope": "self",
+          "revocationBehavior": "hard-stop"
+        }
+      ]
+    }
+  ],
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "http-json",
+    "endpoint": "http://127.0.0.1:47322/health"
+  },
+  "installHooks": {},
+  "service": {
+    "protocol": "http-json",
+    "entrypoint": "http://127.0.0.1:47322"
+  },
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS", "linux", "windows"]
+  }
+}
