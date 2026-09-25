@@ -147,6 +147,13 @@ test("Phase 2 CP4: real extension opens Counter workspace and the per-add-on tok
   const bridgePort = await freePort();
   const echo = spawnEcho();
   const counter = spawnCounter({ token: counterToken });
+  // Delete any stale bridge-config.generated.js from prior test runs so the
+  // bridge's freshly-minted capability bootstrap token and resolved port are
+  // what this test reads. Without this, a stale file from an earlier run
+  // (e.g. an echo-extension-live run with a different free port) makes the
+  // bootstrap probe latch onto a closed bridge URL and fail forever.
+  const bridgeConfigPath = path.join(extensionPath, "src", "bridge-config.generated.js");
+  try { (await import("node:fs")).unlinkSync(bridgeConfigPath); } catch {}
   const bridge = spawnBridge(bridgePort);
   const bridgeLogPath = `/tmp/sd003-${Date.now()}-${process.pid}-counter-bridge.log`;
   const bridgeLogStream = createWriteStream(bridgeLogPath, { flags: "w" });
