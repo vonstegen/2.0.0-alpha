@@ -47,4 +47,16 @@ describe("SDK demo: Resonant Echo upstream round-trip", () => {
     const res = await fetch(`http://127.0.0.1:${port}/nope`);
     expect(res.status).toBe(404);
   });
+
+  it("serves the add-on UI (index.html) with the bootstrap listener", async () => {
+    service = createEchoServer({ port: 0 });
+    const { port } = await service.start();
+    const res = await fetch(`http://127.0.0.1:${port}/`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+    const html = await res.text();
+    expect(html).toContain("resonantos-addon-bootstrap");
+    expect(html).toContain("/api/echo/message");
+  });
 });

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Resonant Echo</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; padding: 24px 32px; }
+    main { max-width: 40rem; display: grid; gap: 12px; }
+    h1 { margin: 0; font-size: 1.25rem; }
+    #status { font-size: 0.85rem; opacity: 0.75; }
+    #status.connected { color: #1b5e48; opacity: 1; }
+    .row { display: flex; gap: 8px; }
+    input { flex: 1; padding: 8px 10px; border: 1px solid #8884; border-radius: 6px; font: inherit; }
+    button { padding: 8px 16px; border: 0; border-radius: 6px; background: #1b5e48; color: #fff; font: inherit; cursor: pointer; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    #response { margin: 0; padding: 12px; border: 1px solid #8884; border-radius: 6px; min-height: 1.5em; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Resonant Echo</h1>
+    <p id="status">connecting…</p>
+    <div class="row">
+      <input id="message" type="text" placeholder="Type a message" autocomplete="off">
+      <button id="send" type="button" disabled>SEND</button>
+    </div>
+    <pre id="response"></pre>
+  </main>
+  <script>
+    // This page runs in a sandboxed cross-origin iframe whose origin equals
+    // this add-on's own upstream origin. The parent (ResonantOS extension)
+    // delivers capability tokens out-of-band via postMessage; nothing here
+    // needs the bridge token and no token is embedded in this HTML.
+    let bootstrap = null;
+
+    window.addEventListener("message", (event) => {
+      if (event.source !== window.parent) return;
+      if (!event.data || event.data.type !== "resonantos-addon-bootstrap") return;
+      bootstrap = event.data;
+      document.getElementById("status").textContent = "connected";
+      document.getElementById("status").classList.add("connected");
+      document.getElementById("send").disabled = false;
+    });
+
+    document.getElementById("send").addEventListener("click", async () => {
+      const message = document.getElementById("message").value;
+      // Same-origin fetch to this add-on's own upstream — no CORS, no bridge.
+      const res = await fetch("/api/echo/message", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      const data = await res.json();
+      document.getElementById("response").textContent = `Resonant Echo received: "${data.echo}"`;
+    });
+
+    // Signal that the bootstrap listener is installed so the parent can
+    // deliver the envelope (and re-deliver if it races the load event).
+    // targetOrigin "*" carries no secret — it is only a readiness ping.
+    window.parent.postMessage({ type: "resonantos-addon-ready" }, "*");
+  </script>
+</body>
+</html>

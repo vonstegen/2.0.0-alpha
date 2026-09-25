@@ -1,8 +1,14 @@
+import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 47321;
+
+// The sandboxed add-on iframe loads this HTML directly from the add-on's own
+// origin (the renderer sets iframe.src = service.entrypoint), so the server
+// serves its own UI here. No CORS header is added anywhere.
+const INDEX_HTML_PATH = fileURLToPath(new URL("./index.html", import.meta.url));
 
 /**
  * Resonant Echo upstream — an operator-started loopback HTTP service.
@@ -24,6 +30,13 @@ export function createEchoServer({ host = DEFAULT_HOST, port = DEFAULT_PORT } = 
     if (req.method === "GET" && url.pathname === "/health") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ status: "ok", addon: "addon.resonant-echo" }));
+      return;
+    }
+
+    if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
+      const html = await readFile(INDEX_HTML_PATH, "utf8");
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(html);
       return;
     }
 
