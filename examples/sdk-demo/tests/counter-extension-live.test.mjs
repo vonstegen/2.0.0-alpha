@@ -262,6 +262,19 @@ test("Phase 2 CP4: real extension opens Counter workspace and the per-add-on tok
     });
     assert.equal(incrementStatus, "use-route-instead");
 
+    // Screenshot the workspace-addons page + Counter iframe before the
+    // network-boundary assertions fire so the PNG reflects the real state.
+    // Works in headless mode (page.screenshot() does not need a display).
+    const screenshotDir = process.env.RESONANTOS_SCREENSHOT_PATH;
+    if (screenshotDir) {
+      await page.screenshot({ path: path.join(screenshotDir, "workspace-addons.png"), fullPage: true });
+      try {
+        const counterFrameHandle = page.locator('iframe.addon-iframe').first();
+        await counterFrameHandle.screenshot({ path: path.join(screenshotDir, "counter-iframe.png") });
+      } catch { /* iframe may not be paintable in every env; non-fatal */ }
+      console.log(`[counter-extension-live] screenshots written under ${screenshotDir}`);
+    }
+
     // Network-level isolation proof: a request bearing Echo's token is
     // REJECTED by Counter's server. We drive this directly against the
     // Counter upstream at the network boundary (loopback), independent of
@@ -293,6 +306,12 @@ test("Phase 2 CP4: real extension opens Counter workspace and the per-add-on tok
       assert.equal(echoWithCounterToken.status, 200);
       const data = await echoWithCounterToken.json();
       assert.equal(data.echo, "Counter bearer reaches Echo");
+    }
+
+    // Capture an "isolation proof" screenshot after the boundary assertions
+    // have run (page state is identical — network calls don't change the UI).
+    if (screenshotDir) {
+      await page.screenshot({ path: path.join(screenshotDir, "counter-isolation-proof.png"), fullPage: true });
     }
 
     // Re-read the iframe once the bootstrap envelope has been delivered.

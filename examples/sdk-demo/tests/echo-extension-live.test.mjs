@@ -337,6 +337,18 @@ test("Phase 1 CP3: real extension loads, opens Echo workspace, and echoes a mess
       "visible Echo response must match the expected hard-coded string",
     );
 
+    // Screenshot the round-trip end state. Works headless (page.screenshot()
+    // does not need a display) — set RESONANTOS_SCREENSHOT_PATH to capture.
+    const screenshotDir = process.env.RESONANTOS_SCREENSHOT_PATH;
+    if (screenshotDir) {
+      await page.screenshot({ path: path.join(screenshotDir, "workspace-addons.png"), fullPage: true });
+      try {
+        const echoFrameHandle = page.locator('iframe.addon-iframe').first();
+        await echoFrameHandle.screenshot({ path: path.join(screenshotDir, "echo-iframe.png") });
+      } catch { /* non-fatal if iframe is not paintable */ }
+      console.log(`[echo-extension-live] screenshots written under ${screenshotDir}`);
+    }
+
     // Manual inspection hook: hold the browser window open for N ms after
     // assertions so a developer can poke at it. CI never sets this env.
     const keepOpenMs = Number(process.env.RESONANTOS_KEEP_OPEN_MS ?? 0);
