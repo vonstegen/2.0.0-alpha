@@ -18,7 +18,7 @@ launcher.
 | --- | --- | --- |
 | Resonant Echo | `addon.resonant-echo` | Deterministic echo; proves the host-mediated round-trip |
 | Resonant Counter | `addon.resonant-counter` | *(P4)* Second independent add-on; proves the mechanism is generic |
-| SDK Guide | `addon.sdk-guide` | *(P7)* Interactive tutorial that teaches the SDK while using it |
+| SDK Guide | `addon.sdk-guide` | Interactive 9-step tutorial that teaches the SDK while using it |
 
 ## Layout
 
@@ -59,8 +59,8 @@ npm run test:examples:sdk-demo   # (or) npx vitest run examples/sdk-demo/tests
 - **P3 Echo** — operator-started loopback echo service + host-mediated round-trip.
 - **P4 Counter** — second independent add-on and cross-add-on isolation.
 - **P5 Cross-origin UI** — port the verified sandboxed iframe + postMessage renderer.
-- **P6 Capabilities** — real host grant / deny / revoke.
-- **P7 SDK Guide** — interactive tutorial with a real policy denial.
+- **P6 Capabilities** — real host grant / deny / revoke. [OK] (shipped)
+- **P7 SDK Guide** — interactive tutorial with a real policy denial. [OK] (shipped)
 - **P8 Adversarial** — red-team the trust boundaries.
 - **P9 Live demo** — clean-checkout unpacked extension + real bridge.
 - **P10 Integration review** — diff audit, regression, 002-findings disposition.

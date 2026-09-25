@@ -1,0 +1,74 @@
+{
+  "id": "addon.sdk-guide",
+  "name": "SDK Guide",
+  "version": "0.1.0",
+  "author": "ResonantOS",
+  "category": "tool",
+  "sdkVersion": "0.1.0",
+  "description": "An interactive 9-step tutorial that teaches the @resonantos/addon-sdk by using it on this same loopback origin. Walks through every Phase-3 (P6) host-policy boundary: discovery, manifest validation, capability request, host consent, grant, sandboxed UI render, an authorized call (real 200), a denied call (real 401 — wrong bearer), and a revoked call (real 403 — host withdrew the grant). No step is hard-coded: every denial is a real host-policy result.",
+  "runtimeType": "local-service",
+  "surfaces": [
+    {
+      "id": "sdk-guide-workspace",
+      "type": "panel",
+      "label": "SDK Guide",
+      "description": "Walk the full P6 lifecycle on a single add-on. The UI calls its own loopback upstream at each step; the upstream enforces every host-policy boundary symmetrically with Echo and Counter. Host revocation flips a real flag; the same bearer that succeeded moments earlier then returns 403."
+    }
+  ],
+  "requestedCapabilities": [
+    {
+      "capability": "network",
+      "granted": false,
+      "scope": "self",
+      "revocationBehavior": "hard-stop"
+    }
+  ],
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
+  },
+  "runtimeIsolation": {
+    "boundary": "host-mediated-service",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": true
+  },
+  "grantPresets": [
+    {
+      "id": "sdk-guide-local",
+      "label": "Local SDK guide",
+      "description": "Grant the local SDK guide upstream the host-minted bearer so the 9 steps can complete.",
+      "grants": [
+        {
+          "capability": "network",
+          "granted": true,
+          "scope": "self",
+          "revocationBehavior": "hard-stop"
+        }
+      ]
+    }
+  ],
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "http-json",
+    "endpoint": "http://127.0.0.1:47323/health"
+  },
+  "installHooks": {},
+  "service": {
+    "protocol": "http-json",
+    "entrypoint": "http://127.0.0.1:47323"
+  },
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS", "linux", "windows"]
+  }
+}

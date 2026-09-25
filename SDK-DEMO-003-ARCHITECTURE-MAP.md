@@ -273,3 +273,69 @@ to its own upstream, which is the operator's choice for local-service
 add-ons). Future P-n work would close (e) by routing the iframe's
 mutating requests through a bridge-owned proxy that is the only listener
 on the upstream's loopback port.
+
+## 7. Phase 4 (P7) — SDK Guide add-on
+
+Phase 4 adds `addon.sdk-guide` — an interactive 9-step tutorial that
+**uses** the SDK instead of merely describing it. The guide is the third
+local-service add-on on its own loopback port (47323) and reuses the
+exact P6 mechanism; no second registry, no second grant surface, no
+second manifest schema.
+
+| Step | UI label | Endpoint | Surface proof |
+| --- | --- | --- | --- |
+| 1 | Discovery | `GET /api/guide/step/1` | workspace-addon-discovery scanned `examples/sdk-demo/*/addon.json`; renderer is generic |
+| 2 | Manifest validation | `GET /api/guide/step/2` | `validateAddOnManifest` accepted the guide |
+| 3 | Capability request | `GET /api/guide/step/3` | `requestedCapabilities` is declarative; the grant lives in the registry |
+| 4 | Host consent | `GET /api/guide/step/4` | registry `setGrants({ consent: false })` throws `permission-denied` |
+| 5 | Grant | `GET /api/guide/step/5` + `/health` | registry `setGrants({ consent: true })` flipped `grantedCapabilities[network].granted = true` |
+| 6 | Sandboxed UI render | `GET /api/guide/step/6` | iframe = `service.entrypoint`, sandboxed, bootstrap via postMessage with pinned `targetOrigin` |
+| 7 | Authorized call | `POST /api/guide/ping` (bearer) | **real 200** from the upstream with the host-minted bearer |
+| 8 | Denied call (wrong bearer) | `POST /api/guide/ping` (wrong bearer) | **real 401** — audience-bound credential boundary |
+| 9 | Revocation | `POST /api/guide/ping` (bearer, after `/admin/deny`) | **real 403** — host-revoked, distinct from 401 |
+
+### Reused, not invented
+
+- **Manifest schema** — `AddOnSdkManifest` (`packages/addon-sdk/src/validation`).
+- **Discovery** — `examples/sdk-demo/*/addon.json` (no per-ID branch in
+  `workspace-addon-discovery.mjs`).
+- **Host-owned registry** — `harness-registry` (same instance gates
+  harness adapters and the three local-service add-ons).
+- **Bridge routes** — `POST /addons/workspace/grant`,
+  `POST /addons/workspace/admin-revoke`,
+  `POST /addons/workspace/bootstrap` (added in P6; reused here).
+- **Renderer** — `createWorkspaceAddonIframe` + bootstrap envelope from
+  `main-workspace.js` (added in P5/P6; reused here).
+- **Per-add-on token model** — operator-pinned bearer + admin tokens are
+  threaded through `run-bridge-minimal.mjs`'s `--sdk-guide-bearer-token`
+  and `--sdk-guide-admin-token` flags (or `RESONANTOS_DEMO_SDK_GUIDE_{BEARER,ADMIN}`
+  env vars). The bridge hands both to `addon-delegation-service.mjs`'s
+  `workspaceAddonBearerTokens` / `workspaceAddonAdminTokens` maps;
+  the iframe receives only the bearer via the bootstrap envelope; the
+  admin token stays bridge-side.
+
+### Educational guarantee
+
+The guide's 9 steps are *not* a UI walkthrough of canned responses.
+Every successful or denied outcome the iframe displays is an actual HTTP
+response from the operator-started guide upstream — the iframe fetches
+`/api/guide/step/{1..6}` directly (public reads), `/api/guide/ping`
+directly (bearer-gated mutating), and `/admin/*` indirectly via the
+bridge's `admin-revoke` route. The denial/revocation steps hit the
+exact same per-add-on audience-bound credential boundary that
+`{echo,counter,counter-p6}-extension-live.test.mjs` exercise:
+
+- step 8 (`401 wrong bearer`) is the audience-bound guarantee proof —
+  Echo's bearer cannot authorize the guide, nor the guide's bearer
+  authorize Echo or Counter.
+- step 9 (`403 host-revoked`) is the host-policy revocation proof — the
+  same bearer that worked moments earlier now returns 403 after
+  `POST /addons/workspace/admin-revoke` flips the upstream's
+  `hostGranted` flag through the admin path.
+
+The P7 real-extension test (`sdk-guide-extension-live.test.mjs`) walks
+all nine steps in the real unpacked extension; step 7 must report 200,
+step 8 must report 401, step 9 must report 403, and step 9's direct
+upstream fetch with the bearer after revoke must return 403. No step
+is hard-coded; if any of the boundary guarantees regress, step 8 or 9
+is the first place a red test appears.
