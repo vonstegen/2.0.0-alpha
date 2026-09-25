@@ -2753,10 +2753,24 @@ except BaseException as exc:
       }
       try {
         if (workspaceAddonRegistry && fullManifest) {
-          await workspaceAddonRegistry.install(fullManifest, { enabled: false });
+          // Phase 3 (P6 regression fix): guard the install so a re-poll of
+          // /addons/status never wipes a previously-granted installation.
+          // registry.install() replaces the installation entry and resets
+          // `grantedCapabilities` back to `requestedCapabilities` (all
+          // `granted: false`). Mirror the guard already in
+          // executeWorkspaceAddonBootstrap. Allowed exceptions:
+          //   - ownership-conflict (registry refuses re-install; fine)
+          //   - already-installed (registry explicit signal; install only
+          //     when not present in the snapshot).
+          const alreadyInstalled = Boolean(
+            workspaceAddonRegistry.snapshot().installations[fullManifest.id],
+          );
+          if (!alreadyInstalled) {
+            await workspaceAddonRegistry.install(fullManifest, { enabled: false });
+          }
         }
       } catch (error) {
-        if (error?.code !== "ownership-conflict") {
+        if (error?.code !== "ownership-conflict" && error?.code !== "already-installed") {
           workspaceDiscovery.errors.push({
             code: "registry-install-failed",
             message: `${fullManifest?.id ?? projection.id}: ${String(error?.message ?? error)}`,
