@@ -225,7 +225,7 @@ test("add-ons workspace renders registry status and governed open actions", asyn
 
   assert.deepEqual(calls.map((call) => call[0]), ["/addons/status", "/addons/delegate/list", "/addons/draft/list"]);
   assert.match(container.textContent, /Replaceable capabilities, explicit trust/);
-  assert.match(container.textContent, /5 add-ons visible/);
+  assert.match(container.textContent, /5 core add-ons visible\. No workspace add-ons are registered with this host\./);
   assert.match(container.textContent, /Hermes/);
   assert.match(container.textContent, /OpenCode/);
   assert.match(container.textContent, /Living Archive/);
@@ -360,4 +360,152 @@ test("add-ons workspace replaces raw bridge fetch failures with setup guidance",
   assert.match(container.textContent, /Draft review unavailable: ResonantOS bridge is unreachable/);
   assert.match(container.textContent, /Settings > Bridge Target/);
   assert.doesNotMatch(container.textContent, /Failed to fetch/);
+});
+
+test("add-ons workspace renders generic workspace add-ons and routes Open to a workspace-iframe request", async () => {
+  const dom = new JSDOM(`<main id="root"></main>`, { url: "https://example.test/" });
+  globalThis.document = dom.window.document;
+  const container = dom.window.document.querySelector("#root");
+  const opened = [];
+  const bridgeRequest = async (route) => {
+    if (route === "/addons/status") {
+      return {
+        addons: [
+          {
+            id: "addon.hermes",
+            name: "Hermes",
+            available: true,
+            mode: "delegation-addon",
+            trust: "add-on agent",
+            requestedCapabilities: ["agent-delegation"],
+            grantedCapabilities: ["agent-delegation"],
+            execution: { localCliExecution: false },
+          },
+        ],
+        workspaceAddonManifests: [
+          {
+            id: "addon.resonant-echo",
+            name: "Resonant Echo",
+            available: true,
+            mode: "workspace-addon",
+            trust: "host-mediated workspace add-on",
+            category: "tool",
+            entrypoint: "http://127.0.0.1:47321",
+            origin: "http://127.0.0.1:47321",
+            runtimeType: "local-service",
+            surfaces: [
+              { id: "resonant-echo-workspace", type: "panel", label: "Resonant Echo", description: "echo" },
+            ],
+            requestedCapabilities: [
+              { capability: "network", scope: "self", revocationBehavior: "hard-stop", granted: false },
+            ],
+            grantPresets: [
+              {
+                id: "resonant-echo-local",
+                label: "Local echo",
+                description: "Grant the local echo service access to its own loopback endpoint.",
+                grants: [
+                  { capability: "network", scope: "self", revocationBehavior: "hard-stop", granted: true },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+    }
+    if (route === "/addons/delegate/list") return { delegations: [] };
+    if (route === "/addons/draft/list") return { drafts: [] };
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  renderAddOnsWorkspace({
+    container,
+    bridgeRequest,
+    onOpenWorkspace: (workspaceId, addon) => opened.push([workspaceId, addon?.id]),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.match(container.textContent, /1 core add-on visible\. 1 workspace add-on available\./);
+  assert.match(container.textContent, /Operator-started loopback add-ons/);
+  const workspaceCards = [...container.querySelectorAll(".addon-card--workspace")];
+  assert.equal(workspaceCards.length, 1);
+  assert.match(workspaceCards[0].textContent, /Resonant Echo/);
+  assert.match(workspaceCards[0].textContent, /Available/);
+  const openButton = workspaceCards[0].querySelector("button");
+  assert.match(openButton.textContent, /Open Resonant Echo/);
+  assert.equal(openButton.disabled, false);
+  openButton.click();
+  assert.deepEqual(opened, [["workspace-iframe:addon.resonant-echo", "addon.resonant-echo"]]);
+});
+
+test("add-ons workspace hides the workspace section when no manifests are registered", async () => {
+  const dom = new JSDOM(`<main id="root"></main>`, { url: "https://example.test/" });
+  globalThis.document = dom.window.document;
+  const container = dom.window.document.querySelector("#root");
+
+  const bridgeRequest = async (route) => {
+    if (route === "/addons/status") return { addons: [], workspaceAddonManifests: [] };
+    if (route === "/addons/delegate/list") return { delegations: [] };
+    if (route === "/addons/draft/list") return { drafts: [] };
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  renderAddOnsWorkspace({
+    container,
+    bridgeRequest,
+    onOpenWorkspace: () => undefined,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.match(container.textContent, /0 core add-ons visible\. No workspace add-ons are registered with this host\./);
+  const section = container.querySelector(".addons-workspace-addons");
+  assert.ok(section, "workspace section should exist");
+  assert.equal(section.hidden, true);
+  assert.equal(container.querySelectorAll(".addon-card--workspace").length, 0);
+});
+
+test("add-ons workspace disables the Open button when the workspace add-on upstream is not reachable", async () => {
+  const dom = new JSDOM(`<main id="root"></main>`, { url: "https://example.test/" });
+  globalThis.document = dom.window.document;
+  const container = dom.window.document.querySelector("#root");
+
+  const bridgeRequest = async (route) => {
+    if (route === "/addons/status") {
+      return {
+        addons: [],
+        workspaceAddonManifests: [
+          {
+            id: "addon.resonant-echo",
+            name: "Resonant Echo",
+            available: false,
+            mode: "workspace-addon",
+            trust: "host-mediated workspace add-on",
+            category: "tool",
+            entrypoint: "http://127.0.0.1:47321",
+            origin: "http://127.0.0.1:47321",
+            runtimeType: "local-service",
+            requestedCapabilities: [{ capability: "network", scope: "self", revocationBehavior: "hard-stop", granted: false }],
+            grantPresets: [],
+          },
+        ],
+      };
+    }
+    if (route === "/addons/delegate/list") return { delegations: [] };
+    if (route === "/addons/draft/list") return { drafts: [] };
+    throw new Error(`Unexpected route ${route}`);
+  };
+
+  renderAddOnsWorkspace({
+    container,
+    bridgeRequest,
+    onOpenWorkspace: () => undefined,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const workspaceCards = [...container.querySelectorAll(".addon-card--workspace")];
+  assert.equal(workspaceCards.length, 1);
+  assert.match(workspaceCards[0].textContent, /Not running/);
+  const openButton = workspaceCards[0].querySelector("button");
+  assert.equal(openButton.disabled, true);
+  assert.match(openButton.title, /Start the operator-side service/);
 });

@@ -27,6 +27,9 @@ function workspaceForAddon(addon) {
   if (addon.id === "addon.hermes") return "hermes";
   if (addon.id === "addon.opencode") return "opencode";
   if (addon.id === "addon.living-archive") return "memory";
+  if (addon?.runtimeType === "local-service" && addon.entrypoint) {
+    return `workspace-iframe:${addon.id}`;
+  }
   return "";
 }
 
@@ -34,6 +37,42 @@ function addonExecutionKey(addon) {
   if (addon.id === "addon.hermes") return "hermes";
   if (addon.id === "addon.opencode") return "opencode";
   return "";
+}
+
+function createWorkspaceAddonCard(addon, actions = {}) {
+  const card = document.createElement("article");
+  card.className = "addon-card addon-card--workspace";
+  card.dataset.tone = addon.available ? "success" : "warning";
+
+  const header = document.createElement("div");
+  header.className = "addon-card-header";
+  const title = document.createElement("strong");
+  title.textContent = addon.name || addon.id || "Unnamed workspace add-on";
+  const status = document.createElement("span");
+  status.textContent = addon.available ? "Available" : "Not running";
+  status.dataset.tone = addon.available ? "success" : "warning";
+  header.append(title, status);
+
+  const meta = document.createElement("p");
+  meta.textContent = `workspace-addon · ${addon.origin ?? "loopback"}`;
+
+  const boundary = document.createElement("small");
+  boundary.textContent = addon.boundary ?? "Workspace add-on with cross-origin sandboxed iframe and postMessage bootstrap.";
+
+  const cardActions = document.createElement("div");
+  cardActions.className = "addon-card-actions";
+  const open = document.createElement("button");
+  open.type = "button";
+  open.textContent = `Open ${addon.name}`;
+  open.disabled = !addon.available;
+  open.title = addon.available
+    ? `Open the ${addon.name} workspace in a sandboxed cross-origin iframe.`
+    : `${addon.name} upstream is not reachable at ${addon.origin}. Start the operator-side service and retry.`;
+  open.addEventListener("click", () => actions.onOpenWorkspace?.(`workspace-iframe:${addon.id}`, addon));
+  cardActions.append(open);
+
+  card.append(header, meta, boundary, capabilityReviewElement(addon), cardActions);
+  return card;
 }
 
 function createAddonCard(addon, actions = {}) {
@@ -239,6 +278,22 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
   const grid = document.createElement("div");
   grid.className = "addons-grid";
 
+  const workspaceSection = document.createElement("section");
+  workspaceSection.className = "addons-workspace-addons";
+  workspaceSection.hidden = true;
+  const workspaceHeader = document.createElement("div");
+  workspaceHeader.className = "addon-draft-review-header";
+  workspaceHeader.innerHTML = `
+    <div>
+      <span class="hero-kicker">Workspace add-ons</span>
+      <h2>Operator-started loopback add-ons</h2>
+      <p>Each workspace add-on is a local-service that the operator starts; the host only connects to its declared loopback endpoint. Capability tokens are delivered via the cross-origin postMessage bootstrap; the bridge token is never shared with the add-on.</p>
+    </div>
+  `;
+  const workspaceGrid = document.createElement("div");
+  workspaceGrid.className = "addons-grid";
+  workspaceSection.append(workspaceHeader, workspaceGrid);
+
   const draftReview = document.createElement("section");
   draftReview.className = "addon-draft-review";
   const draftHeader = document.createElement("div");
@@ -275,7 +330,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
   delegationList.className = "addon-draft-list addon-delegation-list";
   delegationReview.append(delegationHeader, delegationStatus, delegationList);
 
-  section.append(header, status, grid, delegationReview, draftReview);
+  section.append(header, status, grid, workspaceSection, delegationReview, draftReview);
   container.replaceChildren(section);
 
   const loadDrafts = async () => {
@@ -416,6 +471,25 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
     try {
       const result = await bridge()("/addons/status", { method: "GET" });
       const addons = Array.isArray(result.addons) ? result.addons : [];
+      const workspaceManifests = Array.isArray(result.workspaceAddonManifests) ? result.workspaceAddonManifests : [];
+      const workspaceAddons = workspaceManifests.map((manifest) => ({
+        id: manifest.id,
+        name: manifest.name,
+        available: Boolean(manifest.available),
+        mode: manifest.mode ?? "workspace-addon",
+        trust: manifest.trust ?? "host-mediated workspace add-on",
+        category: manifest.category,
+        requestedCapabilities: (manifest.requestedCapabilities ?? []).map((grant) => grant.capability),
+        grantedCapabilities: (manifest.grantPresets ?? []).flatMap((preset) =>
+          (preset.grants ?? []).filter((grant) => grant.granted).map((grant) => grant.capability),
+        ),
+        boundary: `Workspace add-on running on its own loopback origin (${manifest.origin}). The iframe is sandboxed cross-origin; capability tokens are delivered out-of-band via postMessage with targetOrigin pinned to the add-on origin.`,
+        runtimeType: manifest.runtimeType,
+        entrypoint: manifest.entrypoint,
+        origin: manifest.origin,
+        surfaces: manifest.surfaces,
+        grantPresets: manifest.grantPresets ?? [],
+      }));
       grid.replaceChildren();
       addons.forEach((addon) => grid.append(createAddonCard(addon, {
         onOpenWorkspace,
@@ -435,10 +509,20 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
           await loadAddons();
         }
       })));
-      status.textContent = addons.length
-        ? `${addons.length} add-ons visible. Missing add-ons stay disabled until installed or configured.`
-        : "No add-ons are visible to this browser-first host yet.";
-      status.dataset.tone = addons.some((addon) => addon.available) ? "success" : "warning";
+      const coreCount = addons.length;
+      const workspaceCount = workspaceAddons.length;
+      const statusParts = [];
+      statusParts.push(`${coreCount} core add-on${coreCount === 1 ? "" : "s"} visible.`);
+      if (workspaceCount > 0) {
+        statusParts.push(`${workspaceCount} workspace add-on${workspaceCount === 1 ? "" : "s"} available.`);
+      } else {
+        statusParts.push("No workspace add-ons are registered with this host.");
+      }
+      status.textContent = statusParts.join(" ");
+      status.dataset.tone = addons.some((addon) => addon.available) || workspaceAddons.some((addon) => addon.available) ? "success" : "warning";
+      workspaceGrid.replaceChildren();
+      workspaceAddons.forEach((addon) => workspaceGrid.append(createWorkspaceAddonCard(addon, { onOpenWorkspace })));
+      workspaceSection.hidden = workspaceAddons.length === 0;
     } catch (error) {
       status.textContent = addonWorkspaceMessage(error, "Add-on registry unavailable");
       status.dataset.tone = "error";

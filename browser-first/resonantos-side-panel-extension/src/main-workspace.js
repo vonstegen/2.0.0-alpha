@@ -18,6 +18,7 @@ import {
 import { applyAppearancePreferences } from "./lib/settings/appearance-section.js";
 import { renderAddOnsWorkspace } from "./lib/main-workspace-addons.js";
 import { renderArtifactsWorkspace } from "./lib/main-workspace-artifacts.js";
+import { createWorkspaceAddonIframe } from "./lib/addon-iframe-workspace.js";
 import { createMainWorkspaceBrowserJobController } from "./lib/main-workspace-browser-job-controller.js";
 import {
   renderMainBrowserJobStatus
@@ -196,7 +197,7 @@ let contextCompactNotice = "";
 let personalizationSettings = null;
 let initialSettingsSection = "overview";
 let messageActions = null;
-const allowedWorkspaces = new Set(["answer", "artifacts", "addons", "memory", "hermes", "opencode", "settings"]);
+const allowedWorkspaces = new Set(["answer", "artifacts", "addons", "memory", "hermes", "opencode", "settings", "workspace-iframe"]);
 
 function normalizeRegenerationMode(value) {
   return value === "overwrite" ? "overwrite" : "branch";
@@ -849,6 +850,10 @@ function renderMessages() {
     });
     return;
   }
+  if (activeWorkspace === "workspace-iframe") {
+    renderWorkspaceIframeWorkspace();
+    return;
+  }
   if (activeWorkspace === "addons") {
     renderAddOnsWorkspace({
       container: transcript,
@@ -859,8 +864,13 @@ function renderMessages() {
         await chrome.tabs.create({ url: handoff.url }).catch(() => undefined);
         await addMessage("system", `Opened ${handoff.provider} draft for human review. ResonantOS did not send or schedule anything.`);
       },
-      onOpenWorkspace: async (workspaceId) => {
-        setActiveWorkspace(workspaceId, { persist: true });
+      onOpenWorkspace: async (workspaceId, addon) => {
+        if (typeof workspaceId === "string" && workspaceId.startsWith("workspace-iframe:")) {
+          pendingWorkspaceAction = { workspace: "workspace-iframe", addon };
+          setActiveWorkspace("workspace-iframe", { persist: true });
+        } else {
+          setActiveWorkspace(workspaceId, { persist: true });
+        }
         renderAll();
       }
     });
@@ -956,6 +966,99 @@ function renderStatusWorkspace({ eyebrow, title, body, addonId }) {
   }).catch((error) => {
     status.textContent = `Status unavailable: ${error instanceof Error ? error.message : String(error)}`;
   });
+}
+
+function renderWorkspaceIframeWorkspace() {
+  const action = pendingWorkspaceAction?.workspace === "workspace-iframe" ? pendingWorkspaceAction : null;
+  pendingWorkspaceAction = null;
+  const addon = action?.addon;
+  if (!addon || typeof addon.entrypoint !== "string" || typeof addon.origin !== "string") {
+    const error = document.createElement("section");
+    error.className = "workspace-iframe-empty";
+    error.setAttribute("aria-label", "Workspace add-on unavailable");
+    const title = document.createElement("h2");
+    title.textContent = "Workspace add-on unavailable";
+    const body = document.createElement("p");
+    body.textContent = "No workspace add-on was selected, or its loopback entrypoint could not be resolved. Return to the add-ons workspace and pick an add-on again.";
+    const back = document.createElement("button");
+    back.type = "button";
+    back.textContent = "Back to add-ons";
+    back.addEventListener("click", () => {
+      setActiveWorkspace("addons", { persist: true });
+      renderAll();
+    });
+    error.append(title, body, back);
+    transcript.replaceChildren(error);
+    return;
+  }
+
+  const header = document.createElement("header");
+  header.className = "workspace-iframe-header";
+  const eyebrow = document.createElement("span");
+  eyebrow.className = "hero-kicker";
+  eyebrow.textContent = `Workspace add-on · ${addon.id}`;
+  const title = document.createElement("h1");
+  title.textContent = addon.name ?? addon.id;
+  const back = document.createElement("button");
+  back.type = "button";
+  back.textContent = "Back to add-ons";
+  back.addEventListener("click", () => {
+    setActiveWorkspace("addons", { persist: true });
+    renderAll();
+  });
+  header.append(eyebrow, title, back);
+
+  const { wrapper, iframe, deliverBootstrap, setStatus } = createWorkspaceAddonIframe({
+    addonId: addon.id,
+    addonOrigin: addon.origin,
+    addonLabel: addon.name ?? addon.id,
+  });
+
+  // Build the bootstrap envelope. The bootstrap carries the add-on's
+  // grant-preset grants (host-approvable proposals) so the add-on knows its
+  // declared capabilities. P6 will replace this with the live harness
+  // registry snapshot. `apiBasePath` is informational; the add-on makes
+  // same-origin fetches to its own loopback upstream.
+  const capabilityTokens = {};
+  for (const preset of addon.surfaces?.length ? addon.surfaces : []) {
+    void preset;
+  }
+  const grantSets = Array.isArray(addon.grantPresets) ? addon.grantPresets : [];
+  for (const preset of grantSets) {
+    for (const grant of preset.grants ?? []) {
+      if (grant.granted) {
+        capabilityTokens[grant.capability] = {
+          granted: true,
+          scope: grant.scope,
+          revocationBehavior: grant.revocationBehavior,
+        };
+      }
+    }
+  }
+
+  deliverBootstrap({
+    apiBasePath: addon.origin,
+    capabilityTokens,
+  });
+
+  // Re-deliver on the add-on's ready ping so a slow add-on that installs its
+  // listener after iframe load still receives the envelope. The add-on
+  // validates `event.source` and `event.data.type` before trusting it.
+  const onMessage = (event) => {
+    if (event.source !== iframe.contentWindow) return;
+    if (!event.data || event.data.type !== "resonantos-addon-ready") return;
+    deliverBootstrap({
+      apiBasePath: addon.origin,
+      capabilityTokens,
+    });
+    setStatus(`${addon.name ?? addon.id} handshake complete.`, "ready");
+  };
+  window.addEventListener("message", onMessage);
+
+  const trail = document.createElement("section");
+  trail.className = "workspace-iframe-trail";
+  trail.append(header, wrapper);
+  transcript.replaceChildren(trail);
 }
 
 async function renderHermesWorkspace() {

@@ -15,6 +15,10 @@ import { dashboardProxyUrl } from "./bridge-server.mjs";
 import { createDelegationIsolationAdapter } from "./delegation-isolation.mjs";
 import { ensureOpencodeServer, peekOpencodeServer } from "./opencode-client.mjs";
 import { createOpenCodeWebUrlHandler } from "./opencode-session-host-service.mjs";
+import {
+  createLoopbackHealthProbe,
+  discoverWorkspaceAddonManifests,
+} from "./workspace-addon-discovery.mjs";
 
 const DEFAULT_OPENCODE_MODEL = "openai/gpt-5.4-mini";
 const MINIMAX_OPENCODE_MODEL = "minimax/MiniMax-M3";
@@ -2690,6 +2694,14 @@ except BaseException as exc:
 
   async function executeAddonsStatus() {
     const executionSettings = await readAddonExecutionSettings();
+    const workspaceProbe = createLoopbackHealthProbe();
+    const workspaceDiscovery = await discoverWorkspaceAddonManifests({
+      repoRoot,
+      probeAvailability: workspaceProbe,
+    }).catch((error) => ({
+      manifests: [],
+      errors: [{ code: "discovery-failed", message: String(error?.message ?? error) }],
+    }));
     return {
       addons: [
         {
@@ -2756,6 +2768,8 @@ except BaseException as exc:
           boundary: "Draft packets only. Google Calendar handoff opens an event template for human review; ResonantOS does not schedule events.",
         },
       ],
+      workspaceAddonManifests: workspaceDiscovery.manifests,
+      workspaceAddonDiscoveryErrors: workspaceDiscovery.errors,
     };
   }
 
