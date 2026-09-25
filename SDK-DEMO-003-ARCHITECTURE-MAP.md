@@ -209,3 +209,67 @@ These are the pattern SDK-DEMO-003's Echo/Counter/Guide must follow.
 | Extension bridge client | `browser-first/resonantos-side-panel-extension/src/lib/bridge-client.js` |
 | Reference manifests | `examples/addons/{recursive-mas,openai-compatible-harness,reference-memory}.json` |
 | Governing ADRs | `docs/architecture/ADR-018-addon-sdk-v0.md`, `ADR-023-addon-repository-registry-model.md`, `ADR-055-resonant-extension-framework.md`, `ADR-056-provider-fabric-boundary-external-agent-runtimes.md` |
+
+## 6. Phase 3 (P6) — host-owned grants
+
+After P6 the workspace add-on capability surface is host-owned end-to-end.
+
+- **Registry.** `browser-first/host/harness-registry.mjs` is the single
+  source of truth for grants. `executeAddonsStatus` calls `registry.install`
+  for every discovered workspace add-on. The bridge route `POST
+  /addons/workspace/grant` proxies `registry.setGrants(addonId, grants, {
+  consent: true, expectedRevision })`. Consent is enforced at the
+  registry boundary — `consent: false` throws `permission-denied`.
+- **Bootstrap envelope.** The renderer fetches `POST
+  /addons/workspace/bootstrap` at workspace-iframe open time. The handler
+  returns `capabilityTokens[capability].token` only for capabilities that
+  the host has granted. Manifests' `grantPresets` are no longer consulted
+  for the bootstrap path; the renderer surfaces the registry snapshot
+  in the `Capability contract` chips.
+- **Bearer + admin tokens.** Two distinct operator-pinned tokens per
+  add-on:
+    - **Bearer** — delivered to the iframe via the bootstrap envelope;
+      carried as `Authorization: Bearer` on every mutating request. Held
+      by the bridge (host side); never reaches the add-on's HTML/URL.
+    - **Admin** — gates `POST /admin/deny` on the upstream. Never
+      delivered to the iframe; held by the bridge and used to flip the
+      upstream's in-memory deny flag via `POST
+      /addons/workspace/admin-revoke`.
+- **403 is real host policy.** When the host revokes the grant (registry
+  path) AND flips the upstream's admin deny flag, the same bearer that
+  worked moments earlier returns 403 from `/api/echo/message` or
+  `/api/counter/{increment,decrement,reset}`. A bare 401 means "missing
+  or wrong bearer"; 403 means "host revoked". The two states are distinct
+  and the test exercises both.
+
+### Demo-vs-production honesty (do not over-claim)
+
+The P6 enforcement point is the **add-on's own upstream** (bearer on
+mutating routes + admin-gated in-memory deny flag). The bridge calls
+`/admin/deny` out-of-band. This is the cleanest mechanism that fits an
+operator-started local-service add-on without inventing a second host
+transport, and it is what the real-extension test exercises against
+unpacked Chrome + a real bridge + both real upstreams.
+
+This is **not** the host-aligned production model. The clean production
+model is host-mediated: the add-on's mutating request is proxied through
+the bridge's endpoint guard
+(`browser-first/host/agent-runtime-endpoint.mjs`) which already enforces
+loopback-only, no-follow-redirect, and (for harness adapters) per-binding
+credentials. For workspace add-ons the equivalent would be a
+`POST /addons/workspace/proxy/{addonId}/api/...` route that the bridge
+exposes, the iframe calls (no token), and the bridge validates the
+manifest's grant surface + forwards to the upstream with a host-side
+token. That is the production-grade shape and is **not what this demo
+implements**.
+
+This demo proves: (a) the host-owned registry is the right authority;
+(b) consent-gated grant + revoke round-trips through the registry;
+(c) the per-add-on audience boundary holds; (d) the upstream can
+distinguish 401 (wrong bearer) from 403 (host-revoked) without trusting
+the iframe. It does **not** prove: (e) the host is the only path the
+mutating request can take (the iframe still has direct loopback access
+to its own upstream, which is the operator's choice for local-service
+add-ons). Future P-n work would close (e) by routing the iframe's
+mutating requests through a bridge-owned proxy that is the only listener
+on the upstream's loopback port.

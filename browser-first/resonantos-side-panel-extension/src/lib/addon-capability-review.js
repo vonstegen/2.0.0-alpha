@@ -8,7 +8,7 @@ function uniqueCapabilities(values) {
   return [...new Set(values)];
 }
 
-export const CAPABILITY_CONTRACT_NOTE = "Capability enforcement happens at the bridge via per-route tokens; these chips describe the add-on contract.";
+export const CAPABILITY_CONTRACT_NOTE = "Capabilities are host-owned. Workspace add-on chips reflect the host registry's installation.grantedCapabilities (delivered via the bridge /addons/workspace/bootstrap route). The add-on's manifest declares requests; the host grants.";
 
 export function capabilityReviewState(addon = {}) {
   const granted = uniqueCapabilities(capabilityList(addon.grantedCapabilities ?? addon.grants));

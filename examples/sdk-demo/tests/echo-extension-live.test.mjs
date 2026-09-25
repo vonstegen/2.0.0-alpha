@@ -104,6 +104,9 @@ async function waitForCdp(port, { timeoutMs = 30_000, intervalMs = 250 } = {}) {
   throw new Error(`CDP debug port ${port} did not become available: ${lastError?.message ?? lastError}`);
 }
 
+const ECHO_BEARER = "live-echo-bearer-cp3-test";
+const ECHO_ADMIN = "live-echo-admin-cp3-test";
+
 function spawnBridge(bridgePort) {
   const bridgePath = path.join(repoRoot, "browser-first", "host", "run-bridge-minimal.mjs");
   const args = [
@@ -112,6 +115,11 @@ function spawnBridge(bridgePort) {
     "--bridge-token=dev-echo-bridge-token",
     "--addon-runtime-read-token=dev-echo-addon-read",
     "--addon-runtime-control-token=dev-echo-addon-control",
+    `--echo-bearer-token=${ECHO_BEARER}`,
+    `--echo-admin-token=${ECHO_ADMIN}`,
+    // Pin the registry to a tmp user-root so the test does not pollute
+    // ~/ResonantOS_User.
+    `--user-root=${path.join(os.tmpdir(), "sd003-echo-cp3-user-root")}`,
   ];
   const child = spawn(process.execPath, args, { stdio: ["ignore", "pipe", "pipe"] });
   child.stdout.setEncoding("utf8");
@@ -124,12 +132,14 @@ function spawnEcho() {
   // declares in `service.entrypoint` (47321 in examples/sdk-demo/echo/addon.json).
   // The manifest is the operator's contract — the host never rewrites it.
   // We free the port first in case a stray echo from an earlier run is holding it.
+  // Phase 3 (P6): Echo is bearer-gated like Counter. The bearer token must
+  // match what the bridge hands to the bootstrap envelope.
   let service = null;
   const port = 47321;
   const host = "127.0.0.1";
   return {
     async start() {
-      service = createEchoServer({ port, host });
+      service = createEchoServer({ port, host, bearerToken: ECHO_BEARER, adminToken: ECHO_ADMIN });
       const started = await service.start();
       return started.port;
     },
@@ -278,6 +288,23 @@ test("Phase 1 CP3: real extension loads, opens Echo workspace, and echoes a mess
     const openButton = page.locator(`${echoCardSelector} button:not([disabled])`).first();
     await openButton.waitFor({ timeout: 30_000 });
     assert.ok(await openButton.isEnabled(), "Resonant Echo Open button must be enabled while upstream is healthy");
+
+    // Phase 3 (P6): grant Echo's network capability via the host-owned registry
+    // so the bootstrap envelope carries the host-minted bearer. The renderer
+    // fetches /addons/workspace/bootstrap at Open-time, so we grant first.
+    const grantRes = await fetch(`${bridgeConfig.bridgeUrl.replace(/\/$/, "")}/addons/workspace/grant`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-resonantos-bridge-token": bridgeConfig.bridgeToken,
+        "x-resonantos-bridge-capability-token": "dev-echo-addon-control",
+      },
+      body: JSON.stringify({
+        addonId: "addon.resonant-echo",
+        grants: [{ capability: "network", granted: true, scope: "self", revocationBehavior: "hard-stop" }],
+      }),
+    });
+    assert.equal(grantRes.status, 200, `Echo grant must succeed (got ${grantRes.status})`);
 
     await openButton.click();
 

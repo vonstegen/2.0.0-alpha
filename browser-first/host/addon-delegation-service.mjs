@@ -197,6 +197,18 @@ export function createAddonDelegationService(dependencies) {
     uniqueRuntimeId,
     userRoot,
     timers: openCodeListenerTimers = { setTimeout, clearTimeout },
+    // Phase 3 (P6): the host-owned registry is the single source of truth
+    // for workspace add-on grants. The addon-delegation service installs
+    // discovered manifests into it and proxies the grant/revoke lifecycle
+    // through it. Without this dependency, the workspace add-on path falls
+    // back to the legacy `grantPresets`-derived grant surface (CP3/CP4 only).
+    workspaceAddonRegistry = null,
+    // Host-only bearer + admin tokens keyed by add-on id. The bridge holds
+    // these (operator-pinned via launcher arg or env) so the bootstrap
+    // envelope can deliver the bearer for every granted capability without
+    // the add-on ever learning the admin token.
+    workspaceAddonBearerTokens = {},
+    workspaceAddonAdminTokens = {},
   } = dependencies;
   const isolation = isolationDependency?.resolve
     ? isolationDependency
@@ -2691,9 +2703,26 @@ except BaseException as exc:
       handoff,
     };
   }
-
+  let executionSettings;
+  // Cache the most-recently-discovered workspace add-on manifests so the
+  // bootstrap route (which only receives an addonId) can install on demand
+  // and is robust against /addons/workspace/bootstrap racing /addons/status.
+  const workspaceAddonManifestCache = new Map();
+  // Re-read the canonical manifest from disk so the registry sees every
+  // field the harness registry validates (author, description,
+  // providerRequirements, archiveIntegration, health, installHooks,
+  // compatibility, grantPresets). The discovery projection drops these.
+  async function readFullWorkspaceAddonManifest(projection) {
+    if (!projection?.manifestPath) return null;
+    try {
+      const raw = await readFile(projection.manifestPath, "utf8");
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
   async function executeAddonsStatus() {
-    const executionSettings = await readAddonExecutionSettings();
+    executionSettings = await readAddonExecutionSettings();
     const workspaceProbe = createLoopbackHealthProbe();
     const workspaceDiscovery = await discoverWorkspaceAddonManifests({
       repoRoot,
@@ -2702,6 +2731,56 @@ except BaseException as exc:
       manifests: [],
       errors: [{ code: "discovery-failed", message: String(error?.message ?? error) }],
     }));
+
+    // Phase 3 (P6): install every discovered workspace add-on into the host
+    // registry. The registry is the single source of truth for grants; the
+    // bootstrap envelope must reflect what the host granted, never what the
+    // manifest's grantPresets declare. `enabled: false` until the operator
+    // grants; the registry refuses setGrants without `consent: true`.
+    const registrySnapshot = workspaceAddonRegistry ? workspaceAddonRegistry.snapshot() : null;
+    const registryInstallations = registrySnapshot?.installations ?? {};
+    const workspaceAddonManifests = [];
+    for (const projection of workspaceDiscovery.manifests) {
+      // Cache the FULL manifest (parsed from disk) for registry install; the
+      // discovery layer returns a renderer-friendly projection that strips
+      // fields the harness registry needs to validate (author, description,
+      // providerRequirements, archiveIntegration, health, installHooks,
+      // compatibility, grantPresets). The registry must see the canonical
+      // manifest; the renderer only needs the projected subset.
+      const fullManifest = await readFullWorkspaceAddonManifest(projection);
+      if (fullManifest) {
+        workspaceAddonManifestCache.set(fullManifest.id, fullManifest);
+      }
+      try {
+        if (workspaceAddonRegistry && fullManifest) {
+          await workspaceAddonRegistry.install(fullManifest, { enabled: false });
+        }
+      } catch (error) {
+        if (error?.code !== "ownership-conflict") {
+          workspaceDiscovery.errors.push({
+            code: "registry-install-failed",
+            message: `${fullManifest?.id ?? projection.id}: ${String(error?.message ?? error)}`,
+          });
+        }
+      }
+      const installation = registryInstallations[projection.id]
+        ?? (workspaceAddonRegistry ? workspaceAddonRegistry.snapshot().installations[projection.id] : null);
+      const grantedCapabilities = (installation?.grantedCapabilities ?? [])
+        .filter((grant) => grant.granted)
+        .map((grant) => grant.capability);
+      const deniedCapabilities = (installation?.grantedCapabilities ?? [])
+        .filter((grant) => !grant.granted)
+        .map((grant) => grant.capability);
+      workspaceAddonManifests.push({
+        ...projection,
+        // The renderer reads grantedCapabilities from this field (Phase-3 P6).
+        // Until the host grants anything, the field is empty — declarative
+        // `grantPresets` no longer drive UI chip states.
+        grantedCapabilities,
+        deniedCapabilities,
+      });
+    }
+
     return {
       addons: [
         {
@@ -2768,8 +2847,161 @@ except BaseException as exc:
           boundary: "Draft packets only. Google Calendar handoff opens an event template for human review; ResonantOS does not schedule events.",
         },
       ],
-      workspaceAddonManifests: workspaceDiscovery.manifests,
+      workspaceAddonManifests,
       workspaceAddonDiscoveryErrors: workspaceDiscovery.errors,
+    };
+  }
+
+  // Phase 3 (P6) — workspace add-on grant lifecycle handlers.
+  // Each routes through the host-owned registry; consent is enforced at the
+  // registry boundary (setGrants throws permission-denied without consent:true).
+  async function executeWorkspaceAddonInstall({ manifest }) {
+    if (!workspaceAddonRegistry) {
+      throw Object.assign(new Error("Workspace add-on registry unavailable."), { code: "runtime-unavailable" });
+    }
+    if (!manifest || typeof manifest.id !== "string") {
+      throw Object.assign(new Error("Workspace add-on install requires a manifest with an id."), { code: "invalid-event" });
+    }
+    await workspaceAddonRegistry.install(manifest, { enabled: false });
+    return { addonId: manifest.id, installation: workspaceAddonRegistry.snapshot().installations[manifest.id] ?? null };
+  }
+
+  async function executeWorkspaceAddonGrants({ addonId } = {}) {
+    if (!workspaceAddonRegistry) {
+      throw Object.assign(new Error("Workspace add-on registry unavailable."), { code: "runtime-unavailable" });
+    }
+    const snapshot = workspaceAddonRegistry.snapshot();
+    if (addonId) {
+      const installation = snapshot.installations[addonId] ?? null;
+      return { addonId, installation };
+    }
+    return { installations: snapshot.installations };
+  }
+
+  async function executeWorkspaceAddonGrant({ addonId, grants }) {
+    if (!workspaceAddonRegistry) {
+      throw Object.assign(new Error("Workspace add-on registry unavailable."), { code: "runtime-unavailable" });
+    }
+    if (typeof addonId !== "string" || !Array.isArray(grants)) {
+      throw Object.assign(new Error("Workspace add-on grant requires { addonId, grants: [] }."), { code: "invalid-event" });
+    }
+    // The registry enforces consent: true; we pass it explicitly so the
+    // operator's intent is auditable in the projection. We also pin
+    // `expectedRevision` to the current snapshot so the registry's optimistic
+    // concurrency check is satisfied.
+    const expectedRevision = workspaceAddonRegistry.snapshot().revision;
+    await workspaceAddonRegistry.setGrants(addonId, grants, { consent: true, expectedRevision });
+    return { addonId, installation: workspaceAddonRegistry.snapshot().installations[addonId] ?? null };
+  }
+
+  async function executeWorkspaceAddonRevoke({ addonId, capabilities } = {}) {
+    if (!workspaceAddonRegistry) {
+      throw Object.assign(new Error("Workspace add-on registry unavailable."), { code: "runtime-unavailable" });
+    }
+    if (typeof addonId !== "string" || !Array.isArray(capabilities)) {
+      throw Object.assign(new Error("Workspace add-on revoke requires { addonId, capabilities: [] }."), { code: "invalid-event" });
+    }
+    const installation = workspaceAddonRegistry.snapshot().installations[addonId];
+    if (!installation) {
+      throw Object.assign(new Error(`Workspace add-on not installed: ${addonId}`), { code: "permission-denied" });
+    }
+    // Build a grants array that flips `granted: false` for every named
+    // capability while preserving the request shape (the registry refuses
+    // grants that don't match `requestedCapabilities`). The registry's
+    // public snapshot does NOT carry the manifest (it carries only
+    // grantedCapabilities + policy), so we read the manifest from our
+    // cache (populated by executeAddonsStatus or executeWorkspaceAddonBootstrap).
+    const cached = workspaceAddonManifestCache.get(addonId);
+    const requested = cached?.requestedCapabilities ?? [];
+    const revoked = requested.map((grant) => ({
+      capability: grant.capability,
+      scope: grant.scope,
+      revocationBehavior: grant.revocationBehavior,
+      granted: !capabilities.includes(grant.capability),
+    }));
+    await workspaceAddonRegistry.setGrants(addonId, revoked, { consent: true, expectedRevision: workspaceAddonRegistry.snapshot().revision });
+    return { addonId, installation: workspaceAddonRegistry.snapshot().installations[addonId] ?? null };
+  }
+
+  async function executeWorkspaceAddonAdminRevoke({ addonId, upstreamAdminUrl, adminToken, granted }) {
+    // Out-of-band revocation signal: the host (which holds the admin token)
+    // asks the add-on's upstream to flip its in-memory deny flag. This is the
+    // bridge between host policy and the upstream's bearer-enforced surface.
+    // The admin token is operator-pinned, host-only; it never crosses into
+    // the add-on's bootstrap envelope or any iframe.
+    if (typeof addonId !== "string" || typeof upstreamAdminUrl !== "string") {
+      throw Object.assign(new Error("Workspace add-on admin revoke requires { addonId, upstreamAdminUrl }."), { code: "invalid-event" });
+    }
+    if (typeof adminToken !== "string" || !adminToken.length) {
+      throw Object.assign(new Error("Host-only admin token is required to revoke at the upstream."), { code: "permission-denied" });
+    }
+    const response = await fetch(upstreamAdminUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify({ granted: granted !== false }),
+    });
+    let body = null;
+    try { body = await response.json(); } catch { body = null; }
+    if (!response.ok) {
+      throw Object.assign(
+        new Error(`Upstream admin revoke failed: ${response.status} ${response.statusText}`),
+        { code: "runtime-unavailable", upstreamStatus: response.status, upstreamBody: body },
+      );
+    }
+    return { addonId, upstreamStatus: response.status, hostGranted: body?.hostGranted };
+  }
+
+  // Returns the bootstrap envelope payload for a workspace add-on. The
+  // envelope carries one `capabilityTokens` entry per host-granted
+  // capability: the `token` field is the operator-pinned bearer the host
+  // minted for that capability (delivered by the bridge to the iframe). The
+  // admin token is NEVER delivered — it stays host-side.
+  async function executeWorkspaceAddonBootstrap({ addonId } = {}) {
+    if (typeof addonId !== "string") {
+      throw Object.assign(new Error("Workspace add-on bootstrap requires { addonId }."), { code: "invalid-event" });
+    }
+    if (!workspaceAddonRegistry) {
+      console.error("[addon-delegation] bootstrap: registry unavailable");
+      throw Object.assign(new Error("Workspace add-on registry unavailable."), { code: "runtime-unavailable" });
+    }
+    // Robust against /addons/workspace/bootstrap racing /addons/status:
+    // if the manifest is in our cache but the registry hasn't installed it
+    // yet, install it now. Re-installing an already-installed add-on would
+    // wipe its grants (the registry replaces the entire entry), so we skip
+    // installation when the addon is already registered. The registry's
+    // `install()` throws ownership-conflict for re-installs anyway — this
+    // path catches the case where the bootstrap fetch arrives before
+    // /addons/status has ever run.
+    const cachedManifest = workspaceAddonManifestCache.get(addonId);
+    if (cachedManifest && !workspaceAddonRegistry.snapshot().installations[addonId]) {
+      await workspaceAddonRegistry.install(cachedManifest, { enabled: false });
+    }
+    const installation = workspaceAddonRegistry.snapshot().installations[addonId];
+    if (!installation) {
+      console.error(`[addon-delegation] bootstrap: ${addonId} not installed; installations=${Object.keys(workspaceAddonRegistry.snapshot().installations).join(",")}`);
+      throw Object.assign(new Error(`Workspace add-on not installed: ${addonId}`), { code: "permission-denied" });
+    }
+    const grantedCapabilities = (installation.grantedCapabilities ?? [])
+      .filter((grant) => grant.granted);
+    const capabilityTokens = {};
+    for (const grant of grantedCapabilities) {
+      const token = workspaceAddonBearerTokens[addonId];
+      if (!token) continue;
+      capabilityTokens[grant.capability] = {
+        granted: true,
+        scope: grant.scope,
+        revocationBehavior: grant.revocationBehavior,
+        token,
+      };
+    }
+    return {
+      addonId,
+      capabilityTokens,
+      hostGranted: true,
+      // The admin token is host-side. Never return it.
     };
   }
 
@@ -2942,6 +3174,13 @@ except BaseException as exc:
     executeAddonsStatus,
     executeAddonExecutionSettingsGet,
     executeAddonExecutionSettingsUpdate,
+    // Phase 3 (P6) — workspace add-on lifecycle handlers.
+    executeWorkspaceAddonInstall,
+    executeWorkspaceAddonGrants,
+    executeWorkspaceAddonGrant,
+    executeWorkspaceAddonRevoke,
+    executeWorkspaceAddonAdminRevoke,
+    executeWorkspaceAddonBootstrap,
     openCodeProxyExecutionEnabled,
     subscribeOpenCodeExecution,
     executeAddonUninstallAudit,

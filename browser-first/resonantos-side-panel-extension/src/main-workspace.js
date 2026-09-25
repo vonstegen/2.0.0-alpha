@@ -968,7 +968,7 @@ function renderStatusWorkspace({ eyebrow, title, body, addonId }) {
   });
 }
 
-function renderWorkspaceIframeWorkspace() {
+async function renderWorkspaceIframeWorkspace() {
   const action = pendingWorkspaceAction?.workspace === "workspace-iframe" ? pendingWorkspaceAction : null;
   pendingWorkspaceAction = null;
   const addon = action?.addon;
@@ -1016,17 +1016,16 @@ function renderWorkspaceIframeWorkspace() {
 
   // Build the bootstrap envelope.
   //
-  // CONTRACT (SDK-DEMO-003 / P6 gate):
-  //   `capabilityTokens` is currently derived from the manifest's
-  //   `grantPresets` (host-approvable proposals) as a *placeholder* so the
-  //   iframe can be smoke-tested before Phase 3 (P6) lands. Phase 3 MUST
-  //   replace this with the live `harness-registry` snapshot produced by
-  //   `registry.install(manifest, { enabled })` followed by
-  //   `registry.setGrants(addonId, grants, { consent: true })`. Until P6
-  //   ships, treat the bootstrap tokens as **declarative only** — the
-  //   add-on must not rely on them for guarded behavior. The Echo upstream
-  //   is intentionally tolerant of an empty or placeholder envelope so this
-  //   gap does not bypass authorization.
+  // CONTRACT (SDK-DEMO-003 / P6 gate — SHIPPED):
+  //   `capabilityTokens` is now sourced from the host-owned registry. The
+  //   renderer fetches the live envelope from the bridge at
+  //   `POST /addons/workspace/bootstrap` (handler
+  //   `executeWorkspaceAddonBootstrap` in addon-delegation-service.mjs),
+  //   which returns one entry per host-granted capability with the
+  //   host-minted bearer `token` field. The manifest's `grantPresets` are
+  //   no longer consulted — the registry is the single source of truth.
+  //   Until the host grants, `capabilityTokens` is `{}` and the iframe's
+  //   mutating calls return 401 (Echo/Counter enforce the bearer).
   //
   // WORKSPACE-IFRAME NOTE: the iframe is the add-on's own upstream origin
   // (sandbox=`allow-scripts allow-same-origin`), so the add-on issues
@@ -1034,22 +1033,29 @@ function renderWorkspaceIframeWorkspace() {
   // base-path rewriting. There is therefore no `apiBasePath` field in the
   // envelope; we only carry capability declarations.
   const capabilityTokens = {};
-  const grantSets = Array.isArray(addon.grantPresets) ? addon.grantPresets : [];
-  for (const preset of grantSets) {
-    for (const grant of preset.grants ?? []) {
-      if (grant.granted) {
-        capabilityTokens[grant.capability] = {
-          granted: true,
-          scope: grant.scope,
-          revocationBehavior: grant.revocationBehavior,
-        };
-      }
-    }
+  let bootstrapEnvelope = { capabilityTokens };
+  let bootstrapError = null;
+  try {
+    const result = await currentBridgeRequest("/addons/workspace/bootstrap", {
+      method: "POST",
+      capability: "addon-runtime-read",
+      body: { addonId: addon.id },
+    });
+    bootstrapEnvelope = { capabilityTokens: result?.capabilityTokens ?? {} };
+  } catch (error) {
+    // The bootstrap fetch failed (registry unavailable, addon not installed,
+    // etc.). Surface the failure as a visible status — do NOT fall back to
+    // the manifest's grantPresets: that path is closed for workspace
+    // add-ons after P6. If the host has no grants, the iframe stays in
+    // "no bearer" mode and the upstream returns 401.
+    bootstrapError = error instanceof Error ? error.message : String(error);
   }
 
-  const bootstrapEnvelope = { capabilityTokens };
-
-  deliverBootstrap(bootstrapEnvelope);
+  if (bootstrapError) {
+    setStatus(`Bootstrap unavailable: ${bootstrapError}`, "blocked");
+  } else {
+    deliverBootstrap(bootstrapEnvelope);
+  }
 
   // Re-deliver on the add-on's ready ping so a slow add-on that installs its
   // listener after iframe load still receives the envelope. The add-on
@@ -1057,8 +1063,8 @@ function renderWorkspaceIframeWorkspace() {
   const onMessage = (event) => {
     if (event.source !== iframe.contentWindow) return;
     if (!event.data || event.data.type !== "resonantos-addon-ready") return;
-    deliverBootstrap(bootstrapEnvelope);
-    setStatus(`${addon.name ?? addon.id} handshake complete.`, "ready");
+    if (!bootstrapError) deliverBootstrap(bootstrapEnvelope);
+    setStatus(`${addon.name ?? addon.id} handshake complete.`, bootstrapError ? "blocked" : "ready");
   };
   window.addEventListener("message", onMessage);
 

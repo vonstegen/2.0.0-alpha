@@ -77,6 +77,9 @@ async function waitForCdp(port, { timeoutMs = 30_000, intervalMs = 250 } = {}) {
   throw new Error(`CDP debug port ${port} did not become available: ${lastError?.message ?? lastError}`);
 }
 
+const counterBearer = "live-counter-token-pinned-for-this-test";
+const counterAdmin = "live-counter-admin-pinned-for-this-test";
+
 function spawnBridge(bridgePort) {
   const bridgePath = path.join(repoRoot, "browser-first", "host", "run-bridge-minimal.mjs");
   const args = [
@@ -85,35 +88,44 @@ function spawnBridge(bridgePort) {
     "--bridge-token=dev-counter-bridge-token",
     "--addon-runtime-read-token=dev-counter-addon-read",
     "--addon-runtime-control-token=dev-counter-addon-control",
+    `--counter-bearer-token=${counterBearer}`,
+    `--counter-admin-token=${counterAdmin}`,
+    // Pin the registry to a tmp user-root so the test does not pollute
+    // ~/ResonantOS_User.
+    `--user-root=${path.join(os.tmpdir(), "sd003-counter-cp4-user-root")}`,
   ];
   const child = spawn(process.execPath, args, { stdio: ["ignore", "pipe", "pipe"] });
   return child;
 }
 
 // Counter must listen on the loopback port the manifest declares (47322).
-function spawnCounter({ token }) {
+function spawnCounter({ token, admin }) {
   let service = null;
   return {
     async start() {
-      service = createCounterServer({ port: 47322 });
+      service = createCounterServer({ port: 47322, bearerToken: token, adminToken: admin });
       await service.start();
-      process.env.RESONANTOS_COUNTER_ACTIVE_BEARER = token;
       return 47322;
     },
     get port() { return 47322; },
     async stop() {
       if (service) { await service.close(); service = null; }
-      delete process.env.RESONANTOS_COUNTER_ACTIVE_BEARER;
     },
   };
 }
 
 // Echo must listen on the loopback port Echo's manifest declares (47321).
+// Phase 3 (P6): Echo is bearer-gated like Counter. The Counter live test
+// uses Echo only to prove that the Counter bearer cannot authorize Echo's
+// mutating route (audience-bound credential boundary), so Echo here is
+// started with its own operator-pinned bearer.
 function spawnEcho() {
   let service = null;
+  const echoBearer = "live-counter-test-echo-bearer";
+  const echoAdmin = "live-counter-test-echo-admin";
   return {
     async start() {
-      service = createEchoServer({ port: 47321 });
+      service = createEchoServer({ port: 47321, bearerToken: echoBearer, adminToken: echoAdmin });
       await service.start();
       return 47321;
     },
@@ -135,18 +147,17 @@ test("Phase 2 CP4: real extension opens Counter workspace and the per-add-on tok
   }
 
   // Operator pins two distinct tokens per add-on. Echo's envelope carries
-  // counterToken (because the manifest's grant set doesn't pin a token, the
+  // counterBearer (because the manifest's grant set doesn't pin a token, the
   // placeholder chain in this phase still uses grantPresets — but for the
   // isolation proof we explicitly inject each add-on's token into its own
   // iframe via the bootstrap envelope the renderer already delivers).
-  const counterToken = "live-counter-token-pinned-for-this-test";
   const echoToken = "live-echo-token-pinned-for-this-test";
 
   const profile = await mkdtemp(path.join(os.tmpdir(), "sdk-demo-003-cp4-"));
   const cdpPort = await freePort();
   const bridgePort = await freePort();
   const echo = spawnEcho();
-  const counter = spawnCounter({ token: counterToken });
+  const counter = spawnCounter({ token: counterBearer, admin: counterAdmin });
   // Delete any stale bridge-config.generated.js from prior test runs so the
   // bridge's freshly-minted capability bootstrap token and resolved port are
   // what this test reads. Without this, a stale file from an earlier run
@@ -244,6 +255,22 @@ test("Phase 2 CP4: real extension opens Counter workspace and the per-add-on tok
     await counterOpen.waitFor({ timeout: 30_000 });
     assert.ok(await counterOpen.isEnabled(), "Counter Open button must be enabled while upstream is healthy");
 
+    // Phase 3 (P6): grant Counter's network capability via the host-owned
+    // registry so the bootstrap envelope carries the host-minted bearer.
+    const grantRes = await fetch(`${bridgeConfig.bridgeUrl.replace(/\/$/, "")}/addons/workspace/grant`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-resonantos-bridge-token": bridgeConfig.bridgeToken,
+        "x-resonantos-bridge-capability-token": "dev-counter-addon-control",
+      },
+      body: JSON.stringify({
+        addonId: "addon.resonant-counter",
+        grants: [{ capability: "network", granted: true, scope: "self", revocationBehavior: "hard-stop" }],
+      }),
+    });
+    assert.equal(grantRes.status, 200, `Counter grant must succeed (got ${grantRes.status})`);
+
     await counterOpen.click();
 
     const counterFrame = page.frameLocator('iframe.addon-iframe');
@@ -290,7 +317,7 @@ test("Phase 2 CP4: real extension opens Counter workspace and the per-add-on tok
     {
       const right = await fetch("http://127.0.0.1:47322/api/counter/increment", {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${counterToken}` },
+        headers: { "content-type": "application/json", authorization: `Bearer ${counterBearer}` },
         body: "{}",
       });
       assert.equal(right.status, 200, "Counter must accept its pinned bearer token with 200");
@@ -298,14 +325,18 @@ test("Phase 2 CP4: real extension opens Counter workspace and the per-add-on tok
       assert.equal(data.value, 1, "Counter increments state when the right bearer is presented");
     }
     {
+      // Phase 3 (P6) — Echo is bearer-gated. The Counter bearer cannot
+      // authorize Echo's mutating route (per-add-on audience-bound credential
+      // boundary, same shape as the P4 isolation proof but now both surfaces
+      // enforce a bearer).
       const echoWithCounterToken = await fetch("http://127.0.0.1:47321/api/echo/message", {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${counterToken}` },
+        headers: { "content-type": "application/json", authorization: `Bearer ${counterBearer}` },
         body: JSON.stringify({ message: "Counter bearer reaches Echo" }),
       });
-      assert.equal(echoWithCounterToken.status, 200);
+      assert.equal(echoWithCounterToken.status, 401, "Counter's bearer must NOT authorize Echo's mutating route (per-add-on audience-bound credential boundary)");
       const data = await echoWithCounterToken.json();
-      assert.equal(data.echo, "Counter bearer reaches Echo");
+      assert.equal(data.error, "echo-unauthorized");
     }
 
     // Capture an "isolation proof" screenshot after the boundary assertions

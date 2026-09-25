@@ -2331,7 +2331,7 @@ test("settings workspace renders add-on status and capability boundaries", async
       [false, false, false, false, false]
     );
     assert.match(container.textContent, /Capability contract/);
-    assert.match(container.textContent, /Capability enforcement happens at the bridge via per-route tokens; these chips describe the add-on contract\./);
+    assert.match(container.textContent, /Capabilities are host-owned\. Workspace add-on chips reflect the host registry/);
     assert.match(container.textContent, /Declared/);
     assert.match(container.textContent, /agent-delegation/);
     assert.match(container.textContent, /notifications/);

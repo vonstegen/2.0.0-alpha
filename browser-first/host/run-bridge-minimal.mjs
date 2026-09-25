@@ -175,6 +175,16 @@ const {
   sanitizeAssistantContent,
 } = providerHostService;
 
+// Bindings are operator configuration only. Demo manifests never authorize a
+// credential name, endpoint, or port. Invalid host configuration fails startup.
+// Hoisted above addonDelegationService so the host-owned registry is available
+// for Phase-3 (P6) workspace add-on grant lifecycle handlers.
+const harnessService = await createHarnessHostService({
+  userRoot: userRoot(), providerHost: providerHostService,
+  bindings: JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]"),
+  env: process.env,
+});
+
 const addonDelegationService = createAddonDelegationService({
   browserFirstRoot,
   bridgePublicUrl: getBridgePublicUrlValue,
@@ -196,6 +206,24 @@ const addonDelegationService = createAddonDelegationService({
   socketOpen,
   uniqueRuntimeId,
   userRoot,
+  // Phase 3 (P6): the host-owned registry is the single source of truth for
+  // workspace add-on grants. `harnessService.registry` is the same registry
+  // the harness adapter routes use; P6 extends its lifecycle to local-service
+  // workspace add-ons without inventing a second registry.
+  workspaceAddonRegistry: harnessService.registry,
+  // Host-side bearer tokens (delivered to the iframe in the bootstrap
+  // envelope for every granted capability) and host-side admin tokens
+  // (NEVER delivered — host-only, used to drive /admin/deny on revocation).
+  // Both are operator-pinned via launcher args or env so the demo is
+  // reproducible from a clean checkout without a second trust path.
+  workspaceAddonBearerTokens: {
+    "addon.resonant-echo": args.get("echo-bearer-token") ?? process.env.RESONANTOS_DEMO_ECHO_BEARER ?? "",
+    "addon.resonant-counter": args.get("counter-bearer-token") ?? process.env.RESONANTOS_DEMO_COUNTER_BEARER ?? "",
+  },
+  workspaceAddonAdminTokens: {
+    "addon.resonant-echo": args.get("echo-admin-token") ?? process.env.RESONANTOS_DEMO_ECHO_ADMIN ?? "",
+    "addon.resonant-counter": args.get("counter-admin-token") ?? process.env.RESONANTOS_DEMO_COUNTER_ADMIN ?? "",
+  },
 });
 
 const { executeAddonsStatus } = addonDelegationService;
@@ -400,13 +428,6 @@ const { agentControlRoutes } = createAgentControlHostService({
 
 const { extensionPrefsRoutes, flushPendingExtensionPrefs } = createExtensionPrefsHostService({ userRoot });
 
-// Bindings are operator configuration only. Demo manifests never authorize a
-// credential name, endpoint, or port. Invalid host configuration fails startup.
-const harnessService = await createHarnessHostService({
-  userRoot: userRoot(), providerHost: providerHostService,
-  bindings: JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]"),
-  env: process.env,
-});
 const { harnessRoutes } = harnessService;
 const providerBridgeRoutes = harnessService.composeProviderRoutes(legacyProviderBridgeRoutes);
 

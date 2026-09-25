@@ -480,10 +480,14 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
         trust: manifest.trust ?? "host-mediated workspace add-on",
         category: manifest.category,
         requestedCapabilities: (manifest.requestedCapabilities ?? []).map((grant) => grant.capability),
-        grantedCapabilities: (manifest.grantPresets ?? []).flatMap((preset) =>
-          (preset.grants ?? []).filter((grant) => grant.granted).map((grant) => grant.capability),
-        ),
-        boundary: `Workspace add-on running on its own loopback origin (${manifest.origin}). The iframe is sandboxed cross-origin; capability tokens are delivered out-of-band via postMessage with targetOrigin pinned to the add-on origin.`,
+        // Phase 3 (P6): grantedCapabilities / deniedCapabilities come from
+        // the host-owned registry snapshot the bridge carries in
+        // `workspaceAddonManifests` (see `addon-delegation-service.mjs`
+        // executeAddonsStatus). Until the host grants, this is empty —
+        // the manifest's grantPresets no longer drive UI chip states.
+        grantedCapabilities: Array.isArray(manifest.grantedCapabilities) ? manifest.grantedCapabilities : [],
+        deniedCapabilities: Array.isArray(manifest.deniedCapabilities) ? manifest.deniedCapabilities : [],
+        boundary: `Workspace add-on running on its own loopback origin (${manifest.origin}). The iframe is sandboxed cross-origin; capability tokens are delivered out-of-band via postMessage with targetOrigin pinned to the add-on origin. Grants are host-owned: see the host registry's installation.grantedCapabilities, not the manifest's grantPresets.`,
         runtimeType: manifest.runtimeType,
         entrypoint: manifest.entrypoint,
         origin: manifest.origin,

@@ -182,6 +182,48 @@ export function createAddonDelegationHostService(handlers = {}) {
         requiredCapability: "addon-record-write",
         handler: required("executeGoalRecord"),
       },
+      // Phase 3 (P6) — workspace add-on capability lifecycle.
+      // The host-owned registry (exposed via harnessService.registry) is the
+      // single source of truth; routes that mutate grants require the
+      // operator's `addon-runtime-control` token. Consent: true is enforced
+      // inside the registry so an operator who has the bridge token still
+      // cannot grant without explicit intent.
+      {
+        method: "POST",
+        path: "/addons/workspace/install",
+        requiredCapability: "addon-runtime-control",
+        handler: required("executeWorkspaceAddonInstall"),
+      },
+      {
+        method: "POST",
+        path: "/addons/workspace/grants",
+        requiredCapability: "addon-runtime-read",
+        handler: required("executeWorkspaceAddonGrants"),
+      },
+      {
+        method: "POST",
+        path: "/addons/workspace/bootstrap",
+        requiredCapability: "addon-runtime-read",
+        handler: required("executeWorkspaceAddonBootstrap"),
+      },
+      {
+        method: "POST",
+        path: "/addons/workspace/grant",
+        requiredCapability: "addon-runtime-control",
+        handler: required("executeWorkspaceAddonGrant"),
+      },
+      {
+        method: "POST",
+        path: "/addons/workspace/revoke",
+        requiredCapability: "addon-runtime-control",
+        handler: required("executeWorkspaceAddonRevoke"),
+      },
+      {
+        method: "POST",
+        path: "/addons/workspace/admin-revoke",
+        requiredCapability: "addon-runtime-control",
+        handler: required("executeWorkspaceAddonAdminRevoke"),
+      },
     ],
   };
 }

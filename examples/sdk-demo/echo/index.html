@@ -33,27 +33,39 @@
     // this add-on's own upstream origin. The parent (ResonantOS extension)
     // delivers capability tokens out-of-band via postMessage; nothing here
     // needs the bridge token and no token is embedded in this HTML.
+    //
+    // Phase 3 (P6): the bootstrap envelope carries a host-owned bearer for
+    // every host-granted capability (delivered from harness-registry via
+    // /addons/workspace/bootstrap). We attach that bearer to every mutating
+    // request. Without it, the upstream returns 401.
     let bootstrap = null;
+    let echoToken = null;
 
     window.addEventListener("message", (event) => {
       if (event.source !== window.parent) return;
       if (!event.data || event.data.type !== "resonantos-addon-bootstrap") return;
       bootstrap = event.data;
-      document.getElementById("status").textContent = "connected";
+      echoToken = bootstrap.capabilityTokens?.network?.token ?? null;
+      const ok = echoToken && typeof echoToken === "string";
+      document.getElementById("status").textContent = ok
+        ? "connected (echo token received)"
+        : "connected — no echo token; mutating routes will be unauthorized";
       document.getElementById("status").classList.add("connected");
-      document.getElementById("send").disabled = false;
+      document.getElementById("send").disabled = !ok;
     });
 
     document.getElementById("send").addEventListener("click", async () => {
       const message = document.getElementById("message").value;
+      const headers = { "content-type": "application/json" };
+      if (echoToken) headers.authorization = `Bearer ${echoToken}`;
       // Same-origin fetch to this add-on's own upstream — no CORS, no bridge.
       const res = await fetch("/api/echo/message", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers,
         body: JSON.stringify({ message }),
       });
       const data = await res.json();
-      document.getElementById("response").textContent = `Resonant Echo received: "${data.echo}"`;
+      document.getElementById("response").textContent = `Resonant Echo received: "${data.echo ?? data.error}"`;
     });
 
     // Signal that the bootstrap listener is installed so the parent can
