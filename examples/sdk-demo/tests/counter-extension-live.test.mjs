@@ -308,6 +308,14 @@ test("Phase 2 CP4: real extension opens Counter workspace and the per-add-on tok
     // placeholder is a P6 follow-up.
     assert.ok(status, "Counter iframe must render its status line");
 
+    // Manual inspection hook: hold the browser window open for N ms after
+    // assertions so a developer can poke at it. CI never sets this env.
+    const keepOpenMs = Number(process.env.RESONANTOS_KEEP_OPEN_MS ?? 0);
+    if (keepOpenMs > 0) {
+      console.log(`[counter-extension-live] keeping browser open for ${keepOpenMs}ms`);
+      await new Promise((resolve) => setTimeout(resolve, keepOpenMs));
+    }
+
     await page.close();
   } finally {
     if (context) {

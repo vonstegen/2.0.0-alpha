@@ -337,6 +337,14 @@ test("Phase 1 CP3: real extension loads, opens Echo workspace, and echoes a mess
       "visible Echo response must match the expected hard-coded string",
     );
 
+    // Manual inspection hook: hold the browser window open for N ms after
+    // assertions so a developer can poke at it. CI never sets this env.
+    const keepOpenMs = Number(process.env.RESONANTOS_KEEP_OPEN_MS ?? 0);
+    if (keepOpenMs > 0) {
+      console.log(`[echo-extension-live] keeping browser open for ${keepOpenMs}ms`);
+      await new Promise((resolve) => setTimeout(resolve, keepOpenMs));
+    }
+
     await page.close();
   } finally {
     if (context) {
