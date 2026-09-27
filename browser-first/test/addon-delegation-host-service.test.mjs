@@ -122,3 +122,21 @@ test("add-on delegation host service fails fast when a handler is missing", () =
     /Add-on delegation host service missing handler: executeHermesDelegationStart/,
   );
 });
+
+test("workspace add-on install handler remains required", () => {
+  // executeWorkspaceAddonInstall is a required host-service handler: a
+  // construction that omits it must fail fast rather than silently dropping
+  // the /addons/workspace/install route.
+  const incomplete = handlers();
+  delete incomplete.executeWorkspaceAddonInstall;
+
+  assert.throws(
+    () => createAddonDelegationHostService(incomplete),
+    /Add-on delegation host service missing handler: executeWorkspaceAddonInstall/,
+  );
+
+  const { addonDelegationRoutes } = createAddonDelegationHostService(handlers());
+  const install = addonDelegationRoutes.find((r) => r.method === "POST" && r.path === "/addons/workspace/install");
+  assert.ok(install, "POST /addons/workspace/install must remain wired");
+  assert.equal(install.requiredCapability, "addon-runtime-control");
+});
