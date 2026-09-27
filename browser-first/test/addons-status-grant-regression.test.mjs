@@ -1,28 +1,16 @@
-// Regression test for the P6 grant-wipe bug fixed in commit on top of 9a6ffe88.
+// P6 regression test for grant-wipe bug: status calls must not wipe grants.
 //
-// Bug: executeAddonsStatus called registry.install(fullManifest,
-// { enabled: false }) unconditionally on every /addons/status poll.
-// registry.install() *replaces* the installation entry and resets
-// grantedCapabilities back to requestedCapabilities (granted: false).
-// Effect: a grant made via POST /addons/workspace/grant was wiped the next
-// time the extension polled /addons/status.
+// Updated for T2 semantics:
+// - executeAddonsStatus() now reads registry state without installing discovered add-ons.
+// - Discovered add-ons remain uninstalled until explicit POST /addons/workspace/install.
+// - This test verifies that grants survive repeated status polls on installed add-ons.
 //
-// Why in-suite tests missed it: the live extension tests call /addons/status
-// ONCE at the start, then grant, then never re-poll.
-//
-// This test reproduces the bug end-to-end through the public service surface:
-//   1. First /addons/status — registry installs Echo
-//   2. /addons/workspace/grant — registry.setGrants(network, granted: true)
-//   3. Second /addons/status — would have re-installed and wiped the grant
-//   4. /addons/workspace/bootstrap — must still return capabilityTokens.network.token
-//      and the snapshot must still show granted: true
-//
-// Pre-fix: step 4 returns capabilityTokens: {} (assertion fails).
-// Post-fix: step 4 returns the bearer (assertion passes).
+// T1: https://github.com/ResonantOS/ResonantOS/pull/XXXX
+// T2: sdk-003r-t2-status-readonly
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFile, mkdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -100,12 +88,12 @@ async function buildService({ workspaceAddonBearerTokens = { "addon.resonant-ech
 test("P6 regression: a grant survives a subsequent /addons/status poll", async () => {
   const { service, registry, cleanup } = await buildService();
   try {
-    // Step 1 — first poll installs Echo into the registry.
-    await service.executeAddonsStatus();
+    // Step 1 — explicit install into registry first (T2 semantics).
+    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
     const installations1 = registry.snapshot().installations;
     assert.ok(
       installations1["addon.resonant-echo"],
-      "first poll must install Echo into the registry",
+      "explicit install must install Echo into the registry",
     );
 
     // Step 2 — operator grants network through the public handler.
@@ -115,7 +103,7 @@ test("P6 regression: a grant survives a subsequent /addons/status poll", async (
     });
     assert.equal(grantRes.installation.grantedCapabilities[0].granted, true, "grant must succeed");
 
-    // Step 3 — second poll. PRE-FIX this re-installs and wipes the grant.
+    // Step 3 — subsequent status poll (now reads-only, does not re-install).
     const status2 = await service.executeAddonsStatus();
     const installations2 = registry.snapshot().installations;
 
@@ -123,7 +111,7 @@ test("P6 regression: a grant survives a subsequent /addons/status poll", async (
     assert.equal(
       installations2["addon.resonant-echo"].grantedCapabilities[0].granted,
       true,
-      "registry must still show network: granted after the second poll",
+      "registry must still show network: granted after status poll",
     );
 
     // Step 4b — renderer's view of the same field still surfaces the grant.
@@ -147,14 +135,20 @@ test("P6 regression: a grant survives a subsequent /addons/status poll", async (
 test("P6 regression: grants survive multiple /addons/status polls (idempotent)", async () => {
   const { service, registry, cleanup } = await buildService();
   try {
-    await service.executeAddonsStatus();
+    // Explicit install first.
+    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+
+    // Grant.
     await service.executeWorkspaceAddonGrant({
       addonId: "addon.resonant-echo",
       grants: [{ capability: "network", granted: true, scope: "self", revocationBehavior: "hard-stop" }],
     });
+
+    // Multiple status polls should not affect the grant.
     for (let i = 0; i < 5; i += 1) {
       await service.executeAddonsStatus();
     }
+
     const installation = registry.snapshot().installations["addon.resonant-echo"];
     assert.equal(installation.grantedCapabilities[0].granted, true, "grant must survive many polls");
     const bootstrap = await service.executeWorkspaceAddonBootstrap({ addonId: "addon.resonant-echo" });

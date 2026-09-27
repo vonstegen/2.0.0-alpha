@@ -2732,50 +2732,23 @@ except BaseException as exc:
       errors: [{ code: "discovery-failed", message: String(error?.message ?? error) }],
     }));
 
-    // Phase 3 (P6): install every discovered workspace add-on into the host
-    // registry. The registry is the single source of truth for grants; the
-    // bootstrap envelope must reflect what the host granted, never what the
-    // manifest's grantPresets declare. `enabled: false` until the operator
-    // grants; the registry refuses setGrants without `consent: true`.
+    // READ/DISCOVERY REPORTS STATE.
+    // EXPLICIT INSTALL MUTATES STATE.
+    // This function MUST NOT create installation/grant state for discovered
+    // manifests. The workspace add-on manifest is cached for later explicit
+    // installs via /addons/workspace/install. The registry snapshot provides
+    // installation/grant state only for add-ons that the operator has
+    // explicitly installed via the public install endpoint.
     const registrySnapshot = workspaceAddonRegistry ? workspaceAddonRegistry.snapshot() : null;
     const registryInstallations = registrySnapshot?.installations ?? {};
     const workspaceAddonManifests = [];
     for (const projection of workspaceDiscovery.manifests) {
-      // Cache the FULL manifest (parsed from disk) for registry install; the
-      // discovery layer returns a renderer-friendly projection that strips
-      // fields the harness registry needs to validate (author, description,
-      // providerRequirements, archiveIntegration, health, installHooks,
-      // compatibility, grantPresets). The registry must see the canonical
-      // manifest; the renderer only needs the projected subset.
+      // Cache the FULL manifest (parsed from disk) for later explicit install;
+      // the discovery layer returns a renderer-friendly projection. The registry
+      // must see the canonical manifest when the operator explicitly installs.
       const fullManifest = await readFullWorkspaceAddonManifest(projection);
       if (fullManifest) {
         workspaceAddonManifestCache.set(fullManifest.id, fullManifest);
-      }
-      try {
-        if (workspaceAddonRegistry && fullManifest) {
-          // Phase 3 (P6 regression fix): guard the install so a re-poll of
-          // /addons/status never wipes a previously-granted installation.
-          // registry.install() replaces the installation entry and resets
-          // `grantedCapabilities` back to `requestedCapabilities` (all
-          // `granted: false`). Mirror the guard already in
-          // executeWorkspaceAddonBootstrap. Allowed exceptions:
-          //   - ownership-conflict (registry refuses re-install; fine)
-          //   - already-installed (registry explicit signal; install only
-          //     when not present in the snapshot).
-          const alreadyInstalled = Boolean(
-            workspaceAddonRegistry.snapshot().installations[fullManifest.id],
-          );
-          if (!alreadyInstalled) {
-            await workspaceAddonRegistry.install(fullManifest, { enabled: false });
-          }
-        }
-      } catch (error) {
-        if (error?.code !== "ownership-conflict" && error?.code !== "already-installed") {
-          workspaceDiscovery.errors.push({
-            code: "registry-install-failed",
-            message: `${fullManifest?.id ?? projection.id}: ${String(error?.message ?? error)}`,
-          });
-        }
       }
       const installation = registryInstallations[projection.id]
         ?? (workspaceAddonRegistry ? workspaceAddonRegistry.snapshot().installations[projection.id] : null);
