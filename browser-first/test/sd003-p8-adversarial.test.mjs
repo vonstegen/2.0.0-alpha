@@ -724,3 +724,56 @@ test("SDK-DEMO-003R T1: admin-revoke authority must be host-owned", async () => 
     await echo.close();
   }
 });
+
+test("P8 Attack 12 (malformed-request): executeWorkspaceAddonAdminRevoke rejects undefined/null/primitive/array with invalid-event", async () => {
+  // Malformed-request hardening: fail with application error, not TypeError.
+  const { createAddonDelegationService } = await import("../host/addon-delegation-service.mjs");
+  const service = createAddonDelegationService({
+    workspaceAddonRegistry: null,
+    workspaceAddonAdminTokens: {},
+    workspaceAddonBearerTokens: {},
+  });
+  const revoke = service.executeWorkspaceAddonAdminRevoke;
+
+  // undefined
+  await assert.rejects(
+    revoke(undefined),
+    (err) => err.code === "invalid-event" && err.message.includes("requires { addonId, granted }"),
+    "undefined request fails with invalid-event",
+  );
+
+  // null
+  await assert.rejects(
+    revoke(null),
+    (err) => err.code === "invalid-event",
+    "null request fails with invalid-event",
+  );
+
+  // primitive string
+  await assert.rejects(
+    revoke("string"),
+    (err) => err.code === "invalid-event",
+    "string request fails with invalid-event",
+  );
+
+  // number
+  await assert.rejects(
+    revoke(42),
+    (err) => err.code === "invalid-event",
+    "number request fails with invalid-event",
+  );
+
+  // array (typeof [] === "object", so explicitly rejected)
+  await assert.rejects(
+    revoke([]),
+    (err) => err.code === "invalid-event",
+    "array request fails with invalid-event",
+  );
+
+  // empty object => missing addonId => invalid-event
+  await assert.rejects(
+    revoke({}),
+    (err) => err.code === "invalid-event" && err.message.includes("requires { addonId }"),
+    "empty object fails with invalid-event",
+  );
+});

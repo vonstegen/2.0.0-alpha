@@ -2937,7 +2937,7 @@ except BaseException as exc:
     return { addonId, installation: workspaceAddonRegistry.snapshot().installations[addonId] ?? null };
   }
 
-  async function executeWorkspaceAddonAdminRevoke({ addonId, granted }) {
+  async function executeWorkspaceAddonAdminRevoke(request) {
     // SECURITY T1: Authority must come exclusively from trusted host-side
     // configuration keyed by addonId. The caller may identify the add-on and
     // intent only. Any attempt to inject upstreamAdminUrl or adminToken is
@@ -2947,11 +2947,17 @@ except BaseException as exc:
     //
     // The admin credential and target URL are operator-pinned, host-only;
     // they never cross into the add-on's bootstrap envelope or any iframe.
+    // Malformed-request hardening: validate request is a non-null object before
+    // destructuring, to fail with invalid-event (not a native TypeError).
+    if (request == null || typeof request !== "object" || Array.isArray(request)) {
+      throw Object.assign(new Error("Workspace add-on admin revoke requires { addonId, granted }."), { code: "invalid-event" });
+    }
+    const { addonId, granted } = request;
     if (typeof addonId !== "string") {
       throw Object.assign(new Error("Workspace add-on admin revoke requires { addonId }."), { code: "invalid-event" });
     }
     // Ignore any caller-supplied upstreamAdminUrl or adminToken fields
-    if ("upstreamAdminUrl" in arguments[0] || "adminToken" in arguments[0]) {
+    if ("upstreamAdminUrl" in request || "adminToken" in request) {
       throw Object.assign(new Error("Caller-supplied upstreamAdminUrl/adminToken fields are not honored."), { code: "permission-denied", audit: "revoked-caller-injection-attempt" });
     }
     const adminConfig = workspaceAddonAdminTokens[addonId];
