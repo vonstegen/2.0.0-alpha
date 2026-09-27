@@ -216,12 +216,18 @@ export function createAddonDelegationHostService(handlers = {}) {
         method: "POST",
         path: "/addons/workspace/revoke",
         requiredCapability: "addon-runtime-control",
+        // T4: revoke routes carry the harness transport boundary so policy
+        // denials map to 4xx and genuine runtime/upstream failures stay 5xx.
+        loopbackHostOnly: true,
+        errorFamily: "harness",
         handler: required("executeWorkspaceAddonRevoke"),
       },
       {
         method: "POST",
         path: "/addons/workspace/admin-revoke",
         requiredCapability: "addon-runtime-control",
+        loopbackHostOnly: true,
+        errorFamily: "harness",
         handler: required("executeWorkspaceAddonAdminRevoke"),
       },
     ],

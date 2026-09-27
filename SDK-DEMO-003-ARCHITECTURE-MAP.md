@@ -235,12 +235,14 @@ After P6 the workspace add-on capability surface is host-owned end-to-end.
       delivered to the iframe; held by the bridge and used to flip the
       upstream's in-memory deny flag via `POST
       /addons/workspace/admin-revoke`.
-- **403 is real host policy.** When the host revokes the grant (registry
-  path) AND flips the upstream's admin deny flag, the same bearer that
-  worked moments earlier returns 403 from `/api/echo/message` or
-  `/api/counter/{increment,decrement,reset}`. A bare 401 means "missing
-  or wrong bearer"; 403 means "host revoked". The two states are distinct
-  and the test exercises both.
+- **403 is real host policy.** Operator-level revocation is converged
+  (T4): a single revoke — `POST /addons/workspace/revoke` or `POST
+  /addons/workspace/admin-revoke` — flips BOTH the registry grant AND the
+  upstream `/admin/deny` flag. The same bearer that worked moments earlier
+  returns 403 from `/api/echo/message` or
+  `/api/counter/{increment,decrement,reset}`. A bare 401 means "missing or
+  wrong bearer"; 403 means "host revoked". The two states are distinct and
+  the test exercises both.
 
 ### Demo-vs-production honesty (do not over-claim)
 
@@ -354,7 +356,7 @@ operations continue working. The adversarial suite lives at
 | --- | --- | --- | --- |
 | 1 | Bridge / admin / provider secrets leak to iframe, HTML, URL, or env | Bootstrap envelope carries only the host-minted bearer; HTML/URL carry nothing; no `process.env` inheritance | `Attack 1` (envelope + index.html scan), `Attack 1 cross-add-on` |
 | 2 | Cross-add-on credential reuse (Echo bearer → Counter/Guide) | Per-add-on audience-bound bearer; isolation proof (3-way) | `sdk-guide-roundtrip.test.ts` 3-way isolation group |
-| 3 | Use-after-revoke | Two independent channels (registry + admin); bearer never works again until BOTH restored | `Attack 3` (round-trip), `harness-registry-workspace-addon.test.mjs` durable-journal test |
+| 3 | Use-after-revoke | Converged revoke (registry + upstream) — one operator action denies both layers; a live bearer 403s immediately | `Attack 3` (round-trip), `addons-revocation-convergence.test.mjs` |
 | 4 | Self-grant / grant outside `requestedCapabilities` / grant without `consent: true` | Registry throws `permission-denied`; CAS revision prevents drift | `harness-registry-workspace-addon.test.mjs` (consent:false, outside caps, CAS) |
 | 5 | Forged postMessage (wrong source / wrong type) | Iframe rejects `event.source !== window.parent` and `event.data.type !== resonantos-addon-bootstrap`; parent pins `targetOrigin = addonOrigin` (no `"*"`) | `Attack 5` (iframe listener), `Attack 5 parent origin-pin` |
 | 6 | Arbitrary `service.entrypoint` / non-loopback / non local-service runtime | Discovery rejects non-loopback entrypoint + non `local-service` runtime | `Attack 6` (throwaway manifests) |

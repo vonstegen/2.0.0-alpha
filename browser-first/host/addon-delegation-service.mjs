@@ -2884,6 +2884,89 @@ except BaseException as exc:
     return { addonId, installation: workspaceAddonRegistry.snapshot().installations[addonId] ?? null };
   }
 
+  // T4 — converged operator-level revocation/enforcement.
+  // The host-owned registry is the single source of truth for grant state; the
+  // upstream `/admin/deny` flag is its enforcement projection. Every revoke
+  // route coordinates BOTH writes so operator-level revocation has one coherent
+  // authoritative outcome instead of independent state transitions that can
+  // diverge.
+  //   REQUEST DESCRIBES INTENT. HOST DETERMINES AUTHORITY.
+  async function convergeWorkspaceAddonEnforcement(addonId, targetGrants, enforcementGranted) {
+    if (!workspaceAddonRegistry) {
+      throw Object.assign(new Error("Workspace add-on registry unavailable."), { code: "runtime-unavailable" });
+    }
+    const adminConfig = workspaceAddonAdminTokens[addonId];
+    if (!adminConfig || !adminConfig.adminToken || !adminConfig.upstreamAdminUrl) {
+      throw Object.assign(new Error(`Workspace add-on not configured for admin revoke: ${addonId}`), { code: "permission-denied" });
+    }
+    const { upstreamAdminUrl: targetUrl, adminToken: credential } = adminConfig;
+
+    const applyUpstream = async (granted) => {
+      let response;
+      try {
+        response = await fetch(targetUrl, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${credential}`,
+          },
+          body: JSON.stringify({ granted }),
+        });
+      } catch {
+        // Network-level failure (unreachable upstream). Credential non-
+        // disclosure: never surface the target URL or the credential.
+        throw Object.assign(
+          new Error("Upstream admin revoke failed: upstream unreachable."),
+          { code: "runtime-unavailable" },
+        );
+      }
+      let body = null;
+      try { body = await response.json(); } catch { body = null; }
+      if (!response.ok) {
+        // Credential non-disclosure: surface only the upstream status, never
+        // the upstream body (which could carry server-side detail).
+        throw Object.assign(
+          new Error(`Upstream admin revoke failed: ${response.status} ${response.statusText}`),
+          { code: "runtime-unavailable", upstreamStatus: response.status },
+        );
+      }
+      return { upstreamStatus: response.status, hostGranted: body?.hostGranted };
+    };
+
+    // Fail-closed ordering (true cross-system transactionality is impossible):
+    //   deny — close upstream FIRST (kills any live bearer immediately), then
+    //          persist the registry denial. A registry failure still leaves
+    //          enforcement closed (fail-closed) and is reported 5xx.
+    //   allow — persist the registry grant FIRST (source of truth), then open
+    //          upstream. An upstream failure leaves enforcement closed (no
+    //          premature open) and is reported 5xx.
+    // Both writes are idempotent (setGrants re-applies the same grants;
+    // /admin/deny re-applies the boolean). setGrants' expectedRevision CAS
+    // surfaces a stale revision as ownership-conflict (409) so a retry with a
+    // fresh revision is safe. A converged result is only ever returned after
+    // BOTH writes succeed — partial failure is never reported as success.
+    let upstreamResult;
+    if (enforcementGranted) {
+      await workspaceAddonRegistry.setGrants(addonId, targetGrants, {
+        consent: true,
+        expectedRevision: workspaceAddonRegistry.snapshot().revision,
+      });
+      upstreamResult = await applyUpstream(true);
+    } else {
+      upstreamResult = await applyUpstream(false);
+      await workspaceAddonRegistry.setGrants(addonId, targetGrants, {
+        consent: true,
+        expectedRevision: workspaceAddonRegistry.snapshot().revision,
+      });
+    }
+    return {
+      addonId,
+      installation: workspaceAddonRegistry.snapshot().installations[addonId] ?? null,
+      upstreamStatus: upstreamResult.upstreamStatus,
+      hostGranted: upstreamResult.hostGranted,
+    };
+  }
+
   async function executeWorkspaceAddonRevoke({ addonId, capabilities } = {}) {
     if (!workspaceAddonRegistry) {
       throw Object.assign(new Error("Workspace add-on registry unavailable."), { code: "runtime-unavailable" });
@@ -2895,22 +2978,21 @@ except BaseException as exc:
     if (!installation) {
       throw Object.assign(new Error(`Workspace add-on not installed: ${addonId}`), { code: "permission-denied" });
     }
-    // Build a grants array that flips `granted: false` for every named
-    // capability while preserving the request shape (the registry refuses
-    // grants that don't match `requestedCapabilities`). The registry's
-    // public snapshot does NOT carry the manifest (it carries only
-    // grantedCapabilities + policy), so we read the manifest from our
-    // cache (populated by executeAddonsStatus or executeWorkspaceAddonBootstrap).
-    const cached = workspaceAddonManifestCache.get(addonId);
-    const requested = cached?.requestedCapabilities ?? [];
-    const revoked = requested.map((grant) => ({
+    // The registry snapshot's grantedCapabilities is the current grant surface
+    // (capability/scope/revocationBehavior/granted), so flip the named
+    // capabilities to granted:false while preserving every other grant. The
+    // registry refuses any grant that does not match requestedCapabilities, and
+    // these entries were minted from requestedCapabilities at install time.
+    const revoked = (installation.grantedCapabilities ?? []).map((grant) => ({
       capability: grant.capability,
       scope: grant.scope,
       revocationBehavior: grant.revocationBehavior,
-      granted: !capabilities.includes(grant.capability),
+      granted: capabilities.includes(grant.capability) ? false : grant.granted,
     }));
-    await workspaceAddonRegistry.setGrants(addonId, revoked, { consent: true, expectedRevision: workspaceAddonRegistry.snapshot().revision });
-    return { addonId, installation: workspaceAddonRegistry.snapshot().installations[addonId] ?? null };
+    // Enforcement follows the resulting grant surface: the upstream mutating
+    // route stays open only while at least one capability remains granted.
+    const enforcementGranted = revoked.some((grant) => grant.granted);
+    return convergeWorkspaceAddonEnforcement(addonId, revoked, enforcementGranted);
   }
 
   async function executeWorkspaceAddonAdminRevoke(request) {
@@ -2940,24 +3022,24 @@ except BaseException as exc:
     if (!adminConfig || !adminConfig.adminToken || !adminConfig.upstreamAdminUrl) {
       throw Object.assign(new Error(`Workspace add-on not configured for admin revoke: ${addonId}`), { code: "permission-denied" });
     }
-    const { upstreamAdminUrl: targetUrl, adminToken: credential } = adminConfig;
-    const response = await fetch(targetUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${credential}`,
-      },
-      body: JSON.stringify({ granted: granted !== false }),
-    });
-    let body = null;
-    try { body = await response.json(); } catch { body = null; }
-    if (!response.ok) {
-      throw Object.assign(
-        new Error(`Upstream admin revoke failed: ${response.status} ${response.statusText}`),
-        { code: "runtime-unavailable", upstreamStatus: response.status, upstreamBody: body },
-      );
+    if (!workspaceAddonRegistry) {
+      throw Object.assign(new Error("Workspace add-on registry unavailable."), { code: "runtime-unavailable" });
     }
-    return { addonId, upstreamStatus: response.status, hostGranted: body?.hostGranted };
+    const installation = workspaceAddonRegistry.snapshot().installations[addonId];
+    if (!installation) {
+      throw Object.assign(new Error(`Workspace add-on not installed: ${addonId}`), { code: "permission-denied" });
+    }
+    // Admin-revoke sets the add-on's whole grant surface to the enforcement
+    // boolean (for the single-`network`-capability demo add-ons this is exactly
+    // one grant) and converges the upstream flag to the same value.
+    const enforcementGranted = granted !== false;
+    const targetGrants = (installation.grantedCapabilities ?? []).map((grant) => ({
+      capability: grant.capability,
+      scope: grant.scope,
+      revocationBehavior: grant.revocationBehavior,
+      granted: enforcementGranted,
+    }));
+    return convergeWorkspaceAddonEnforcement(addonId, targetGrants, enforcementGranted);
   }
 
   // Returns the bootstrap envelope payload for a workspace add-on. The

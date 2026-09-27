@@ -32,6 +32,7 @@ const COUNTER_ADMIN = "admin-revoke-bridge-counter-admin";
 const BRIDGE_TOKEN = "admin-revoke-bridge-bridge-token";
 const CONTROL_TOKEN = "admin-revoke-bridge-control-token";
 const COUNTER_PORT = 47322;
+const COUNTER_MANIFEST = JSON.parse(readFileSync(path.join(repoRoot, "examples/sdk-demo/counter/addon.json"), "utf8"));
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -85,9 +86,9 @@ test("live bridge admin-revoke uses host-owned mapping (T1) and flips the Counte
   let bridgeStderr = "";
   bridge.stderr.on("data", (chunk) => { bridgeStderr += chunk.toString("utf8"); });
 
-  const bridgePost = async (body) => {
+  const bridgePost = async (routePath, body) => {
     const cfg = await waitForBridgeConfig(configPath);
-    return fetch(`${cfg.bridgeUrl.replace(/\/$/, "")}/addons/workspace/admin-revoke`, {
+    return fetch(`${cfg.bridgeUrl.replace(/\/$/, "")}${routePath}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -99,8 +100,14 @@ test("live bridge admin-revoke uses host-owned mapping (T1) and flips the Counte
   };
 
   try {
-    // 1. Host-owned intent-only revoke must succeed and flip the upstream flag.
-    const revokeRes = await bridgePost({ addonId: "addon.resonant-counter", granted: false });
+    // 0. Install the Counter add-on so the converged admin-revoke path has a
+    //    registry grant surface to flip (T4: registry + upstream converge).
+    const installRes = await bridgePost("/addons/workspace/install", { manifest: COUNTER_MANIFEST });
+    assert.equal(installRes.status, 200, `counter install must succeed (got ${installRes.status})`);
+
+    // 1. Host-owned intent-only revoke must converge BOTH the registry grant
+    //    and the upstream flag.
+    const revokeRes = await bridgePost("/addons/workspace/admin-revoke", { addonId: "addon.resonant-counter", granted: false });
     const revokeBody = await revokeRes.json().catch(() => null);
     assert.equal(
       revokeRes.status,
@@ -111,15 +118,16 @@ test("live bridge admin-revoke uses host-owned mapping (T1) and flips the Counte
 
     // 2. Caller-supplied upstreamAdminUrl/adminToken must be denied at the
     //    bridge boundary; the upstream state must be untouched by the attempt.
-    const injectRes = await bridgePost({
+    const injectRes = await bridgePost("/addons/workspace/admin-revoke", {
       addonId: "addon.resonant-counter",
       upstreamAdminUrl: "http://127.0.0.1:1/admin/deny",
       adminToken: "attacker-admin",
       granted: true,
     });
-    assert.ok(
-      injectRes.status >= 400,
-      `caller-injected upstreamAdminUrl/adminToken must be denied (>=400); got ${injectRes.status}`,
+    assert.equal(
+      injectRes.status,
+      403,
+      `caller-injected upstreamAdminUrl/adminToken must be denied 403; got ${injectRes.status}`,
     );
     assert.equal(counter.getHostGranted(), false, "injection attempt must not flip the upstream flag");
   } finally {

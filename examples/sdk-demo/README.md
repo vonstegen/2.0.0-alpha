@@ -186,13 +186,13 @@ Inside the side panel:
 3. **Wrong bearer** — open DevTools on the iframe and call
    `fetch("/api/echo/message", { headers: { authorization: "Bearer wrong" } })`.
    The upstream returns **401** (host boundary intact).
-4. **Revoke** in the side panel — registry flips `granted: false`. The
-   add-on's iframe gets a **403** on its next call. This is the real
-   host-policy 403, not a renderer-side simulation.
-5. **Admin revoke + re-grant** — the harness's out-of-band admin
-   channel (`POST /admin/deny {granted:false}`) overrides the upstream's
-   admin flag; re-granting flips it back. The add-on's next call is
-   **200** again.
+4. **Revoke** in the side panel — one operator action flips BOTH the
+   registry grant (`granted: false`) and the upstream `/admin/deny` flag
+   (T4 converged revoke). The add-on's iframe gets a **403** on its next
+   call — the real host-policy 403, not a renderer-side simulation.
+5. **Admin revoke + re-grant** — `POST /admin/deny {granted:false}`
+   converges the same two layers (registry + upstream); re-granting with
+   `{granted:true}` restores both. The add-on's next call is **200** again.
 6. **Co-existence** — switch back to **Hermes**, **OpenCode**, and
    **Living Archive** tabs in the side panel. Their routes and
    capabilities are unchanged: each still wires through the bridge and

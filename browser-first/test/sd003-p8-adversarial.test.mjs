@@ -647,10 +647,25 @@ test("SDK-DEMO-003R T1: admin-revoke authority must be host-owned", async () => 
       [addonId]: { upstreamAdminUrl: actualAdminUrl, adminToken },
     };
 
-    // Import the service with host-owned config
+    // Import the service with host-owned config and a host-owned registry. T4
+    // convergence requires the registry (source of truth) alongside the admin
+    // channel, so admin-revoke flips BOTH grant state and upstream enforcement.
     const { createAddonDelegationService } = await import("../host/addon-delegation-service.mjs");
+    const { createHarnessRegistry } = await import("../host/harness-registry.mjs");
+    const { readFile } = await import("node:fs/promises");
+    const echoManifest = JSON.parse(await readFile(
+      new URL("../../examples/sdk-demo/echo/addon.json", import.meta.url), "utf8",
+    ));
+    const registryData = new Map();
+    const registry = await createHarnessRegistry({
+      store: {
+        read: async () => registryData.get("doc") ?? null,
+        write: async (_k, v) => { registryData.set("doc", v); },
+      },
+    });
+    await registry.install(echoManifest, { enabled: false });
     const service = createAddonDelegationService({
-      workspaceAddonRegistry: null,
+      workspaceAddonRegistry: registry,
       workspaceAddonAdminTokens,
       workspaceAddonBearerTokens: {},
     });
