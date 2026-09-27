@@ -209,6 +209,8 @@ export function createAddonDelegationService(dependencies) {
     // the add-on ever learning the admin token.
     workspaceAddonBearerTokens = {},
     workspaceAddonAdminTokens = {},
+    // Test seam for forcing discovery failure. Default to production discovery
+    workspaceAddonDiscoveryDependency = null,
   } = dependencies;
   const isolation = isolationDependency?.resolve
     ? isolationDependency
@@ -2724,7 +2726,8 @@ except BaseException as exc:
   async function executeAddonsStatus() {
     executionSettings = await readAddonExecutionSettings();
     const workspaceProbe = createLoopbackHealthProbe();
-    const workspaceDiscovery = await discoverWorkspaceAddonManifests({
+    const discoveryFunc = workspaceAddonDiscoveryDependency?.discoverWorkspaceAddonManifests || discoverWorkspaceAddonManifests;
+    const workspaceDiscovery = await discoveryFunc({
       repoRoot,
       probeAvailability: workspaceProbe,
     }).catch((error) => ({
