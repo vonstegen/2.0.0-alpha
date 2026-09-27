@@ -133,6 +133,12 @@ function createRoutes(root) {
     executeAddonUserDataList: async () => ({}),
     executeAddonUserDataDelete: async () => ({}),
     executeGoalRecord: async () => ({}),
+    executeWorkspaceAddonInstall: async () => ({}),
+    executeWorkspaceAddonGrants: async () => ({ grants: [] }),
+    executeWorkspaceAddonBootstrap: async () => ({ envelope: {} }),
+    executeWorkspaceAddonGrant: async () => ({ granted: [] }),
+    executeWorkspaceAddonRevoke: async () => ({ revoked: [] }),
+    executeWorkspaceAddonAdminRevoke: async () => ({ revoked: true }),
   });
   const {opencodeSessionRoutes} = createOpencodeSessionHostService(stubHandlers([
     "executeOpenCodeSessionStart", "executeOpenCodeSessionPrompt", "executeOpenCodeSessionPermission", "executeOpenCodeSessionStop",

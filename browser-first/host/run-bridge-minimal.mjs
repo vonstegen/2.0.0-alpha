@@ -222,9 +222,9 @@ const addonDelegationService = createAddonDelegationService({
     "addon.sdk-guide": args.get("sdk-guide-bearer-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_BEARER ?? "",
   },
   workspaceAddonAdminTokens: {
-    "addon.resonant-echo": args.get("echo-admin-token") ?? process.env.RESONANTOS_DEMO_ECHO_ADMIN ?? "",
-    "addon.resonant-counter": args.get("counter-admin-token") ?? process.env.RESONANTOS_DEMO_COUNTER_ADMIN ?? "",
-    "addon.sdk-guide": args.get("sdk-guide-admin-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_ADMIN ?? "",
+    "addon.resonant-echo": { upstreamAdminUrl: "http://localhost:${DEMO_ECHO_ADMIN_PORT || 3401}/admin/deny", adminToken: args.get("echo-admin-token") ?? process.env.RESONANTOS_DEMO_ECHO_ADMIN ?? "" },
+    "addon.resonant-counter": { upstreamAdminUrl: "http://localhost:${DEMO_COUNTER_ADMIN_PORT || 3402}/admin/deny", adminToken: args.get("counter-admin-token") ?? process.env.RESONANTOS_DEMO_COUNTER_ADMIN ?? "" },
+    "addon.sdk-guide": { upstreamAdminUrl: "http://localhost:3403/admin/deny", adminToken: args.get("sdk-guide-admin-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_ADMIN ?? "" },
   },
 });
 

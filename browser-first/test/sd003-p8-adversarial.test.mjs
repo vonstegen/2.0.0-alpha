@@ -627,3 +627,100 @@ test("P8 Attack 11: Hermes / OpenCode / Living Archive routes are still present 
   assert.ok(opencodeSessionRoutes.length >= 8, `opencode session routes must be wired; got ${opencodeSessionRoutes.length}`);
   assert.ok(memoryBridgeRoutes.length >= 20, `memory bridge routes must be wired; got ${memoryBridgeRoutes.length}`);
 });
+test("SDK-DEMO-003R T1: admin-revoke authority must be host-owned", async () => {
+  // T1: The host determines authority; caller may only specify intent.
+  // Any attempt to inject upstreamAdminUrl or adminToken is rejected.
+
+  const addonId = "addon.resonant-echo";
+  const adminToken = "t1-admin-token-fixed";
+
+  // Start upstream echo server with admin endpoint
+  const { createEchoServer } = await import("../../examples/sdk-demo/echo/server.mjs");
+  const echo = createEchoServer({ port: 0, bearerToken: "", adminToken });
+  const started = await echo.start();
+  try {
+    const adminPort = started.port;
+    const actualAdminUrl = `http://127.0.0.1:${adminPort}/admin/deny`;
+
+    // Host-side admin config keyed by addonId
+    const workspaceAddonAdminTokens = {
+      [addonId]: { upstreamAdminUrl: actualAdminUrl, adminToken },
+    };
+
+    // Import the service with host-owned config
+    const { createAddonDelegationService } = await import("../host/addon-delegation-service.mjs");
+    const service = createAddonDelegationService({
+      workspaceAddonRegistry: null,
+      workspaceAddonAdminTokens,
+      workspaceAddonBearerTokens: {},
+    });
+
+    const executeWorkspaceAddonAdminRevoke = service.executeWorkspaceAddonAdminRevoke;
+
+    // Test 1: valid addonId resolves host-owned admin endpoint/token
+    const result = await executeWorkspaceAddonAdminRevoke({ addonId, granted: false });
+    assert.strictEqual(result.addonId, addonId, "result.addonId matches");
+    assert.ok(typeof result.upstreamStatus === "number", "result.upstreamStatus is set");
+    assert.ok(typeof result.hostGranted === "boolean", "result.hostGranted is set");
+    const echoStateRes = await fetch(`http://127.0.0.1:${adminPort}/admin/state`, {
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const state = await echoStateRes.json();
+    assert.strictEqual(state.hostGranted, false, "echo hostGranted set to false by revoke");
+
+    // Test 2: unknown addonId fails closed
+    try {
+      await executeWorkspaceAddonAdminRevoke({ addonId: "addon.unknown", granted: false });
+      assert.fail("unknown addonId should throw");
+    } catch (err) {
+      assert.strictEqual(err.code, "permission-denied", "unknown addonId fails with permission-denied");
+    }
+
+    // Test 3: missing host-side admin token/config fails closed
+    const serviceNoConfig = createAddonDelegationService({
+      workspaceAddonRegistry: null,
+      workspaceAddonAdminTokens: {},
+      workspaceAddonBearerTokens: {},
+    });
+    const executeNoConfig = serviceNoConfig.executeWorkspaceAddonAdminRevoke;
+    try {
+      await executeNoConfig({ addonId, granted: false });
+      assert.fail("missing config should throw");
+    } catch (err) {
+      assert.strictEqual(err.code, "permission-denied", "missing config fails with permission-denied");
+    }
+
+    // Test 4: caller-supplied upstreamAdminUrl cannot redirect the privileged request
+    try {
+      await executeWorkspaceAddonAdminRevoke({
+        addonId,
+        upstreamAdminUrl: "http://attacker.example.com/admin/deny",
+        granted: false,
+      });
+      assert.fail("caller-injected upstreamAdminUrl should throw");
+    } catch (err) {
+      assert.strictEqual(err.code, "permission-denied", "caller-injected upstreamAdminUrl is rejected");
+      const hostGranted = echo.getHostGranted();
+      assert.strictEqual(hostGranted, false, "echo state unchanged (no redirect occurred)");
+    }
+
+    // Test 5: caller-supplied adminToken cannot replace host credential
+    try {
+      await executeWorkspaceAddonAdminRevoke({
+        addonId,
+        adminToken: "attacker-supplied-token",
+        granted: false,
+      });
+      assert.fail("caller-injected adminToken should throw");
+    } catch (err) {
+      assert.strictEqual(err.code, "permission-denied", "caller-injected adminToken is rejected");
+    }
+
+    // Test 6: admin token is not returned to caller or leaked
+    const errorResult = await executeWorkspaceAddonAdminRevoke({ addonId: "addon.unknown", granted: false }).catch(e => e);
+    const errorStr = JSON.stringify(errorResult);
+    assert.ok(!errorStr.includes(adminToken), "adminToken not leaked in error response");
+  } finally {
+    await echo.close();
+  }
+});

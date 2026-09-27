@@ -32,6 +32,12 @@ const requiredHandlers = [
   "executeAddonUserDataList",
   "executeAddonUserDataDelete",
   "executeGoalRecord",
+  "executeWorkspaceAddonInstall",
+  "executeWorkspaceAddonGrants",
+  "executeWorkspaceAddonBootstrap",
+  "executeWorkspaceAddonGrant",
+  "executeWorkspaceAddonRevoke",
+  "executeWorkspaceAddonAdminRevoke",
 ];
 
 function handlers() {
@@ -72,6 +78,12 @@ test("add-on delegation host service owns add-on, delegation, draft, and goal ro
     "POST /addons/user-data/list",
     "POST /addons/user-data/delete",
     "POST /goals",
+    "POST /addons/workspace/install",
+    "POST /addons/workspace/grants",
+    "POST /addons/workspace/bootstrap",
+    "POST /addons/workspace/grant",
+    "POST /addons/workspace/revoke",
+    "POST /addons/workspace/admin-revoke"
   ]);
   assert.equal(routes.get("POST /addons/execution-settings").requiredCapability, "addon-execution-settings-write");
   assert.equal(routes.get("POST /hermes/dashboard/status").requiredCapability, "addon-runtime-read");

@@ -2937,23 +2937,33 @@ except BaseException as exc:
     return { addonId, installation: workspaceAddonRegistry.snapshot().installations[addonId] ?? null };
   }
 
-  async function executeWorkspaceAddonAdminRevoke({ addonId, upstreamAdminUrl, adminToken, granted }) {
-    // Out-of-band revocation signal: the host (which holds the admin token)
-    // asks the add-on's upstream to flip its in-memory deny flag. This is the
-    // bridge between host policy and the upstream's bearer-enforced surface.
-    // The admin token is operator-pinned, host-only; it never crosses into
-    // the add-on's bootstrap envelope or any iframe.
-    if (typeof addonId !== "string" || typeof upstreamAdminUrl !== "string") {
-      throw Object.assign(new Error("Workspace add-on admin revoke requires { addonId, upstreamAdminUrl }."), { code: "invalid-event" });
+  async function executeWorkspaceAddonAdminRevoke({ addonId, granted }) {
+    // SECURITY T1: Authority must come exclusively from trusted host-side
+    // configuration keyed by addonId. The caller may identify the add-on and
+    // intent only. Any attempt to inject upstreamAdminUrl or adminToken is
+    // rejected to enforce the invariant:
+    //   REQUEST DESCRIBES INTENT.
+    //   HOST DETERMINES AUTHORITY.
+    //
+    // The admin credential and target URL are operator-pinned, host-only;
+    // they never cross into the add-on's bootstrap envelope or any iframe.
+    if (typeof addonId !== "string") {
+      throw Object.assign(new Error("Workspace add-on admin revoke requires { addonId }."), { code: "invalid-event" });
     }
-    if (typeof adminToken !== "string" || !adminToken.length) {
-      throw Object.assign(new Error("Host-only admin token is required to revoke at the upstream."), { code: "permission-denied" });
+    // Ignore any caller-supplied upstreamAdminUrl or adminToken fields
+    if ("upstreamAdminUrl" in arguments[0] || "adminToken" in arguments[0]) {
+      throw Object.assign(new Error("Caller-supplied upstreamAdminUrl/adminToken fields are not honored."), { code: "permission-denied", audit: "revoked-caller-injection-attempt" });
     }
-    const response = await fetch(upstreamAdminUrl, {
+    const adminConfig = workspaceAddonAdminTokens[addonId];
+    if (!adminConfig || !adminConfig.adminToken || !adminConfig.upstreamAdminUrl) {
+      throw Object.assign(new Error(`Workspace add-on not configured for admin revoke: ${addonId}`), { code: "permission-denied" });
+    }
+    const { upstreamAdminUrl: targetUrl, adminToken: credential } = adminConfig;
+    const response = await fetch(targetUrl, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${adminToken}`,
+        authorization: `Bearer ${credential}`,
       },
       body: JSON.stringify({ granted: granted !== false }),
     });
