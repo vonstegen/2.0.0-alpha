@@ -299,10 +299,11 @@ test("Phase 4 CP7: SDK Guide renders and walks the 9 lifecycle steps with real h
     // Step 9 — revocation. Bridge calls /addons/workspace/admin-revoke to
     // flip the upstream's hostGranted flag; the next ping from the iframe
     // (with the correct bearer) returns 403.
+    // T1: caller sends intent only ({ addonId, granted }); the host resolves
+    // the trusted upstreamAdminUrl + adminToken from its operator-pinned
+    // addonId mapping. Never supply the privileged URL/token from the caller.
     const adminRevokeRes = await bridgePost(bridgeConfig.bridgeUrl, "/addons/workspace/admin-revoke", {
       addonId: "addon.sdk-guide",
-      upstreamAdminUrl: `${GUIDE_LOOPBACK_ORIGIN}/admin/deny`,
-      adminToken: GUIDE_ADMIN,
       granted: false,
     }, { capabilityToken: "dev-p7-addon-control" });
     assert.equal(adminRevokeRes.status, 200, `SDK Guide admin-revoke must succeed (got ${adminRevokeRes.status})`);

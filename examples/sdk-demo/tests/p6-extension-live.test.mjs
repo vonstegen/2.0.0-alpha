@@ -330,10 +330,11 @@ test("Phase 3 CP6: real extension — host-owned grant lifecycle against Counter
 
     // The host-only admin-revoke path closes the upstream's in-memory flag
     // so even the previously-correct bearer is denied by host policy.
+    // T1: the caller sends intent only ({ addonId, granted }). The host
+    // resolves the trusted upstreamAdminUrl + adminToken from its own
+    // operator-pinned addonId mapping; the caller must not supply either.
     const adminRevokeRes = await bridgePost(bridgeConfig.bridgeUrl, "/addons/workspace/admin-revoke", {
       addonId: "addon.resonant-counter",
-      upstreamAdminUrl: "http://127.0.0.1:47322/admin/deny",
-      adminToken: COUNTER_ADMIN,
       granted: false,
     }, { capability: "addon-runtime-control", bridgeToken: bridgeConfig.bridgeToken, capabilityToken: "dev-p6-addon-control" });
     assert.equal(adminRevokeRes.status, 200, `admin revoke must succeed (got ${adminRevokeRes.status})`);
@@ -369,8 +370,6 @@ test("Phase 3 CP6: real extension — host-owned grant lifecycle against Counter
     // mutation succeeds again.
     await bridgePost(bridgeConfig.bridgeUrl, "/addons/workspace/admin-revoke", {
       addonId: "addon.resonant-counter",
-      upstreamAdminUrl: "http://127.0.0.1:47322/admin/deny",
-      adminToken: COUNTER_ADMIN,
       granted: true,
     }, { capability: "addon-runtime-control", bridgeToken: bridgeConfig.bridgeToken, capabilityToken: "dev-p6-addon-control" });
     const restored = await fetch("http://127.0.0.1:47322/api/counter/increment", {

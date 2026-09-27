@@ -222,9 +222,13 @@ const addonDelegationService = createAddonDelegationService({
     "addon.sdk-guide": args.get("sdk-guide-bearer-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_BEARER ?? "",
   },
   workspaceAddonAdminTokens: {
-    "addon.resonant-echo": { upstreamAdminUrl: "http://localhost:${DEMO_ECHO_ADMIN_PORT || 3401}/admin/deny", adminToken: args.get("echo-admin-token") ?? process.env.RESONANTOS_DEMO_ECHO_ADMIN ?? "" },
-    "addon.resonant-counter": { upstreamAdminUrl: "http://localhost:${DEMO_COUNTER_ADMIN_PORT || 3402}/admin/deny", adminToken: args.get("counter-admin-token") ?? process.env.RESONANTOS_DEMO_COUNTER_ADMIN ?? "" },
-    "addon.sdk-guide": { upstreamAdminUrl: "http://localhost:3403/admin/deny", adminToken: args.get("sdk-guide-admin-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_ADMIN ?? "" },
+    // Admin endpoints are the manifest-declared loopback service entrypoints
+    // (echo 47321, counter 47322, sdk-guide 47323) plus the /admin/deny
+    // host-only route. Operator-pinned admin tokens; the URL is host-owned,
+    // never caller-supplied (T1).
+    "addon.resonant-echo": { upstreamAdminUrl: "http://127.0.0.1:47321/admin/deny", adminToken: args.get("echo-admin-token") ?? process.env.RESONANTOS_DEMO_ECHO_ADMIN ?? "" },
+    "addon.resonant-counter": { upstreamAdminUrl: "http://127.0.0.1:47322/admin/deny", adminToken: args.get("counter-admin-token") ?? process.env.RESONANTOS_DEMO_COUNTER_ADMIN ?? "" },
+    "addon.sdk-guide": { upstreamAdminUrl: "http://127.0.0.1:47323/admin/deny", adminToken: args.get("sdk-guide-admin-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_ADMIN ?? "" },
   },
 });
 
