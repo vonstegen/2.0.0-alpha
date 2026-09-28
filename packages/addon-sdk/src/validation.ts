@@ -20,6 +20,7 @@ import {
   type AddOnManifestValidationResult,
   type AddOnValidationIssue,
 } from "./contracts.ts";
+import { ADDON_CATEGORY_IDS, isRegisteredAddOnCategory } from "./category-registry.ts";
 
 const runtimeTypes: readonly AddOnRuntimeType[] = ["ui-module", "embedded-module", "local-service", "agent-addon", "channel-addon"];
 const categories: readonly AddOnCategory[] = [
@@ -42,7 +43,11 @@ const surfaceTypes: readonly AddOnSurfaceType[] = [
   "tool-action",
   "background-task-monitor",
   "channel",
+  "tool-panel",
+  "workspace",
 ];
+// Safe declarative icon identifiers only: kebab-case, no path/markup/URL/space.
+const surfaceIconPattern = /^[a-z][a-z0-9-]{0,63}$/;
 // Section IDs and dock icon names are open strings: core values are defined in CoreSectionId /
 // CoreDockIconName in contracts.ts, but add-on manifests may register any string as a new section
 // or dock icon. Validation here only checks that the field is a non-empty string.
@@ -376,6 +381,32 @@ export const validateAddOnManifest = (
   validateEnum(issues, candidate.category, categories, "category");
   validateEnum(issues, candidate.runtimeType, runtimeTypes, "runtimeType");
 
+  // classification is a pure descriptor (WHAT), orthogonal to runtime/surface/
+  // capability/slot/provider. It never grants authority; a valid classification
+  // must reference a registered category, and subtype is an open string (no
+  // exhaustive subtype enum). A malformed or unknown category fails closed on
+  // the descriptor itself but is never elevated into an authority channel.
+  if (candidate.classification !== undefined) {
+    if (!isRecord(candidate.classification)) {
+      pushIssue(issues, "error", "classification-object", "classification", "classification must be an object.");
+    } else {
+      if (!isString(candidate.classification.category)) {
+        pushIssue(issues, "error", "classification-category-required", "classification.category", "classification.category must be a non-empty string.");
+      } else if (!isRegisteredAddOnCategory(candidate.classification.category)) {
+        pushIssue(
+          issues,
+          "error",
+          "classification-category-unknown",
+          "classification.category",
+          `classification.category must be a registered SDK category (registered: ${ADDON_CATEGORY_IDS.join(", ")}).`,
+        );
+      }
+      if (candidate.classification.subtype !== undefined && !isString(candidate.classification.subtype)) {
+        pushIssue(issues, "error", "classification-subtype-string", "classification.subtype", "classification.subtype must be a non-empty string.");
+      }
+    }
+  }
+
   const manifestSurfaceTypes = new Set<AddOnSurfaceType>();
   if (!Array.isArray(candidate.surfaces)) {
     pushIssue(issues, "error", "surfaces-array", "surfaces", "surfaces must be an array.");
@@ -391,6 +422,20 @@ export const validateAddOnManifest = (
       validateStringValue(issues, surface.label, `${path}.label`);
       validateStringValue(issues, surface.description, `${path}.description`);
       validateEnum(issues, surface.type, surfaceTypes, `${path}.type`);
+      if (surface.icon !== undefined) {
+        if (!isString(surface.icon) || !surfaceIconPattern.test(surface.icon)) {
+          pushIssue(issues, "error", "surface-icon-unsafe", `${path}.icon`, "Surface icon must be a safe declarative identifier (kebab-case), never a path, URL, or markup.");
+        }
+      }
+      if (surface.requiredCapabilities !== undefined) {
+        if (!Array.isArray(surface.requiredCapabilities)) {
+          pushIssue(issues, "error", "surface-required-capabilities-array", `${path}.requiredCapabilities`, "Surface requiredCapabilities must be an array.");
+        } else {
+          surface.requiredCapabilities.forEach((capability, capabilityIndex) => {
+            validateEnum(issues, capability, ADDON_CAPABILITIES, `${path}.requiredCapabilities[${capabilityIndex}]`);
+          });
+        }
+      }
       if (surfaceTypes.includes(surface.type as AddOnSurfaceType)) {
         manifestSurfaceTypes.add(surface.type as AddOnSurfaceType);
       }
@@ -490,6 +535,26 @@ export const validateAddOnManifest = (
             "surface-navigation-unrequested-capability",
             `surfaces[${index}].shellNavigation.requiredCapabilities[${capabilityIndex}]`,
             "Surface navigation capabilities must be declared in requestedCapabilities.",
+          );
+        }
+      });
+    });
+    // Top-level surface.requiredCapabilities (tool-panel / workspace) follow the
+    // same rule: the surface may gate on a capability only if the manifest
+    // actually requested it. This is declaration, not authority — the host still
+    // owns the grant, so a surface request can never self-authorize.
+    candidate.surfaces.forEach((surface, index) => {
+      if (!isRecord(surface) || !Array.isArray(surface.requiredCapabilities)) {
+        return;
+      }
+      surface.requiredCapabilities.forEach((capability, capabilityIndex) => {
+        if (ADDON_CAPABILITIES.includes(capability as Capability) && !requestedCapabilitySet.has(capability as Capability)) {
+          pushIssue(
+            issues,
+            "error",
+            "surface-unrequested-capability",
+            `surfaces[${index}].requiredCapabilities[${capabilityIndex}]`,
+            "Surface requiredCapabilities must be declared in requestedCapabilities.",
           );
         }
       });

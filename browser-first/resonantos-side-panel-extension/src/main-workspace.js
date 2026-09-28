@@ -39,6 +39,7 @@ import { createMessageActionController } from "./lib/message-action-controller.j
 import { createSitePermissionStore } from "./lib/site-permission-store.js";
 import { createSidePanelRenderers } from "./lib/side-panel-renderers.js";
 import { createTaskConsentStore } from "./lib/task-consent-store.js";
+import { computeToolRailEntries, renderAddOnToolWorkspace, renderToolRail } from "./lib/main-workspace-tool-rail.js";
 
 const STORAGE_KEYS = {
   messages: "augmentorBrowserMessages",
@@ -177,6 +178,58 @@ async function currentRawFetch(route, options = {}) {
 
 const getBridgeRequest = () => currentBridgeRequest;
 
+// --- Dynamic right-side tool rail (SDK-CATEGORY-001) ---
+// Reads the host harness registry projection and renders one entry per
+// installed + enabled + authorized tool-panel surface. No add-on id is
+// hard-coded. Revocation/disable/removal simply drops the entry on refresh.
+async function refreshToolRail() {
+  const rail = document.querySelector("#tool-rail-list");
+  if (!rail) return;
+  const empty = document.querySelector("#tool-rail-empty");
+  const finish = (entries) => {
+    renderToolRail(rail, entries, {
+      document,
+      onSelect: (entry) => {
+        activeToolAddonId = entry.addonId;
+        setActiveWorkspace("tool-workspace", { persist: true });
+        renderAll();
+      },
+    });
+    if (empty) empty.hidden = entries.length > 0;
+  };
+  try {
+    const response = await currentBridgeRequest("/addons/registry", { method: "GET" });
+    const projection = response?.payload ?? response;
+    if (!projection || typeof projection !== "object") {
+      toolRailProjection = null;
+      finish([]);
+      return;
+    }
+    toolRailProjection = projection;
+    finish(computeToolRailEntries(projection));
+  } catch {
+    toolRailProjection = null;
+    finish([]);
+  }
+}
+
+async function assignPrimaryAgent(addonId) {
+  if (!addonId || !toolRailProjection) return;
+  const slot = toolRailProjection.slots?.["primary-agent"];
+  const generation = Number(slot?.generation ?? 0);
+  try {
+    await currentBridgeRequest("/addons/slots/assign", {
+      method: "POST",
+      body: { slot: "primary-agent", addonId, expectedGeneration: generation, replace: true },
+    });
+  } catch {
+    /* A denied switch leaves the prior projection intact. */
+  }
+  await refreshToolRail();
+  renderAll();
+}
+
+
 void hydrateAfterRebind();
 
 chrome?.storage?.onChanged?.addListener?.((changes, area) => {
@@ -197,7 +250,9 @@ let contextCompactNotice = "";
 let personalizationSettings = null;
 let initialSettingsSection = "overview";
 let messageActions = null;
-const allowedWorkspaces = new Set(["answer", "artifacts", "addons", "memory", "hermes", "opencode", "settings", "workspace-iframe"]);
+let toolRailProjection = null;
+let activeToolAddonId = null;
+const allowedWorkspaces = new Set(["answer", "artifacts", "addons", "memory", "hermes", "opencode", "settings", "workspace-iframe", "tool-workspace"]);
 
 function normalizeRegenerationMode(value) {
   return value === "overwrite" ? "overwrite" : "branch";
@@ -882,6 +937,16 @@ function renderMessages() {
     renderOpenCodeWorkspace({ container: transcript, bridgeRequest: currentBridgeRequest, getBridgeRequest, initialMission });
     return;
   }
+  if (activeWorkspace === "tool-workspace") {
+    const installation = toolRailProjection?.installations?.[activeToolAddonId];
+    renderAddOnToolWorkspace(transcript, {
+      installation: installation ?? { addonId: activeToolAddonId },
+      slots: toolRailProjection?.slots ?? {},
+      onAssignPrimary: assignPrimaryAgent,
+      document,
+    });
+    return;
+  }
   if (activeWorkspace === "settings") {
     renderSettingsWorkspace({
       container: transcript,
@@ -1278,3 +1343,4 @@ if (!requestedDeepLink) {
 }
 await persistActiveWorkspace();
 renderAll();
+await refreshToolRail();

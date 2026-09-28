@@ -38,7 +38,8 @@
     "verify:alpha": "node scripts/verify-alpha.mjs",
     "pre-release:scan": "bash scripts/pre-release-scan.sh",
     "browser-first:audit-scope": "node scripts/browser-first-release-scope-audit.mjs",
-    "browser-first:audit-scope:staged": "node scripts/browser-first-release-scope-audit.mjs --staged --strict"
+    "browser-first:audit-scope:staged": "node scripts/browser-first-release-scope-audit.mjs --staged --strict",
+    "sdk:describe": "node scripts/resonant-sdk.mjs"
   },
   "engines": {
     "node": ">=24.21.0"

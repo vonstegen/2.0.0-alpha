@@ -7,7 +7,27 @@
   "sdkVersion": "0.1.0",
   "description": "Provider-profile harness example. Host installation, explicit consent and slot ownership are required; the host resolves the approved provider-profile credential. This manifest grants no authority and carries no secret.",
   "runtimeType": "local-service",
-  "surfaces": [],
+  "surfaces": [
+    {
+      "id": "pi-tool-panel",
+      "type": "tool-panel",
+      "label": "Pi",
+      "icon": "pi",
+      "description": "Open the Pi harness workspace and options.",
+      "requiredCapabilities": [
+        "agent-runtime"
+      ]
+    },
+    {
+      "id": "pi-workspace",
+      "type": "workspace",
+      "label": "Pi Workspace",
+      "description": "Pi harness workspace: status, provider profile, model selection, and primary-agent controls.",
+      "requiredCapabilities": [
+        "agent-runtime"
+      ]
+    }
+  ],
   "requestedCapabilities": [
     {
       "capability": "agent-runtime",
@@ -118,5 +138,9 @@
       "linux",
       "windows"
     ]
+  },
+  "classification": {
+    "category": "harness",
+    "subtype": "coding-agent"
   }
 }

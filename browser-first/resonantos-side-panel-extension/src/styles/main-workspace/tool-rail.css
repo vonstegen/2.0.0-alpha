@@ -1,0 +1,124 @@
+/* Dynamic right-side tool rail (SDK-CATEGORY-001). */
+.tool-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 32%),
+    rgba(14, 18, 16, 0.92);
+  padding: 14px 12px;
+  overflow-y: auto;
+}
+
+.tool-rail-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tool-rail-header strong {
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+}
+
+.tool-rail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tool-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+}
+
+.tool-rail-item:hover,
+.tool-rail-item:focus-visible {
+  background: rgba(36, 209, 143, 0.12);
+  border-color: rgba(36, 209, 143, 0.4);
+  outline: none;
+}
+
+.tool-rail-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border-radius: 7px;
+  background: rgba(36, 209, 143, 0.18);
+  color: #24d18f;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.tool-rail-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-rail-empty {
+  color: var(--muted, #8b9690);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+/* Harness/tool workspace + options panel. */
+.tool-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px 24px;
+}
+
+.harness-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 560px;
+}
+
+.harness-status-row,
+.harness-primary-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.harness-status-key {
+  color: var(--muted, #8b9690);
+  font-size: 0.85rem;
+}
+
+.harness-status-value[data-tone="success"] {
+  color: #24d18f;
+}
+
+.harness-status-value[data-tone="warning"] {
+  color: #e0a44a;
+}
+
+.primary-agent-assign {
+  align-self: flex-start;
+  padding: 8px 14px;
+  border: 1px solid rgba(36, 209, 143, 0.4);
+  border-radius: 8px;
+  background: rgba(36, 209, 143, 0.12);
+  color: #24d18f;
+  font-size: 0.85rem;
+}

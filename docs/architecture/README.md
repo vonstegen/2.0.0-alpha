@@ -110,6 +110,7 @@ Add-on skill contracts:
 | [ADR-037: Browser-First Chromium ResonantOS](ADR-037-browser-first-chromium-resonantos.md) | Accepted | Partial | - | Browser architecture | Browser-contained product direction applies; Alpha is the unpacked Chrome extension plus bridge, not a custom Chromium build. |
 | [ADR-038: Guardian/Engineer Boundary And Core-Only Invariants](ADR-038-guardian-engineer-core-only-invariants.md) | Accepted | Partial | - | Core and add-ons | Authority boundaries and invariants govern Alpha changes; Guardian, DSH, request/grant separation, and invariant review remain unimplemented by this decision. |
 | [ADR-039: Harness Runtime Category And Central Provider Profiles](ADR-039-harness-runtime-provider-profiles.md) | Accepted | Partial | - | Core and add-ons | One host-owned provider profile/credential resolver serves authorized harnesses; provider-profile/self/none credential modes; session-only credential persistence. |
+| [ADR-040: Add-on Classification, Category Registry, And Dynamic Surface Discovery](ADR-040-addon-classification-category-discovery.md) | Accepted | Partial | - | Core and add-ons | Six orthogonal dimensions (classification/runtime/surfaces/capabilities/slots/provider); extensible category registry; machine category discovery; declarative tool-panel surface routing with no hard-coded add-on ids. |
 
 ## Authority Rules
 

@@ -69,3 +69,49 @@ export const createAddOnSurfaceDockRoutes = (
       });
     })
     .sort((left, right) => left.order - right.order || left.label.localeCompare(right.label));
+
+export interface AddOnToolPanelRoute {
+  addonId: string;
+  surfaceId: string;
+  label: string;
+  icon: string;
+  order: number;
+  requiredCapabilities: Capability[];
+}
+
+const granted = (installation: HarnessRegistryProjection["installations"][string] | undefined, capability: Capability): boolean =>
+  Boolean(installation?.grantedCapabilities.some((grant) => grant.capability === capability && grant.granted));
+
+/**
+ * Dynamic right-rail discovery: a tool-panel surface becomes a rail entry only
+ * when its add-on is installed + enabled and the host has granted every
+ * capability the surface declares. Classification alone never creates an entry;
+ * the manifest must still explicitly request the surface, and the host must
+ * still validate/grant/authorize it. No add-on id is hard-coded.
+ */
+export const createAddOnToolPanelRoutes = (
+  manifests: AddOnManifest[],
+  projection?: HarnessRegistryProjection | null,
+): AddOnToolPanelRoute[] => {
+  const byId = new Map([...manifests, ...(projection?.candidates ?? [])].map((manifest) => [manifest.id, manifest]));
+  const routes: AddOnToolPanelRoute[] = [];
+  for (const manifest of byId.values()) {
+    const installation = projection?.installations[manifest.id];
+    if (!installation?.installed || !installation.enabled) continue;
+    for (const surface of manifest.surfaces) {
+      if (surface.type !== "tool-panel") continue;
+      if (installation.hiddenSurfaceIds.includes(surface.id)) continue;
+      const required = surface.requiredCapabilities ?? [];
+      if (required.some((capability) => !granted(installation, capability))) continue;
+      routes.push({
+        addonId: manifest.id,
+        surfaceId: surface.id,
+        label: surface.label || manifest.name,
+        icon: surface.icon ?? "",
+        order: typeof surface.shellNavigation?.order === "number" ? surface.shellNavigation.order : 1000,
+        requiredCapabilities: [...required],
+      });
+    }
+  }
+  return routes.sort((left, right) => left.order - right.order || left.label.localeCompare(right.label));
+};

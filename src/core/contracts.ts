@@ -30,7 +30,9 @@ export type AddOnSurfaceType =
   | "modal"
   | "tool-action"
   | "background-task-monitor"
-  | "channel";
+  | "channel"
+  | "tool-panel"
+  | "workspace";
 export type AddOnCategory =
   | "agent"
   | "channel"
@@ -40,6 +42,18 @@ export type AddOnCategory =
   | "tool"
   | "integration"
   | "orchestration";
+
+// Classification describes WHAT an add-on is (identity/type) and never grants
+// authority. It is orthogonal to runtimeType (HOW), surfaces (WHERE),
+// requestedCapabilities (WHAT AUTHORITY), systemSlots (WHAT ROLE), and
+// agentRuntime.credentialSource (WHAT INFERENCE/AUTH). The category id is
+// validated against the extensible SDK category registry
+// (packages/addon-sdk/src/category-registry.ts); subtype is an open string so
+// no global exhaustive subtype enum is required.
+export interface AddOnClassification {
+  category: string;
+  subtype?: string;
+}
 // Core (non-replaceable) shell sections. Add-on sections are registered at runtime via the add-on manifest.
 export type CoreSectionId = "overview" | "strategist" | "archive" | "delegation" | "compute" | "addons" | "settings";
 // Open union: autocomplete works for CoreSectionId values; add-on manifests may supply any string.
@@ -259,6 +273,10 @@ export interface AddOnSurface {
   type: AddOnSurfaceType;
   label: string;
   description: string;
+  /** Safe declarative icon identifier (kebab-case), never markup/path/URL. */
+  icon?: string;
+  /** Capabilities that must be granted before the host renders this surface. */
+  requiredCapabilities?: Capability[];
   shellNavigation?: {
     sectionId: ShellSectionId;
     dockIcon: AddOnDockIconName;
@@ -575,6 +593,34 @@ export type HarnessEvent = HarnessProvenance & (
   | { type: "error"; data: HarnessPublicError }
 );
 
+// Sanitized, declarative-only surface view for host projections. Never carries
+// secret or executable material; the host owns rendering and authorization.
+export interface HarnessSurfaceProjection {
+  id: string;
+  type: AddOnSurfaceType;
+  label: string;
+  icon?: string;
+  requiredCapabilities: readonly Capability[];
+}
+
+// Sanitized harness runtime view for host projections. Carries credential
+// *mode* and non-secret binding metadata only — never a credential, endpoint,
+// header, or executable path.
+export interface HarnessAgentRuntimeProjection {
+  adapterId: string;
+  credentialSource: HarnessCredentialSource | null;
+  credentialBinding: string | null;
+  chatAuthorLabel: string;
+  supportsStreaming: boolean;
+  supportsCancellation: boolean;
+  supportsModelSelection: boolean;
+  modelSelection: {
+    source: string;
+    currentModelField: string;
+    selectable: boolean;
+  } | null;
+}
+
 // Read-only acknowledgement from the host; client storage is not governance.
 export interface HarnessRegistryProjection {
   bootEpoch: string;
@@ -588,6 +634,16 @@ export interface HarnessRegistryProjection {
     grantedCapabilities: readonly CapabilityGrant[];
     disabledOperations: readonly HarnessOperation[];
     hiddenSurfaceIds: readonly string[];
+    // Additive, non-authoritative metadata added by SDK-CATEGORY-001. Optional
+    // so older projections/consumers remain type-compatible; the host always
+    // populates them at runtime.
+    name?: string;
+    classification?: AddOnClassification | null;
+    surfaces?: readonly HarnessSurfaceProjection[];
+    agentRuntime?: HarnessAgentRuntimeProjection | null;
+    // true/false = provider-profile harness with/without a host-session
+    // credential; null/undefined = not a provider-profile harness (self/none/legacy).
+    providerProfileConfigured?: boolean | null;
   }>>;
   slots: Readonly<Partial<Record<SystemSlotId, {
     addonId: string | null;
@@ -630,6 +686,7 @@ export interface AddOnManifest {
   version: string;
   author: string;
   category: AddOnCategory;
+  classification?: AddOnClassification;
   description: string;
   runtimeType: AddOnRuntimeType;
   surfaces: AddOnSurface[];

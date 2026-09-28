@@ -205,9 +205,24 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     };
   }
   const boundary = createHarnessBoundary({ registry, resolveAdapter, cleanupTimeoutMs });
-  const snapshot = () => {
+  const snapshot = async () => {
     const projection = registry.snapshot();
     for (const [addonId, entry] of Object.entries(projection.installations)) entry.supportedOperations = [...(manifests.get(addonId)?.agentRuntime?.supportedOperations ?? [])];
+    // Host-owned credential-configured status, keyed by the approved binding.
+    // Never exposes a credential: only a boolean, and only for provider-profile
+    // harnesses (null otherwise). A resolver miss reads as "not configured".
+    await Promise.all(Object.entries(projection.installations).map(async ([addonId, entry]) => {
+      if (entry.agentRuntime?.credentialSource !== 'provider-profile') return;
+      const runtime = manifests.get(addonId)?.agentRuntime;
+      const binding = approvedBindings.find(candidate => candidate.addonId === addonId &&
+        candidate.adapterId === runtime?.adapterId && candidate.name === runtime?.credentialBinding &&
+        candidate.source && typeof candidate.source.providerProfileId === 'string' && candidate.source.providerProfileId);
+      if (!binding) { entry.providerProfileConfigured = false; return; }
+      try {
+        await resolveProviderProfileCredential(binding.source.providerProfileId);
+        entry.providerProfileConfigured = true;
+      } catch { entry.providerProfileConfigured = false; }
+    }));
     return { ...projection, candidates: structuredClone(candidates) };
   };
   function route(method, path, capability, required, optional, handler, streaming = false) {

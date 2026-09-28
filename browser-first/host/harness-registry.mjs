@@ -103,6 +103,33 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
       return authorization.bootEpoch === current.bootEpoch && authorization.generation === current.generation;
     } catch { return false; }
   }
+  function sanitizedRuntime(manifest) {
+    const runtime = manifest.agentRuntime;
+    if (!runtime) return null;
+    return {
+      adapterId: runtime.adapterId ?? '',
+      credentialSource: runtime.credentialSource ?? null,
+      credentialBinding: typeof runtime.credentialBinding === 'string' && runtime.credentialBinding ? runtime.credentialBinding : null,
+      chatAuthorLabel: typeof runtime.chatAuthorLabel === 'string' ? runtime.chatAuthorLabel : '',
+      supportsStreaming: Boolean(runtime.supportsStreaming),
+      supportsCancellation: Boolean(runtime.supportsCancellation),
+      supportsModelSelection: Boolean(runtime.supportsModelSelection),
+      modelSelection: runtime.modelSelection ? {
+        source: typeof runtime.modelSelection.source === 'string' ? runtime.modelSelection.source : '',
+        currentModelField: typeof runtime.modelSelection.currentModelField === 'string' ? runtime.modelSelection.currentModelField : '',
+        selectable: Boolean(runtime.modelSelection.selectable),
+      } : null,
+    };
+  }
+  function sanitizedSurfaces(manifest) {
+    return (Array.isArray(manifest.surfaces) ? manifest.surfaces : []).map(surface => ({
+      id: typeof surface?.id === 'string' ? surface.id : '',
+      type: surface?.type ?? '',
+      label: typeof surface?.label === 'string' ? surface.label : '',
+      icon: typeof surface?.icon === 'string' && surface.icon ? surface.icon : undefined,
+      requiredCapabilities: [...(Array.isArray(surface?.requiredCapabilities) ? surface.requiredCapabilities : [])],
+    }));
+  }
   function projectPolicy(addonId, entry) {
     const policy = pendingPolicies.get(addonId) ?? evaluateHarnessPolicy(entry.manifest, entry.grants);
     return { disabledOperations: disabled || !entry.enabled ? [...(entry.manifest.agentRuntime?.supportedOperations ?? [])] : [...policy.disabledOperations],
@@ -115,8 +142,12 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
   /** @returns {import('../../src/core/contracts.ts').HarnessRegistryProjection} */
   function snapshot() {
     const installations = Object.fromEntries(Object.entries(state.installations).map(([addonId, entry]) => [addonId, {
-      addonId, installed: true, enabled: entry.enabled, grantedCapabilities: structuredClone(entry.grants),
+      addonId, name: entry.manifest.name ?? addonId, classification: entry.manifest.classification ?? null,
+      installed: true, enabled: entry.enabled, grantedCapabilities: structuredClone(entry.grants),
       ...projectPolicy(addonId, entry),
+      surfaces: sanitizedSurfaces(entry.manifest),
+      agentRuntime: sanitizedRuntime(entry.manifest),
+      providerProfileConfigured: null,
     }]));
     const projection = Object.fromEntries(Object.entries(state.slots).map(([slot, owner]) => [slot, { ...owner,
       available: !disabled && !fenced.has(slot) && !!owner.addonId && eligible(state.installations[owner.addonId], slot),

@@ -25,8 +25,15 @@ This package provides the **add-on author-facing** portion of REF V0.1:
 - Registry helpers (`createAddOnRegistryEntry`,
   `createAddOnRegistrySnapshot`) — combine manifests and installations
   into a registry snapshot.
-- Surface routing (`createAddOnSurfaceDockRoutes`) — compute the dock
-  routes for an enabled-and-installed add-on set. The installations argument is retained for signature compatibility and is not consulted; the host projection is the sole authority, and a missing projection yields no dock routes.
+- Surface routing (`createAddOnSurfaceDockRoutes`,
+  `createAddOnToolPanelRoutes`) — compute dock/tool-panel routes for an
+  enabled-and-installed add-on set. The host projection is the sole authority;
+  a missing projection yields no routes.
+- Category registry (`describeCategory`, `listAddOnCategories`,
+  `ADDON_CATEGORY_REGISTRY`) — machine-readable category descriptors for AI
+  discovery (`harness`, `tool`, `connector`, `communication`, `data-source`,
+  `ui`, `service`). Classification is a pure descriptor and never grants
+  authority. See `docs/addons/sdk-category-discovery.md`.
 
 ## Out of scope (V0.1)
 
@@ -47,7 +54,8 @@ packages/addon-sdk/
     contracts.ts       # AddOnSdkManifest, ADDON_CAPABILITIES, etc.
     validation.ts      # validateAddOnManifest / assertValidAddOnManifest
     registry.ts        # createAddOnRegistryEntry, createAddOnRegistrySnapshot
-    surface-routing.ts # createAddOnSurfaceDockRoutes
+    surface-routing.ts # createAddOnSurfaceDockRoutes, createAddOnToolPanelRoutes
+    category-registry.ts # ADDON_CATEGORY_REGISTRY, describeCategory, listAddOnCategories
     index.ts           # re-export everything
 ```
 

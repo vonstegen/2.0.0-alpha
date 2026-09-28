@@ -1,0 +1,72 @@
+{
+  "id": "addon.tool-utility",
+  "name": "Utility Tool",
+  "version": "0.1.0",
+  "author": "ResonantOS",
+  "category": "tool",
+  "classification": {
+    "category": "tool",
+    "subtype": "utility"
+  },
+  "sdkVersion": "0.1.0",
+  "description": "Minimal harmless tool/utility reference add-on. Declares a tool-panel surface and a bounded deterministic tool. It requests no privileged capability, no provider profile, no system slot, and no agent runtime; classification alone grants nothing.",
+  "runtimeType": "ui-module",
+  "surfaces": [
+    {
+      "id": "utility-tool-panel",
+      "type": "tool-panel",
+      "label": "Utility",
+      "icon": "utility",
+      "description": "Open the harmless utility tool panel.",
+      "requiredCapabilities": []
+    }
+  ],
+  "requestedCapabilities": [],
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "tools": [
+    {
+      "name": "utility.echo",
+      "description": "Return the provided text unchanged (deterministic, harmless).",
+      "requiredCapabilities": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" }
+        },
+        "required": ["text"]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" }
+        }
+      },
+      "audit": {
+        "logRequest": true,
+        "logResult": true,
+        "artifactTypes": []
+      }
+    }
+  ],
+  "health": {
+    "strategy": "host-command-ready"
+  },
+  "installHooks": {},
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": [
+      "macOS",
+      "linux",
+      "windows"
+    ]
+  }
+}

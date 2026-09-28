@@ -28,6 +28,24 @@ export {
 } from "./contracts";
 export { createAddOnRegistryEntry, createAddOnRegistrySnapshot } from "./registry";
 export type { AddOnRegistryBuildInput, AddOnRegistryEntryOptions, AddOnRegistrySnapshot } from "./registry";
-export { createAddOnSurfaceDockRoutes } from "./surface-routing";
-export type { AddOnSurfaceDockRoute } from "./surface-routing";
+export { createAddOnSurfaceDockRoutes, createAddOnToolPanelRoutes } from "./surface-routing";
+export type { AddOnSurfaceDockRoute, AddOnToolPanelRoute } from "./surface-routing";
 export { assertValidAddOnManifest, validateAddOnManifest } from "./validation";
+export {
+  ADDON_CATEGORY_IDS,
+  ADDON_CATEGORY_REGISTRY,
+  CATEGORY_DESCRIPTION_SCHEMA,
+  UnknownCategoryError,
+  describeCategory,
+  getAddOnCategoryDescriptor,
+  isRegisteredAddOnCategory,
+  listAddOnCategories,
+} from "./category-registry";
+export type {
+  AddOnCategoryDescriptor,
+  CategoryArtifactRef,
+  CategoryDescription,
+  CategorySdkModule,
+  CategorySubtypeDescriptor,
+  SdkComponentStatus,
+} from "./category-registry";

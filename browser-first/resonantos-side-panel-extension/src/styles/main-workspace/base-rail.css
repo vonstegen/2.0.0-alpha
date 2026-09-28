@@ -90,11 +90,19 @@ button {
 
 .workspace-shell {
   display: grid;
-  grid-template-columns: var(--rail-width, 268px) minmax(0, 1fr);
+  grid-template-columns: var(--rail-width, 268px) minmax(0, 1fr) var(--tool-rail-width, 232px);
   height: 100dvh;
   min-height: 100%;
   overflow: hidden;
   position: relative;
+}
+
+/* Collapse the right tool rail to an icon strip when it is empty. */
+.workspace-shell:has(#tool-rail-list:empty) {
+  grid-template-columns: var(--rail-width, 268px) minmax(0, 1fr) 0px;
+}
+.workspace-shell:has(#tool-rail-list:empty) .tool-rail {
+  overflow: hidden;
 }
 
 .workspace-rail {
