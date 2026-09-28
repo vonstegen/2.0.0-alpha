@@ -2,46 +2,28 @@
 
 | Area | Candidate | Independent evidence | Result |
 |---|---|---|---|
-| T1–T3 + live admin revoke | `c869a92841511fc444ef42772bdae2e985303890` | VIGIL Test Lab issue #28 | PASS |
-| T4 convergence | `c57d4d0f579f601de91fcf3b7d7faca343d68c7d` | VIGIL Test Lab issue #39 | PASS |
-| T5 operator UI | `20726e395909e135782205d7fdad37d481aa5400` | VIGIL Test Lab issue #41 | PENDING FINAL RECORD |
+| T1–T3 + live admin revoke | `c869a92841511fc444ef42772bdae2e985303890` | Test Lab #28 | PASS |
+| T4 convergence | `c57d4d0f579f601de91fcf3b7d7faca343d68c7d` | Test Lab #39 | PASS |
+| T5 operator UI | `20726e395909e135782205d7fdad37d481aa5400` | Test Lab #41 | PASS |
+| T6 engineering | `30197261cb179a43126fc0890dd56de9354ffec9` | superseded | SUPERSEDED |
+| T6/T6.1 final | `b8735970315a8f5ab4a4656dfe6702d31ad47d13` | Test Lab #45 | PASS |
 
-## T1–T3 cumulative acceptance
+## #28 — T1–T3 cumulative
+Candidate=actual SHA; source mutation none; browser-host 13/13; security 12/12; T2 6/6 + 2/2; browser-first 2213/2214 exit 0; Extension 4/4; artifact verification PASS.
 
-Final independent run on `c869a928...`:
-- Unit/Vitest PASS
-- SDK tests PASS
-- Browser-host 13/13
-- Security/adversarial 12/12
-- T2 status 6/6
-- T2 grant regression 2/2
-- Browser-first exit 0 with platform skip only
-- graphical Extension 4/4
-- source mutation none
+## #39 — T4
+Candidate=actual SHA; source mutation none; browser-host 13/13; security 12/12; T2 6/6 + 2/2; browser-first 2220/2221 exit 0; Extension 4/4; artifact verification PASS.
 
-## T4 acceptance
+## #41 — T5
+Candidate=actual SHA; source mutation none; browser-host 13/13; security 12/12; T2 6/6 + 2/2; browser-first 2234/2235 exit 0; Extension 5/5; artifact verification PASS.
 
-Issue #39 tested exact SHA `c57d4d0f...` and reported:
-- actual SHA = requested SHA
-- status PASS
-- source mutation none
-- Browser-host 13/13
-- Security/adversarial 12/12
-- T2 status 6/6
-- T2 grant regression 2/2
-- Browser-first 2220/2221, exit 0
-- Extension 4/4
-- artifact verification PASS
+## #45 — T6/T6.1 final
+Candidate=actual SHA `b8735970315a8f5ab4a4656dfe6702d31ad47d13`; status PASS; source mutation none; Unit/Vitest PASS; SDK tests PASS; browser-host 13/13; security 12/12; T2 6/6 + 2/2; browser-first 2250/2251 exit 0; Extension 5/5; artifact verification PASS.
 
-## T5 engineering evidence
+## Lineage audit
+- `c869a928 → c57d4d0f`: +1 / behind 0
+- `c57d4d0f → 20726e39`: +1 / behind 0
+- `20726e39 → 30197261`: +1 / behind 0
+- `30197261 → b8735970`: +1 / behind 0
 
-Engineering work order #40 reports:
-- browser-first 2234 pass / 0 fail / 1 platform skip
-- graphical Extension 5/5 including real operator UI flow
-- T1 adversarial 12/12
-- UI tests 9/9
-- bridge tests 5/5
-- SDK Vitest 58/58
-- browser-host 13/13
-
-Do not convert this section to independent PASS until Test Lab #41 posts its final machine report.
+No accepted milestone dropped prior accepted history.
