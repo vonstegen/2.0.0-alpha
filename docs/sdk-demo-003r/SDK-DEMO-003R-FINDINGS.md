@@ -1,57 +1,37 @@
 # SDK-DEMO-003R Findings
 
 ## T1 — Privileged admin-revoke authority
+Caller-controlled privileged endpoint/credential authority was removed. Caller supplies intent; host resolves trusted authority. **CLOSED / independently verified.**
 
-**Finding:** caller-controlled request data could carry privileged upstream administrative URL/credential information.
+## T2 — Status/discovery mutation
+Discovery no longer installs. Explicit install remains the mutation boundary. **CLOSED / independently verified.**
 
-**Resolution:** caller supplies identity/intent only; host resolves trusted authority from host-owned configuration. Caller injection is rejected.
+## T3 — Required install-handler contract
+Required `executeWorkspaceAddonInstall` contract retained and regression-locked. **CLOSED / independently verified.**
 
-**Status:** CLOSED and independently verified.
-
-## T2 — Status/discovery mutated registry state
-
-**Finding:** status/discovery could call installation logic and therefore mutate state.
-
-**Resolution:** discovery caches canonical manifests and reports registry state without installing. Explicit install remains the mutation boundary.
-
-**Status:** CLOSED and independently verified.
-
-## T3 — Required workspace-install handler integration
-
-**Finding:** making `executeWorkspaceAddonInstall` required exposed stale host-service constructions.
-
-**Resolution:** required-handler contract retained and regression-locked; no production weakening.
-
-**Status:** CLOSED and independently verified.
-
-## Additional live admin-revoke defect
-
-Real graphical extension testing exposed two HTTP 500 failures. Root causes were stale pre-T1 request shapes and incorrect host-owned admin endpoints.
-
-**Resolution:** intent-only callers plus corrected host-owned endpoints. Graphical Extension moved from 2/4 to 4/4.
-
-**Status:** CLOSED and independently verified.
+## Live admin-revoke integration defect
+Real extension testing exposed stale request shapes and incorrect host-owned admin endpoints. Corrected; graphical Extension moved to 4/4. **CLOSED.**
 
 ## OpenCode environment mismatch
+Certification environment was qualified to OpenCode 1.18.4 without weakening the SDK pin. **CLOSED as environment issue.**
 
-**Finding:** certification expected OpenCode 1.18.4 while VIGIL resolved 1.14.33.
-
-**Resolution:** test environment upgraded/qualified to exact 1.18.4; SDK pin was not weakened.
-
-**Status:** CLOSED as environment issue.
-
-## T4 — Two independent revocation channels
-
-**Finding:** registry revoke and upstream admin revoke could diverge in both directions.
-
-**Resolution:** both routes now coordinate registry grant state and upstream enforcement through a common host-owned convergence helper. Deny is fail-closed; partial failure is never reported as converged success.
-
-**Status:** CLOSED and independently verified at `c57d4d0f579f601de91fcf3b7d7faca343d68c7d`.
+## T4 — Revocation convergence
+Registry revoke and upstream enforcement could diverge. Both now coordinate through one host-owned convergence operation with fail-closed partial-failure semantics. **CLOSED at `c57d4d0f...` (#39).**
 
 ## T5 — Operator grant/revoke UI
+Explicit Install → Grant → Revoke controls now represent authoritative host state; browser owns no admin URL/token; real Chromium proof verifies bearer 200→403 after revoke. **CLOSED at `20726e39...` (#41).**
 
-**Finding:** operator-facing explicit install/grant/revoke lifecycle needed to be represented in the Add-ons workspace without inventing authority in the browser.
+## T6 — Generic credential provisioning
+Demo-specific token maps, literal admin endpoints, and per-demo flags were replaced with a generic host-owned resolver keyed by add-on identity + purpose. Bearer and admin credential classes remain distinct. No encrypted-vault claim; rotation is restart-bound. Engineering SHA `30197261...` was superseded before acceptance.
 
-**Engineering result:** explicit Install → Grant → Revoke controls; authoritative host refresh; pending/error handling; no browser-owned admin URL/token; revoke uses T4 convergence; real Chromium flow added.
+## T6.1 — Credential-boundary hardening
+T6 audit found: raw credential JSON in argv, `0.0.0.0` accepted as an admin destination, and overstated resolver-level isolation wording.
 
-**Status:** engineering complete at `20726e395909e135782205d7fdad37d481aa5400`; independent acceptance must be recorded in the verification ledger when final.
+Corrections:
+- raw secret argv source removed;
+- precedence = CLI file reference → env file reference → env JSON → fail closed;
+- admin destinations = true loopback only (127/8, ::1, localhost);
+- resolver explicitly documented as internal lookup, not authentication boundary;
+- production resolver call sites audited with no identity-escalation path found.
+
+**CLOSED at `b8735970315a8f5ab4a4656dfe6702d31ad47d13` (#45).**
