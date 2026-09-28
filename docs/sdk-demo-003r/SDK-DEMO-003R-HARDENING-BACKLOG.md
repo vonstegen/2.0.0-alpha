@@ -1,52 +1,45 @@
 # SDK-DEMO-003R Future Hardening Backlog
 
-These are recommendations and follow-up risks, not claims of unresolved acceptance blockers unless explicitly marked.
+These are recommendations and follow-up risks, not unresolved acceptance blockers unless explicitly marked.
 
 ## H1 — Per-capability operator consent
-**Origin:** T5 audit.  
-**Current state:** UI grants all currently ungranted requested capabilities in one action.  
-**Recommendation:** consider per-capability toggles/consent if the long-term SDK requires finer operator control.  
-**Priority:** Medium.  
-**Status:** Future hardening.
+**Origin:** T5 audit. **Current:** UI grants all currently ungranted requested capabilities together. **Recommendation:** per-capability toggles if production SDK requires finer consent. **Priority:** Medium.
 
 ## H2 — Public vs trusted install contract
-**Origin:** T5.  
-**Current state:** public UI uses intent-only `{addonId}`; trusted host-side callers may still supply canonical `{manifest}`.  
-**Recommendation:** document and enforce this distinction explicitly in the public SDK contract.  
-**Priority:** Medium.
+**Origin:** T5. **Current:** public UI uses intent-only `{addonId}`; trusted host callers may use canonical `{manifest}`. **Recommendation:** formalize this distinction in the public SDK contract. **Priority:** Medium.
 
-## H3 — Partial-failure recovery for converged revocation
-**Origin:** T4 audit.  
-**Current state:** deny is fail-closed; a failure after upstream denial but before registry persistence may leave a safe split state while returning failure.  
-**Recommendation:** define operator-visible reconciliation/retry tooling and durable recovery semantics. Do not claim impossible cross-system atomicity.  
-**Priority:** High for production hardening.
+## H3 — Partial-failure reconciliation
+**Origin:** T4. **Current:** deny is fail-closed; registry persistence can still fail after upstream denial. **Recommendation:** operator-visible reconciliation/retry tooling. **Priority:** High.
 
 ## H4 — Bootstrap reinstall semantics
-**Origin:** T2/T4 audit.  
-**Current state:** bootstrap may reinstall a cached manifest after registry removal, but install initializes grants denied and does not resurrect bearer authority.  
-**Recommendation:** document this behavior as an explicit lifecycle rule and keep regression coverage.  
-**Priority:** Medium.
+Bootstrap may reinstall cached manifest after registry removal but initializes grants denied. Keep this explicit and regression-tested. **Priority:** Medium.
 
 ## H5 — Error taxonomy stability
-**Origin:** T1/T4/T5.  
-**Current state:** harness routes distinguish policy 4xx from runtime 5xx.  
-**Recommendation:** make the error-family mapping part of the SDK contract and regression-lock new privileged routes.  
-**Priority:** Medium.
+Preserve deterministic policy 4xx versus runtime 5xx behavior as an SDK contract. **Priority:** Medium.
 
 ## H6 — Test-state isolation
-**Origin:** T5 engineering.  
-**Current state:** older graphical tests had relied on durable registry state left by previous runs. T5 corrected affected tests and added fresh user-root isolation.  
-**Recommendation:** require isolated user/registry roots for every live SDK certification lane.  
-**Priority:** High.
+Require isolated user/registry roots for live certification lanes. **Priority:** High.
 
-## H7 — VIGIL-MCP operator-session isolation warnings
-**Origin:** infrastructure observations during earlier engineering runs.  
-**Scope:** VIGIL-MCP, not SDK acceptance.  
-**Recommendation:** separately investigate reports of pre-existing operator OMP PIDs disappearing during managed work.  
-**Priority:** Medium infrastructure hardening.
+## H7 — VIGIL-MCP operator-session isolation
+Infrastructure-only follow-up: investigate historical operator OMP PID disappearance observations. Not an SDK acceptance issue. **Priority:** Medium.
 
-## H8 — Verification-plan coverage growth
-**Origin:** T4/T5.  
-**Current state:** standard Test Lab plan catches broad regressions; task-specific tests live in the candidate and are reached through browser-first/unit stages.  
-**Recommendation:** maintain an explicit mapping from each closed finding to the exact test(s) that prevent recurrence.  
-**Priority:** Medium.
+## H8 — Finding-to-test traceability
+Maintain an explicit closed-finding → regression-test map. **Priority:** Medium.
+
+## H9 — Host-mediated enforcement proxy
+**Origin:** cumulative/T6 audit; existing D1. **Current:** iframe can reach its own loopback upstream directly. **Recommendation:** bridge-owned proxy as sole mutating path, validating registry authority before forwarding. **Priority:** High production hardening.
+
+## H10 — Expiring/rotating credentials
+**Origin:** T6/T6.1. **Current:** credentials are read at startup and rotation is restart-bound. **Recommendation:** per-grant minting, expiry, and rotate-on-revoke. **Priority:** High production hardening.
+
+## H11 — Encrypted-at-rest credential storage
+No encrypted vault exists and none is claimed. Introduce a real secret store before making encryption-at-rest claims. **Priority:** High production hardening.
+
+## H12 — Credential-file ownership/mode enforcement
+T6.1 accepts a credential-file reference but does not enforce ownership or mode such as 0600. Add portable owner/mode validation in deployment hardening. **Priority:** High.
+
+## H13 — Registry reinstall semantics
+`harness-registry.install()` can reset grants; guarded production callers avoid the immediate problem, but the primitive remains a footgun. Decide reject/no-op/reset semantics explicitly. **Priority:** Medium.
+
+## H14 — R&D documentation reachability
+Engineering docs reported informational docs-tree reachability warnings. Wire SDK-DEMO-003R records into the canonical documentation entrypoint when appropriate. **Priority:** Low/Medium.
