@@ -43,7 +43,9 @@ function isLoopbackHostname(hostname) {
   const lower = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (LOOPBACK_HOSTS.has(lower)) return true;
   if (lower.startsWith("127.")) return true;
-  if (lower === "0.0.0.0") return true;
+  // T7: `0.0.0.0` is bind-any, not a loopback destination. Reject it so a
+  // manifest cannot declare a non-loopback-ish service.entrypoint (matches the
+  // T6.1 admin-destination validator in workspace-addon-credentials.mjs).
   return false;
 }
 

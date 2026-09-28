@@ -270,3 +270,57 @@ test("harness routes retain the exact capability and transport boundary", async 
     assert.equal(arrays.harnessRoutes.find(route => route.path === '/agent/events').terminalEventFamily, 'harness');
   });
 });
+
+// T7 — workspace add-on route enforcement completeness. The privileged/mutating
+// workspace routes must each declare `addon-runtime-control` + the loopback-host
+// transport boundary, and the read routes must declare `addon-runtime-read`.
+// The two sets are the authoritative classification: adding a new
+// `/addons/workspace/*` route without classifying it (or dropping a route from
+// the sets) fails this regression, so enforcement classification cannot be
+// silently omitted or a mutating route silently de-gated.
+const WORKSPACE_ADDON_MUTATING_ROUTES = [
+  ["POST", "/addons/workspace/install"],
+  ["POST", "/addons/workspace/grant"],
+  ["POST", "/addons/workspace/revoke"],
+  ["POST", "/addons/workspace/admin-revoke"],
+];
+const WORKSPACE_ADDON_READ_ROUTES = [
+  ["POST", "/addons/workspace/grants"],
+  ["POST", "/addons/workspace/bootstrap"],
+];
+
+test("workspace add-on routes retain exact capability and transport boundary", async () => {
+  await withBridgeRoutes(async (_routes, arrays) => {
+    const workspace = arrays.addonDelegationRoutes.filter((route) => route.path.startsWith("/addons/workspace/"));
+    const classified = new Set(
+      [...WORKSPACE_ADDON_MUTATING_ROUTES, ...WORKSPACE_ADDON_READ_ROUTES].map(([method, path]) => bridgeRouteKey({ method, path })),
+    );
+
+    // Completeness (both directions): every workspace route is classified, and
+    // every classified route is declared. Route metadata is inspected directly,
+    // not regex'd from source.
+    for (const route of workspace) {
+      assert.ok(
+        classified.has(bridgeRouteKey(route)),
+        `${bridgeRouteKey(route)} is an unclassified workspace add-on route; classify it as mutating or read`,
+      );
+    }
+    for (const key of classified) {
+      assert.ok(workspace.some((route) => bridgeRouteKey(route) === key), `${key} is classified but no workspace route is declared`);
+    }
+
+    for (const [method, path] of WORKSPACE_ADDON_MUTATING_ROUTES) {
+      const route = workspace.find((entry) => entry.method === method && entry.path === path);
+      assert.ok(route, `${method} ${path} must be declared`);
+      assert.equal(route.requiredCapability, "addon-runtime-control", `${method} ${path} must require addon-runtime-control`);
+      assert.equal(route.loopbackHostOnly, true, `${method} ${path} must be loopback-host-only`);
+      assert.equal(route.errorFamily, "harness", `${method} ${path} must map to the harness transport error family`);
+    }
+
+    for (const [method, path] of WORKSPACE_ADDON_READ_ROUTES) {
+      const route = workspace.find((entry) => entry.method === method && entry.path === path);
+      assert.ok(route, `${method} ${path} must be declared`);
+      assert.equal(route.requiredCapability, "addon-runtime-read", `${method} ${path} must require addon-runtime-read`);
+    }
+  });
+});

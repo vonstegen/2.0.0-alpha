@@ -23,6 +23,9 @@ describe("SDK demo: Resonant Counter upstream round-trip (P6 capability-gated)",
       bearerToken: COUNTER_BEARER,
       adminToken: COUNTER_ADMIN,
     });
+    // T7: the upstream now fails closed by default; open the endpoint to
+    // simulate the host having granted the network capability.
+    service.setHostGranted(true);
     const started = await service.start();
     port = started.port;
   });
@@ -222,6 +225,7 @@ describe("SDK demo: per-add-on credential isolation (Phase 3 P6)", () => {
 
   beforeEach(async () => {
     echo = createEchoServer({ port: 0, bearerToken: echoBearer, adminToken: echoAdmin });
+    echo.setHostGranted(true); // T7: fail-closed by default; open for the authorized isolation path.
     const echoStarted = await echo.start();
     echoPort = echoStarted.port;
 
@@ -231,6 +235,7 @@ describe("SDK demo: per-add-on credential isolation (Phase 3 P6)", () => {
       bearerToken: counterBearer,
       adminToken: counterAdmin,
     });
+    counter.setHostGranted(true); // T7: fail-closed by default; open for the authorized isolation path.
     const counterStarted = await counter.start();
     counterPort = counterStarted.port;
   });

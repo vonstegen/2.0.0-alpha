@@ -73,10 +73,13 @@ export function createCounterServer({
   adminToken,
 } = {}) {
   let value = Number.isInteger(initialValue) ? initialValue : 0;
-  // Host-revocable in-memory flag. Flipped by POST /admin/deny; cleared by
-  // the same route with { granted: true }. The bridge calls this when the
-  // operator revokes the network capability for addon.resonant-counter.
-  let hostGranted = true;
+  // Host-enforced in-memory flag (T7 endpoint enforcement). FAILS CLOSED by
+  // default: the mutating routes are denied until the host grants the network
+  // capability and opens this flag via POST /admin/deny { granted: true }.
+  // The bridge opens it on grant and closes it on revoke; a restart therefore
+  // re-closes the endpoint, so a stale bearer cannot bypass a revoked host
+  // state.
+  let hostGranted = false;
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${host}:${port}`);

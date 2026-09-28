@@ -83,10 +83,13 @@ export function createSdkGuideServer({
   bearerToken,
   adminToken,
 } = {}) {
-  // Host-revocable in-memory flag. Flipped by POST /admin/deny; cleared by
-  // the same route with { granted: true }. The bridge calls this when the
-  // operator revokes the network capability for addon.sdk-guide.
-  let hostGranted = true;
+  // Host-enforced in-memory flag (T7 endpoint enforcement). FAILS CLOSED by
+  // default: the mutating route is denied until the host grants the network
+  // capability and opens this flag via POST /admin/deny { granted: true }.
+  // The bridge opens it on grant and closes it on revoke; a restart therefore
+  // re-closes the endpoint, so a stale bearer cannot bypass a revoked host
+  // state.
+  let hostGranted = false;
 
   // Public step body builders. Each function returns the educational payload
   // that the iframe renders in step 1..6. None of them touch the grant

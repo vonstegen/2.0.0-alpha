@@ -272,10 +272,12 @@ test("T2-6: status reports registry grants for installed add-ons", async () => {
   const { service, registry, cleanup } = await buildService();
   try {
     await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
-    await service.executeWorkspaceAddonGrant({
-      addonId: "addon.resonant-echo",
-      grants: [{ capability: "network", granted: true, scope: "self", revocationBehavior: "hard-stop" }],
-    });
+    // T7: grant now converges the upstream enforcement projection, so the
+    // grant *route* needs a reachable upstream. This T2 test asserts status
+    // projection only, so set the registry grant directly for setup.
+    await registry.setGrants("addon.resonant-echo", [
+      { capability: "network", granted: true, scope: "self", revocationBehavior: "hard-stop" },
+    ], { consent: true, expectedRevision: registry.snapshot().revision });
     
     const status = await service.executeAddonsStatus();
     const echo = status.workspaceAddonManifests.find((m) => m.id === "addon.resonant-echo");

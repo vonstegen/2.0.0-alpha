@@ -17,6 +17,10 @@ describe("SDK demo: Resonant Echo upstream round-trip (P6 capability-gated)", ()
 
   beforeEach(async () => {
     service = createEchoServer({ port: 0, bearerToken: ECHO_BEARER, adminToken: ECHO_ADMIN });
+    // T7: the upstream now fails closed by default; open the endpoint to
+    // simulate the host having granted the network capability for the
+    // authorized round-trip (the bridge grant route does this in production).
+    service.setHostGranted(true);
     const result = await service.start();
     port = result.port;
   });

@@ -259,15 +259,17 @@ test("T6.1 loopback: true loopback admin destinations are accepted", () => {
 });
 
 test("T6 service: bootstrap delivers only the intentionally-scoped bearer, never the admin credential", async () => {
-  const { service, cleanup } = await buildService({
+  const { service, registry, cleanup } = await buildService({
     credentials: { "addon.resonant-echo": { bearer: "echo-bearer-secret", adminToken: "echo-admin-secret" } },
   });
   try {
     await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
-    await service.executeWorkspaceAddonGrant({
-      addonId: "addon.resonant-echo",
-      grants: [{ capability: "network", granted: true, scope: "self", revocationBehavior: "hard-stop" }],
-    });
+    // T7: the grant route now converges upstream (needs a reachable upstream);
+    // this test asserts bootstrap credential scoping only, so set the registry
+    // grant directly for setup.
+    await registry.setGrants("addon.resonant-echo", [
+      { capability: "network", granted: true, scope: "self", revocationBehavior: "hard-stop" },
+    ], { consent: true, expectedRevision: registry.snapshot().revision });
     const bootstrap = await service.executeWorkspaceAddonBootstrap({ addonId: "addon.resonant-echo" });
     assert.equal(bootstrap.capabilityTokens?.network?.token, "echo-bearer-secret", "bootstrap must deliver the scoped bearer");
     assert.ok(!JSON.stringify(bootstrap).includes("echo-admin-secret"), "bootstrap must never carry the admin credential");

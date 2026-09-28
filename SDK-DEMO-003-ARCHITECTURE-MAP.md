@@ -544,3 +544,71 @@ the resolver. Concretely:
 `examples/sdk-demo/{echo,counter,sdk-guide}/server.mjs`,
 `browser-first/test/workspace-addon-credentials.test.mjs` (new), and the
 credential-wired test launchers.
+
+## 11. Phase 8 (T7) — endpoint enforcement
+
+T7 anchors the upstream mutating endpoints to the authoritative registry in both
+directions. It does not introduce the D1 host-mediated proxy: the iframe still
+contacts its own loopback upstream directly, but the upstream enforcement flag
+is now a faithful, restart-safe projection of the registry. The upstream default
+is fail-closed and the grant route converges the same host-owned admin channel
+the T4 revoke routes already used.
+
+### 11.1 Endpoint / trust-boundary table
+
+**Bridge routes** (`createAddonDelegationHostService` — capability-gated by the
+bridge dispatcher; `loopbackHostOnly` + `errorFamily: "harness"` on mutations):
+
+| Route | Method | Class | Caller | Capability | Boundary |
+| --- | --- | --- | --- | --- | --- |
+| `/addons/status` | GET | read | extension | `addon-runtime-read` | — |
+| `/addons/workspace/grants` | POST | read | extension | `addon-runtime-read` | — |
+| `/addons/workspace/bootstrap` | POST | read envelope | extension | `addon-runtime-read` | — |
+| `/addons/workspace/install` | POST | mutate | operator | `addon-runtime-control` | loopback + harness |
+| `/addons/workspace/grant` | POST | mutate | operator | `addon-runtime-control` | loopback + harness |
+| `/addons/workspace/revoke` | POST | mutate | operator | `addon-runtime-control` | loopback + harness |
+| `/addons/workspace/admin-revoke` | POST | mutate | operator | `addon-runtime-control` | loopback + harness |
+
+**Upstream routes** (Echo / Counter / SDK Guide — operator-started loopback HTTP):
+
+| Endpoint | Method | Class | Caller | Trusted identity | Enforcement |
+| --- | --- | --- | --- | --- | --- |
+| `/health`, `/`, `/api/counter/value`, `/api/guide/step/*` | GET | read (public) | iframe | none | none |
+| `/api/echo/message`, `/api/counter/{increment,decrement,reset}`, `/api/guide/ping` | POST | mutate (privileged) | iframe | per-add-on bearer + `hostGranted` flag | bearer (401) then policy (403); fails closed by default |
+| `/admin/deny` | POST | mutate (enforcement flag) | host bridge | admin token (host-only) | 401 on wrong/missing admin token |
+| `/admin/state` | GET | read (host-only) | host bridge | admin token (host-only) | 401 on wrong/missing admin token |
+
+### 11.2 Enforcement contract per endpoint class
+
+- **Read (bridge)**: reports registry state; no mutation authority. Never
+  installs, grants, or revokes (T2).
+- **Mutate (bridge)**: requires `addon-runtime-control` + loopback-host +
+  `harness` transport family. Policy denials map to 4xx; upstream/runtime
+  failures stay 5xx. Caller supplies intent only; host resolves the admin
+  credential/URL (T1). Caller-supplied `upstreamAdminUrl`/`adminToken` are
+  rejected (`permission-denied`).
+- **Upstream read**: public, bearer-free, no ACAO. Reports state; never mutates.
+- **Upstream mutate (privileged)**: requires the per-add-on bearer (401 on
+  missing/wrong) AND the host-policy `hostGranted` flag (403 on revoked, 503 when
+  no bearer is provisioned). Fails closed by default; opened only by the bridge
+  on grant, closed on revoke. A stale bearer is denied after revoke even across
+  an upstream restart.
+- **Upstream admin**: host-only; admin token never crosses into the iframe or
+  bootstrap envelope (T6/T6.1).
+
+### 11.3 Fail-closed semantics
+
+Allow (grant): registry persisted first (source of truth), then the upstream flag
+opens. An unreachable upstream fails the grant as `runtime-unavailable` (5xx) and
+the endpoint stays closed. Deny (revoke): upstream closes first, then the
+registry denial persists. A converged result is returned only after both writes
+succeed (T4). Grant/revoke are symmetric: regrant after revoke re-opens; revoke
+after grant re-closes.
+
+### 11.4 Completeness regression
+
+`bridge-route-capability-audit.test.mjs` now classifies every
+`/addons/workspace/*` route as mutating (`addon-runtime-control` + loopback-host
++ harness) or read (`addon-runtime-read`) by inspecting the route declarations
+directly. Adding a workspace route without an enforcement classification fails
+the suite.

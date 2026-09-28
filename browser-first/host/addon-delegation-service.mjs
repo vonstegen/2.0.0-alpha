@@ -2901,7 +2901,27 @@ except BaseException as exc:
     // concurrency check is satisfied.
     const expectedRevision = workspaceAddonRegistry.snapshot().revision;
     await workspaceAddonRegistry.setGrants(addonId, grants, { consent: true, expectedRevision });
-    return { addonId, installation: workspaceAddonRegistry.snapshot().installations[addonId] ?? null };
+
+    // T7 — converged grant (endpoint enforcement). The registry grant is the
+    // single source of truth and the upstream `/admin/deny` flag is its
+    // enforcement projection. Granting must OPEN the upstream mutating
+    // endpoint (which otherwise stays fail-closed), and a grant that leaves no
+    // capability granted must CLOSE it. `setGrants` already validated the
+    // caller's grant shape against requestedCapabilities and merged it into the
+    // authoritative surface, so we converge the upstream flag from the
+    // resulting surface. Fail-closed: if the upstream cannot be opened, the
+    // error is runtime-unavailable (5xx) and enforcement stays closed — a grant
+    // is never reported as success without the endpoint converging.
+    const installation = workspaceAddonRegistry.snapshot().installations[addonId] ?? null;
+    const grantedCapabilities = (installation?.grantedCapabilities ?? []).filter((grant) => grant.granted);
+    const enforcementGranted = grantedCapabilities.length > 0;
+    const upstreamResult = await applyWorkspaceAddonUpstreamEnforcement(addonId, enforcementGranted);
+    return {
+      addonId,
+      installation,
+      upstreamStatus: upstreamResult.upstreamStatus,
+      hostGranted: upstreamResult.hostGranted,
+    };
   }
 
   // T4 — converged operator-level revocation/enforcement.
@@ -2937,45 +2957,44 @@ except BaseException as exc:
     }
   }
 
+  // Apply the upstream `/admin/deny` enforcement flag for an add-on. The
+  // admin credential is host-owned (resolved by identity + purpose, never from
+  // the caller). Credential non-disclosure: failures surface a status/code
+  // only, never the target URL or the credential.
+  async function applyWorkspaceAddonUpstreamEnforcement(addonId, granted) {
+    const { upstreamAdminUrl: targetUrl, adminToken: credential } = resolveWorkspaceAddonAdminCredential(addonId);
+    let response;
+    try {
+      response = await fetch(targetUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${credential}`,
+        },
+        body: JSON.stringify({ granted }),
+      });
+    } catch {
+      throw Object.assign(
+        new Error("Upstream admin enforcement failed: upstream unreachable."),
+        { code: "runtime-unavailable" },
+      );
+    }
+    let body = null;
+    try { body = await response.json(); } catch { body = null; }
+    if (!response.ok) {
+      throw Object.assign(
+        new Error(`Upstream admin enforcement failed: ${response.status} ${response.statusText}`),
+        { code: "runtime-unavailable", upstreamStatus: response.status },
+      );
+    }
+    return { upstreamStatus: response.status, hostGranted: body?.hostGranted };
+  }
+
   //   REQUEST DESCRIBES INTENT. HOST DETERMINES AUTHORITY.
   async function convergeWorkspaceAddonEnforcement(addonId, targetGrants, enforcementGranted) {
     if (!workspaceAddonRegistry) {
       throw Object.assign(new Error("Workspace add-on registry unavailable."), { code: "runtime-unavailable" });
     }
-    const { upstreamAdminUrl: targetUrl, adminToken: credential } = resolveWorkspaceAddonAdminCredential(addonId);
-
-    const applyUpstream = async (granted) => {
-      let response;
-      try {
-        response = await fetch(targetUrl, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${credential}`,
-          },
-          body: JSON.stringify({ granted }),
-        });
-      } catch {
-        // Network-level failure (unreachable upstream). Credential non-
-        // disclosure: never surface the target URL or the credential.
-        throw Object.assign(
-          new Error("Upstream admin revoke failed: upstream unreachable."),
-          { code: "runtime-unavailable" },
-        );
-      }
-      let body = null;
-      try { body = await response.json(); } catch { body = null; }
-      if (!response.ok) {
-        // Credential non-disclosure: surface only the upstream status, never
-        // the upstream body (which could carry server-side detail).
-        throw Object.assign(
-          new Error(`Upstream admin revoke failed: ${response.status} ${response.statusText}`),
-          { code: "runtime-unavailable", upstreamStatus: response.status },
-        );
-      }
-      return { upstreamStatus: response.status, hostGranted: body?.hostGranted };
-    };
-
     // Fail-closed ordering (true cross-system transactionality is impossible):
     //   deny — close upstream FIRST (kills any live bearer immediately), then
     //          persist the registry denial. A registry failure still leaves
@@ -2994,9 +3013,9 @@ except BaseException as exc:
         consent: true,
         expectedRevision: workspaceAddonRegistry.snapshot().revision,
       });
-      upstreamResult = await applyUpstream(true);
+      upstreamResult = await applyWorkspaceAddonUpstreamEnforcement(addonId, true);
     } else {
-      upstreamResult = await applyUpstream(false);
+      upstreamResult = await applyWorkspaceAddonUpstreamEnforcement(addonId, false);
       await workspaceAddonRegistry.setGrants(addonId, targetGrants, {
         consent: true,
         expectedRevision: workspaceAddonRegistry.snapshot().revision,

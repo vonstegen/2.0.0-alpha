@@ -20,6 +20,9 @@ describe("SDK demo: SDK Guide upstream round-trip (P7 capability-gated, 9-step)"
 
   beforeEach(async () => {
     service = createSdkGuideServer({ port: 0, bearerToken: SDK_GUIDE_BEARER, adminToken: SDK_GUIDE_ADMIN });
+    // T7: the upstream now fails closed by default; open the endpoint to
+    // simulate the host having granted the network capability (step 7 needs it).
+    service.setHostGranted(true);
     const started = await service.start();
     port = started.port;
   });

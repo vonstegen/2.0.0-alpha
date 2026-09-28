@@ -174,13 +174,13 @@ test("P8 Attack 7 (open-mirror negative): no /addons/workspace/proxy* route exis
   assert.deepEqual(findings, [], `no /addons/workspace/proxy* route must exist; found ${findings.join(", ")}`);
 });
 
-test("P8 Attack 3 (admin channel only): admin /admin/deny revocation flips the bearer from 200 → 403; restore flips back. (Both-channel registry + admin witness lives in p6-extension-live.test.mjs.)", async () => {
+test("P8 Attack 3 (admin channel only): admin /admin/deny enforcement flips the bearer 403 (fail-closed) ↔ 200 (opened); revoke/restore round-trips. (Both-channel registry + admin witness lives in p6-extension-live.test.mjs.)", async () => {
   // Admin-channel lifecycle (this test drives the /admin/deny path only):
-  //   1. baseline:                 valid bearer → 200
-  //   2. admin /admin/deny {false}: valid bearer → 403
-  //   3. admin /admin/deny {true}:  valid bearer → 200
-  //   4. revoke again:              valid bearer → 403
-  //   5. restore again:             valid bearer → 200
+  //   1. baseline (T7):            valid bearer → 403 (fails closed)
+  //   2. admin /admin/deny {true}:  valid bearer → 200 (opened)
+  //   3. admin /admin/deny {false}: valid bearer → 403 (revoked)
+  //   4. admin /admin/deny {true}:  valid bearer → 200 (restored)
+  //   5. admin /admin/deny {false}: valid bearer → 403 (revoked again)
   // The registry channel is not driven here — see p6-extension-live.test.mjs
   // for the both-channel round-trip in the real extension.
   const bearer = "attack3-bearer";
@@ -201,24 +201,24 @@ test("P8 Attack 3 (admin channel only): admin /admin/deny revocation flips the b
   });
 
   try {
-    // 1. Baseline
-    assert.equal((await ping()).status, 200, "baseline must be 200");
+    // 1. Baseline (T7): the upstream fails closed by default.
+    assert.equal((await ping()).status, 403, "baseline must fail closed (T7)");
 
-    // 2. Admin revoke
+    // 2. Admin open (host grant)
+    assert.equal((await flip(true)).status, 200, "admin open must be 200");
+    assert.equal((await ping()).status, 200, "valid bearer + opened policy must be 200");
+
+    // 3. Admin revoke
     assert.equal((await flip(false)).status, 200, "admin revoke must be 200");
     assert.equal((await ping()).status, 403, "valid bearer + revoked policy must be 403");
 
-    // 3. Admin restore
+    // 4. Admin restore
     assert.equal((await flip(true)).status, 200, "admin restore must be 200");
     assert.equal((await ping()).status, 200, "valid bearer + restored policy must be 200");
 
-    // 4. Revoke again to prove round-trip
+    // 5. Revoke again to prove round-trip
     assert.equal((await flip(false)).status, 200, "second admin revoke must be 200");
     assert.equal((await ping()).status, 403, "second revoke must produce 403");
-
-    // 5. Restore
-    assert.equal((await flip(true)).status, 200);
-    assert.equal((await ping()).status, 200);
   } finally {
     await counter.close();
   }

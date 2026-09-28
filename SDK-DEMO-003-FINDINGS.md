@@ -99,3 +99,44 @@ Non-blocking future hardening (recorded, not expanded in scope):
 - **Credential-file ownership/mode enforcement.** The loader does not currently
   validate the provisioning file's ownership or permissions (e.g. 0600);
   enforcing owner-only access is future hardening, not claimed here.
+
+## SDK-DEMO-003R T7 — endpoint enforcement (closed)
+
+T7 is the endpoint-enforcement finding that T4 convergence left open. T4
+converged only the revoke/admin-revoke directions; the grant direction and the
+upstream default were never anchored to the authoritative registry.
+
+### Finding
+
+The upstream mutating endpoints (`POST /api/echo/message`,
+`POST /api/counter/{increment,decrement,reset}`, `POST /api/guide/ping`) were
+enforced by an in-memory `hostGranted` flag that:
+
+1. **Failed open on startup** — every upstream initialized `hostGranted = true`,
+   so a fresh/restarted upstream re-opened the mutating endpoint. A stale bearer
+   bypassed a revoked registry state simply by the upstream restarting.
+2. **Converged in only one direction** — `POST /addons/workspace/grant` mutated
+   the registry (`setGrants`) but never called the upstream `/admin/deny`, while
+   revoke/admin-revoke did. Grant-after-revoke left the registry granted but the
+   endpoint closed; a subsequent restart re-opened it regardless of registry
+   state.
+
+Consequence: the "upstream enforcement is its projection" invariant (T4) held
+only for the deny direction, and the projection could diverge from the registry
+in both directions and across restarts.
+
+### Correction (narrower than D1)
+
+- Upstreams initialize `hostGranted = false` (fail closed).
+- `POST /addons/workspace/grant` now converges the upstream flag through the
+  same host-owned admin channel as revoke. Allow-ordering: registry grant first
+  (source of truth), then upstream open; an unreachable upstream fails the grant
+  as 5xx and enforcement stays closed (never a reported success without
+  convergence).
+- Discovery rejects `0.0.0.0` (bind-any) as a `service.entrypoint`, aligning the
+  entrypoint loopback guard with the T6.1 admin-destination guard.
+
+D1 (host-mediated proxy) is NOT required for T7 and remains deferred: the iframe
+still reaches its own loopback upstream directly, but the enforcement flag is
+now a faithful, restart-safe projection of the registry in both directions.
+D2/D3 remain deferred and are untouched.

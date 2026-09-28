@@ -225,12 +225,20 @@ test("T4 caller privileged-field injection is denied and mutates nothing", async
 });
 
 test("T4 partial upstream failure is reported as runtime-unavailable, never success", async () => {
-  // Admin URL points at a port with no listener: the upstream write fails.
-  const { service, registry, cleanup } = await buildHarness({ adminUrl: "http://127.0.0.1:1/admin/deny" });
+  // T7 makes grant converge upstream too, so install+grant must run against a
+  // REACHABLE upstream. Start a real Echo upstream, grant, then stop it so the
+  // REVOKE's upstream write fails — exercising the fail-closed deny ordering.
+  const echo = createEchoServer({ port: 0, bearerToken: BEARER, adminToken: ADMIN });
+  const started = await echo.start();
+  const base = `http://127.0.0.1:${started.port}`;
+  const { service, registry, cleanup } = await buildHarness({ adminUrl: `${base}/admin/deny` });
   try {
     await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
     await service.executeWorkspaceAddonGrant({ addonId: ID, grants: [NETWORK_GRANT] });
     const before = registry.snapshot().revision;
+
+    // Stop the upstream so the revoke's upstream write fails.
+    await echo.close();
 
     await assert.rejects(
       service.executeWorkspaceAddonRevoke({ addonId: ID, capabilities: ["network"] }),

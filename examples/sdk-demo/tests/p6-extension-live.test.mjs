@@ -356,35 +356,23 @@ test("Phase 3 CP6: real extension — host-owned grant lifecycle against Counter
     const revokedBody = await revokedDirect.json();
     assert.equal(revokedBody.error, "counter-revoked");
 
-    // ----- STEP 5: re-grant through the host registry — but DO NOT call
-    //               admin/deny to restore. The registry grant path must not
-    //               be conflated with the admin path; the operator must
-    //               explicitly re-grant at both layers.
+    // ----- STEP 5: re-grant through the host registry. T7: the grant route
+    //               converges BOTH the registry grant AND the upstream flag
+    //               through the same host-owned admin channel revoke uses, so
+    //               a registry re-grant re-opens the mutation. No separate
+    //               admin restore is needed.
     await bridgePost(bridgeConfig.bridgeUrl, "/addons/workspace/grant", {
       addonId: "addon.resonant-counter",
       grants: grantBody,
     }, { capability: "addon-runtime-control", bridgeToken: bridgeConfig.bridgeToken, capabilityToken: "dev-p6-addon-control" });
-    // The upstream still has hostGranted: false because we did not flip the
-    // admin flag back. The mutation must still 403.
-    const stillRevoked = await fetch("http://127.0.0.1:47322/api/counter/increment", {
+    // The upstream flag was re-opened by the grant's convergence; the same
+    // bearer mutates again.
+    const regranted = await fetch("http://127.0.0.1:47322/api/counter/increment", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${COUNTER_BEARER}` },
       body: "{}",
     });
-    assert.equal(stillRevoked.status, 403, "registry re-grant without admin restore must still 403 (distinct channels)");
-
-    // Now restore at the admin layer — both channels must agree before the
-    // mutation succeeds again.
-    await bridgePost(bridgeConfig.bridgeUrl, "/addons/workspace/admin-revoke", {
-      addonId: "addon.resonant-counter",
-      granted: true,
-    }, { capability: "addon-runtime-control", bridgeToken: bridgeConfig.bridgeToken, capabilityToken: "dev-p6-addon-control" });
-    const restored = await fetch("http://127.0.0.1:47322/api/counter/increment", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${COUNTER_BEARER}` },
-      body: "{}",
-    });
-    assert.equal(restored.status, 200, "full restore (registry + admin) must succeed");
+    assert.equal(regranted.status, 200, "registry re-grant must converge the upstream and re-open the mutation (T7)");
 
     if (process.env.RESONANTOS_KEEP_OPEN_MS) {
       console.log(`[p6-extension-live] keeping browser open for ${process.env.RESONANTOS_KEEP_OPEN_MS}ms`);

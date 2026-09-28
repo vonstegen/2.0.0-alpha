@@ -99,11 +99,13 @@ test("P6 regression: a grant survives a subsequent /addons/status poll", async (
     );
 
     // Step 2 — operator grants network through the public handler.
-    const grantRes = await service.executeWorkspaceAddonGrant({
-      addonId: "addon.resonant-echo",
-      grants: [{ capability: "network", granted: true, scope: "self", revocationBehavior: "hard-stop" }],
-    });
-    assert.equal(grantRes.installation.grantedCapabilities[0].granted, true, "grant must succeed");
+    // T7: the grant route now converges upstream (needs a reachable upstream);
+    // this P6/R5 regression asserts grants survive status polls, so set the
+    // registry grant directly for setup.
+    await registry.setGrants("addon.resonant-echo", [
+      { capability: "network", granted: true, scope: "self", revocationBehavior: "hard-stop" },
+    ], { consent: true, expectedRevision: registry.snapshot().revision });
+    assert.equal(registry.snapshot().installations["addon.resonant-echo"].grantedCapabilities[0].granted, true, "grant must succeed");
 
     // Step 3 — subsequent status poll (now reads-only, does not re-install).
     const status2 = await service.executeAddonsStatus();
@@ -141,10 +143,9 @@ test("P6 regression: grants survive multiple /addons/status polls (idempotent)",
     await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
 
     // Grant.
-    await service.executeWorkspaceAddonGrant({
-      addonId: "addon.resonant-echo",
-      grants: [{ capability: "network", granted: true, scope: "self", revocationBehavior: "hard-stop" }],
-    });
+    await registry.setGrants("addon.resonant-echo", [
+      { capability: "network", granted: true, scope: "self", revocationBehavior: "hard-stop" },
+    ], { consent: true, expectedRevision: registry.snapshot().revision });
 
     // Multiple status polls should not affect the grant.
     for (let i = 0; i < 5; i += 1) {
