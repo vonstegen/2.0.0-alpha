@@ -185,15 +185,22 @@ test("T5 real extension exercises operator grant/revoke UI (install -> grant -> 
     await card.waitFor({ timeout: 30_000 });
 
     const cardText = () => card.innerText();
-    const waitForText = async (re, { timeoutMs = 15_000, intervalMs = 200 } = {}) => {
+    // The card status label lives in a dedicated span inside the card header
+    // (addon-card-header > span). Assertions MUST wait on that exact label, not
+    // on a loose whole-card regex: "Grant requested capabilities" (the button
+    // label shown while DENIED) contains the substring "grant", so a
+    // /granted/i match returns while the grant mutation is still in flight and
+    // the bearer fetch races the upstream /admin/deny convergence (T7.1 #49).
+    const statusLabel = () => card.locator(".addon-card-header span").first().innerText();
+    const waitForStatus = async (label, { timeoutMs = 15_000, intervalMs = 200 } = {}) => {
       const deadline = Date.now() + timeoutMs;
       let text = "";
       while (Date.now() < deadline) {
-        text = await cardText().catch(() => "");
-        if (re.test(text)) return text;
+        text = await statusLabel().catch(() => "");
+        if (text.trim().toLowerCase() === label.toLowerCase()) return text;
         await new Promise((resolve) => setTimeout(resolve, intervalMs));
       }
-      throw new Error(`card did not reach ${re} (last text: ${JSON.stringify(text)})`);
+      throw new Error(`card status did not reach "${label}" (last status: ${JSON.stringify(text)})`);
     };
     const clickButton = async (label) => {
       const btn = card.locator("button").filter({ hasText: label }).first();
@@ -202,17 +209,17 @@ test("T5 real extension exercises operator grant/revoke UI (install -> grant -> 
     };
 
     // 1. Discovered (uninstalled): no granted authority, explicit Install offered.
-    await waitForText(/discovered/i);
+    await waitForStatus("Discovered");
     assert.match(await cardText(), /Install Resonant Echo/);
 
     // 2. Explicit install: card flips to Denied (install grants nothing).
     await clickButton("Install Resonant Echo");
-    await waitForText(/denied/i);
+    await waitForStatus("Denied");
     assert.match(await cardText(), /Grant requested capabilities/);
 
     // 3. Explicit grant: card flips to Granted (authoritative re-read).
     await clickButton("Grant requested capabilities");
-    await waitForText(/granted/i);
+    await waitForStatus("Granted");
     const grantedDirect = await fetch(`http://127.0.0.1:${ECHO_PORT}/api/echo/message`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${ECHO_BEARER}` },
@@ -222,7 +229,7 @@ test("T5 real extension exercises operator grant/revoke UI (install -> grant -> 
 
     // 4. Explicit revoke: card flips to Denied AND upstream enforcement closes.
     await clickButton("Revoke granted capabilities");
-    await waitForText(/denied/i);
+    await waitForStatus("Denied");
     assert.match(await cardText(), /Grant requested capabilities/);
     const revokedDirect = await fetch(`http://127.0.0.1:${ECHO_PORT}/api/echo/message`, {
       method: "POST",

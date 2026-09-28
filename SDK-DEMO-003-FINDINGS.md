@@ -140,3 +140,33 @@ D1 (host-mediated proxy) is NOT required for T7 and remains deferred: the iframe
 still reaches its own loopback upstream directly, but the enforcement flag is
 now a faithful, restart-safe projection of the registry in both directions.
 D2/D3 remain deferred and are untouched.
+
+## SDK-DEMO-003R T7.1 — graphical integration closure (closed)
+
+Independent VIGIL Test Lab #49 ran the exact T7 candidate
+(`f99667b4641a51861d65a4fad8e4bd7aa07e7e06`). The browser-first suite passed
+(2259/2260, 0 failures) but the graphical extension suite failed 4/5 with the
+T5 operator grant/revoke UI test recording `403 !== 200` on the post-grant
+bearer call.
+
+### Finding
+
+Not a production grant-convergence defect. The T5 extension-live test asserted
+the card state with a loose whole-card regex — `waitForText(/granted/i)` —
+which matches the `Grant requested capabilities` button label (always present
+while the card is DENIED). After clicking Grant, the wait returned while the
+grant mutation was still in flight, so the direct bearer fetch raced the
+bridge's upstream `/admin/deny` convergence. Under full-suite contention the
+bearer fetch reached the still-fail-closed upstream first (403); in isolation
+the convergence finished first (200). Reproduction: 9/12 full-suite runs failed
+before the fix; 0/12 after.
+
+### Correction (test-only)
+
+The T5 test now waits on the exact card status label
+(`.addon-card-header span`, case-insensitive) for `Discovered` / `Denied` /
+`Granted`, so it synchronizes with the mutation's authoritative re-read before
+issuing the bearer call. The T7 production contract is unchanged: registry is
+source of truth; allow-ordering persists registry grant first, then upstream
+open; an unreachable upstream still fails the grant 5xx with enforcement
+closed.
