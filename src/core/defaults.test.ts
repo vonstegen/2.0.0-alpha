@@ -19,7 +19,7 @@ const manifestForSlot = (
   name: id,
   version: "0.1.0",
   author: "test",
-  category: "agent",
+  classification: { category: "harness" },
   description: "test",
   runtimeType: "ui-module",
   surfaces: [],

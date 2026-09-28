@@ -3,7 +3,9 @@
   "name": "LIA Verification Stack",
   "version": "0.1.0",
   "author": "Resonant Alpha",
-  "category": "security",
+  "classification": {
+    "category": "service"
+  },
   "description": "Five-gate verification stack that runs after every agent response. Posts the prompt and response to a local verification service which evaluates structural integrity, hallucination likelihood, logical consistency, consensus alignment, and adversarial robustness. Logs failures to a JSONL violation ledger. Fails open when the verification stack is unreachable.",
   "runtimeType": "local-service",
   "surfaces": [

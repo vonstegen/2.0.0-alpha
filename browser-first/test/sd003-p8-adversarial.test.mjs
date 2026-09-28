@@ -335,7 +335,7 @@ test("P8 Attack 6: discovery rejects non-loopback entrypoint and non `local-serv
     name: "p8 good",
     version: "0.1.0",
     author: "x",
-    category: "tool",
+    classification: { category: "tool" },
     sdkVersion: "0.1.0",
     description: "ok",
     runtimeType: "local-service",

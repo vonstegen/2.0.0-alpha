@@ -21,7 +21,7 @@ const manifestForSlot = (
   name: id === "addon.augmentor-chat" ? "Augmentor Chat" : "Living Archive",
   version: "0.1.0",
   author: "Resonant Alpha",
-  category: slotId === "memory-system" ? "memory" : "agent",
+  classification: { category: slotId === "memory-system" ? "data-source" : "harness" },
   description: "Recommended replaceable default.",
   runtimeType: slotId === "memory-system" ? "local-service" : "ui-module",
   surfaces: [],

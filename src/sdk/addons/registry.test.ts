@@ -10,7 +10,7 @@ const manifest = (id: string, overrides: Partial<AddOnManifest> = {}): AddOnMani
   name: id,
   version: "0.1.0",
   author: "test",
-  category: "integration",
+  classification: { category: "connector" },
   description: "test add-on",
   runtimeType: "local-service",
   surfaces: [],

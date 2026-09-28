@@ -103,7 +103,7 @@ export const createAddOnRegistryEntry = (
     name: manifest.name,
     version: manifest.version,
     author: manifest.author,
-    category: manifest.category,
+    classification: manifest.classification,
     description: manifest.description,
     runtimeType: manifest.runtimeType,
     registrySource: options.registrySource,

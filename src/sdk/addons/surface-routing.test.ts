@@ -18,7 +18,7 @@ const manifest = (): AddOnManifest => ({
   name: "Custom Tool",
   version: "0.1.0",
   author: "test",
-  category: "tool",
+  classification: { category: "tool" },
   description: "test add-on",
   runtimeType: "local-service",
   surfaces: [

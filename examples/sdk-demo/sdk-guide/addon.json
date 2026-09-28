@@ -3,7 +3,9 @@
   "name": "SDK Guide",
   "version": "0.1.0",
   "author": "ResonantOS",
-  "category": "tool",
+  "classification": {
+    "category": "tool"
+  },
   "sdkVersion": "0.1.0",
   "description": "An interactive 9-step tutorial that teaches the @resonantos/addon-sdk by using it on this same loopback origin. Walks through every Phase-3 (P6) host-policy boundary: discovery, manifest validation, capability request, host consent, grant, sandboxed UI render, an authorized call (real 200), a denied call (real 401 — wrong bearer), and a revoked call (real 403 — host withdrew the grant). No step is hard-coded: every denial is a real host-policy result.",
   "runtimeType": "local-service",

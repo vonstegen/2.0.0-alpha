@@ -33,16 +33,6 @@ export type AddOnSurfaceType =
   | "channel"
   | "tool-panel"
   | "workspace";
-export type AddOnCategory =
-  | "agent"
-  | "channel"
-  | "memory"
-  | "security"
-  | "knowledge"
-  | "tool"
-  | "integration"
-  | "orchestration";
-
 // Classification describes WHAT an add-on is (identity/type) and never grants
 // authority. It is orthogonal to runtimeType (HOW), surfaces (WHERE),
 // requestedCapabilities (WHAT AUTHORITY), systemSlots (WHAT ROLE), and
@@ -685,8 +675,7 @@ export interface AddOnManifest {
   name: string;
   version: string;
   author: string;
-  category: AddOnCategory;
-  classification?: AddOnClassification;
+  classification: AddOnClassification;
   description: string;
   runtimeType: AddOnRuntimeType;
   surfaces: AddOnSurface[];
@@ -767,7 +756,7 @@ export interface AddOnRegistryEntry {
   name: string;
   version: string;
   author: string;
-  category: AddOnCategory;
+  classification: AddOnClassification;
   description: string;
   runtimeType: AddOnRuntimeType;
   registrySource: AddOnRegistrySource;

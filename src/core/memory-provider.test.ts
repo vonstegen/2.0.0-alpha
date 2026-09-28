@@ -9,7 +9,7 @@ const memoryManifest = (id: string, name: string): AddOnManifest => ({
   name,
   version: "0.1.0",
   author: "Test",
-  category: "memory",
+  classification: { category: "data-source" },
   sdkVersion: "0.1.0",
   description: "Test memory provider",
   runtimeType: "local-service",

@@ -3,7 +3,9 @@
   "name": "RecursiveMAS",
   "version": "0.1.0",
   "author": "Resonant Alpha",
-  "category": "agent",
+  "classification": {
+    "category": "service"
+  },
   "sdkVersion": "0.1.0",
   "description": "Experimental recursive multi-agent reasoning runtime for local or user-owned open-model compute.",
   "runtimeType": "local-service",

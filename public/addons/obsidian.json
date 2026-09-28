@@ -3,7 +3,9 @@
   "name": "Resonant Notes",
   "version": "0.1.0",
   "author": "Resonant Alpha",
-  "category": "knowledge",
+  "classification": {
+    "category": "data-source"
+  },
   "description": "Opens an Obsidian-compatible markdown vault inside ResonantOS as a native Resonant Notes workspace.",
   "runtimeType": "ui-module",
   "surfaces": [

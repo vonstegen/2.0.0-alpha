@@ -240,7 +240,7 @@ test("T7 discovery rejects bind-any (0.0.0.0) service.entrypoint", async () => {
   const tmpRoot = await mkdtemp(join(tmpdir(), "sdk-003r-t7-discovery-"));
   try {
     const good = {
-      id: "addon.t7-good", name: "t7 good", version: "0.1.0", author: "x", category: "tool",
+      id: "addon.t7-good", name: "t7 good", version: "0.1.0", author: "x", classification: { category: "tool" },
       sdkVersion: "0.1.0", description: "ok", runtimeType: "local-service",
       surfaces: [{ id: "x", type: "panel", label: "X", description: "x" }],
       requestedCapabilities: [],

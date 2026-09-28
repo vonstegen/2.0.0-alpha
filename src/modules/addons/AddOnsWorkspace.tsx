@@ -207,7 +207,7 @@ export function AddOnsWorkspace(props: AddOnsWorkspaceProps) {
                   <div>
                     <strong>{manifest.name}</strong>
                     <p>
-                      {manifest.category} · {manifest.runtimeType}
+                      {manifest.classification.category} · {manifest.runtimeType}
                     </p>
                   </div>
                   <span className={`tone tone-${effectiveInstallation?.enabled ? "active" : "neutral"}`}>

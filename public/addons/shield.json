@@ -3,7 +3,9 @@
   "name": "Shield",
   "version": "0.1.0",
   "author": "Resonant Alpha",
-  "category": "security",
+  "classification": {
+    "category": "service"
+  },
   "description": "Local protection layer for capability enforcement, filesystem control, and security telemetry.",
   "runtimeType": "local-service",
   "surfaces": [

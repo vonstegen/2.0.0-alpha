@@ -71,6 +71,38 @@ test("classification validates against the registry and unknown categories rejec
   assert.equal(validateAddOnManifest(badSubtype).valid, false);
 });
 
+test("missing classification is rejected with a deterministic error", () => {
+  const noClassification = structuredClone(tool);
+  delete noClassification.classification;
+  const result = validateAddOnManifest(noClassification);
+  assert.equal(result.valid, false);
+  assert.ok(result.issues.some((issue) => issue.code === "classification-required"));
+});
+
+test("legacy top-level category cannot substitute for classification", () => {
+  // A manifest that carries ONLY the obsolete top-level `category` field (no
+  // classification) must fail closed; the legacy vocabulary is not a fallback.
+  const legacyOnly = structuredClone(tool);
+  delete legacyOnly.classification;
+  legacyOnly.category = "tool";
+  const result = validateAddOnManifest(legacyOnly);
+  assert.equal(result.valid, false);
+  assert.ok(result.issues.some((issue) => issue.code === "classification-required"));
+  // Even an unknown legacy category string must not be interpreted as a
+  // classification; the manifest is still missing classification.
+  legacyOnly.category = "orchestration";
+  const legacyOrchestration = validateAddOnManifest(legacyOnly);
+  assert.equal(legacyOrchestration.valid, false);
+  assert.ok(legacyOrchestration.issues.some((issue) => issue.code === "classification-required"));
+});
+
+test("all seven canonical categories are accepted as classification.category", () => {
+  for (const id of ["harness", "tool", "connector", "communication", "data-source", "ui", "service"]) {
+    const manifest = { ...tool, classification: { category: id } };
+    assert.equal(validateAddOnManifest(manifest).valid, true, `expected ${id} to validate`);
+  }
+});
+
 test("pi and tool manifests carry correct classification and validate", () => {
   assert.deepEqual(pi.classification, { category: "harness", subtype: "coding-agent" });
   assert.deepEqual(tool.classification, { category: "tool", subtype: "utility" });

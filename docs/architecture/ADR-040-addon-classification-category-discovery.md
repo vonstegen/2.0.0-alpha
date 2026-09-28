@@ -8,8 +8,10 @@
 - Owner: Core and add-ons
 - Decision date: 2026-09-28
 - Alpha note: The classification registry, category discovery, and dynamic
-  tool-panel surface routing ship with this decision. The legacy `category`
-  field remains for backward compatibility and is advisory, not authority.
+  tool-panel surface routing ship with this decision. `classification` is the
+  single canonical classification contract; the legacy top-level `category`
+  field and its closed enum were removed (SDK-CATEGORY-001A) and are not
+  advisory compatibility state.
 
 ## Context
 
@@ -55,11 +57,12 @@ ui-module; classification never forces a runtime.
 }
 ```
 
-`classification.category` is validated against the extensible category registry
-(`packages/addon-sdk/src/category-registry.ts`). `classification.subtype` is an
-open string — no global exhaustive subtype enum is required. The legacy
-`category` field is retained and validated against the old enum; it is advisory
-backward-compatibility, not an authority channel.
+`classification` is REQUIRED on every manifest and `classification.category` is
+validated against the extensible category registry
+(`packages/addon-sdk/src/category-registry.ts`); a missing or unknown category
+fails validation. `classification.subtype` is an open string — no global
+exhaustive subtype enum is required. There is no legacy top-level `category`
+field; classification is the single canonical contract.
 
 ### Category Registry
 
@@ -98,5 +101,6 @@ owns rendering (textContent only, no arbitrary HTML/script injection).
   and slot/provider escalation all fail closed (validated + tested).
 - Disabling/revoking/removing an add-on drops its rail entry on the next
   projection refresh.
-- The legacy `category` enum remains for existing manifests; new manifests SHOULD
-  also declare `classification`. No behavior is removed.
+- The legacy `category` enum and top-level manifest field were removed
+  (SDK-CATEGORY-001A). Every valid manifest MUST declare `classification`;
+  there is no fallback to the removed legacy vocabulary.

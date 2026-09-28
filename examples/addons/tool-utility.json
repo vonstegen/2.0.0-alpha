@@ -3,7 +3,6 @@
   "name": "Utility Tool",
   "version": "0.1.0",
   "author": "ResonantOS",
-  "category": "tool",
   "classification": {
     "category": "tool",
     "subtype": "utility"

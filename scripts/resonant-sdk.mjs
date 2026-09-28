@@ -50,6 +50,7 @@ try {
         testSuites: description.descriptor.testSuites,
         docs: description.descriptor.docs,
         subtypeDetail: description.subtypeDetail,
+        universalManifest: description.universalManifest,
       } : description);
     }
   } else if (command === "list-categories") {

@@ -3,7 +3,9 @@
   "name": "Reference Memory",
   "version": "0.1.0",
   "author": "Resonant Alpha",
-  "category": "memory",
+  "classification": {
+    "category": "data-source"
+  },
   "sdkVersion": "0.1.0",
   "description": "Minimal third-party memory-system add-on used to validate that ResonantOS can replace Living Archive through the memory-provider broker.",
   "runtimeType": "local-service",

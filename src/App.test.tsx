@@ -3,7 +3,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
-  AddOnCategory,
   CapabilityGrant,
   AddOnManifest,
   ArchiveAiMemoryBuildJobSummary,
@@ -29,12 +28,12 @@ vi.mock("./core/web-transport", async (importOriginal) => ({
 }));
 
 const manifests: AddOnManifest[] = [
-  createManifest("addon.telegram-channel", "Telegram Channel", "channel"),
-  createManifest("addon.obsidian", "Resonant Notes", "knowledge"),
+  createManifest("addon.telegram-channel", "Telegram Channel", "communication"),
+  createManifest("addon.obsidian", "Resonant Notes", "data-source"),
   createBrowserManifest(),
   createOpenCodeManifest(),
   createPaperclipManifest(),
-  createManifest("addon.openclaw", "OpenClaw", "agent"),
+  createManifest("addon.openclaw", "OpenClaw", "harness"),
 ];
 
 const {
@@ -3508,7 +3507,7 @@ describe("App boot flow", () => {
     ["paperclip", "Grant Paperclip Access"],
     ["hermes", "Grant Hermes Access"],
   ] as const)("all add-on and quick-grant actions use host transactions: %s denial preserves displayed consent", async (section, button) => {
-    const extra = createManifest("addon.hermes", "Hermes", "agent");
+    const extra = createManifest("addon.hermes", "Hermes", "harness");
     extra.requestedCapabilities = ["shell", "ui-embedding"].map(capability => ({ capability, scope: "system", revocationBehavior: "hard-stop", granted: false })) as CapabilityGrant[];
     const catalog = section === "hermes" ? [...manifests, extra] : manifests;
     vi.mocked(runtimeModule.loadBundledManifests).mockResolvedValueOnce(catalog);
@@ -3755,7 +3754,7 @@ describe("App boot flow", () => {
   });
 
   it("wires host harness management behind the existing Add-ons shell", async () => {
-    const candidate = createManifest("addon.host-harness", "Host Harness", "agent");
+    const candidate = createManifest("addon.host-harness", "Host Harness", "harness");
     const snapshot = {
       bootEpoch: "app-boot", revision: 0, governanceActivated: false,
       candidates: [candidate], installations: {}, slots: {},
@@ -6521,7 +6520,7 @@ describe("App boot flow", () => {
   });
 });
 
-function createManifest(id: string, name: string, category: AddOnCategory): AddOnManifest {
+function createManifest(id: string, name: string, category: string): AddOnManifest {
   const requestedCapabilities =
     id === "addon.obsidian"
       ? [
@@ -6551,7 +6550,7 @@ function createManifest(id: string, name: string, category: AddOnCategory): AddO
     name,
     version: "0.1.0",
     author: "test",
-    category,
+    classification: { category },
     description: `${name} manifest`,
     runtimeType: "local-service",
     surfaces: [],
@@ -6586,7 +6585,7 @@ function createLivingArchiveManifest(): AddOnManifest {
   };
 
   return {
-    ...createManifest("addon.living-archive", "Living Archive", "memory"),
+    ...createManifest("addon.living-archive", "Living Archive", "data-source"),
     description:
       "Human Knowledge is preserved; AI Memory is the maintained wiki. Living Archive is the recommended default memory add-on and can be disabled or replaced later.",
     requestedCapabilities: [memoryProviderGrant],
@@ -6726,7 +6725,7 @@ function createOpenCodeManifest(): AddOnManifest {
 
 function createPaperclipManifest(): AddOnManifest {
   return {
-    ...createManifest("addon.paperclip", "Paperclip", "orchestration"),
+    ...createManifest("addon.paperclip", "Paperclip", "service"),
     sdkVersion: "0.1.0",
     description: "Paperclip organizational runtime add-on hosted through a local loopback endpoint.",
     runtimeType: "embedded-module",

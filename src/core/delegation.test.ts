@@ -192,7 +192,7 @@ const manifest = (overrides: Partial<AddOnManifest>): AddOnManifest => ({
   name: "OpenCode",
   version: "0.1.0",
   author: "test",
-  category: "tool",
+  classification: { category: "tool" },
   description: "test",
   runtimeType: "embedded-module",
   surfaces: [],

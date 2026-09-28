@@ -3,7 +3,10 @@
   "name": "Hermes",
   "version": "0.1.0",
   "author": "Resonant Alpha",
-  "category": "agent",
+  "classification": {
+    "category": "harness",
+    "subtype": "coding-agent"
+  },
   "description": "Communication and coordination agent add-on for delegated messaging, follow-up, and channel workflows.",
   "runtimeType": "agent-addon",
   "surfaces": [

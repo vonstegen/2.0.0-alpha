@@ -3,7 +3,9 @@
   "name": "TTS Enforcer",
   "version": "0.1.0",
   "author": "Resonant Alpha",
-  "category": "security",
+  "classification": {
+    "category": "service"
+  },
   "description": "Mechanically enforces the rule that every agent response must include TTS audio first (full text, word-for-word), then text. Audits outbound messages for compliance and logs violations.",
   "runtimeType": "local-service",
   "surfaces": [

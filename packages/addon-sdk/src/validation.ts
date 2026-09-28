@@ -1,7 +1,6 @@
 // Intent citation: docs/architecture/ADR-018-addon-sdk-v0.md
 
 import type {
-  AddOnCategory,
   AddOnManifest,
   AddOnRuntimeType,
   AddOnSurfaceType,
@@ -23,16 +22,6 @@ import {
 import { ADDON_CATEGORY_IDS, isRegisteredAddOnCategory } from "./category-registry.ts";
 
 const runtimeTypes: readonly AddOnRuntimeType[] = ["ui-module", "embedded-module", "local-service", "agent-addon", "channel-addon"];
-const categories: readonly AddOnCategory[] = [
-  "agent",
-  "channel",
-  "memory",
-  "security",
-  "knowledge",
-  "tool",
-  "integration",
-  "orchestration",
-];
 const surfaceTypes: readonly AddOnSurfaceType[] = [
   "page",
   "panel",
@@ -367,7 +356,7 @@ export const validateAddOnManifest = (
     };
   }
 
-  for (const field of ["id", "name", "version", "author", "category", "description", "runtimeType"]) {
+  for (const field of ["id", "name", "version", "author", "description", "runtimeType"]) {
     validateString(issues, candidate, field);
   }
 
@@ -378,32 +367,32 @@ export const validateAddOnManifest = (
   if (isString(candidate.version) && !semanticVersionPattern.test(candidate.version)) {
     pushIssue(issues, "error", "invalid-version", "version", "Add-on version must be semantic version-like, for example 0.1.0.");
   }
-  validateEnum(issues, candidate.category, categories, "category");
   validateEnum(issues, candidate.runtimeType, runtimeTypes, "runtimeType");
 
-  // classification is a pure descriptor (WHAT), orthogonal to runtime/surface/
-  // capability/slot/provider. It never grants authority; a valid classification
-  // must reference a registered category, and subtype is an open string (no
-  // exhaustive subtype enum). A malformed or unknown category fails closed on
-  // the descriptor itself but is never elevated into an authority channel.
-  if (candidate.classification !== undefined) {
-    if (!isRecord(candidate.classification)) {
-      pushIssue(issues, "error", "classification-object", "classification", "classification must be an object.");
-    } else {
-      if (!isString(candidate.classification.category)) {
-        pushIssue(issues, "error", "classification-category-required", "classification.category", "classification.category must be a non-empty string.");
-      } else if (!isRegisteredAddOnCategory(candidate.classification.category)) {
-        pushIssue(
-          issues,
-          "error",
-          "classification-category-unknown",
-          "classification.category",
-          `classification.category must be a registered SDK category (registered: ${ADDON_CATEGORY_IDS.join(", ")}).`,
-        );
-      }
-      if (candidate.classification.subtype !== undefined && !isString(candidate.classification.subtype)) {
-        pushIssue(issues, "error", "classification-subtype-string", "classification.subtype", "classification.subtype must be a non-empty string.");
-      }
+  // classification is the single canonical WHAT descriptor and is REQUIRED on
+  // every manifest. It is orthogonal to runtime/surface/capability/slot/provider
+  // and never grants authority. classification.category must reference a
+  // registered SDK category; subtype is an open string (no exhaustive enum). A
+  // missing, malformed, or unknown classification fails closed on the descriptor
+  // itself and is never elevated into an authority channel.
+  if (candidate.classification === undefined || candidate.classification === null) {
+    pushIssue(issues, "error", "classification-required", "classification", "classification is required; a manifest must declare a canonical classification (category + optional subtype).");
+  } else if (!isRecord(candidate.classification)) {
+    pushIssue(issues, "error", "classification-object", "classification", "classification must be an object.");
+  } else {
+    if (!isString(candidate.classification.category)) {
+      pushIssue(issues, "error", "classification-category-required", "classification.category", "classification.category must be a non-empty string.");
+    } else if (!isRegisteredAddOnCategory(candidate.classification.category)) {
+      pushIssue(
+        issues,
+        "error",
+        "classification-category-unknown",
+        "classification.category",
+        `classification.category must be a registered SDK category (registered: ${ADDON_CATEGORY_IDS.join(", ")}).`,
+      );
+    }
+    if (candidate.classification.subtype !== undefined && !isString(candidate.classification.subtype)) {
+      pushIssue(issues, "error", "classification-subtype-string", "classification.subtype", "classification.subtype must be a non-empty string.");
     }
   }
 

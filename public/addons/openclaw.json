@@ -3,7 +3,10 @@
   "name": "OpenClaw",
   "version": "0.1.0",
   "author": "Resonant Alpha",
-  "category": "agent",
+  "classification": {
+    "category": "harness",
+    "subtype": "coding-agent"
+  },
   "description": "Mount an OpenClaw runtime as a delegated agent add-on under ResonantOS supervision.",
   "runtimeType": "agent-addon",
   "surfaces": [

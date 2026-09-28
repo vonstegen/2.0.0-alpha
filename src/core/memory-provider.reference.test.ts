@@ -14,7 +14,7 @@ const referenceMemoryManifest = (): AddOnManifest => ({
   name: "Reference Memory",
   version: "0.1.0",
   author: "Resonant Alpha",
-  category: "memory",
+  classification: { category: "data-source" },
   sdkVersion: "0.1.0",
   description: "Reference memory provider test manifest.",
   runtimeType: "local-service",

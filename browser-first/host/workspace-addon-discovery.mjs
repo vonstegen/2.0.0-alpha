@@ -208,7 +208,7 @@ export async function discoverWorkspaceAddonManifests({
       runtimeType: parsed.runtimeType,
       mode: "workspace-addon",
       trust: "host-mediated workspace add-on",
-      category: asString(parsed.category),
+      classification: parsed.classification ?? null,
       available,
       surfaces: Array.isArray(parsed.surfaces) ? parsed.surfaces.map((surface) => ({
         id: asString(surface?.id),

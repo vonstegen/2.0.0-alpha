@@ -3,7 +3,6 @@
   "name": "Pi Harness",
   "version": "0.1.0",
   "author": "ResonantOS",
-  "category": "agent",
   "sdkVersion": "0.1.0",
   "description": "Provider-profile harness example. Host installation, explicit consent and slot ownership are required; the host resolves the approved provider-profile credential. This manifest grants no authority and carries no secret.",
   "runtimeType": "local-service",

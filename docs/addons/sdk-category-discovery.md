@@ -47,10 +47,10 @@ runtime is orthogonal.
 
 ## Minimal compliant manifest
 
-A manifest needs (beyond the universal core — `id`, `name`, `version`, `author`,
-`category`, `description`, `runtimeType`, `surfaces`, `requestedCapabilities`,
-`providerRequirements`, `archiveIntegration`, `health`, `installHooks`,
-`compatibility`):
+A manifest needs the universal core — `id`, `name`, `version`, `author`,
+`classification`, `description`, `runtimeType`, `surfaces`,
+`requestedCapabilities`, `providerRequirements`, `archiveIntegration`, `health`,
+`installHooks`, `compatibility`:
 
 ```jsonc
 {

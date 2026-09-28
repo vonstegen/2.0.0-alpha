@@ -40,7 +40,7 @@ function echoManifest(overrides = {}) {
     available: true,
     mode: "workspace-addon",
     trust: "host-mediated workspace add-on",
-    category: "tool",
+    classification: { category: "tool" },
     entrypoint: "http://127.0.0.1:47321",
     origin: "http://127.0.0.1:47321",
     runtimeType: "local-service",

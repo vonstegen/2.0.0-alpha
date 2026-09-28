@@ -634,7 +634,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
         installed: Boolean(manifest.installed),
         mode: manifest.mode ?? "workspace-addon",
         trust: manifest.trust ?? "host-mediated workspace add-on",
-        category: manifest.category,
+        classification: manifest.classification,
         requestedCapabilities: (manifest.requestedCapabilities ?? []).map((grant) => grant.capability),
         // The requested grant shape (scope + revocationBehavior) is what the
         // registry matches on when the operator explicitly grants. grantPresets

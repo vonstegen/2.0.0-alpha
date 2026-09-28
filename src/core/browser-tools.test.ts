@@ -8,7 +8,7 @@ const browserManifest = (): AddOnManifest => ({
   name: "Resonant Browser",
   version: "0.1.0",
   author: "Resonant Alpha",
-  category: "tool",
+  classification: { category: "tool" },
   description: "Controlled browser add-on.",
   runtimeType: "local-service",
   surfaces: [{ id: "browser", type: "embedded-pane", label: "Browser", description: "Browser" }],

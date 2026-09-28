@@ -85,7 +85,14 @@ test("live bridge admin-revoke uses host-owned mapping (T1) and flips the Counte
     `--addon-runtime-control-token=${CONTROL_TOKEN}`,
     `--workspace-addon-credentials-file=${credentialFile}`,
     `--user-root=${userRoot}`,
-  ], { stdio: ["ignore", "ignore", "pipe"] });
+  ], {
+    stdio: ["ignore", "ignore", "pipe"],
+    // The bridge resolves its user root from RESONANTOS_BROWSER_FIRST_USER_ROOT,
+    // not the `--user-root` argv (which the launcher ignores). Pin the env so
+    // the freshly-minted isolated root is authoritative; otherwise the test
+    // would read the operator's persistent ~/ResonantOS_User governance state.
+    env: { ...process.env, RESONANTOS_BROWSER_FIRST_USER_ROOT: userRoot },
+  });
 
   let bridgeStderr = "";
   bridge.stderr.on("data", (chunk) => { bridgeStderr += chunk.toString("utf8"); });

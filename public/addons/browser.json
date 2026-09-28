@@ -3,7 +3,9 @@
   "name": "Resonant Browser",
   "version": "0.1.0",
   "author": "Resonant Alpha",
-  "category": "tool",
+  "classification": {
+    "category": "tool"
+  },
   "sdkVersion": "0.1.0",
   "description": "Chrome extension browser layer for side-panel web work, audited page context, and bridge-mediated AI control.",
   "runtimeType": "local-service",

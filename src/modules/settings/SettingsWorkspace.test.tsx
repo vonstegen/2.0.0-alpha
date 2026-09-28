@@ -18,7 +18,7 @@ const logicianManifest = (): AddOnManifest => ({
   name: "Logician",
   version: "0.1.0",
   author: "test",
-  category: "knowledge",
+  classification: { category: "data-source" },
   description: "Policy and reasoning rules engine.",
   runtimeType: "local-service",
   surfaces: [],

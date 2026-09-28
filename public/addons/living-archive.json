@@ -3,7 +3,9 @@
   "name": "Living Archive",
   "version": "0.1.0",
   "author": "Resonant Alpha",
-  "category": "memory",
+  "classification": {
+    "category": "data-source"
+  },
   "sdkVersion": "0.1.0",
   "description": "Human Knowledge is preserved; AI Memory is the maintained wiki. Living Archive is the recommended default memory add-on and can be disabled or replaced later.",
   "runtimeType": "local-service",

@@ -68,13 +68,13 @@ export interface AddOnCategoryDescriptor {
 export const CATEGORY_DESCRIPTION_SCHEMA = "resonant-sdk/category-description/v1" as const;
 
 const UNIVERSAL_REQUIRED = [
-  "id", "name", "version", "author", "category", "description", "runtimeType",
+  "id", "name", "version", "author", "classification", "description", "runtimeType",
   "surfaces", "requestedCapabilities", "providerRequirements", "archiveIntegration",
   "health", "installHooks", "compatibility",
 ] as const;
 
 const UNIVERSAL_OPTIONAL = [
-  "sdkVersion", "classification", "provenance", "grantPresets", "runtimeIsolation",
+  "sdkVersion", "provenance", "grantPresets", "runtimeIsolation",
   "systemSlots", "service", "tools", "delegation", "install", "audit",
   "embeddedWorkspace", "agentRuntime", "memoryAccess", "smokeTests",
 ] as const;
@@ -312,6 +312,13 @@ export interface CategoryDescription {
   // Subtype resolved against the descriptor's open subtype map (may be absent
   // even for a valid subtype: subtypes are advisory, not an exhaustive enum).
   subtypeDetail: CategorySubtypeDescriptor | null;
+  // Universal manifest structure (classification is REQUIRED; the legacy
+  // top-level `category` field is gone). Machine-readable for AI/developer
+  // harness consumption so a kit can be assembled without reading the repo.
+  universalManifest: {
+    required: readonly string[];
+    optional: readonly string[];
+  };
 }
 
 export class UnknownCategoryError extends Error {
@@ -332,6 +339,10 @@ export function describeCategory(category: string, options: { subtype?: string }
     subtype,
     descriptor,
     subtypeDetail: subtype && Object.hasOwn(descriptor.subtypes, subtype) ? descriptor.subtypes[subtype] : null,
+    universalManifest: {
+      required: UNIVERSAL_REQUIRED,
+      optional: UNIVERSAL_OPTIONAL,
+    },
   };
 }
 

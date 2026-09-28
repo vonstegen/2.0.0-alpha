@@ -10,7 +10,7 @@ const validManifest = (overrides: Partial<AddOnManifest> = {}): AddOnManifest =>
   name: "Resonant Browser",
   version: "0.1.0",
   author: "Resonant Alpha",
-  category: "tool",
+  classification: { category: "tool" },
   description: "Controlled browser add-on.",
   runtimeType: "local-service",
   surfaces: [
@@ -512,12 +512,12 @@ describe("add-on SDK manifest validation", () => {
     expect(invalid.issues.some((issue) => issue.code === "engineer-setup-unrequested-capability")).toBe(true);
   });
 
-  it("accepts orchestration as a first-class add-on category", () => {
+  it("accepts service as a first-class add-on category (canonical classification)", () => {
     const result = validateAddOnManifest(
       validManifest({
         id: "addon.paperclip",
         name: "Paperclip",
-        category: "orchestration",
+        classification: { category: "service" },
         description: "Organizational runtime add-on.",
       }),
     );
@@ -603,7 +603,7 @@ describe("add-on SDK manifest validation", () => {
       validManifest({
         id: "addon.hermes",
         name: "Hermes",
-        category: "agent",
+        classification: { category: "harness" },
         runtimeType: "agent-addon",
         requestedCapabilities: [
           ...baseManifest.requestedCapabilities,

@@ -176,7 +176,7 @@ export const buildShellViewModel = ({
   const filteredManifests = !needle
     ? allManifests
     : allManifests.filter((manifest) => {
-        const haystack = `${manifest.name} ${manifest.category} ${manifest.description}`.toLowerCase();
+        const haystack = `${manifest.name} ${manifest.classification.category} ${manifest.description}`.toLowerCase();
         return haystack.includes(needle);
       });
   const manifestMap = new Map(allManifests.map((manifest) => [manifest.id, manifest]));

@@ -3,7 +3,10 @@
   "name": "Augmentor Chat",
   "version": "0.1.0",
   "author": "Resonant Alpha",
-  "category": "agent",
+  "classification": {
+    "category": "harness",
+    "subtype": "coding-agent"
+  },
   "sdkVersion": "0.1.0",
   "description": "Recommended default chat and primary-agent interface for ResonantOS. It can run as the right rail or detach into a floating chat window, and can be disabled or replaced by another chat add-on.",
   "runtimeType": "ui-module",

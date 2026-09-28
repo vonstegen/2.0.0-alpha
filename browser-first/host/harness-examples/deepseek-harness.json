@@ -3,7 +3,10 @@
   "name": "DeepSeek Harness",
   "version": "0.1.0",
   "author": "ResonantOS",
-  "category": "agent",
+  "classification": {
+    "category": "harness",
+    "subtype": "coding-agent"
+  },
   "sdkVersion": "0.1.0",
   "description": "Opt-in harness example. Host installation, explicit consent and slot ownership are required; this manifest grants no authority.",
   "runtimeType": "local-service",

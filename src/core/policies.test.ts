@@ -16,7 +16,7 @@ const testManifest = (id: string): AddOnManifest => ({
   name: id,
   version: "0.1.0",
   author: "test",
-  category: "integration",
+  classification: { category: "connector" },
   description: "test",
   runtimeType: "local-service",
   surfaces: [],

@@ -3,7 +3,9 @@
   "name": "Resonant Counter",
   "version": "0.1.0",
   "author": "ResonantOS",
-  "category": "tool",
+  "classification": {
+    "category": "tool"
+  },
   "sdkVersion": "0.1.0",
   "description": "Stateful counter add-on. Proves the workspace-add-on renderer is generic: a second independent local-service add-on shares the host's manifest contract, discovery, sandboxed cross-origin iframe, and postMessage bootstrap — but holds its own loopback origin, its own capability boundary, and its own per-route bearer token.",
   "runtimeType": "local-service",

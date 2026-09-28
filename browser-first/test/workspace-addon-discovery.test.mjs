@@ -48,7 +48,7 @@ const echoManifest = JSON.stringify({
   name: "Resonant Echo",
   version: "0.1.0",
   author: "ResonantOS",
-  category: "tool",
+  classification: { category: "tool" },
   sdkVersion: "0.1.0",
   description: "Deterministic local echo add-on that proves the SDK round-trip.",
   runtimeType: "local-service",
@@ -82,7 +82,7 @@ const malformedManifest = JSON.stringify({
   id: "addon.broken",
   runtimeType: "local-service",
   service: { protocol: "http-json", entrypoint: "http://127.0.0.1:47322" },
-  // missing required fields: name, version, author, category, description, surfaces
+  // missing required fields: name, version, author, classification, description, surfaces
 });
 
 test("discoverWorkspaceAddonManifests returns the live Echo manifest against the real repo", async () => {

@@ -3,7 +3,9 @@
   "name": "Resonant Echo",
   "version": "0.1.0",
   "author": "ResonantOS",
-  "category": "tool",
+  "classification": {
+    "category": "tool"
+  },
   "sdkVersion": "0.1.0",
   "description": "Deterministic local echo add-on that proves the SDK round-trip: a message sent through the host boundary returns a host-mediated echo response.",
   "runtimeType": "local-service",
