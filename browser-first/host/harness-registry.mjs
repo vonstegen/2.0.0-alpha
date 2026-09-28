@@ -20,8 +20,19 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
   function bindingAllowed(manifest) {
     const runtime = manifest.agentRuntime;
     if (!runtime || runtime.adapterVersion !== 1 || !reviewed.has(runtime.adapterId)) return false;
+    // provider-profile runtimes never propose an endpoint: the host derives it
+    // from the approved provider profile. The binding name is the non-secret
+    // authority carrier; the profile id is host configuration, never manifest
+    // authority. Endpoint-injected (env/file) bindings must never satisfy a
+    // provider-profile manifest, and vice versa.
+    if (runtime.credentialSource === 'provider-profile') {
+      return approvedBindings.some(binding => binding.providerProfile === true &&
+        binding.addonId === manifest.id && binding.adapterId === runtime.adapterId &&
+        binding.name === runtime.credentialBinding && binding.authScheme === runtime.authScheme);
+    }
     if (runtime.authScheme === 'none' && !runtime.endpoint) return true;
-    return approvedBindings.some(binding => binding.addonId === manifest.id && binding.adapterId === runtime.adapterId &&
+    return approvedBindings.some(binding => binding.providerProfile !== true &&
+      binding.addonId === manifest.id && binding.adapterId === runtime.adapterId &&
       binding.name === runtime.credentialBinding && binding.authScheme === runtime.authScheme &&
       binding.endpoint === runtime.endpoint);
   }

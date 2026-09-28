@@ -257,6 +257,9 @@ export function classify(changedPath, state) {
   if (changedPath === "examples/addons/openai-compatible-harness.json") {
     return { bucket: "include", reason: "governed OpenAI-compatible harness example" };
   }
+  if (changedPath === "examples/addons/pi-harness.json") {
+    return { bucket: "include", reason: "governed provider-profile Pi harness example" };
+  }
   if (includeDocs.has(changedPath)) {
     return {
       bucket: "include",

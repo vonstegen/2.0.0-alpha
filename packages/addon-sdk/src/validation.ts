@@ -128,7 +128,7 @@ const pushIssue = (
 
 const adapterFields = [
   "adapterVersion", "adapterId", "endpoint", "authScheme", "credentialBinding",
-  "supportedOperations", "contextRoleFidelity", "toolCallbacks",
+  "credentialSource", "supportedOperations", "contextRoleFidelity", "toolCallbacks",
 ] as const;
 const legacyRuntimeFields = [
   "invocationTool", "chatAuthorLabel", "displayNameSource", "supportsStreaming",
@@ -136,6 +136,7 @@ const legacyRuntimeFields = [
   "outputFiltering", "requiredCapabilities",
 ];
 const bindingNamePattern = /^[a-zA-Z][a-zA-Z0-9_-]*(?:\.[a-zA-Z0-9_-]+)*$/;
+const credentialSources = ["provider-profile", "self", "none"] as const;
 
 const validateRuntimeAdapter = (issues: AddOnValidationIssue[], runtime: Record<string, unknown>) => {
   if (!adapterFields.some(field => Object.hasOwn(runtime, field))) return;
@@ -153,17 +154,13 @@ const validateRuntimeAdapter = (issues: AddOnValidationIssue[], runtime: Record<
   if (typeof runtime.adapterId !== "string" || !/^[a-z][a-z0-9-]{0,63}$/.test(runtime.adapterId)) {
     reject("adapter-id", "adapterId", "Adapter IDs must be bounded names, never executable paths.");
   }
+  if (runtime.credentialSource !== undefined && !credentialSources.includes(runtime.credentialSource as (typeof credentialSources)[number])) {
+    reject("credential-source", "credentialSource", "Unsupported credential source; declare provider-profile, self, or none.");
+  }
   if (!["none", "dsh-action-token", "bearer"].includes(runtime.authScheme as string)) {
     reject("auth-scheme", "authScheme", "Unsupported authentication scheme.");
   }
-  if (runtime.authScheme !== "none" || runtime.credentialBinding !== undefined) {
-    if (typeof runtime.credentialBinding !== "string" || runtime.credentialBinding.length > 128 ||
-        !bindingNamePattern.test(runtime.credentialBinding) || runtime.authScheme === "none") {
-      reject("credential-binding", "credentialBinding", "Authentication requires a binding name; inline credentials and file paths are forbidden.");
-    }
-  }
-  // This validates a proposal, not DNS, approved ports, or binding authorization.
-  if (runtime.authScheme !== "none" || runtime.endpoint !== undefined) {
+  const rejectInvalidEndpoint = () => {
     try {
       if (typeof runtime.endpoint !== "string" || runtime.endpoint.length > 2048 || runtime.endpoint.trim() !== runtime.endpoint) throw new Error();
       const endpoint = new URL(runtime.endpoint);
@@ -171,6 +168,55 @@ const validateRuntimeAdapter = (issues: AddOnValidationIssue[], runtime: Record<
           endpoint.search || endpoint.hash || endpoint.pathname !== "/") throw new Error();
     } catch {
       reject("endpoint", "endpoint", "Endpoint must be an HTTP(S) origin without credentials, query, fragment or file path.");
+    }
+  };
+  const credentialSource = runtime.credentialSource;
+  if (credentialSource === "provider-profile") {
+    // The host resolves the credential from the shared provider store and
+    // derives the endpoint from the approved provider profile. A manifest must
+    // name only the non-secret host binding; it cannot propose an endpoint.
+    if (runtime.authScheme !== "bearer") {
+      reject("auth-scheme", "authScheme", "provider-profile runtimes use the bearer scheme.");
+    }
+    if (typeof runtime.credentialBinding !== "string" || runtime.credentialBinding.length > 128 ||
+        !bindingNamePattern.test(runtime.credentialBinding)) {
+      reject("credential-binding", "credentialBinding", "provider-profile runtimes must name a non-secret host binding; inline credentials and file paths are forbidden.");
+    }
+    if (runtime.endpoint !== undefined) {
+      reject("endpoint", "endpoint", "provider-profile runtimes must not propose an endpoint; the host derives it from the approved provider profile.");
+    }
+  } else if (credentialSource === "self") {
+    if (runtime.authScheme !== "none") {
+      reject("auth-scheme", "authScheme", "self-authenticating runtimes inject no host credential and must use the none scheme.");
+    }
+    if (runtime.credentialBinding !== undefined) {
+      reject("credential-binding", "credentialBinding", "self-authenticating runtimes must not declare a host credential binding.");
+    }
+    if (runtime.endpoint !== undefined) {
+      reject("endpoint", "endpoint", "self-authenticating runtimes own their endpoint; the manifest must not propose one.");
+    }
+  } else if (credentialSource === "none") {
+    if (runtime.authScheme !== "none") {
+      reject("auth-scheme", "authScheme", "none runtimes must use the none scheme.");
+    }
+    if (runtime.credentialBinding !== undefined) {
+      reject("credential-binding", "credentialBinding", "none runtimes must not declare a credential binding.");
+    }
+    if (runtime.endpoint !== undefined) {
+      // Local/keyless runtimes may still declare a host-approved origin.
+      rejectInvalidEndpoint();
+    }
+  } else {
+    // Legacy manifests without credentialSource keep the reviewed binding rules.
+    if (runtime.authScheme !== "none" || runtime.credentialBinding !== undefined) {
+      if (typeof runtime.credentialBinding !== "string" || runtime.credentialBinding.length > 128 ||
+          !bindingNamePattern.test(runtime.credentialBinding) || runtime.authScheme === "none") {
+        reject("credential-binding", "credentialBinding", "Authentication requires a binding name; inline credentials and file paths are forbidden.");
+      }
+    }
+    // This validates a proposal, not DNS, approved ports, or binding authorization.
+    if (runtime.authScheme !== "none" || runtime.endpoint !== undefined) {
+      rejectInvalidEndpoint();
     }
   }
   const operations = runtime.supportedOperations;

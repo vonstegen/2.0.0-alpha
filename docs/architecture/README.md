@@ -109,6 +109,7 @@ Add-on skill contracts:
 | [ADR-036: Resonant Browser Host Architecture](ADR-036-wallet-capable-browser-host.md) | Superseded | Not applicable | [ADR-037](ADR-037-browser-first-chromium-resonantos.md) | Browser architecture | Historical external-browser sidecar direction; it is not the Alpha package. |
 | [ADR-037: Browser-First Chromium ResonantOS](ADR-037-browser-first-chromium-resonantos.md) | Accepted | Partial | - | Browser architecture | Browser-contained product direction applies; Alpha is the unpacked Chrome extension plus bridge, not a custom Chromium build. |
 | [ADR-038: Guardian/Engineer Boundary And Core-Only Invariants](ADR-038-guardian-engineer-core-only-invariants.md) | Accepted | Partial | - | Core and add-ons | Authority boundaries and invariants govern Alpha changes; Guardian, DSH, request/grant separation, and invariant review remain unimplemented by this decision. |
+| [ADR-039: Harness Runtime Category And Central Provider Profiles](ADR-039-harness-runtime-provider-profiles.md) | Accepted | Partial | - | Core and add-ons | One host-owned provider profile/credential resolver serves authorized harnesses; provider-profile/self/none credential modes; session-only credential persistence. |
 
 ## Authority Rules
 

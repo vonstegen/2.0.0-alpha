@@ -36,21 +36,47 @@ async function readSecret(source, env) {
   return value;
 }
 
-export function createHarnessCredentials({ bindings = [], env = process.env } = {}) {
+export function createHarnessCredentials({ bindings = [], env = process.env, resolveProviderProfileCredential } = {}) {
   const approved = new Map();
   for (const binding of structuredClone(bindings)) {
     if (!binding || typeof binding.name !== 'string' || approved.has(binding.name) ||
-        !['addonId', 'adapterId', 'authScheme', 'endpoint'].every(key => typeof binding[key] === 'string' && binding[key])) throw fail('permission-denied');
+        !['addonId', 'adapterId', 'authScheme'].every(key => typeof binding[key] === 'string' && binding[key])) throw fail('permission-denied');
+    const isProviderProfile = Boolean(binding.source && typeof binding.source.providerProfileId === 'string' && binding.source.providerProfileId);
+    // provider-profile bindings derive their endpoint from the approved provider
+    // profile; every other binding must pin an exact host-approved endpoint.
+    if (!isProviderProfile && (typeof binding.endpoint !== 'string' || !binding.endpoint)) throw fail('permission-denied');
+    if (isProviderProfile && binding.endpoint !== undefined) throw fail('permission-denied');
     approved.set(binding.name, binding);
   }
+  // Validate and bound provider-store material to the same limits as env/file
+  // secrets so a misconfigured profile can never widen the credential boundary.
+  const validActionToken = value => typeof value === 'string' && value && Buffer.byteLength(value) <= MAX_SECRET_BYTES && /^[\x21-\x7e]+$/.test(value);
   return Object.freeze({
     async acquire({ addonId, runtime } = {}) {
       const binding = approved.get(runtime?.credentialBinding);
       if (!binding || addonId !== binding.addonId ||
-          ['adapterId', 'authScheme', 'endpoint'].some(key => runtime?.[key] !== binding[key])) throw fail('permission-denied');
+          ['adapterId', 'authScheme'].some(key => runtime?.[key] !== binding[key])) throw fail('permission-denied');
+      let endpoint;
       let actionToken;
-      try { actionToken = await readSecret(binding.source, env); }
-      catch { throw fail('runtime-unavailable'); }
+      const providerProfileId = binding.source && typeof binding.source.providerProfileId === 'string' ? binding.source.providerProfileId : '';
+      if (providerProfileId) {
+        // Host-owned provider profile: the manifest names a non-secret binding,
+        // the host resolves the approved profile's credential + endpoint. A
+        // caller cannot swap the profile id or propose an endpoint here.
+        if (runtime.credentialSource !== 'provider-profile') throw fail('permission-denied');
+        if (typeof resolveProviderProfileCredential !== 'function') throw fail('runtime-unavailable');
+        let resolved;
+        try { resolved = await resolveProviderProfileCredential(providerProfileId); }
+        catch { throw fail('runtime-unavailable'); }
+        endpoint = typeof resolved?.endpoint === 'string' ? resolved.endpoint : '';
+        actionToken = resolved?.actionToken;
+        if (!endpoint || !validActionToken(actionToken)) throw fail('runtime-unavailable');
+      } else {
+        if (runtime.endpoint !== binding.endpoint) throw fail('permission-denied');
+        endpoint = binding.endpoint;
+        try { actionToken = await readSecret(binding.source, env); }
+        catch { throw fail('runtime-unavailable'); }
+      }
       let disposed = false;
       const forbidden = new Set();
       function remember(value) {
@@ -65,7 +91,7 @@ export function createHarnessCredentials({ bindings = [], env = process.env } = 
       return Object.freeze({
         async use(callback) {
           if (disposed) throw fail('runtime-unavailable');
-          return callback({ endpoint: binding.endpoint, actionToken });
+          return callback({ endpoint, actionToken });
         },
         remember,
         sanitize(value) {

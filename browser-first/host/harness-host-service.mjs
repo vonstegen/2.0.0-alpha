@@ -112,11 +112,11 @@ export function createHarnessStreamSubscription(reader) {
 }
 
 export async function createHarnessHostService({ userRoot, store = createHarnessRegistryStore({ userRoot }),
-  bindings = [], env = process.env, providerHost, cleanupTimeoutMs = 1000, onReceipt = () => {}, fixtureSigningKey,
+  bindings = [], env = process.env, providerHost, resolveProviderProfileCredential, cleanupTimeoutMs = 1000, onReceipt = () => {}, fixtureSigningKey,
   transportFactory = createHarnessTransport, dshAdapterFactory = createDshTypertAdapter, openaiAdapterFactory = createOpenAICompatibleAdapter } = {}) {
   if (!Number.isSafeInteger(cleanupTimeoutMs) || cleanupTimeoutMs < 1 || cleanupTimeoutMs > 30000) throw new TypeError('Bounded cleanup required.');
   const approvedBindings = structuredClone(bindings);
-  const credentials = createHarnessCredentials({ bindings: approvedBindings, env });
+  const credentials = createHarnessCredentials({ bindings: approvedBindings, env, resolveProviderProfileCredential });
   const manifests = new Map(), resources = new Set();
   let closed = false, closing;
   const trackedStore = {
@@ -128,7 +128,10 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     write: document => store.write(document),
   };
   const registry = await createHarnessRegistry({ store: trackedStore, reviewedAdapterIds: ['dsh-typert-v1', 'provider-fabric-v1', 'openai-compatible-v1'],
-    bindings: approvedBindings.map(({ name, addonId, adapterId, authScheme, endpoint }) => ({ name, addonId, adapterId, authScheme, endpoint })) });
+    bindings: approvedBindings.map(({ name, addonId, adapterId, authScheme, endpoint, source }) => ({
+      name, addonId, adapterId, authScheme, endpoint,
+      providerProfile: Boolean(source && typeof source.providerProfileId === 'string' && source.providerProfileId),
+    })) });
   // Only the explicit fixture composition injects a public test key. Production
   // keys are generated anew, remain in this closure, and are never persisted.
   const { privateKey } = fixtureSigningKey ? { privateKey: fixtureSigningKey } : generateKeyPairSync('ed25519');

@@ -45,6 +45,54 @@ test("host imports the canonical manifest validator", async () => {
   assert.equal(host.validateHarnessManifest, canonical.validateAddOnManifest);
 });
 
+const providerProfileHarness = () => ({
+  ...structuredClone(hermes),
+  requestedCapabilities: [...hermes.requestedCapabilities, { capability: "agent-runtime", granted: false, scope: "system", revocationBehavior: "hard-stop" }],
+  agentRuntime: {
+    ...hermes.agentRuntime,
+    requiredCapabilities: [...hermes.agentRuntime.requiredCapabilities, "agent-runtime"],
+    adapterVersion: 1,
+    adapterId: "openai-compatible-v1",
+    authScheme: "bearer",
+    credentialSource: "provider-profile",
+    credentialBinding: "openai.compatible",
+    supportedOperations: ["createSession", "invoke", "cancel", "history", "status", "selectModel"],
+    contextRoleFidelity: "structured-messages",
+    toolCallbacks: false,
+  },
+});
+
+test("credentialSource provider-profile, self and none declare safely and unsafe forms reject", async () => {
+  const { validateAddOnManifest } = await import("../../packages/addon-sdk/src/validation.ts");
+  // provider-profile: valid without an endpoint; the host derives it from the profile.
+  assert.equal(validateAddOnManifest(providerProfileHarness()).valid, true);
+  for (const [patch, code] of [
+    [{ credentialSource: "provider-profile", authScheme: "none" }, "agent-runtime-auth-scheme"],
+    [{ credentialSource: "provider-profile", endpoint: "http://127.0.0.1:8000" }, "agent-runtime-endpoint"],
+    [{ credentialSource: "provider-profile", credentialBinding: "/tmp/token" }, "agent-runtime-credential-binding"],
+    [{ credentialSource: "provider-profile", credentialBinding: "openai.compatible", apiKey: "canary" }, "agent-runtime-adapter-field"],
+    [{ credentialSource: "arbitrary" }, "agent-runtime-credential-source"],
+    [{ credentialSource: "self", authScheme: "bearer" }, "agent-runtime-auth-scheme"],
+    [{ credentialSource: "self", credentialBinding: "openai.compatible" }, "agent-runtime-credential-binding"],
+    [{ credentialSource: "none", authScheme: "bearer" }, "agent-runtime-auth-scheme"],
+    [{ credentialSource: "none", credentialBinding: "openai.compatible" }, "agent-runtime-credential-binding"],
+  ]) {
+    const manifest = providerProfileHarness();
+    Object.assign(manifest.agentRuntime, patch);
+    const result = validateAddOnManifest(manifest);
+    assert.equal(result.valid, false, JSON.stringify(patch));
+    assert.ok(result.issues.some(issue => issue.code === code), `${code} for ${JSON.stringify(patch)}`);
+    assert.ok(!JSON.stringify(result).includes("canary"));
+  }
+  // self and none declare safely (host injects nothing).
+  const self = providerProfileHarness();
+  self.agentRuntime = { ...self.agentRuntime, credentialSource: "self", authScheme: "none", credentialBinding: undefined };
+  assert.equal(validateAddOnManifest(self).valid, true);
+  const none = providerProfileHarness();
+  none.agentRuntime = { ...none.agentRuntime, credentialSource: "none", authScheme: "none", credentialBinding: undefined };
+  assert.equal(validateAddOnManifest(none).valid, true);
+});
+
 test("operation validation rejects undeclared and unsupported operations", async () => {
   const { assertHarnessOperation } = await import("../host/harness-adapter-contract.mjs");
   const runtime = boundHarness().agentRuntime;

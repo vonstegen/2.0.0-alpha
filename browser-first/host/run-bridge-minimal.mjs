@@ -183,8 +183,28 @@ const {
 // credential name, endpoint, or port. Invalid host configuration fails startup.
 // Hoisted above addonDelegationService so the host-owned registry is available
 // for Phase-3 (P6) workspace add-on grant lifecycle handlers.
+// Host-owned provider-profile credential resolver: resolves a non-secret
+// provider profile id into the profile's endpoint + the session-only credential
+// the same store already serves Augmentor's provider-fabric. It never exposes
+// the credential store or profile enumeration to a harness — it is a scoped,
+// host-mediated lookup keyed by the profile id approved in the binding.
+const resolveProviderProfileCredential = async (providerProfileId) => {
+  const profiles = await providerHostService.allProviderProfiles();
+  const profile = profiles.find((candidate) => candidate.id === providerProfileId);
+  if (!profile || typeof profile.apiBaseUrl !== "string" || !profile.apiBaseUrl) {
+    throw new Error("Unknown provider profile.");
+  }
+  const secrets = await providerHostService.readProviderSecrets();
+  const actionToken = secrets[providerProfileId];
+  if (!actionToken) {
+    throw new Error("Provider profile credential is not configured for this host session.");
+  }
+  return { endpoint: profile.apiBaseUrl, actionToken };
+};
+
 const harnessService = await createHarnessHostService({
   userRoot: userRoot(), providerHost: providerHostService,
+  resolveProviderProfileCredential,
   bindings: JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]"),
   env: process.env,
 });

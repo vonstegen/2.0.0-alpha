@@ -518,6 +518,12 @@ export interface AddOnMemoryAccessContract {
 
 export type HarnessOperation = "createSession" | "invoke" | "cancel" | "history" | "status" | "modelCatalog" | "selectModel";
 
+// How a harness runtime obtains its provider authentication. The host owns
+// resolution in every mode: provider-profile material is resolved from the
+// shared host provider store, self means the harness owns its own login/auth
+// store (host injects nothing), and none is local/keyless.
+export type HarnessCredentialSource = "provider-profile" | "self" | "none";
+
 // Declarative proposals only: reviewed host adapters and bindings supply authority.
 export interface AddOnAgentRuntimeAdapterContract {
   adapterVersion: 1;
@@ -525,6 +531,7 @@ export interface AddOnAgentRuntimeAdapterContract {
   endpoint?: string;
   authScheme: "none" | "dsh-action-token" | "bearer";
   credentialBinding?: string;
+  credentialSource?: HarnessCredentialSource;
   supportedOperations: HarnessOperation[];
   contextRoleFidelity: "text-only" | "structured-messages";
   toolCallbacks: false;

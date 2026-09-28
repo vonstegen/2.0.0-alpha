@@ -52,6 +52,64 @@ test('host bindings are snapshotted and secrets are bounded and validated', asyn
   }
 });
 
+const profileRuntime = { adapterId: 'openai-compatible-v1', authScheme: 'bearer', credentialSource: 'provider-profile', credentialBinding: 'openai.compatible' };
+const profileBinding = { name: 'openai.compatible', addonId: 'addon.pi', adapterId: 'openai-compatible-v1', authScheme: 'bearer', source: { providerProfileId: 'provider-shared-openai-compatible' } };
+
+test('provider-profile bindings resolve host-owned credentials and never expose the store', async () => {
+  const canary = secret();
+  const resolved = [];
+  const custody = module.createHarnessCredentials({
+    bindings: [profileBinding],
+    env: {},
+    resolveProviderProfileCredential: async (providerProfileId) => {
+      resolved.push(providerProfileId);
+      return { endpoint: 'http://127.0.0.1:8000', actionToken: canary };
+    },
+  });
+  const lease = await custody.acquire({ addonId: 'addon.pi', runtime: profileRuntime });
+  assert.deepEqual(resolved, ['provider-shared-openai-compatible']);
+  const seen = await lease.use(({ endpoint, actionToken }) => ({ endpoint, actionToken }));
+  assert.deepEqual(seen, { endpoint: 'http://127.0.0.1:8000', actionToken: canary });
+  // The lease exposes only the scoped material; the resolver/store are not enumerable.
+  assert.ok(!JSON.stringify(lease).includes(canary));
+  lease.dispose();
+  await assert.rejects(lease.use(() => 'unexpected'), { code: 'runtime-unavailable' });
+});
+
+test('provider-profile bindings fail closed on wrong add-on, mode, profile or material', async () => {
+  const canary = secret();
+  const custody = module.createHarnessCredentials({
+    bindings: [profileBinding],
+    env: {},
+    resolveProviderProfileCredential: async () => ({ endpoint: 'http://127.0.0.1:8000', actionToken: canary }),
+  });
+  for (const [label, addonId, runtime] of [
+    ['wrong add-on', 'addon.other', profileRuntime],
+    ['wrong adapter', 'addon.pi', { ...profileRuntime, adapterId: 'dsh-typert-v1' }],
+    ['wrong scheme', 'addon.pi', { ...profileRuntime, authScheme: 'none' }],
+    ['legacy mode on provider-profile binding', 'addon.pi', { ...profileRuntime, credentialSource: undefined }],
+  ]) await assert.rejects(custody.acquire({ addonId, runtime }), { code: 'permission-denied' }, label);
+  const missingProfile = module.createHarnessCredentials({
+    bindings: [profileBinding],
+    env: {},
+    resolveProviderProfileCredential: async () => { throw new Error('missing'); },
+  });
+  await assert.rejects(missingProfile.acquire({ addonId: 'addon.pi', runtime: profileRuntime }), { code: 'runtime-unavailable' });
+  const badMaterial = module.createHarnessCredentials({
+    bindings: [profileBinding],
+    env: {},
+    resolveProviderProfileCredential: async () => ({ endpoint: 'http://127.0.0.1:8000', actionToken: 'bad\nvalue' }),
+  });
+  await assert.rejects(badMaterial.acquire({ addonId: 'addon.pi', runtime: profileRuntime }), { code: 'runtime-unavailable' });
+});
+
+test('provider-profile bindings require a host-owned resolver and an exact source', async () => {
+  assert.throws(() => module.createHarnessCredentials({ bindings: [{ ...profileBinding, source: {} }], env: {} }), { code: 'permission-denied' });
+  assert.throws(() => module.createHarnessCredentials({ bindings: [{ ...profileBinding, endpoint: 'http://127.0.0.1:8000' }], env: {} }), { code: 'permission-denied' });
+  const custody = module.createHarnessCredentials({ bindings: [profileBinding], env: {} });
+  await assert.rejects(custody.acquire({ addonId: 'addon.pi', runtime: profileRuntime }), { code: 'runtime-unavailable' });
+});
+
 test('operator token files require private regular files and bounded reads', async t => {
   const root = await mkdtemp(join(tmpdir(), 'harness-credentials-'));
   t.after(() => rm(root, { recursive: true, force: true }));
