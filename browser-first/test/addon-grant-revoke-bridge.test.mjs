@@ -64,8 +64,6 @@ async function buildService() {
     userRoot,
     timers: { setTimeout, clearTimeout },
     workspaceAddonRegistry: registry,
-    workspaceAddonBearerTokens: { "addon.resonant-echo": "echo-bearer-test" },
-    workspaceAddonAdminTokens: { "addon.resonant-echo": { upstreamAdminUrl: "http://127.0.0.1:1/admin/deny", adminToken: "admin-test" } },
   });
   return { service, registry, cleanup: () => { try { rmSync(userRoot, { recursive: true, force: true }); } catch {} } };
 }

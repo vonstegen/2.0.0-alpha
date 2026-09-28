@@ -81,26 +81,37 @@ no hand-edited generated config, no pre-seeded tokens.
 - `npm ci` completed at the repo root.
 - A Chromium-family browser (Chrome, Edge, Brave, Arc).
 
-### 1. Build + start the three upstream add-on services
+### 1. Provision credentials + start the three upstream add-on services
+
+Workspace add-on credentials are provisioned from **one** generic JSON
+document (T6), keyed by add-on id. Both the bridge resolver and the
+operator-started upstreams read the same document, so a value provisioned
+host-side is the value the upstream enforces. There is no vault: the
+document is environment/config-backed and must never be committed.
+
+```bash
+# Run this in every terminal you start a demo process in (servers + bridge):
+export RESONANTOS_WORKSPACE_ADDON_CREDENTIALS='{
+  "addon.resonant-echo":    { "bearer": "demo-echo-bearer",    "adminToken": "demo-echo-admin" },
+  "addon.resonant-counter": { "bearer": "demo-counter-bearer", "adminToken": "demo-counter-admin" },
+  "addon.sdk-guide":        { "bearer": "demo-guide-bearer",   "adminToken": "demo-guide-admin" }
+}'
+```
 
 Open three terminals; each starts one operator-owned loopback HTTP service
-on its declared port. The bridge never spawns them.
+on its declared port. The bridge never spawns them, and no per-add-on token
+flags are needed — each upstream resolves its own `{ bearer, adminToken }`
+from the shared document.
 
 ```bash
 # Terminal 1 — Resonant Echo on :47321
-node examples/sdk-demo/echo/server.mjs \
-  --echo-bearer-token=demo-echo-bearer \
-  --echo-admin-token=demo-echo-admin
+node examples/sdk-demo/echo/server.mjs
 
 # Terminal 2 — Resonant Counter on :47322
-node examples/sdk-demo/counter/server.mjs \
-  --counter-bearer-token=demo-counter-bearer \
-  --counter-admin-token=demo-counter-admin
+node examples/sdk-demo/counter/server.mjs
 
 # Terminal 3 — SDK Guide on :47323
-node examples/sdk-demo/sdk-guide/server.mjs \
-  --sdk-guide-bearer-token=demo-guide-bearer \
-  --sdk-guide-admin-token=demo-guide-admin
+node examples/sdk-demo/sdk-guide/server.mjs
 ```
 
 Smoke-check each upstream:
@@ -144,14 +155,13 @@ node browser-first/host/run-bridge-minimal.mjs \
   --bridge-diagnostics-read-token=demo-bridge-diagnostics-read \
   --browser-download-action-token=demo-browser-download-action \
   --extension-prefs-read-token=demo-extension-prefs-read \
-  --extension-prefs-write-token=demo-extension-prefs-write \
-  --echo-bearer-token=demo-echo-bearer \
-  --echo-admin-token=demo-echo-admin \
-  --counter-bearer-token=demo-counter-bearer \
-  --counter-admin-token=demo-counter-admin \
-  --sdk-guide-bearer-token=demo-guide-bearer \
-  --sdk-guide-admin-token=demo-guide-admin
+  --extension-prefs-write-token=demo-extension-prefs-write
 ```
+
+Workspace add-on credentials come from the shared
+`RESONANTOS_WORKSPACE_ADDON_CREDENTIALS` document exported in step 1 (or
+`--workspace-addon-credentials=<json>`, or a
+`--workspace-addon-credentials-file=<path>`). No per-add-on flags.
 
 The bridge prints a banner like:
 

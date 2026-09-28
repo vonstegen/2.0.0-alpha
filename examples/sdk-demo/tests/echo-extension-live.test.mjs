@@ -115,8 +115,7 @@ function spawnBridge(bridgePort) {
     "--bridge-token=dev-echo-bridge-token",
     "--addon-runtime-read-token=dev-echo-addon-read",
     "--addon-runtime-control-token=dev-echo-addon-control",
-    `--echo-bearer-token=${ECHO_BEARER}`,
-    `--echo-admin-token=${ECHO_ADMIN}`,
+    `--workspace-addon-credentials=${JSON.stringify({ "addon.resonant-echo": { bearer: ECHO_BEARER, adminToken: ECHO_ADMIN } })}`,
     // Pin the registry to a tmp user-root so the test does not pollute
     // ~/ResonantOS_User.
     `--user-root=${path.join(os.tmpdir(), "sd003-echo-cp3-user-root")}`,

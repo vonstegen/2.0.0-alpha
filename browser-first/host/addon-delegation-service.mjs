@@ -19,6 +19,7 @@ import {
   createLoopbackHealthProbe,
   discoverWorkspaceAddonManifests,
 } from "./workspace-addon-discovery.mjs";
+import { createWorkspaceAddonCredentialResolver } from "./workspace-addon-credentials.mjs";
 
 const DEFAULT_OPENCODE_MODEL = "openai/gpt-5.4-mini";
 const MINIMAX_OPENCODE_MODEL = "minimax/MiniMax-M3";
@@ -203,12 +204,12 @@ export function createAddonDelegationService(dependencies) {
     // through it. Without this dependency, the workspace add-on path falls
     // back to the legacy `grantPresets`-derived grant surface (CP3/CP4 only).
     workspaceAddonRegistry = null,
-    // Host-only bearer + admin tokens keyed by add-on id. The bridge holds
-    // these (operator-pinned via launcher arg or env) so the bootstrap
-    // envelope can deliver the bearer for every granted capability without
-    // the add-on ever learning the admin token.
-    workspaceAddonBearerTokens = {},
-    workspaceAddonAdminTokens = {},
+    // T6: typed host-owned credential resolver. Callers name identity +
+    // purpose ("bearer" | "admin"); the resolver returns the scoped material
+    // (never caller-supplied). Defaults to an empty resolver so a caller that
+    // provisions nothing fails closed: bootstrap omits tokens, admin-revoke
+    // denies with permission-denied.
+    workspaceAddonCredentialResolver = createWorkspaceAddonCredentialResolver({}),
     // Test seam for forcing discovery failure. Default to production discovery
     workspaceAddonDiscoveryDependency = null,
   } = dependencies;
@@ -2867,6 +2868,10 @@ except BaseException as exc:
     if (!resolvedManifest || typeof resolvedManifest.id !== "string") {
       throw Object.assign(new Error("Workspace add-on install requires a manifest with an id."), { code: "invalid-event" });
     }
+    // Cache the full manifest so the host-owned admin endpoint can always be
+    // derived from `service.entrypoint` (T6) even when install was driven by
+    // an explicit { manifest } payload rather than the discovery cache.
+    workspaceAddonManifestCache.set(resolvedManifest.id, resolvedManifest);
     await workspaceAddonRegistry.install(resolvedManifest, { enabled: false });
     return { addonId: resolvedManifest.id, installation: workspaceAddonRegistry.snapshot().installations[resolvedManifest.id] ?? null };
   }
@@ -2905,16 +2910,39 @@ except BaseException as exc:
   // route coordinates BOTH writes so operator-level revocation has one coherent
   // authoritative outcome instead of independent state transitions that can
   // diverge.
+  // T6: resolve the host-only admin credential for an add-on from the typed
+  // resolver. The manifest entrypoint comes from the host-owned full-manifest
+  // cache, never from the caller. A missing/unusable credential maps to
+  // permission-denied (T1: "not configured" is a policy denial, 4xx) rather
+  // than runtime-unavailable (5xx).
+  function resolveWorkspaceAddonAdminCredential(addonId) {
+    // The registry snapshot intentionally projects no raw manifest, so the
+    // authoritative entrypoint (for deriving the host-only admin endpoint)
+    // comes from the full-manifest discovery/install cache the service owns.
+    const manifestEntrypoint = workspaceAddonManifestCache.get(addonId)?.service?.entrypoint;
+    try {
+      return workspaceAddonCredentialResolver.resolveWorkspaceAddonCredential({
+        addonId,
+        purpose: "admin",
+        manifestEntrypoint,
+      });
+    } catch (error) {
+      if (error?.code === "credential-unavailable" || error?.code === "invalid-event") {
+        throw Object.assign(
+          new Error(`Workspace add-on not configured for admin revoke: ${addonId}`),
+          { code: "permission-denied" },
+        );
+      }
+      throw error;
+    }
+  }
+
   //   REQUEST DESCRIBES INTENT. HOST DETERMINES AUTHORITY.
   async function convergeWorkspaceAddonEnforcement(addonId, targetGrants, enforcementGranted) {
     if (!workspaceAddonRegistry) {
       throw Object.assign(new Error("Workspace add-on registry unavailable."), { code: "runtime-unavailable" });
     }
-    const adminConfig = workspaceAddonAdminTokens[addonId];
-    if (!adminConfig || !adminConfig.adminToken || !adminConfig.upstreamAdminUrl) {
-      throw Object.assign(new Error(`Workspace add-on not configured for admin revoke: ${addonId}`), { code: "permission-denied" });
-    }
-    const { upstreamAdminUrl: targetUrl, adminToken: credential } = adminConfig;
+    const { upstreamAdminUrl: targetUrl, adminToken: credential } = resolveWorkspaceAddonAdminCredential(addonId);
 
     const applyUpstream = async (granted) => {
       let response;
@@ -3033,10 +3061,12 @@ except BaseException as exc:
     if ("upstreamAdminUrl" in request || "adminToken" in request) {
       throw Object.assign(new Error("Caller-supplied upstreamAdminUrl/adminToken fields are not honored."), { code: "permission-denied", audit: "revoked-caller-injection-attempt" });
     }
-    const adminConfig = workspaceAddonAdminTokens[addonId];
-    if (!adminConfig || !adminConfig.adminToken || !adminConfig.upstreamAdminUrl) {
-      throw Object.assign(new Error(`Workspace add-on not configured for admin revoke: ${addonId}`), { code: "permission-denied" });
-    }
+    // T6: resolve the host-only admin credential by (identity, purpose). A
+    // missing credential maps to permission-denied ("not configured"), and the
+    // manifest entrypoint is read from the host-owned registry — never the
+    // caller. This runs BEFORE the registry-null check to preserve T1 ordering
+    // (not-configured is a 4xx policy denial, not a 5xx runtime failure).
+    resolveWorkspaceAddonAdminCredential(addonId);
     if (!workspaceAddonRegistry) {
       throw Object.assign(new Error("Workspace add-on registry unavailable."), { code: "runtime-unavailable" });
     }
@@ -3089,16 +3119,29 @@ except BaseException as exc:
     }
     const grantedCapabilities = (installation.grantedCapabilities ?? [])
       .filter((grant) => grant.granted);
+    // T6: the bearer is resolved from the typed resolver (identity + purpose).
+    // A missing bearer credential omits tokens (fail closed) rather than
+    // throwing — the iframe then receives no bearer and the upstream returns
+    // 401, matching the pre-T6 "no bearer" behavior.
+    let bearerToken = "";
+    try {
+      bearerToken = workspaceAddonCredentialResolver.resolveWorkspaceAddonCredential({
+        addonId,
+        purpose: "bearer",
+      }).token;
+    } catch (error) {
+      if (error?.code !== "credential-unavailable" && error?.code !== "invalid-event") throw error;
+    }
     const capabilityTokens = {};
-    for (const grant of grantedCapabilities) {
-      const token = workspaceAddonBearerTokens[addonId];
-      if (!token) continue;
-      capabilityTokens[grant.capability] = {
-        granted: true,
-        scope: grant.scope,
-        revocationBehavior: grant.revocationBehavior,
-        token,
-      };
+    if (bearerToken) {
+      for (const grant of grantedCapabilities) {
+        capabilityTokens[grant.capability] = {
+          granted: true,
+          scope: grant.scope,
+          revocationBehavior: grant.revocationBehavior,
+          token: bearerToken,
+        };
+      }
     }
     return {
       addonId,

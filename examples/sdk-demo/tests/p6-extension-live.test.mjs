@@ -94,8 +94,7 @@ function spawnBridge(bridgePort) {
     `--bridge-token=${COUNTER_BRIDGE_TOKEN}`,
     "--addon-runtime-read-token=dev-p6-addon-read",
     "--addon-runtime-control-token=dev-p6-addon-control",
-    `--counter-bearer-token=${COUNTER_BEARER}`,
-    `--counter-admin-token=${COUNTER_ADMIN}`,
+    `--workspace-addon-credentials=${JSON.stringify({ "addon.resonant-counter": { bearer: COUNTER_BEARER, adminToken: COUNTER_ADMIN } })}`,
     // Pin the registry to a tmp user-root so the test does not pollute
     // ~/ResonantOS_User.
     `--user-root=${path.join(os.tmpdir(), "sd003-p6-user-root")}`,

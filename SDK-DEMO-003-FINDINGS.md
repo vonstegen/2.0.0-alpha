@@ -48,3 +48,24 @@ real extension and demonstrates Echo + Counter + grant/deny/revoke with a real
 host-policy 403 and real revocation — without exposing host secrets, creating a
 second trust model, or regressing Hermes/OpenCode/Living Archive. D1–D3 are
 explicitly out of scope for the _demo_ and recorded here so they are not lost.
+
+## SDK-DEMO-003R T6 — generic credential provisioning (closed)
+
+T6 replaces the demo-specific/hard-coded credential wiring with a generic
+host-owned resolver (`browser-first/host/workspace-addon-credentials.mjs`):
+callers name `(add-on identity + purpose)` and the host resolves the scoped
+material. One provisioning document (JSON, env/config-backed — no vault) is
+read by both the bridge and the operator-started upstreams. See
+`SDK-DEMO-003-ARCHITECTURE-MAP.md` §10 for the contract, trust/storage
+boundary table, and lifecycle semantics.
+
+Non-blocking future hardening (recorded, not expanded in scope):
+
+- **Live rotation / expiry (D2).** Credentials are read once at bridge startup
+  and are restart-bound; per-grant minting, expiry, and rotate-on-revoke remain
+  future work.
+- **Host-mediated enforcement (D1).** The iframe still reaches its own loopback
+  upstream directly; routing mutating requests through a bridge-owned proxy is
+  still deferred.
+- **Encrypted-at-rest store.** None exists; do not claim one until a real
+  encrypted store ships.

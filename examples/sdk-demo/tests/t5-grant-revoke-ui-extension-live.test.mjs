@@ -106,8 +106,7 @@ function spawnBridge(bridgePort, userRoot) {
     `--bridge-token=${BRIDGE_TOKEN}`,
     "--addon-runtime-read-token=t5-ui-addon-read",
     "--addon-runtime-control-token=t5-ui-addon-control",
-    `--echo-bearer-token=${ECHO_BEARER}`,
-    `--echo-admin-token=${ECHO_ADMIN}`,
+    `--workspace-addon-credentials=${JSON.stringify({ "addon.resonant-echo": { bearer: ECHO_BEARER, adminToken: ECHO_ADMIN } })}`,
   ];
   // Isolate the durable harness registry to a fresh tmp root. The launcher
   // reads RESONANTOS_BROWSER_FIRST_USER_ROOT (its --user-root flag is not

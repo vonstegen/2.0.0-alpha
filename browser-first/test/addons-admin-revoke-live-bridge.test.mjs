@@ -78,8 +78,7 @@ test("live bridge admin-revoke uses host-owned mapping (T1) and flips the Counte
     `--bridge-port=${bridgePort}`,
     `--bridge-token=${BRIDGE_TOKEN}`,
     `--addon-runtime-control-token=${CONTROL_TOKEN}`,
-    `--counter-bearer-token=${COUNTER_BEARER}`,
-    `--counter-admin-token=${COUNTER_ADMIN}`,
+    `--workspace-addon-credentials=${JSON.stringify({ "addon.resonant-counter": { bearer: COUNTER_BEARER, adminToken: COUNTER_ADMIN } })}`,
     `--user-root=${userRoot}`,
   ], { stdio: ["ignore", "ignore", "pipe"] });
 

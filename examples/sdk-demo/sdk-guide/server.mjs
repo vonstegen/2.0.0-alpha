@@ -1,35 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolveProvisionedWorkspaceAddonCredential } from "../../../browser-first/host/workspace-addon-credentials.mjs";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 47323;
 
-// Per-add-on bearer token. Phase-3 (P6): the host mints this through
-// `harness-registry.setGrants(...)` and delivers it via the bootstrap
-// envelope; the operator hands a stable token to the server so the demo can
-// be reproduced from a clean checkout. The host-only /admin/* routes accept a
-// distinct admin token (operator-pinned, never delivered to the iframe) so the
-// bridge can flip the in-memory deny flag without the add-on ever being able
-// to do so itself.
-const envBearerToken = () =>
-  String(process.env.RESONANTOS_SDK_GUIDE_BEARER_TOKEN ?? "").trim();
-const argvBearerToken = () => {
-  for (const arg of process.argv.slice(2)) {
-    const match = /^--sdk-guide-bearer-token=(.+)$/.exec(arg);
-    if (match) return match[1];
-  }
-  return "";
-};
-const envAdminToken = () =>
-  String(process.env.RESONANTOS_SDK_GUIDE_ADMIN_TOKEN ?? "").trim();
-const argvAdminToken = () => {
-  for (const arg of process.argv.slice(2)) {
-    const match = /^--sdk-guide-admin-token=(.+)$/.exec(arg);
-    if (match) return match[1];
-  }
-  return "";
-};
+const ADDON_ID = "addon.sdk-guide";
+// T6: this operator-started upstream reads its own { bearer, adminToken }
+// from the same generic provisioning document the bridge resolver uses —
+// no demo-specific per-add-on flags.
 
 // Like Echo and Counter, the sandboxed add-on iframe loads this HTML directly
 // from the add-on's own origin (the renderer sets iframe.src =
@@ -94,7 +74,7 @@ const STEP_INFO = Object.freeze({
  *   403 — host has revoked the grant; caller has a valid bearer but the
  *         network capability was withdrawn by the host (real host-policy
  *         revocation result, symmetric with Echo + Counter)
- *   503 — server was started without --sdk-guide-bearer-token; the mutating
+ *   503 — server was started without a provisioned bearer credential; the mutating
  *         route refuses every call (discovery-step symmetry).
  */
 export function createSdkGuideServer({
@@ -156,7 +136,7 @@ export function createSdkGuideServer({
         addon: "addon.sdk-guide",
         hostGranted,
         bearerConfigured: Boolean(
-          process.env.RESONANTOS_SDK_GUIDE_ACTIVE_BEARER ?? bearerToken,
+          bearerToken,
         ),
       });
       return;
@@ -190,7 +170,7 @@ export function createSdkGuideServer({
       }
       sendJson(res, 200, {
         hostGranted,
-        bearerConfigured: Boolean(process.env.RESONANTOS_SDK_GUIDE_ACTIVE_BEARER ?? bearerToken),
+        bearerConfigured: Boolean(bearerToken),
       });
       return;
     }
@@ -214,12 +194,12 @@ export function createSdkGuideServer({
     // and the bearer presented. 401/403 are the *real* outcomes that
     // prove the lifecycle.
     if (req.method === "POST" && url.pathname === "/api/guide/ping") {
-      const expected = process.env.RESONANTOS_SDK_GUIDE_ACTIVE_BEARER ?? bearerToken ?? "";
+      const expected = bearerToken ?? "";
       const presented = String(req.headers.authorization ?? "");
       if (!expected) {
         sendJson(res, 503, {
           error: "sdk-guide-not-configured",
-          message: "SDK Guide upstream started without --sdk-guide-bearer-token; no mutating calls are authorized. The lifecycle requires an operator-pinned bearer; that is the discovery-step symmetry with Echo and Counter.",
+          message: "SDK Guide upstream started without a provisioned bearer credential; no mutating calls are authorized. The lifecycle requires an operator-pinned bearer; that is the discovery-step symmetry with Echo and Counter.",
         });
         return;
       }
@@ -249,11 +229,6 @@ export function createSdkGuideServer({
     sendJson(res, 404, { error: "not-found" });
   });
 
-  const resolvedEnvToken = envBearerToken();
-  if (resolvedEnvToken) process.env.RESONANTOS_SDK_GUIDE_ACTIVE_BEARER = resolvedEnvToken;
-  const resolvedArgvToken = argvBearerToken();
-  if (resolvedArgvToken) process.env.RESONANTOS_SDK_GUIDE_ACTIVE_BEARER = resolvedArgvToken;
-  const resolvedAdminToken = adminToken ?? envAdminToken() ?? argvAdminToken();
 
   return {
     host,
@@ -278,9 +253,11 @@ const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process
 
 if (isDirectRun) {
   const port = Number(process.env.RESONANTOS_SDK_GUIDE_PORT ?? DEFAULT_PORT);
-  const service = createSdkGuideServer({ port });
-  service.start().then(({ host: h, port: p }) => {
-    const tokenStatus = process.env.RESONANTOS_SDK_GUIDE_ACTIVE_BEARER ? "configured" : "NOT configured (mutating routes will return 503)";
-    console.log(`Resonant SDK Guide listening on http://${h}:${p} (bearer token: ${tokenStatus})`);
+  resolveProvisionedWorkspaceAddonCredential(ADDON_ID).then(({ bearer, adminToken }) => {
+    const service = createSdkGuideServer({ port, bearerToken: bearer, adminToken });
+    service.start().then(({ host: h, port: p }) => {
+      const tokenStatus = bearer ? "configured" : "NOT configured (mutating routes will return 503)";
+      console.log(`Resonant SDK Guide listening on http://${h}:${p} (bearer token: ${tokenStatus})`);
+    });
   });
 }

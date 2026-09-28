@@ -29,6 +29,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 import { createAddonDelegationService } from "../host/addon-delegation-service.mjs";
+import { createWorkspaceAddonCredentialResolver } from "../host/workspace-addon-credentials.mjs";
 import { createHarnessRegistry } from "../host/harness-registry.mjs";
 import { createEchoServer } from "../../examples/sdk-demo/echo/server.mjs";
 
@@ -79,8 +80,9 @@ async function buildHarness({ adminUrl, adminToken = ADMIN } = {}) {
     userRoot,
     timers: { setTimeout, clearTimeout },
     workspaceAddonRegistry: registry,
-    workspaceAddonBearerTokens: { [ID]: BEARER },
-    workspaceAddonAdminTokens: { [ID]: { upstreamAdminUrl: adminUrl, adminToken } },
+    workspaceAddonCredentialResolver: createWorkspaceAddonCredentialResolver({
+      credentials: { [ID]: { bearer: BEARER, adminToken, adminUrl } },
+    }),
   });
   return {
     service,

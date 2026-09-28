@@ -17,6 +17,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 import { createAddonDelegationService } from "../host/addon-delegation-service.mjs";
+import { createWorkspaceAddonCredentialResolver } from "../host/workspace-addon-credentials.mjs";
 import { createHarnessRegistry } from "../host/harness-registry.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -32,7 +33,7 @@ function memoryStore() {
   };
 }
 
-async function buildService({ workspaceAddonBearerTokens = { "addon.resonant-echo": "echo-bearer-test" } } = {}) {
+async function buildService() {
   const userRoot = mkdtempSync(join(tmpdir(), "sdk-demo-003-p6-regression-"));
   const memoryRoot = mkdtempSync(join(userRoot, "memory-"));
   const browserFirstRootPath = join(userRoot, "browser-first-root");
@@ -77,8 +78,9 @@ async function buildService({ workspaceAddonBearerTokens = { "addon.resonant-ech
       userRoot,
       timers: { setTimeout, clearTimeout },
       workspaceAddonRegistry,
-      workspaceAddonBearerTokens,
-      workspaceAddonAdminTokens: { "addon.resonant-echo": "echo-admin-test" },
+      workspaceAddonCredentialResolver: createWorkspaceAddonCredentialResolver({
+        credentials: { "addon.resonant-echo": { bearer: "echo-bearer-test" } },
+      }),
     }),
     registry: workspaceAddonRegistry,
     cleanup: () => { try { rmSync(userRoot, { recursive: true, force: true }); } catch {} },

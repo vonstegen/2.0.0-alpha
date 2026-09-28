@@ -34,7 +34,7 @@ function memoryStore() {
   };
 }
 
-async function buildService({ workspaceAddonBearerTokens = { "addon.resonant-echo": "echo-bearer-test" } } = {}) {
+async function buildService() {
   const userRoot = mkdtempSync(join(tmpdir(), "sdk-demo-003-t2-status-readonly-"));
   const memoryRoot = mkdtempSync(join(userRoot, "memory-"));
   const browserFirstRootPath = join(userRoot, "browser-first-root");
@@ -79,8 +79,6 @@ async function buildService({ workspaceAddonBearerTokens = { "addon.resonant-ech
       userRoot,
       timers: { setTimeout, clearTimeout },
       workspaceAddonRegistry,
-      workspaceAddonBearerTokens,
-      workspaceAddonAdminTokens: { "addon.resonant-echo": "echo-admin-test" },
     }),
     registry: workspaceAddonRegistry,
     cleanup: () => { try { rmSync(userRoot, { recursive: true, force: true }); } catch {} },
@@ -139,8 +137,6 @@ async function buildServiceWithFailingDiscovery() {
       userRoot,
       timers: { setTimeout, clearTimeout },
       workspaceAddonRegistry,
-      workspaceAddonBearerTokens: { "addon.resonant-echo": "echo-bearer-test" },
-      workspaceAddonAdminTokens: { "addon.resonant-echo": "echo-admin-test" },
     }),
     registry: workspaceAddonRegistry,
     cleanup: () => { try { rmSync(userRoot, { recursive: true, force: true }); } catch {} },

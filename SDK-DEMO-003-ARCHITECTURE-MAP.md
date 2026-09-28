@@ -226,15 +226,16 @@ After P6 the workspace add-on capability surface is host-owned end-to-end.
   the host has granted. Manifests' `grantPresets` are no longer consulted
   for the bootstrap path; the renderer surfaces the registry snapshot
   in the `Capability contract` chips.
-- **Bearer + admin tokens.** Two distinct operator-pinned tokens per
-  add-on:
-    - **Bearer** — delivered to the iframe via the bootstrap envelope;
-      carried as `Authorization: Bearer` on every mutating request. Held
-      by the bridge (host side); never reaches the add-on's HTML/URL.
-    - **Admin** — gates `POST /admin/deny` on the upstream. Never
-      delivered to the iframe; held by the bridge and used to flip the
-      upstream's in-memory deny flag via `POST
-      /addons/workspace/admin-revoke`.
+- **Credential provisioning (T6 — generic).** One operator-supplied
+  provisioning document (JSON) replaces the earlier per-add-on token maps.
+  The bridge loads it via the generic resolver
+  (`browser-first/host/workspace-addon-credentials.mjs`) which maps
+  `(addon identity + purpose)` → scoped material; purposes are `bearer`
+  (add-on-scoped, delivered to the iframe bootstrap envelope for each
+  host-granted capability) and `admin` (host-only, never delivered, used
+  to drive the upstream `/admin/deny` flag). The admin URL is derived from
+  the validated manifest `service.entrypoint` unless the document pins an
+  `adminUrl` (loopback-validated).
 - **403 is real host policy.** Operator-level revocation is converged
   (T4): a single revoke — `POST /addons/workspace/revoke` or `POST
   /addons/workspace/admin-revoke` — flips BOTH the registry grant AND the
@@ -308,13 +309,13 @@ second manifest schema.
   `POST /addons/workspace/bootstrap` (added in P6; reused here).
 - **Renderer** — `createWorkspaceAddonIframe` + bootstrap envelope from
   `main-workspace.js` (added in P5/P6; reused here).
-- **Per-add-on token model** — operator-pinned bearer + admin tokens are
-  threaded through `run-bridge-minimal.mjs`'s `--sdk-guide-bearer-token`
-  and `--sdk-guide-admin-token` flags (or `RESONANTOS_DEMO_SDK_GUIDE_{BEARER,ADMIN}`
-  env vars). The bridge hands both to `addon-delegation-service.mjs`'s
-  `workspaceAddonBearerTokens` / `workspaceAddonAdminTokens` maps;
-  the iframe receives only the bearer via the bootstrap envelope; the
-  admin token stays bridge-side.
+- **Per-add-on credential model (T6)** — bearer + admin credentials are
+  provisioned in one generic document (`--workspace-addon-credentials=<json>`,
+  `RESONANTOS_WORKSPACE_ADDON_CREDENTIALS`, or a file) keyed by add-on id.
+  The bridge resolver and each operator-started upstream
+  (`resolveProvisionedWorkspaceAddonCredential`) read the same document; the
+  iframe receives only the bearer via the bootstrap envelope; the admin
+  token stays bridge-side.
 
 ### Educational guarantee
 
@@ -427,3 +428,72 @@ routed through one host-owned endpoint.
 - The grant/install routes carry the same harness transport boundary
   (`loopbackHostOnly` + `errorFamily: "harness"`) as the T4 revoke routes, so
   policy denials map to 4xx and runtime/upstream failures stay 5xx.
+
+## 10. Phase 7 (T6) — generic host-owned credential provisioning
+
+Replaces the demo-specific, hard-coded credential wiring (`workspaceAddonBearerTokens` /
+`workspaceAddonAdminTokens` maps plus `--echo-*` / `--counter-*` / `--sdk-guide-*` flags)
+with one typed, provider/add-on-neutral resolver.
+
+### 10.1 Gap (Tom T6)
+
+Before T6 every new workspace add-on required code edits to the host launcher
+(a literal add-on id, a literal admin URL, and six literal flag/env names) and a
+bespoke argv/env token parser in its upstream. That is non-generic provisioning.
+T6 is narrowly: **callers name `(add-on identity + credential purpose)`; the host
+resolves the material.** No T7 scope (host-mediated proxying, expiry/rotation,
+vault storage) is pulled in.
+
+### 10.2 Contract
+
+`browser-first/host/workspace-addon-credentials.mjs`:
+
+- `WORKSPACE_ADDON_CREDENTIAL_PURPOSES = ["bearer", "admin"]` — the only two
+  credential classes a workspace add-on has.
+- `createWorkspaceAddonCredentialResolver({ credentials })` →
+  `resolveWorkspaceAddonCredential({ addonId, purpose, manifestEntrypoint })`.
+  - `bearer` → `{ addonId, purpose, token }` (never admin material).
+  - `admin` → `{ addonId, purpose, upstreamAdminUrl, adminToken }`.
+  - `upstreamAdminUrl` = document `adminUrl` (if pinned) else derived from the
+    validated manifest `service.entrypoint` + `/admin/deny`; always loopback
+    http(s)-validated.
+- `loadWorkspaceAddonCredentials({ args, env })` — precedence:
+  `--workspace-addon-credentials=<json>` → `RESONANTOS_WORKSPACE_ADDON_CREDENTIALS`
+  → `--workspace-addon-credentials-file=<path>` → `RESONANTOS_WORKSPACE_ADDON_CREDENTIALS_FILE`.
+- `resolveProvisionedWorkspaceAddonCredential(addonId)` — the add-on upstream's
+  reader of the same document (returns only its own `{ bearer, adminToken }`;
+  never `adminUrl`).
+
+### 10.3 Trust / storage boundary table
+
+| Surface | May hold | Never |
+| --- | --- | --- |
+| Durable host config | provisioning document (`bearer`, `adminToken`, optional `adminUrl`), only if the operator supplies a file outside the repo | any secret in source control |
+| Process memory (host) | resolved bearer + admin material | admin material crossing the bridge→iframe boundary |
+| Bootstrap envelope | `capabilityTokens[capability].token` (bearer) for granted capabilities | admin token/URL, raw host-only credentials |
+| Status / grants / install projections | registry-derived grant state only | any credential value |
+| Logs / errors | redacted codes + messages | token values |
+| `addon.json` manifests | requests, `supportsPrivateCredentials: false` | any secret |
+| Generated bridge config | bridge token + capability bootstrap + bridge capability tokens | workspace bearer/admin tokens |
+
+### 10.4 Failure, rotation, redaction semantics
+
+- Missing/unknown identity → `credential-unavailable`; unknown purpose → `invalid-event`.
+  In `admin-revoke` a missing admin credential maps to `permission-denied`
+  ("not configured", 4xx) — the T1/T4 ordering is preserved.
+- Bootstrap with no bearer omits tokens (fail closed) rather than throwing; the
+  upstream then returns 401, unchanged from pre-T6.
+- Rotation is **restart-bound**: credentials are read once at bridge startup into
+  process memory, never regenerated or revoked at runtime. Live rotation and
+  expiry are future hardening (D2), not fabricated here.
+- Errors never echo the resolved material; the admin-revoke upstream failure path
+  already surfaces only `{ status, statusText }`.
+
+### 10.5 Files
+
+`browser-first/host/workspace-addon-credentials.mjs` (new),
+`browser-first/host/addon-delegation-service.mjs`,
+`browser-first/host/run-bridge-minimal.mjs`,
+`examples/sdk-demo/{echo,counter,sdk-guide}/server.mjs`,
+`browser-first/test/workspace-addon-credentials.test.mjs` (new), and the
+credential-wired test launchers.

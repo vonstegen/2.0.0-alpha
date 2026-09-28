@@ -33,6 +33,10 @@ import {
 } from "./browser-first-host-utils.mjs";
 import { runBrowserFirstSelfTest } from "./browser-first-self-test-service.mjs";
 import { createAgentControlHostService } from "./agent-control-host-service.mjs";
+import {
+  createWorkspaceAddonCredentialResolver,
+  loadWorkspaceAddonCredentials,
+} from "./workspace-addon-credentials.mjs";
 import { buildBridgeCapabilityTokens } from "./bridge-capability-tokens.mjs";
 import { createAddonDelegationHostService } from "./addon-delegation-host-service.mjs";
 import { createAddonDelegationService } from "./addon-delegation-service.mjs";
@@ -211,25 +215,16 @@ const addonDelegationService = createAddonDelegationService({
   // the harness adapter routes use; P6 extends its lifecycle to local-service
   // workspace add-ons without inventing a second registry.
   workspaceAddonRegistry: harnessService.registry,
-  // Host-side bearer tokens (delivered to the iframe in the bootstrap
-  // envelope for every granted capability) and host-side admin tokens
-  // (NEVER delivered — host-only, used to drive /admin/deny on revocation).
-  // Both are operator-pinned via launcher args or env so the demo is
-  // reproducible from a clean checkout without a second trust path.
-  workspaceAddonBearerTokens: {
-    "addon.resonant-echo": args.get("echo-bearer-token") ?? process.env.RESONANTOS_DEMO_ECHO_BEARER ?? "",
-    "addon.resonant-counter": args.get("counter-bearer-token") ?? process.env.RESONANTOS_DEMO_COUNTER_BEARER ?? "",
-    "addon.sdk-guide": args.get("sdk-guide-bearer-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_BEARER ?? "",
-  },
-  workspaceAddonAdminTokens: {
-    // Admin endpoints are the manifest-declared loopback service entrypoints
-    // (echo 47321, counter 47322, sdk-guide 47323) plus the /admin/deny
-    // host-only route. Operator-pinned admin tokens; the URL is host-owned,
-    // never caller-supplied (T1).
-    "addon.resonant-echo": { upstreamAdminUrl: "http://127.0.0.1:47321/admin/deny", adminToken: args.get("echo-admin-token") ?? process.env.RESONANTOS_DEMO_ECHO_ADMIN ?? "" },
-    "addon.resonant-counter": { upstreamAdminUrl: "http://127.0.0.1:47322/admin/deny", adminToken: args.get("counter-admin-token") ?? process.env.RESONANTOS_DEMO_COUNTER_ADMIN ?? "" },
-    "addon.sdk-guide": { upstreamAdminUrl: "http://127.0.0.1:47323/admin/deny", adminToken: args.get("sdk-guide-admin-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_ADMIN ?? "" },
-  },
+  // T6: one generic provisioning document (JSON) replaces the demo-specific
+  // per-add-on token maps. Precedence: --workspace-addon-credentials=<json>,
+  // then RESONANTOS_WORKSPACE_ADDON_CREDENTIALS, then a file. The resolver
+  // maps (addon identity + purpose) -> scoped material; admin URLs are derived
+  // from the validated manifest entrypoint unless the document pins an
+  // `adminUrl` (host-only, loopback-validated). No per-add-on code, no
+  // per-add-on flags.
+  workspaceAddonCredentialResolver: createWorkspaceAddonCredentialResolver({
+    credentials: await loadWorkspaceAddonCredentials({ args }),
+  }),
 });
 
 const { executeAddonsStatus } = addonDelegationService;

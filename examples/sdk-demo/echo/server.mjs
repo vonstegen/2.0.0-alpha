@@ -1,45 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolveProvisionedWorkspaceAddonCredential } from "../../../browser-first/host/workspace-addon-credentials.mjs";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 47321;
 
-// Per-add-on bearer token for Echo's mutating routes (Phase-3 P6). Before P6,
-// Echo was bearer-agnostic — the P6 capability-gated model requires Echo's
-// `network` capability to be enforced the same way Counter's is, so the
-// revoke/deny proof applies symmetrically across both add-ons. The bearer
-// token is delivered to the iframe via the bootstrap envelope (host-minted
-// from harness-registry). The admin token (operator-pinned, host-only) gates
-// the /admin/* revocation surface.
-const envBearerToken = () =>
-  String(process.env.RESONANTOS_ECHO_BEARER_TOKEN ?? "").trim();
-const argvBearerToken = () => {
-  for (let i = 2; i < process.argv.length; i += 1) {
-    const arg = process.argv[i];
-    if (arg === `--echo-bearer-token`) {
-      return String(process.argv[i + 1] ?? "").trim();
-    }
-    if (arg.startsWith("--echo-bearer-token=")) {
-      return arg.slice("--echo-bearer-token=".length).trim();
-    }
-  }
-  return "";
-};
-const envAdminToken = () =>
-  String(process.env.RESONANTOS_ECHO_ADMIN_TOKEN ?? "").trim();
-const argvAdminToken = () => {
-  for (let i = 2; i < process.argv.length; i += 1) {
-    const arg = process.argv[i];
-    if (arg === `--echo-admin-token`) {
-      return String(process.argv[i + 1] ?? "").trim();
-    }
-    if (arg.startsWith("--echo-admin-token=")) {
-      return arg.slice("--echo-admin-token=".length).trim();
-    }
-  }
-  return "";
-};
+const ADDON_ID = "addon.resonant-echo";
+// T6: this operator-started upstream reads its own { bearer, adminToken }
+// from the same generic provisioning document the bridge resolver uses —
+// no demo-specific per-add-on flags.
 
 // The sandboxed add-on iframe loads this HTML directly from the add-on's own
 // origin (the renderer sets iframe.src = service.entrypoint), so the server
@@ -89,7 +59,7 @@ const constantTimeEqual = (a, b) => {
  *   401 — caller presented a missing or wrong bearer (Echo's bearer is locked
  *         down; Counter's bearer cannot authorize Echo)
  *   403 — host has revoked the grant (real host-policy result, not hard-coded)
- *   503 — server started without --echo-bearer-token; mutating calls refused
+ *   503 — server started without a provisioned bearer credential; mutating calls refused
  */
 export function createEchoServer({
   host = DEFAULT_HOST,
@@ -124,7 +94,7 @@ export function createEchoServer({
         return;
       }
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ hostGranted, bearerConfigured: Boolean(bearerToken ?? process.env.RESONANTOS_ECHO_ACTIVE_BEARER) }));
+      res.end(JSON.stringify({ hostGranted, bearerConfigured: Boolean(bearerToken) }));
       return;
     }
 
@@ -149,7 +119,7 @@ export function createEchoServer({
     }
 
     if (req.method === "POST" && url.pathname === "/api/echo/message") {
-      const expected = process.env.RESONANTOS_ECHO_ACTIVE_BEARER ?? bearerToken ?? "";
+      const expected = bearerToken ?? "";
       const presented = String(req.headers.authorization ?? "");
       if (!expected) {
         res.writeHead(503, { "content-type": "application/json" });
@@ -157,7 +127,7 @@ export function createEchoServer({
           JSON.stringify({
             error: "echo-not-configured",
             message:
-              "Echo upstream started without --echo-bearer-token; no mutating calls are authorized. The host has not minted a capability token.",
+              "Echo upstream started without a provisioned bearer credential; no mutating calls are authorized. The host has not minted a capability token.",
           }),
         );
         return;
@@ -203,13 +173,6 @@ export function createEchoServer({
     res.end(JSON.stringify({ error: "not-found" }));
   });
 
-  const resolvedEnvToken = envBearerToken();
-  if (resolvedEnvToken) process.env.RESONANTOS_ECHO_ACTIVE_BEARER = resolvedEnvToken;
-  const resolvedArgvToken = argvBearerToken();
-  if (resolvedArgvToken) process.env.RESONANTOS_ECHO_ACTIVE_BEARER = resolvedArgvToken;
-  const resolvedAdminEnvToken = envAdminToken();
-  const resolvedAdminArgvToken = argvAdminToken();
-  const resolvedAdminToken = adminToken ?? resolvedAdminEnvToken ?? resolvedAdminArgvToken;
 
   return {
     host,
@@ -236,9 +199,11 @@ const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process
 
 if (isDirectRun) {
   const port = Number(process.env.RESONANTOS_ECHO_PORT ?? DEFAULT_PORT);
-  const service = createEchoServer({ port });
-  service.start().then(({ host: h, port: p }) => {
-    const tokenStatus = process.env.RESONANTOS_ECHO_ACTIVE_BEARER ? "configured" : "NOT configured (mutating routes will return 503)";
-    console.log(`Resonant Echo listening on http://${h}:${p} (bearer token: ${tokenStatus})`);
+  resolveProvisionedWorkspaceAddonCredential(ADDON_ID).then(({ bearer, adminToken }) => {
+    const service = createEchoServer({ port, bearerToken: bearer, adminToken });
+    service.start().then(({ host: h, port: p }) => {
+      const tokenStatus = bearer ? "configured" : "NOT configured (mutating routes will return 503)";
+      console.log(`Resonant Echo listening on http://${h}:${p} (bearer token: ${tokenStatus})`);
+    });
   });
 }

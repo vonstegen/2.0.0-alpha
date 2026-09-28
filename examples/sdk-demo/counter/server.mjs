@@ -1,45 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolveProvisionedWorkspaceAddonCredential } from "../../../browser-first/host/workspace-addon-credentials.mjs";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 47322;
 
-// Per-add-on bearer token. Phase-3 (P6): the host mints this through
-// `harness-registry.setGrants(...)` and delivers it via the bootstrap
-// envelope; the operator hands a stable token to the server so the demo can
-// be reproduced from a clean checkout. The host-only /admin/* routes accept a
-// distinct admin token (operator-pinned, never delivered to the iframe) so the
-// bridge can flip the in-memory deny flag without the add-on ever being able
-// to do so itself.
-const envBearerToken = () =>
-  String(process.env.RESONANTOS_COUNTER_BEARER_TOKEN ?? "").trim();
-const argvBearerToken = () => {
-  for (let i = 2; i < process.argv.length; i += 1) {
-    const arg = process.argv[i];
-    if (arg === `--counter-bearer-token`) {
-      return String(process.argv[i + 1] ?? "").trim();
-    }
-    if (arg.startsWith("--counter-bearer-token=")) {
-      return arg.slice("--counter-bearer-token=".length).trim();
-    }
-  }
-  return "";
-};
-const envAdminToken = () =>
-  String(process.env.RESONANTOS_COUNTER_ADMIN_TOKEN ?? "").trim();
-const argvAdminToken = () => {
-  for (let i = 2; i < process.argv.length; i += 1) {
-    const arg = process.argv[i];
-    if (arg === `--counter-admin-token`) {
-      return String(process.argv[i + 1] ?? "").trim();
-    }
-    if (arg.startsWith("--counter-admin-token=")) {
-      return arg.slice("--counter-admin-token=".length).trim();
-    }
-  }
-  return "";
-};
+const ADDON_ID = "addon.resonant-counter";
+// T6: this operator-started upstream reads its own { bearer, adminToken }
+// from the same generic provisioning document the bridge resolver uses —
+// no demo-specific per-add-on flags.
 
 // Like Echo, the sandboxed add-on iframe loads this HTML directly from the
 // add-on's own origin (the renderer sets iframe.src = service.entrypoint). No
@@ -92,7 +62,7 @@ const constantTimeEqual = (a, b) => {
  *   403 — host has revoked the grant; caller has a valid bearer but the
  *         network capability was withdrawn by the host (real host-policy
  *         result, not a hard-coded 403)
- *   503 — server was started without --counter-bearer-token; no mutating
+ *   503 — server was started without a provisioned bearer credential; no mutating
  *         calls are authorized. Discovery step of the isolation proof.
  */
 export function createCounterServer({
@@ -139,7 +109,7 @@ export function createCounterServer({
         return;
       }
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ hostGranted, bearerConfigured: Boolean(bearerToken ?? process.env.RESONANTOS_COUNTER_ACTIVE_BEARER) }));
+      res.end(JSON.stringify({ hostGranted, bearerConfigured: Boolean(bearerToken) }));
       return;
     }
 
@@ -169,18 +139,18 @@ export function createCounterServer({
         url.pathname === "/api/counter/decrement" ||
         url.pathname === "/api/counter/reset")
     ) {
-      const expected = process.env.RESONANTOS_COUNTER_ACTIVE_BEARER ?? bearerToken ?? "";
+      const expected = bearerToken ?? "";
       const presented = String(req.headers.authorization ?? "");
       if (!expected) {
         // Server was started without an operator-pinned token: refuse all
         // mutating requests. Discovering this is part of the isolation proof
-        // — the test passes --counter-bearer-token to opt in.
+        // — the operator provisions the counter bearer to opt in.
         res.writeHead(503, { "content-type": "application/json" });
         res.end(
           JSON.stringify({
             error: "counter-not-configured",
             message:
-              "Counter upstream started without --counter-bearer-token; no mutating calls are authorized. This is the isolation guarantee: callers without the operator-pinned token cannot drive the counter.",
+              "Counter upstream started without a provisioned bearer credential; no mutating calls are authorized. This is the isolation guarantee: callers without the operator-pinned token cannot drive the counter.",
           }),
         );
         return;
@@ -221,13 +191,6 @@ export function createCounterServer({
     res.end(JSON.stringify({ error: "not-found" }));
   });
 
-  const resolvedEnvToken = envBearerToken();
-  if (resolvedEnvToken) process.env.RESONANTOS_COUNTER_ACTIVE_BEARER = resolvedEnvToken;
-  const resolvedArgvToken = argvBearerToken();
-  if (resolvedArgvToken) process.env.RESONANTOS_COUNTER_ACTIVE_BEARER = resolvedArgvToken;
-  const resolvedAdminEnvToken = envAdminToken();
-  const resolvedAdminArgvToken = argvAdminToken();
-  const resolvedAdminToken = adminToken ?? resolvedAdminEnvToken ?? resolvedAdminArgvToken;
 
   return {
     host,
@@ -258,9 +221,11 @@ const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process
 
 if (isDirectRun) {
   const port = Number(process.env.RESONANTOS_COUNTER_PORT ?? DEFAULT_PORT);
-  const service = createCounterServer({ port });
-  service.start().then(({ host: h, port: p }) => {
-    const tokenStatus = process.env.RESONANTOS_COUNTER_ACTIVE_BEARER ? "configured" : "NOT configured (mutating routes will return 503)";
-    console.log(`Resonant Counter listening on http://${h}:${p} (bearer token: ${tokenStatus})`);
+  resolveProvisionedWorkspaceAddonCredential(ADDON_ID).then(({ bearer, adminToken }) => {
+    const service = createCounterServer({ port, bearerToken: bearer, adminToken });
+    service.start().then(({ host: h, port: p }) => {
+      const tokenStatus = bearer ? "configured" : "NOT configured (mutating routes will return 503)";
+      console.log(`Resonant Counter listening on http://${h}:${p} (bearer token: ${tokenStatus})`);
+    });
   });
 }

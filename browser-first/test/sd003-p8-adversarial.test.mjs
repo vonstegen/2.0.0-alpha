@@ -642,10 +642,11 @@ test("SDK-DEMO-003R T1: admin-revoke authority must be host-owned", async () => 
     const adminPort = started.port;
     const actualAdminUrl = `http://127.0.0.1:${adminPort}/admin/deny`;
 
-    // Host-side admin config keyed by addonId
-    const workspaceAddonAdminTokens = {
-      [addonId]: { upstreamAdminUrl: actualAdminUrl, adminToken },
-    };
+    // Host-side admin config keyed by addonId, via the T6 typed resolver.
+    const { createWorkspaceAddonCredentialResolver } = await import("../host/workspace-addon-credentials.mjs");
+    const workspaceAddonCredentialResolver = createWorkspaceAddonCredentialResolver({
+      credentials: { [addonId]: { adminToken, adminUrl: actualAdminUrl } },
+    });
 
     // Import the service with host-owned config and a host-owned registry. T4
     // convergence requires the registry (source of truth) alongside the admin
@@ -666,8 +667,7 @@ test("SDK-DEMO-003R T1: admin-revoke authority must be host-owned", async () => 
     await registry.install(echoManifest, { enabled: false });
     const service = createAddonDelegationService({
       workspaceAddonRegistry: registry,
-      workspaceAddonAdminTokens,
-      workspaceAddonBearerTokens: {},
+      workspaceAddonCredentialResolver,
     });
 
     const executeWorkspaceAddonAdminRevoke = service.executeWorkspaceAddonAdminRevoke;
@@ -694,8 +694,6 @@ test("SDK-DEMO-003R T1: admin-revoke authority must be host-owned", async () => 
     // Test 3: missing host-side admin token/config fails closed
     const serviceNoConfig = createAddonDelegationService({
       workspaceAddonRegistry: null,
-      workspaceAddonAdminTokens: {},
-      workspaceAddonBearerTokens: {},
     });
     const executeNoConfig = serviceNoConfig.executeWorkspaceAddonAdminRevoke;
     try {
@@ -745,8 +743,6 @@ test("P8 Attack 12 (malformed-request): executeWorkspaceAddonAdminRevoke rejects
   const { createAddonDelegationService } = await import("../host/addon-delegation-service.mjs");
   const service = createAddonDelegationService({
     workspaceAddonRegistry: null,
-    workspaceAddonAdminTokens: {},
-    workspaceAddonBearerTokens: {},
   });
   const revoke = service.executeWorkspaceAddonAdminRevoke;
 

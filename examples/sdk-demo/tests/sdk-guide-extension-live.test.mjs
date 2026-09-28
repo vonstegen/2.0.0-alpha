@@ -85,8 +85,7 @@ function spawnBridge(bridgePort) {
     `--bridge-token=${GUIDE_BRIDGE_TOKEN}`,
     "--addon-runtime-read-token=dev-p7-addon-read",
     "--addon-runtime-control-token=dev-p7-addon-control",
-    `--sdk-guide-bearer-token=${GUIDE_BEARER}`,
-    `--sdk-guide-admin-token=${GUIDE_ADMIN}`,
+    `--workspace-addon-credentials=${JSON.stringify({ "addon.sdk-guide": { bearer: GUIDE_BEARER, adminToken: GUIDE_ADMIN } })}`,
     `--user-root=${path.join(os.tmpdir(), "sd003-p7-user-root-" + process.pid)}`,
   ];
   return spawn(process.execPath, args, { stdio: ["ignore", "pipe", "pipe"] });
