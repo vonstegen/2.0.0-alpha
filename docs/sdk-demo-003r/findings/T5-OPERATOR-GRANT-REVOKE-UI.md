@@ -1,27 +1,24 @@
 # T5 — Operator Grant / Revoke UI
 
 ## Finding
-The Add-ons workspace needed an explicit operator lifecycle that represented host authority without recreating privileged authority in browser code.
+The Add-ons workspace needed an explicit operator lifecycle representing host authority without recreating privileged authority in browser code.
 
-## Engineering decision
-Workspace cards represent:
-- Discovered
-- Installed but denied
-- Granted
-- mutation pending/error
+## Decision
+Cards represent Discovered, installed/Denied, Granted, and pending/error states. Lifecycle:
 
-The operator lifecycle is explicit:
 `Discover → Install → Denied → Grant → Granted → Revoke → Denied`.
 
-The UI submits intent-only install by `addonId`, builds grant requests from requested grant shape, derives current authority from host-reported registry state, and uses the T4 converged revoke route. It never constructs or sends privileged admin URL/token fields.
-
-After mutation, authoritative state is re-read. Failed mutations do not render false success; pending mutation suppresses duplicate actions.
+The UI sends intent-only install by `addonId`, derives current authority from host-reported registry state, and uses the T4 converged revoke route. It never constructs/sends privileged admin URL/token fields. Failed mutations do not render false success; pending mutation suppresses duplicates.
 
 ## Real graphical proof
-The new extension-live test drives the real unpacked extension through Install → Grant → Revoke and verifies the same bearer changes from accepted (200) to denied (403) after UI revoke.
+The real unpacked extension drives Install → Grant → Revoke and verifies the same bearer changes from HTTP 200 to HTTP 403 after revoke.
 
-## Engineering candidate
-`20726e395909e135782205d7fdad37d481aa5400`.
+## Acceptance
+Candidate `20726e395909e135782205d7fdad37d481aa5400` independently verified by VIGIL Test Lab #41:
+- Browser-first 2234/2235, exit 0
+- Extension 5/5
+- source mutation none
+- artifact verification PASS
 
 ## Status
-ENGINEERING COMPLETE. Independent Test Lab #41 must be final before marking CLOSED.
+CLOSED / independently verified.
