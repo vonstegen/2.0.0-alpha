@@ -1,35 +1,24 @@
 # SDK-DEMO-003R R&D / Audit Record
 
-This directory is the durable technical record for SDK-DEMO-003R.
+This directory is the durable technical record for SDK-DEMO-003R. It separates mechanically observed findings, architectural decisions, exact-SHA verification evidence, and future hardening recommendations.
 
-It separates four classes of information:
+## Current accepted lineage
+- T1–T3/live integration: `c869a92841511fc444ef42772bdae2e985303890` — PASS (#28)
+- T4: `c57d4d0f579f601de91fcf3b7d7faca343d68c7d` — PASS (#39)
+- T5: `20726e395909e135782205d7fdad37d481aa5400` — PASS (#41)
+- T6 engineering: `30197261cb179a43126fc0890dd56de9354ffec9` — superseded by T6.1
+- T6/T6.1 final: `b8735970315a8f5ab4a4656dfe6702d31ad47d13` — PASS (#45)
 
-1. **Findings** — mechanically observed defects or architectural gaps.
-2. **Decisions** — architecture choices made in response and the invariants they establish.
-3. **Verification** — exact-SHA evidence used to accept a correction.
-4. **Hardening backlog** — worthwhile future work that is not claimed as complete.
-
-## Current lineage
-
-- Tom-reviewed baseline: `c92bf898d0f801a2a189cd111000fc8a24f88c19`
-- T1–T3/live-integration accepted candidate: `c869a92841511fc444ef42772bdae2e985303890`
-- T4 independently accepted candidate: `c57d4d0f579f601de91fcf3b7d7faca343d68c7d`
-- T5 engineering candidate: `20726e395909e135782205d7fdad37d481aa5400`
-- T5 independent verification: tracked separately; do not treat T5 as closed until its exact-SHA Test Lab run is final.
+Every transition above is a linear one-commit advance with no dropped accepted history.
 
 ## Core invariants
-
-**T1 — Host-owned authority**  
-REQUEST DESCRIBES INTENT. HOST DETERMINES AUTHORITY.
-
-**T2 — Read versus mutation**  
-READ/DISCOVERY REPORTS STATE. EXPLICIT INSTALL MUTATES STATE.
-
-**T4 — Converged revocation**  
-Registry grant state is authoritative; upstream enforcement is its projection. Successful operator revoke/regrant converges both. Partial failure is fail-closed and never reported as successful convergence.
+**T1:** REQUEST DESCRIBES INTENT. HOST DETERMINES AUTHORITY.  
+**T2:** READ/DISCOVERY REPORTS STATE. EXPLICIT INSTALL MUTATES STATE.  
+**T4:** Registry grant state is authoritative; upstream enforcement is its projection. Successful revoke/regrant converges both; partial failure is fail-closed.  
+**T5:** Browser UI represents host authority; it does not own privileged authority.  
+**T6/T6.1:** Credential material is host-resolved by add-on identity + purpose. Scoped bearer may cross only its intended boundary; admin material remains host-only; raw credential JSON is not supported in argv.
 
 ## Index
-
 - [Findings](SDK-DEMO-003R-FINDINGS.md)
 - [Decision Log](SDK-DEMO-003R-DECISION-LOG.md)
 - [Verification Ledger](SDK-DEMO-003R-VERIFICATION-LEDGER.md)
@@ -39,11 +28,14 @@ Registry grant state is authoritative; upstream enforcement is its projection. S
 - [T3](findings/T3-INSTALL-HANDLER-CONTRACT.md)
 - [T4](findings/T4-REVOCATION-CONVERGENCE.md)
 - [T5](findings/T5-OPERATOR-GRANT-REVOKE-UI.md)
+- [T6/T6.1](findings/T6-GENERIC-CREDENTIAL-PROVISIONING.md)
 
 ## Acceptance model
-
-Engineering-agent PASS is not final acceptance. The normal path is:
+Engineering-agent PASS is not final acceptance:
 
 `Build work order → candidate SHA → independent VIGIL Test Lab exact-SHA run → code/evidence audit → closure`.
 
-The Test Lab is deterministic and does not use an LLM to decide PASS/FAIL.
+## Current status
+T1–T6.1 are CLOSED and independently verified. Accepted pre-T7 baseline:
+
+`b8735970315a8f5ab4a4656dfe6702d31ad47d13`
