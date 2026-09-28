@@ -17,7 +17,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
@@ -107,6 +107,14 @@ async function waitForCdp(port, { timeoutMs = 30_000, intervalMs = 250 } = {}) {
 const ECHO_BEARER = "live-echo-bearer-cp3-test";
 const ECHO_ADMIN = "live-echo-admin-cp3-test";
 
+function writeWorkspaceAddonCredentialsFile(credentials) {
+  // T6.1: no raw secret material in argv. Write the provisioning document to a
+  // host-controlled temp file and pass a *reference* (path) instead of JSON.
+  const filePath = path.join(os.tmpdir(), `sd003-workspace-addon-credentials-${process.pid}.json`);
+  writeFileSync(filePath, JSON.stringify(credentials), "utf8");
+  return filePath;
+}
+
 function spawnBridge(bridgePort) {
   const bridgePath = path.join(repoRoot, "browser-first", "host", "run-bridge-minimal.mjs");
   const args = [
@@ -115,7 +123,7 @@ function spawnBridge(bridgePort) {
     "--bridge-token=dev-echo-bridge-token",
     "--addon-runtime-read-token=dev-echo-addon-read",
     "--addon-runtime-control-token=dev-echo-addon-control",
-    `--workspace-addon-credentials=${JSON.stringify({ "addon.resonant-echo": { bearer: ECHO_BEARER, adminToken: ECHO_ADMIN } })}`,
+    `--workspace-addon-credentials-file=${writeWorkspaceAddonCredentialsFile({ "addon.resonant-echo": { bearer: ECHO_BEARER, adminToken: ECHO_ADMIN } })}`,
     // Pin the registry to a tmp user-root so the test does not pollute
     // ~/ResonantOS_User.
     `--user-root=${path.join(os.tmpdir(), "sd003-echo-cp3-user-root")}`,

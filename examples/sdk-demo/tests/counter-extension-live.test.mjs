@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
@@ -80,6 +80,14 @@ async function waitForCdp(port, { timeoutMs = 30_000, intervalMs = 250 } = {}) {
 const counterBearer = "live-counter-token-pinned-for-this-test";
 const counterAdmin = "live-counter-admin-pinned-for-this-test";
 
+function writeWorkspaceAddonCredentialsFile(credentials) {
+  // T6.1: no raw secret material in argv. Write the provisioning document to a
+  // host-controlled temp file and pass a *reference* (path) instead of JSON.
+  const filePath = path.join(os.tmpdir(), `sd003-workspace-addon-credentials-${process.pid}.json`);
+  writeFileSync(filePath, JSON.stringify(credentials), "utf8");
+  return filePath;
+}
+
 function spawnBridge(bridgePort) {
   const bridgePath = path.join(repoRoot, "browser-first", "host", "run-bridge-minimal.mjs");
   const args = [
@@ -88,7 +96,7 @@ function spawnBridge(bridgePort) {
     "--bridge-token=dev-counter-bridge-token",
     "--addon-runtime-read-token=dev-counter-addon-read",
     "--addon-runtime-control-token=dev-counter-addon-control",
-    `--workspace-addon-credentials=${JSON.stringify({ "addon.resonant-counter": { bearer: counterBearer, adminToken: counterAdmin } })}`,
+    `--workspace-addon-credentials-file=${writeWorkspaceAddonCredentialsFile({ "addon.resonant-counter": { bearer: counterBearer, adminToken: counterAdmin } })}`,
     // Pin the registry to a tmp user-root so the test does not pollute
     // ~/ResonantOS_User.
     `--user-root=${path.join(os.tmpdir(), "sd003-counter-cp4-user-root")}`,

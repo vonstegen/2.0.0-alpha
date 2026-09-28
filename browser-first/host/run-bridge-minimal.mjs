@@ -215,13 +215,16 @@ const addonDelegationService = createAddonDelegationService({
   // the harness adapter routes use; P6 extends its lifecycle to local-service
   // workspace add-ons without inventing a second registry.
   workspaceAddonRegistry: harnessService.registry,
-  // T6: one generic provisioning document (JSON) replaces the demo-specific
-  // per-add-on token maps. Precedence: --workspace-addon-credentials=<json>,
-  // then RESONANTOS_WORKSPACE_ADDON_CREDENTIALS, then a file. The resolver
-  // maps (addon identity + purpose) -> scoped material; admin URLs are derived
-  // from the validated manifest entrypoint unless the document pins an
-  // `adminUrl` (host-only, loopback-validated). No per-add-on code, no
-  // per-add-on flags.
+  // T6/T6.1: one generic provisioning document (JSON) replaces the
+  // demo-specific per-add-on token maps. NO raw secret material in argv:
+  // precedence is --workspace-addon-credentials-file=<path> (a file
+  // *reference*), then RESONANTOS_WORKSPACE_ADDON_CREDENTIALS_FILE, then
+  // RESONANTOS_WORKSPACE_ADDON_CREDENTIALS (env JSON), then fail closed. The
+  // historical --workspace-addon-credentials=<json> flag is not read. The
+  // resolver maps (addon identity + purpose) -> scoped material; admin URLs
+  // are derived from the validated manifest entrypoint unless the document
+  // pins an `adminUrl` (host-only, true-loopback-validated; 0.0.0.0 rejected).
+  // No per-add-on code, no per-add-on flags.
   workspaceAddonCredentialResolver: createWorkspaceAddonCredentialResolver({
     credentials: await loadWorkspaceAddonCredentials({ args }),
   }),

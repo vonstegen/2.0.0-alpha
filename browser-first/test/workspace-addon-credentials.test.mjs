@@ -175,31 +175,87 @@ test("T6 document: malformed JSON parses to an empty table (fail closed)", () =>
   assert.deepEqual(parseWorkspaceAddonCredentials("[]"), {});
 });
 
-test("T6 document: loader precedence is arg > env > file", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "t6-load-"));
-  const filePath = join(dir, "creds.json");
-  await writeFile(filePath, JSON.stringify({ "addon.file": { bearer: "file-bearer" } }), "utf8");
-
-  // env wins over file
-  const envOnly = await loadWorkspaceAddonCredentials({
-    env: { RESONANTOS_WORKSPACE_ADDON_CREDENTIALS_FILE: filePath },
-  });
-  assert.equal(envOnly["addon.file"].bearer, "file-bearer");
-
-  const envWins = await loadWorkspaceAddonCredentials({
-    env: {
-      RESONANTOS_WORKSPACE_ADDON_CREDENTIALS: JSON.stringify({ "addon.env": { bearer: "env-bearer" } }),
-      RESONANTOS_WORKSPACE_ADDON_CREDENTIALS_FILE: filePath,
-    },
-  });
-  assert.equal(envWins["addon.env"].bearer, "env-bearer");
-
-  const argWins = await loadWorkspaceAddonCredentials({
-    args: { get: (name) => (name === "workspace-addon-credentials" ? JSON.stringify({ "addon.arg": { bearer: "arg-bearer" } }) : undefined) },
+test("T6.1 loader: raw-secret argv JSON is ignored (no raw secret in argv)", async () => {
+  const loaded = await loadWorkspaceAddonCredentials({
+    args: { get: (name) => (name === "workspace-addon-credentials" ? JSON.stringify({ "addon.raw": { bearer: "raw-secret" } }) : undefined) },
     env: { RESONANTOS_WORKSPACE_ADDON_CREDENTIALS: JSON.stringify({ "addon.env": { bearer: "env-bearer" } }) },
   });
-  assert.equal(argWins["addon.arg"].bearer, "arg-bearer");
+  assert.deepEqual(
+    loaded,
+    { "addon.env": { bearer: "env-bearer", adminToken: "", adminUrl: "" } },
+    "raw argv JSON must be ignored while the env JSON still resolves",
+  );
+
+  // Raw argv JSON alone must fail closed to an empty table (never provisioned).
+  const rawOnly = await loadWorkspaceAddonCredentials({
+    args: { get: (name) => (name === "workspace-addon-credentials" ? JSON.stringify({ "addon.raw": { bearer: "raw-secret" } }) : undefined) },
+  });
+  assert.deepEqual(rawOnly, {}, "raw argv JSON alone must fail closed to an empty table");
+});
+
+test("T6.1 loader: precedence is CLI file ref > env file > env JSON", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "t6-load-"));
+  const cliFile = join(dir, "cli.json");
+  const envFile = join(dir, "env.json");
+  await writeFile(cliFile, JSON.stringify({ "addon.cli": { bearer: "cli-bearer" } }), "utf8");
+  await writeFile(envFile, JSON.stringify({ "addon.envfile": { bearer: "envfile-bearer" } }), "utf8");
+
+  // env JSON only
+  const envJsonOnly = await loadWorkspaceAddonCredentials({
+    env: { RESONANTOS_WORKSPACE_ADDON_CREDENTIALS: JSON.stringify({ "addon.env": { bearer: "env-bearer" } }) },
+  });
+  assert.equal(envJsonOnly["addon.env"].bearer, "env-bearer");
+
+  // env file beats env JSON
+  const envFileWins = await loadWorkspaceAddonCredentials({
+    env: {
+      RESONANTOS_WORKSPACE_ADDON_CREDENTIALS_FILE: envFile,
+      RESONANTOS_WORKSPACE_ADDON_CREDENTIALS: JSON.stringify({ "addon.env": { bearer: "env-bearer" } }),
+    },
+  });
+  assert.equal(envFileWins["addon.envfile"].bearer, "envfile-bearer");
+  assert.equal(envFileWins["addon.env"], undefined, "env JSON must not win over env file");
+
+  // CLI file ref beats everything
+  const cliWins = await loadWorkspaceAddonCredentials({
+    args: { get: (name) => (name === "workspace-addon-credentials-file" ? cliFile : undefined) },
+    env: {
+      RESONANTOS_WORKSPACE_ADDON_CREDENTIALS_FILE: envFile,
+      RESONANTOS_WORKSPACE_ADDON_CREDENTIALS: JSON.stringify({ "addon.env": { bearer: "env-bearer" } }),
+    },
+  });
+  assert.equal(cliWins["addon.cli"].bearer, "cli-bearer");
+  assert.equal(cliWins["addon.envfile"], undefined, "env file must not win over CLI file ref");
+  assert.equal(cliWins["addon.env"], undefined, "env JSON must not win over CLI file ref");
+
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("T6.1 loopback: 0.0.0.0 is rejected for derived and pinned admin URLs", () => {
+  assert.throws(
+    () => deriveUpstreamAdminUrl("http://0.0.0.0:47321", "addon.a"),
+    (e) => e.code === "credential-unavailable",
+    "0.0.0.0 must not be derivable as an admin destination",
+  );
+  const resolver = createWorkspaceAddonCredentialResolver({
+    credentials: { "addon.a": { adminToken: "t", adminUrl: "http://0.0.0.0:47321/admin/deny" } },
+  });
+  assert.throws(
+    () => resolver.resolveWorkspaceAddonCredential({ addonId: "addon.a", purpose: "admin" }),
+    (e) => e.code === "credential-unavailable",
+    "a pinned 0.0.0.0 adminUrl must be rejected",
+  );
+});
+
+test("T6.1 loopback: true loopback admin destinations are accepted", () => {
+  assert.equal(deriveUpstreamAdminUrl("http://127.0.0.1:47321", "addon.a"), "http://127.0.0.1:47321/admin/deny");
+  assert.equal(deriveUpstreamAdminUrl("http://127.8.9.10:1", "addon.a"), "http://127.8.9.10:1/admin/deny");
+  assert.equal(deriveUpstreamAdminUrl("http://[::1]:1", "addon.a"), "http://[::1]:1/admin/deny");
+  assert.equal(deriveUpstreamAdminUrl("http://localhost:1", "addon.a"), "http://localhost:1/admin/deny");
+  assert.throws(
+    () => deriveUpstreamAdminUrl("http://attacker.example:1", "addon.a"),
+    (e) => e.code === "credential-unavailable",
+  );
 });
 
 test("T6 service: bootstrap delivers only the intentionally-scoped bearer, never the admin credential", async () => {

@@ -59,6 +59,33 @@ read by both the bridge and the operator-started upstreams. See
 `SDK-DEMO-003-ARCHITECTURE-MAP.md` §10 for the contract, trust/storage
 boundary table, and lifecycle semantics.
 
+### SDK-DEMO-003R T6.1 — credential-boundary hardening (closed)
+
+T6.1 corrected three narrow credential-boundary issues found by the T6 audit,
+without redesigning T6 and without starting T7:
+
+1. **No raw secret material in argv.** The historical
+   `--workspace-addon-credentials=<json>` flag is removed and no longer read;
+   if present it is ignored (the loader fails closed). There is no replacement
+   raw-secret argv flag. Provisioning precedence is now:
+   `--workspace-addon-credentials-file=<path>` (file reference) →
+   `RESONANTOS_WORKSPACE_ADDON_CREDENTIALS_FILE` (env file path) →
+   `RESONANTOS_WORKSPACE_ADDON_CREDENTIALS` (env JSON) → `{}` (fail closed).
+   Environment variables are process-level host configuration, not an
+   encrypted vault; credential-file permissions/ownership are not enforced.
+2. **True loopback only.** The admin-destination validator now accepts only
+   `127.0.0.0/8`, `::1`, and `localhost`, and rejects `0.0.0.0` (bind-any) and
+   all external hosts/IPs and non-http(s) schemes.
+3. **Resolver trust semantics.** `resolveWorkspaceAddonCredential(addonId,
+   purpose)` is an internal host-owned lookup, not an authentication boundary.
+   It resolves material *by* add-on id and trusts the caller already holds that
+   id. Add-on isolation depends on the trusted host call sites binding the
+   authoritative add-on identity (resolver never exposed to iframe/add-on,
+   routes capability-gated, addonId from host lifecycle registry/install state,
+   manifest entrypoint from the host-owned discovery/install cache, caller
+   material cannot override host provisioning). Production call sites were
+   audited (see `SDK-DEMO-003-ARCHITECTURE-MAP.md` §10.3).
+
 Non-blocking future hardening (recorded, not expanded in scope):
 
 - **Live rotation / expiry (D2).** Credentials are read once at bridge startup
@@ -69,3 +96,6 @@ Non-blocking future hardening (recorded, not expanded in scope):
   still deferred.
 - **Encrypted-at-rest store.** None exists; do not claim one until a real
   encrypted store ships.
+- **Credential-file ownership/mode enforcement.** The loader does not currently
+  validate the provisioning file's ownership or permissions (e.g. 0600);
+  enforcing owner-only access is future hardening, not claimed here.

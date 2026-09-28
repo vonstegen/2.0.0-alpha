@@ -13,7 +13,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm, unlink } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
@@ -73,12 +73,17 @@ test("live bridge admin-revoke uses host-owned mapping (T1) and flips the Counte
   const counter = createCounterServer({ port: COUNTER_PORT, bearerToken: COUNTER_BEARER, adminToken: COUNTER_ADMIN });
   await counter.start();
 
+  // T6.1: no raw secret material in argv. Write the provisioning document into
+  // the already-isolated tmp user root and pass a *reference* (path) instead.
+  const credentialFile = path.join(userRoot, "workspace-addon-credentials.json");
+  writeFileSync(credentialFile, JSON.stringify({ "addon.resonant-counter": { bearer: COUNTER_BEARER, adminToken: COUNTER_ADMIN } }), "utf8");
+
   const bridge = spawn(process.execPath, [
     bridgePath,
     `--bridge-port=${bridgePort}`,
     `--bridge-token=${BRIDGE_TOKEN}`,
     `--addon-runtime-control-token=${CONTROL_TOKEN}`,
-    `--workspace-addon-credentials=${JSON.stringify({ "addon.resonant-counter": { bearer: COUNTER_BEARER, adminToken: COUNTER_ADMIN } })}`,
+    `--workspace-addon-credentials-file=${credentialFile}`,
     `--user-root=${userRoot}`,
   ], { stdio: ["ignore", "ignore", "pipe"] });
 

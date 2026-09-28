@@ -235,7 +235,18 @@ After P6 the workspace add-on capability surface is host-owned end-to-end.
   host-granted capability) and `admin` (host-only, never delivered, used
   to drive the upstream `/admin/deny` flag). The admin URL is derived from
   the validated manifest `service.entrypoint` unless the document pins an
-  `adminUrl` (loopback-validated).
+  `adminUrl` (true-loopback-validated: 127.0.0.0/8, `::1`, or `localhost`;
+  `0.0.0.0` and all non-loopback hosts are rejected).
+  **Resolver trust semantics (T6.1).** The resolver is an internal host
+  lookup — it does NOT authenticate the identity of an arbitrary caller;
+  it resolves material *by* add-on id and trusts the caller already holds
+  that id. Isolation comes from the trusted host call sites, not from the
+  resolver: it is never exposed to the iframe/add-on, the privileged
+  bridge routes are capability-gated, production call sites pass the
+  add-on id from the host lifecycle's own registry/install state, the
+  manifest entrypoint used for admin derivation comes from the host-owned
+  discovery/install cache, and caller-supplied credential material cannot
+  override host provisioning.
 - **403 is real host policy.** Operator-level revocation is converged
   (T4): a single revoke — `POST /addons/workspace/revoke` or `POST
   /addons/workspace/admin-revoke` — flips BOTH the registry grant AND the
@@ -309,10 +320,13 @@ second manifest schema.
   `POST /addons/workspace/bootstrap` (added in P6; reused here).
 - **Renderer** — `createWorkspaceAddonIframe` + bootstrap envelope from
   `main-workspace.js` (added in P5/P6; reused here).
-- **Per-add-on credential model (T6)** — bearer + admin credentials are
-  provisioned in one generic document (`--workspace-addon-credentials=<json>`,
-  `RESONANTOS_WORKSPACE_ADDON_CREDENTIALS`, or a file) keyed by add-on id.
-  The bridge resolver and each operator-started upstream
+- **Per-add-on credential model (T6/T6.1)** — bearer + admin credentials are
+  provisioned in one generic document (`--workspace-addon-credentials-file=<path>`,
+  `RESONANTOS_WORKSPACE_ADDON_CREDENTIALS_FILE`, or
+  `RESONANTOS_WORKSPACE_ADDON_CREDENTIALS`) keyed by add-on id. No raw secret
+  material is accepted on the command line: the historical
+  `--workspace-addon-credentials=<json>` flag is removed and not read. The
+  bridge resolver and each operator-started upstream
   (`resolveProvisionedWorkspaceAddonCredential`) read the same document; the
   iframe receives only the bearer via the bootstrap envelope; the admin
   token stays bridge-side.
@@ -444,6 +458,13 @@ T6 is narrowly: **callers name `(add-on identity + credential purpose)`; the hos
 resolves the material.** No T7 scope (host-mediated proxying, expiry/rotation,
 vault storage) is pulled in.
 
+T6.1 (credential-boundary hardening) tightens three boundaries without
+redesigning T6: (1) no raw secret material is accepted in process argv; (2) the
+admin destination validator accepts only true loopback (`127.0.0.0/8`, `::1`,
+`localhost`) and rejects `0.0.0.0`; (3) the resolver is documented as an
+internal host lookup, not an authentication boundary — add-on isolation depends
+on the trusted host call sites binding the authoritative add-on identity.
+
 ### 10.2 Contract
 
 `browser-first/host/workspace-addon-credentials.mjs`:
@@ -457,14 +478,36 @@ vault storage) is pulled in.
   - `upstreamAdminUrl` = document `adminUrl` (if pinned) else derived from the
     validated manifest `service.entrypoint` + `/admin/deny`; always loopback
     http(s)-validated.
-- `loadWorkspaceAddonCredentials({ args, env })` — precedence:
-  `--workspace-addon-credentials=<json>` → `RESONANTOS_WORKSPACE_ADDON_CREDENTIALS`
-  → `--workspace-addon-credentials-file=<path>` → `RESONANTOS_WORKSPACE_ADDON_CREDENTIALS_FILE`.
+- `loadWorkspaceAddonCredentials({ args, env })` — precedence (highest first;
+  T6.1: no raw secret material in argv):
+  1. `--workspace-addon-credentials-file=<path>` (CLI file reference)
+  2. `RESONANTOS_WORKSPACE_ADDON_CREDENTIALS_FILE` (env file path)
+  3. `RESONANTOS_WORKSPACE_ADDON_CREDENTIALS` (env JSON)
+  4. `{}` — fail closed per add-on
+  The historical `--workspace-addon-credentials=<json>` flag is removed and not
+  read. Environment variables are process-level host configuration, not an
+  encrypted vault; credential-file permissions/ownership are not enforced
+  (future hardening — do not claim secure file permissions).
 - `resolveProvisionedWorkspaceAddonCredential(addonId)` — the add-on upstream's
   reader of the same document (returns only its own `{ bearer, adminToken }`;
   never `adminUrl`).
 
 ### 10.3 Trust / storage boundary table
+
+The resolver is an **internal host-owned lookup, not an authentication
+boundary**. `resolveWorkspaceAddonCredential(addonId, purpose)` resolves
+material *by* add-on id and trusts that its caller already holds that id; it
+does not independently authenticate who is asking. Add-on isolation depends on
+the trusted host call sites that bind the authoritative add-on identity, not on
+the resolver. Concretely:
+
+- the resolver is never exposed to the iframe or to an add-on;
+- privileged bridge routes are capability-gated (`addon-runtime-control` /
+  `addon-runtime-read`) and admin-mutation routes are `loopbackHostOnly`;
+- production call sites pass `addonId` from the host lifecycle's own
+  registry/install state and the `manifestEntrypoint` for admin derivation from
+  the host-owned discovery/install cache (`workspaceAddonManifestCache`);
+- caller-supplied credential material can never override host provisioning.
 
 | Surface | May hold | Never |
 | --- | --- | --- |
@@ -488,6 +531,10 @@ vault storage) is pulled in.
   expiry are future hardening (D2), not fabricated here.
 - Errors never echo the resolved material; the admin-revoke upstream failure path
   already surfaces only `{ status, statusText }`.
+- **Future hardening (recorded, not implemented):** encrypted-at-rest storage,
+  live rotation/expiry, and stronger credential-file ownership/mode (0600)
+  enforcement. Credential-file permissions are currently NOT validated — do not
+  claim secure file permissions.
 
 ### 10.5 Files
 

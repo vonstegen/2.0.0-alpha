@@ -10,7 +10,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
@@ -98,6 +98,14 @@ async function readBridgeConfig(bridgePath = path.join(extensionPath, "src", "br
   throw new Error("bridge-config.generated.js never appeared");
 }
 
+function writeWorkspaceAddonCredentialsFile(credentials) {
+  // T6.1: no raw secret material in argv. Write the provisioning document to a
+  // host-controlled temp file and pass a *reference* (path) instead of JSON.
+  const filePath = path.join(os.tmpdir(), `sd003-workspace-addon-credentials-${process.pid}.json`);
+  writeFileSync(filePath, JSON.stringify(credentials), "utf8");
+  return filePath;
+}
+
 function spawnBridge(bridgePort, userRoot) {
   const bridgePath = path.join(repoRoot, "browser-first", "host", "run-bridge-minimal.mjs");
   const args = [
@@ -106,7 +114,7 @@ function spawnBridge(bridgePort, userRoot) {
     `--bridge-token=${BRIDGE_TOKEN}`,
     "--addon-runtime-read-token=t5-ui-addon-read",
     "--addon-runtime-control-token=t5-ui-addon-control",
-    `--workspace-addon-credentials=${JSON.stringify({ "addon.resonant-echo": { bearer: ECHO_BEARER, adminToken: ECHO_ADMIN } })}`,
+    `--workspace-addon-credentials-file=${writeWorkspaceAddonCredentialsFile({ "addon.resonant-echo": { bearer: ECHO_BEARER, adminToken: ECHO_ADMIN } })}`,
   ];
   // Isolate the durable harness registry to a fresh tmp root. The launcher
   // reads RESONANTOS_BROWSER_FIRST_USER_ROOT (its --user-root flag is not

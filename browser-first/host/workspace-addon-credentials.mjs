@@ -1,4 +1,5 @@
-// Generic host-owned workspace add-on credential provisioning (SDK-DEMO-003R T6).
+// Generic host-owned workspace add-on credential provisioning (SDK-DEMO-003R T6,
+// hardened in T6.1 credential-boundary hardening).
 //
 // Replaces the demo-specific per-add-on credential wiring
 // (`workspaceAddonBearerTokens` / `workspaceAddonAdminTokens` maps plus the
@@ -19,8 +20,26 @@
 // both the bridge (resolver) and the operator-started add-on upstreams
 // (`resolveProvisionedWorkspaceAddonCredential`) read the same document, so a
 // value provisioned host-side is the same value the upstream enforces. Secrets
-// therefore never live in source control: the document is supplied via CLI
-// arg, an env var, or a file the operator keeps outside the repository.
+// therefore never live in source control.
+//
+// T6.1 provisioning sources — NO raw secret material in argv:
+//   * The historical `--workspace-addon-credentials=<json>` flag is removed and
+//     is NOT read. If present it is ignored; the resolver fails closed to an
+//     empty table. There is no replacement raw-secret argv flag.
+//   * A CLI *file reference* is supported (a path, not credential material):
+//     `--workspace-addon-credentials-file=<path>`.
+//   * Environment JSON remains supported for this milestone:
+//     `RESONANTOS_WORKSPACE_ADDON_CREDENTIALS`. Environment variables are
+//     process-level host configuration, NOT an encrypted vault; treat them as
+//     plaintext host state, not a secret store.
+//   Precedence (highest first):
+//     1. --workspace-addon-credentials-file=<path>        (CLI file reference)
+//     2. RESONANTOS_WORKSPACE_ADDON_CREDENTIALS_FILE       (env, file path)
+//     3. RESONANTOS_WORKSPACE_ADDON_CREDENTIALS            (env, JSON)
+//     4. {} — fail closed per add-on
+//   Credential-file permissions/ownership are NOT enforced here; owner-only
+//   (0600) / ownership enforcement is recorded as future hardening. Do not
+//   claim secure file permissions.
 //
 // Document shape (all values are non-empty strings):
 //   {
@@ -33,7 +52,23 @@
 //
 // `adminUrl` is optional: when absent, the resolver derives it from the
 // validated manifest `service.entrypoint` + `/admin/deny`. It is always host
-// configuration, never caller-supplied, and always validated loopback http(s).
+// configuration, never caller-supplied, and always validated TRUE-loopback
+// http(s): 127.0.0.0/8, ::1, or localhost. `0.0.0.0` (bind-any) and any other
+// non-loopback host are rejected.
+//
+// TRUST SEMANTICS. `resolveWorkspaceAddonCredential(addonId, purpose)` is an
+// internal host-owned lookup: it resolves material BY add-on id, but it does
+// NOT authenticate the identity of an arbitrary caller — it trusts that the
+// caller already holds the add-on identity it is asking for. Add-on isolation
+// therefore comes from the trusted host call sites, not from the resolver:
+//   * the resolver is never exposed to the iframe or to an add-on;
+//   * privileged bridge routes are capability-gated at the host-service layer;
+//   * production call sites pass the add-on id from the host lifecycle's own
+//     registry/install state, never from caller-controlled input;
+//   * the manifest entrypoint used for admin derivation comes from the
+//     host-owned discovery/install cache;
+//   * caller-supplied credential material can never override host provisioning
+//     (unknown fields on the resolution request are ignored).
 //
 // Lifecycle: credentials are read once at bridge startup (process memory), not
 // per request, and are not regenerable or revocable at runtime. Rotation is
@@ -43,7 +78,6 @@ import { readFile } from "node:fs/promises";
 
 export const WORKSPACE_ADDON_CREDENTIAL_PURPOSES = Object.freeze(["bearer", "admin"]);
 
-const CREDENTIALS_ARG = "workspace-addon-credentials";
 const CREDENTIALS_FILE_ARG = "workspace-addon-credentials-file";
 const CREDENTIALS_ENV = "RESONANTOS_WORKSPACE_ADDON_CREDENTIALS";
 const CREDENTIALS_FILE_ENV = "RESONANTOS_WORKSPACE_ADDON_CREDENTIALS_FILE";
@@ -62,17 +96,19 @@ function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+// True-loopback-only hostname check. Accepts 127.0.0.0/8, ::1, and localhost.
+// `0.0.0.0` (bind-any) and all other non-loopback hosts are rejected.
 function isLoopbackHostname(hostname) {
   if (!isString(hostname) || !hostname) return false;
   const lower = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (LOOPBACK_HOSTS.has(lower)) return true;
   if (lower.startsWith("127.")) return true;
-  return lower === "0.0.0.0";
+  return false;
 }
 
 // Parse a loopback-only http(s) origin from a URL string. Returns
 // { origin, hostname, port } or null. Mirrors the discovery guard so the admin
-// URL derived here can never leave loopback.
+// URL derived here can never leave true loopback.
 export function parseLoopbackHttpOrigin(entrypoint) {
   if (!isString(entrypoint)) return null;
   try {
@@ -137,19 +173,15 @@ function argValue(args, name) {
   return args && typeof args.get === "function" ? args.get(name) : undefined;
 }
 
-// Load the provisioning document, precedence:
-//   1. --workspace-addon-credentials=<json>       (CLI arg)
-//   2. RESONANTOS_WORKSPACE_ADDON_CREDENTIALS      (env, JSON)
-//   3. --workspace-addon-credentials-file=<path>   (CLI arg)
-//   4. RESONANTOS_WORKSPACE_ADDON_CREDENTIALS_FILE (env, file path)
+// Load the provisioning document. NO raw secret material is read from argv:
+// the only argv-based source is a CLI file *reference* (a path, not credential
+// material). Precedence (highest first):
+//   1. --workspace-addon-credentials-file=<path>        (CLI file reference)
+//   2. RESONANTOS_WORKSPACE_ADDON_CREDENTIALS_FILE       (env, file path)
+//   3. RESONANTOS_WORKSPACE_ADDON_CREDENTIALS            (env, JSON)
+//   4. {} — fail closed per add-on
 // A missing/malformed source yields {} (fail closed per add-on).
 export async function loadWorkspaceAddonCredentials({ args, env = process.env, readFileFn = readFile } = {}) {
-  const inlineArg = argValue(args, CREDENTIALS_ARG);
-  const inline = isString(inlineArg) && inlineArg.trim()
-    ? inlineArg
-    : (isString(env?.[CREDENTIALS_ENV]) ? env[CREDENTIALS_ENV] : "");
-  if (inline) return parseWorkspaceAddonCredentials(inline);
-
   const filePath = argValue(args, CREDENTIALS_FILE_ARG) ?? env?.[CREDENTIALS_FILE_ENV] ?? "";
   if (isString(filePath) && filePath.trim()) {
     try {
@@ -157,6 +189,10 @@ export async function loadWorkspaceAddonCredentials({ args, env = process.env, r
     } catch {
       return {};
     }
+  }
+  const envJson = env?.[CREDENTIALS_ENV];
+  if (isString(envJson) && envJson.trim()) {
+    return parseWorkspaceAddonCredentials(envJson);
   }
   return {};
 }
@@ -172,9 +208,12 @@ function validateAdminUrl(url, addonId) {
 }
 
 // Typed host-owned resolver factory. The returned resolver exposes a single
-// capability: resolve an add-on's credential by (identity, purpose). It never
-// accepts caller-supplied credential material — only identity + purpose (and
-// the host's own authoritative manifest entrypoint for admin derivation).
+// lookup capability: resolve an add-on's credential by (identity, purpose).
+// It is an internal host lookup — it does NOT authenticate the caller; it
+// trusts the caller already holds the add-on identity (see the header TRUST
+// SEMANTICS). It never accepts caller-supplied credential material — only
+// identity + purpose (and the host's own authoritative manifest entrypoint for
+// admin derivation).
 export function createWorkspaceAddonCredentialResolver({ credentials = {} } = {}) {
   const table = normalizeWorkspaceAddonCredentials(credentials);
 

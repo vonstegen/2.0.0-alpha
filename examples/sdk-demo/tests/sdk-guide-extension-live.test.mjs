@@ -7,7 +7,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createWriteStream, existsSync } from "node:fs";
+import { createWriteStream, existsSync, writeFileSync } from "node:fs";
 import { mkdtemp, unlink } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
@@ -77,6 +77,14 @@ async function discoverExtensionId(cdpPort, { timeoutMs = 30_000, intervalMs = 2
   throw new Error(`Could not discover extension id from CDP targets on port ${cdpPort} within ${timeoutMs}ms`);
 }
 
+function writeWorkspaceAddonCredentialsFile(credentials) {
+  // T6.1: no raw secret material in argv. Write the provisioning document to a
+  // host-controlled temp file and pass a *reference* (path) instead of JSON.
+  const filePath = path.join(os.tmpdir(), `sd003-workspace-addon-credentials-${process.pid}.json`);
+  writeFileSync(filePath, JSON.stringify(credentials), "utf8");
+  return filePath;
+}
+
 function spawnBridge(bridgePort) {
   const bridgePath = path.join(repoRoot, "browser-first", "host", "run-bridge-minimal.mjs");
   const args = [
@@ -85,7 +93,7 @@ function spawnBridge(bridgePort) {
     `--bridge-token=${GUIDE_BRIDGE_TOKEN}`,
     "--addon-runtime-read-token=dev-p7-addon-read",
     "--addon-runtime-control-token=dev-p7-addon-control",
-    `--workspace-addon-credentials=${JSON.stringify({ "addon.sdk-guide": { bearer: GUIDE_BEARER, adminToken: GUIDE_ADMIN } })}`,
+    `--workspace-addon-credentials-file=${writeWorkspaceAddonCredentialsFile({ "addon.sdk-guide": { bearer: GUIDE_BEARER, adminToken: GUIDE_ADMIN } })}`,
     `--user-root=${path.join(os.tmpdir(), "sd003-p7-user-root-" + process.pid)}`,
   ];
   return spawn(process.execPath, args, { stdio: ["ignore", "pipe", "pipe"] });

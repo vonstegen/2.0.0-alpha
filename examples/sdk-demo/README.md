@@ -159,9 +159,12 @@ node browser-first/host/run-bridge-minimal.mjs \
 ```
 
 Workspace add-on credentials come from the shared
-`RESONANTOS_WORKSPACE_ADDON_CREDENTIALS` document exported in step 1 (or
-`--workspace-addon-credentials=<json>`, or a
-`--workspace-addon-credentials-file=<path>`). No per-add-on flags.
+`RESONANTOS_WORKSPACE_ADDON_CREDENTIALS` document exported in step 1, or a
+`--workspace-addon-credentials-file=<path>` reference to a JSON file the
+operator keeps outside the repo. No raw secret material is accepted on the
+command line: the historical `--workspace-addon-credentials=<json>` flag is
+removed and is not read (pass a file *path*, not credential JSON). No
+per-add-on flags.
 
 The bridge prints a banner like:
 
