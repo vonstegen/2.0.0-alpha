@@ -23,7 +23,7 @@ function addonBoundary(addon) {
 function addonCapabilitySummary(addon) {
   const state = capabilityContractState(addon);
   const parts = [];
-  if (state.granted.length) parts.push(`${state.granted.length} declared`);
+  if (state.granted.length) parts.push(`${state.granted.length} granted`);
   if (state.pending.length) parts.push(`${state.pending.length} needs review`);
   for (const live of state.live) {
     if (live.capabilities.length) parts.push(`${live.capabilities.length} ${live.label.toLowerCase()}`);

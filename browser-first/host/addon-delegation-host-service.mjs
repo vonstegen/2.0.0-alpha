@@ -192,6 +192,12 @@ export function createAddonDelegationHostService(handlers = {}) {
         method: "POST",
         path: "/addons/workspace/install",
         requiredCapability: "addon-runtime-control",
+        // T5: workspace add-on mutation routes carry the harness transport
+        // boundary (matching the T4 revoke routes) so policy denials map to
+        // 4xx and runtime/upstream failures stay 5xx. Loopback-host-only keeps
+        // explicit install an operator-at-the-host action.
+        loopbackHostOnly: true,
+        errorFamily: "harness",
         handler: required("executeWorkspaceAddonInstall"),
       },
       {
@@ -210,6 +216,12 @@ export function createAddonDelegationHostService(handlers = {}) {
         method: "POST",
         path: "/addons/workspace/grant",
         requiredCapability: "addon-runtime-control",
+        // T5: same harness transport boundary as revoke so a policy denial
+        // (permission-denied 403 / ownership-conflict 409 / invalid-event 400)
+        // is distinguishable from a runtime failure (503). Loopback-host-only
+        // keeps explicit grant an operator-at-the-host action.
+        loopbackHostOnly: true,
+        errorFamily: "harness",
         handler: required("executeWorkspaceAddonGrant"),
       },
       {

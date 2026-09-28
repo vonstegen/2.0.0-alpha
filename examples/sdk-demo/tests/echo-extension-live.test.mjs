@@ -289,6 +289,20 @@ test("Phase 1 CP3: real extension loads, opens Echo workspace, and echoes a mess
     await openButton.waitFor({ timeout: 30_000 });
     assert.ok(await openButton.isEnabled(), "Resonant Echo Open button must be enabled while upstream is healthy");
 
+    // T5: explicit install is the mutation boundary — the registry rejects a
+    // grant for an uninstalled add-on. Install by addonId; the host resolves
+    // the canonical manifest from its discovery cache.
+    const installRes = await fetch(`${bridgeConfig.bridgeUrl.replace(/\/$/, "")}/addons/workspace/install`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-resonantos-bridge-token": bridgeConfig.bridgeToken,
+        "x-resonantos-bridge-capability-token": "dev-echo-addon-control",
+      },
+      body: JSON.stringify({ addonId: "addon.resonant-echo" }),
+    });
+    assert.equal(installRes.status, 200, `Echo install must succeed (got ${installRes.status})`);
+
     // Phase 3 (P6): grant Echo's network capability via the host-owned registry
     // so the bootstrap envelope carries the host-minted bearer. The renderer
     // fetches /addons/workspace/bootstrap at Open-time, so we grant first.

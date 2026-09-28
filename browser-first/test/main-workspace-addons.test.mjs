@@ -236,7 +236,7 @@ test("add-ons workspace renders registry status and governed open actions", asyn
   assert.match(container.textContent, /Sending and scheduling remain human-approval gated/);
   assert.match(container.textContent, /Capability contract/);
   assert.match(container.textContent, /Capabilities are host-owned\. Workspace add-on chips reflect the host registry/);
-  assert.match(container.textContent, /Declaredagent-delegation/);
+  assert.match(container.textContent, /Grantedagent-delegation/);
   assert.match(container.textContent, /Needs reviewnotifications/);
   assert.match(container.textContent, /Denied by policynetwork/);
   assert.match(container.textContent, /Disabledshell/);
@@ -430,9 +430,13 @@ test("add-ons workspace renders generic workspace add-ons and routes Open to a w
   const workspaceCards = [...container.querySelectorAll(".addon-card--workspace")];
   assert.equal(workspaceCards.length, 1);
   assert.match(workspaceCards[0].textContent, /Resonant Echo/);
-  assert.match(workspaceCards[0].textContent, /Available/);
-  const openButton = workspaceCards[0].querySelector("button");
-  assert.match(openButton.textContent, /Open Resonant Echo/);
+  // Uninstalled (no registry entry) yet discovered and reachable: the card
+  // reports "Discovered" and offers an explicit Install action alongside Open.
+  assert.match(workspaceCards[0].textContent, /Discovered/);
+  const echoButtons = [...workspaceCards[0].querySelectorAll(".addon-card-actions button")];
+  assert.ok(echoButtons.some((button) => /Install Resonant Echo/.test(button.textContent)), "uninstalled add-on must offer Install");
+  const openButton = echoButtons.find((button) => /Open Resonant Echo/.test(button.textContent));
+  assert.ok(openButton, "Open button must remain");
   assert.equal(openButton.disabled, false);
   openButton.click();
   assert.deepEqual(opened, [["workspace-iframe:addon.resonant-echo", "addon.resonant-echo"]]);
@@ -505,7 +509,8 @@ test("add-ons workspace disables the Open button when the workspace add-on upstr
   const workspaceCards = [...container.querySelectorAll(".addon-card--workspace")];
   assert.equal(workspaceCards.length, 1);
   assert.match(workspaceCards[0].textContent, /Not running/);
-  const openButton = workspaceCards[0].querySelector("button");
+  const openButton = [...workspaceCards[0].querySelectorAll(".addon-card-actions button")].find((button) => /Open Resonant Echo/.test(button.textContent));
+  assert.ok(openButton, "Open button must remain");
   assert.equal(openButton.disabled, true);
   assert.match(openButton.title, /Start the operator-side service/);
 });
@@ -609,8 +614,8 @@ test("add-ons workspace renders Counter alongside Echo as separate cards (P4 gen
 
   // Each card has its own Open button; clicking each yields a workspace-iframe
   // key namespaced by the add-on id (proves per-add-on routing, no fallback).
-  const openEcho = workspaceCards.find((c) => c.textContent.includes("Resonant Echo")).querySelector("button");
-  const openCounter = workspaceCards.find((c) => c.textContent.includes("Resonant Counter")).querySelector("button");
+  const openEcho = [...workspaceCards.find((c) => c.textContent.includes("Resonant Echo")).querySelectorAll("button")].find((b) => /Open Resonant Echo/.test(b.textContent));
+  const openCounter = [...workspaceCards.find((c) => c.textContent.includes("Resonant Counter")).querySelectorAll("button")].find((b) => /Open Resonant Counter/.test(b.textContent));
   openEcho.click();
   openCounter.click();
   assert.deepEqual(opened, [

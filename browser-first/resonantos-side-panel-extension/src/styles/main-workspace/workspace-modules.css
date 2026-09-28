@@ -218,6 +218,23 @@
   opacity: 0.48;
 }
 
+.addon-mutation-status {
+  border-left: 2px solid rgba(255, 214, 138, 0.4);
+  padding-left: 9px;
+}
+
+.addon-mutation-status[data-tone="pending"] {
+  border-left-color: rgba(255, 214, 138, 0.4);
+  color: rgba(255, 230, 180, 0.86) !important;
+}
+
+.addon-mutation-status[data-tone="policy"],
+.addon-mutation-status[data-tone="runtime"],
+.addon-mutation-status[data-tone="network"] {
+  border-left-color: rgba(255, 154, 138, 0.4);
+  color: rgba(255, 192, 192, 0.9) !important;
+}
+
 .artifacts-hero button {
   justify-self: start;
   border: 1px solid rgba(36, 209, 143, 0.18);

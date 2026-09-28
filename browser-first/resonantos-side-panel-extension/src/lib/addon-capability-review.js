@@ -68,13 +68,13 @@ export function capabilityReviewElement(addon = {}, options = {}) {
     wrapper.append(heading);
   }
   const groups = [
-    ["Declared", "declared", state.granted],
+    ["Granted", "granted", state.granted],
     ["Needs review", "pending", state.pending],
     ["Denied by policy", "denied", state.denied],
     ...state.live.map((entry) => [entry.label, entry.state, entry.capabilities])
   ].filter(([, , capabilities]) => capabilities.length);
   if (!groups.length) {
-    wrapper.append(capabilityGroup("Declared", "empty", ["explicit grants required"]));
+    wrapper.append(capabilityGroup("Granted", "empty", ["explicit grants required"]));
     const note = document.createElement("small");
     note.textContent = CAPABILITY_CONTRACT_NOTE;
     wrapper.append(note);

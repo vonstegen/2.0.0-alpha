@@ -255,6 +255,20 @@ test("Phase 2 CP4: real extension opens Counter workspace and the per-add-on tok
     await counterOpen.waitFor({ timeout: 30_000 });
     assert.ok(await counterOpen.isEnabled(), "Counter Open button must be enabled while upstream is healthy");
 
+    // T5: explicit install is the mutation boundary — the registry rejects a
+    // grant for an uninstalled add-on. Install by addonId; the host resolves
+    // the canonical manifest from its discovery cache.
+    const installRes = await fetch(`${bridgeConfig.bridgeUrl.replace(/\/$/, "")}/addons/workspace/install`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-resonantos-bridge-token": bridgeConfig.bridgeToken,
+        "x-resonantos-bridge-capability-token": "dev-counter-addon-control",
+      },
+      body: JSON.stringify({ addonId: "addon.resonant-counter" }),
+    });
+    assert.equal(installRes.status, 200, `Counter install must succeed (got ${installRes.status})`);
+
     // Phase 3 (P6): grant Counter's network capability via the host-owned
     // registry so the bootstrap envelope carries the host-minted bearer.
     const grantRes = await fetch(`${bridgeConfig.bridgeUrl.replace(/\/$/, "")}/addons/workspace/grant`, {

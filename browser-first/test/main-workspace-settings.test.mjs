@@ -2323,16 +2323,16 @@ test("settings workspace renders add-on status and capability boundaries", async
     assert.match(container.textContent, /Hermes/);
     assert.match(container.textContent, /Living Archive/);
     assert.match(container.textContent, /OpenCode/);
-    assert.match(container.textContent, /2 declared · 1 denied by policy/);
-    assert.match(container.textContent, /2 declared · 1 denied by policy/);
-    assert.match(container.textContent, /1 declared · 2 needs review · 1 disabled/);
+    assert.match(container.textContent, /2 granted · 1 denied by policy/);
+    assert.match(container.textContent, /2 granted · 1 denied by policy/);
+    assert.match(container.textContent, /1 granted · 2 needs review · 1 disabled/);
     assert.deepEqual(
       [...container.querySelectorAll(".settings-addon-disclosure")].map((details) => details.open),
       [false, false, false, false, false]
     );
     assert.match(container.textContent, /Capability contract/);
     assert.match(container.textContent, /Capabilities are host-owned\. Workspace add-on chips reflect the host registry/);
-    assert.match(container.textContent, /Declared/);
+    assert.match(container.textContent, /Granted/);
     assert.match(container.textContent, /agent-delegation/);
     assert.match(container.textContent, /notifications/);
     assert.match(container.textContent, /Denied by policy/);

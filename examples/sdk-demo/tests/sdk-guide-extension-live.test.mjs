@@ -221,6 +221,14 @@ test("Phase 4 CP7: SDK Guide renders and walks the 9 lifecycle steps with real h
     await guideOpen.waitFor({ timeout: 30_000 });
     assert.ok(await guideOpen.isEnabled(), "SDK Guide Open button must be enabled while upstream is healthy");
 
+    // T5: explicit install is the mutation boundary — the registry rejects a
+    // grant for an uninstalled add-on. Install by addonId; the host resolves
+    // the canonical manifest from its discovery cache.
+    const installRes = await bridgePost(bridgeConfig.bridgeUrl, "/addons/workspace/install", {
+      addonId: "addon.sdk-guide",
+    }, { capabilityToken: "dev-p7-addon-control" });
+    assert.equal(installRes.status, 200, `SDK Guide install must succeed (got ${installRes.status})`);
+
     // Phase 4 (P7): grant the network capability via the host-owned
     // registry so the bootstrap envelope carries the host-minted bearer.
     const grantRes = await bridgePost(bridgeConfig.bridgeUrl, "/addons/workspace/grant", {

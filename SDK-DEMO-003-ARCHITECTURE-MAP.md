@@ -376,3 +376,54 @@ operations continue working. The adversarial suite lives at
 - The P6 regression test (`addons-status-grant-regression.test.mjs`)
   continues to fail-then-pass the grant-wipe bug, proving the no-second-
   trust-path guarantee is reasserted.
+
+## 9. Phase 6 (T5) — operator grant/revoke UI
+
+The Add-ons workspace card is the operator's only authority surface for a
+workspace add-on's capability lifecycle. It represents authority, it never
+invents it: every displayed grant state comes from the host-owned registry
+snapshot (`/addons/status`), and every mutation is an explicit operator action
+routed through one host-owned endpoint.
+
+### Operator UX contract
+
+| UI state | Authoritative input | Rendered | Controls |
+| --- | --- | --- | --- |
+| Discovered (uninstalled) | `installed: false` | "Discovered" badge; requested caps → "Needs review"; **no** granted authority | Install |
+| Installed, denied | `installed: true`, granted empty | "Denied" badge; denied caps → "Denied by policy" | Grant requested capabilities |
+| Installed, granted | `installed: true`, granted non-empty | "Granted" badge; granted caps → "Granted" | Revoke granted capabilities |
+| Pending mutation | in-flight bridge call | mutation line "…"; all mutation buttons disabled | (none — duplicate suppressed) |
+| Policy denial (4xx) | `error.bridgeStatus` 400–499 | "denied by policy (HTTP …)" error line; state unchanged | retry grant/revoke |
+| Runtime failure (5xx) | `error.bridgeStatus` 500–599 | "failed (HTTP …)" error line; state unchanged | retry grant/revoke |
+| Bridge unreachable | network error | setup-guidance error line | retry after reconnect |
+
+### Read vs. explicit mutation
+
+- `GET /addons/status` — **read only**. Discovery reports state; it never
+  installs, grants, or revokes. Merely opening/refreshing the Add-ons UI
+  mutates nothing.
+- `POST /addons/workspace/install { addonId }` — explicit install (the host
+  resolves the canonical manifest from its discovery cache; T1: intent only).
+  Installing grants nothing — every requested capability stays denied.
+- `POST /addons/workspace/grant { addonId, grants }` — explicit grant through
+  the host-owned registry (`setGrants` with `consent: true`). The UI sends only
+  the requested grant shape (`scope`/`revocationBehavior` preserved, `granted:
+  true`) for currently-ungranted capabilities; `grantPresets` are never a UI
+  authority.
+- `POST /addons/workspace/revoke { addonId, capabilities }` — explicit revoke
+  through the converged T4 route (registry grant + upstream enforcement).
+- `POST /addons/workspace/bootstrap { addonId }` — read envelope; may register
+  a cached manifest with grants reset to denied, but never grants.
+
+### Security invariants the UI upholds
+
+- The card never constructs `upstreamAdminUrl`, never sends `adminToken`, and
+  never calls the upstream `/admin/*` surface directly — revoke goes through
+  the converged host route.
+- Grant state is read from the registry's `grantedCapabilities` /
+  `deniedCapabilities`, not the manifest's `grantPresets`.
+- After every mutation the card re-reads `/addons/status`; a failed mutation
+  is surfaced as 4xx policy / 5xx runtime and is never rendered as success.
+- The grant/install routes carry the same harness transport boundary
+  (`loopbackHostOnly` + `errorFamily: "harness"`) as the T4 revoke routes, so
+  policy denials map to 4xx and runtime/upstream failures stay 5xx.

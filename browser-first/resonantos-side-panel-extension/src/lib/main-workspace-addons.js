@@ -2,7 +2,7 @@
 // Intent citation: docs/reference/CAPABILITY_MATRIX.md
 
 import { capabilityReviewElement } from "./addon-capability-review.js";
-import { addonWorkspaceMessage } from "./runtime-error-messages.js";
+import { addonWorkspaceMessage, redactSensitiveErrorMessage } from "./runtime-error-messages.js";
 
 function addonTone(addon) {
   if (addon.available) return "success";
@@ -39,6 +39,58 @@ function addonExecutionKey(addon) {
   return "";
 }
 
+function workspaceAddonStatusLabel(addon) {
+  if (!addon.available) return "Not running";
+  if (!addon.installed) return "Discovered";
+  if ((addon.grantedCapabilities ?? []).length) return "Granted";
+  return "Denied";
+}
+
+function workspaceAddonGrantableCapabilities(addon) {
+  const granted = new Set(addon.grantedCapabilities ?? []);
+  return (addon.requestedCapabilities ?? []).filter((capability) => !granted.has(capability));
+}
+
+function workspaceAddonRevocableCapabilities(addon) {
+  return [...new Set(addon.grantedCapabilities ?? [])];
+}
+
+// Builds the /addons/workspace/grant payload from the requested grant shape.
+// Only currently-ungranted capabilities are sent with granted: true; the
+// registry's setGrants merges (it leaves already-granted entries untouched),
+// and scope + revocationBehavior are preserved so the registry's sameRequest
+// match accepts each entry. This is NOT derived from grantPresets.
+function workspaceGrantPayload(addon) {
+  const granted = new Set(addon.grantedCapabilities ?? []);
+  return (addon.requestedGrantShape ?? []).filter((request) => !granted.has(request.capability)).map((request) => ({
+    capability: request.capability,
+    scope: request.scope ?? "none",
+    revocationBehavior: request.revocationBehavior ?? "hard-stop",
+    granted: true,
+  }));
+}
+
+// Distinguishes policy denial (4xx) from runtime/upstream failure (5xx) and
+// bridge-unreachable (network). A failed mutation is never rendered as success.
+function workspaceMutationFailure(error, action) {
+  const statusCode = Number(error?.bridgeStatus);
+  if (statusCode >= 400 && statusCode < 500) {
+    return {
+      status: "error",
+      tone: "policy",
+      message: `${action} denied by policy (HTTP ${statusCode}): ${redactSensitiveErrorMessage(error)}`,
+    };
+  }
+  if (statusCode >= 500 && statusCode < 600) {
+    return {
+      status: "error",
+      tone: "runtime",
+      message: `${action} failed (HTTP ${statusCode}): ${redactSensitiveErrorMessage(error)}`,
+    };
+  }
+  return { status: "error", tone: "network", message: addonWorkspaceMessage(error, `${action} failed`) };
+}
+
 function createWorkspaceAddonCard(addon, actions = {}) {
   const card = document.createElement("article");
   card.className = "addon-card addon-card--workspace";
@@ -49,7 +101,7 @@ function createWorkspaceAddonCard(addon, actions = {}) {
   const title = document.createElement("strong");
   title.textContent = addon.name || addon.id || "Unnamed workspace add-on";
   const status = document.createElement("span");
-  status.textContent = addon.available ? "Available" : "Not running";
+  status.textContent = workspaceAddonStatusLabel(addon);
   status.dataset.tone = addon.available ? "success" : "warning";
   header.append(title, status);
 
@@ -59,19 +111,74 @@ function createWorkspaceAddonCard(addon, actions = {}) {
   const boundary = document.createElement("small");
   boundary.textContent = addon.boundary ?? "Workspace add-on with cross-origin sandboxed iframe and postMessage bootstrap.";
 
+  const mutation = addon.mutation ?? null;
+  const pending = mutation?.status === "pending";
+
   const cardActions = document.createElement("div");
   cardActions.className = "addon-card-actions";
+
+  // Open stays the primary (first) action: the extension live tests select the
+  // first non-disabled button in each card as the workspace launcher.
   const open = document.createElement("button");
   open.type = "button";
   open.textContent = `Open ${addon.name}`;
-  open.disabled = !addon.available;
+  open.disabled = !addon.available || pending;
   open.title = addon.available
     ? `Open the ${addon.name} workspace in a sandboxed cross-origin iframe.`
     : `${addon.name} upstream is not reachable at ${addon.origin}. Start the operator-side service and retry.`;
   open.addEventListener("click", () => actions.onOpenWorkspace?.(`workspace-iframe:${addon.id}`, addon));
   cardActions.append(open);
 
-  card.append(header, meta, boundary, capabilityReviewElement(addon), cardActions);
+  // Explicit install/grant/revoke are the only authority mutations the UI
+  // offers. Each maps to one host-owned route; none constructs
+  // upstreamAdminUrl or sends adminToken, and none touches the upstream
+  // /admin/* surface directly.
+  if (!addon.installed) {
+    const install = document.createElement("button");
+    install.type = "button";
+    install.textContent = `Install ${addon.name}`;
+    install.disabled = pending;
+    install.title = pending
+      ? "An install is already in progress."
+      : "Register this discovered add-on with the host registry. Installation grants nothing; capabilities stay denied until you explicitly grant them.";
+    install.addEventListener("click", () => actions.onInstall?.(addon));
+    cardActions.append(install);
+  } else {
+    const grantable = workspaceAddonGrantableCapabilities(addon);
+    if (grantable.length) {
+      const grant = document.createElement("button");
+      grant.type = "button";
+      grant.textContent = "Grant requested capabilities";
+      grant.disabled = pending;
+      grant.title = pending
+        ? "A grant mutation is already in progress."
+        : `Explicitly grant ${grantable.join(", ")} through the host-owned grant route.`;
+      grant.addEventListener("click", () => actions.onGrant?.(addon));
+      cardActions.append(grant);
+    }
+    const revocable = workspaceAddonRevocableCapabilities(addon);
+    if (revocable.length) {
+      const revoke = document.createElement("button");
+      revoke.type = "button";
+      revoke.textContent = "Revoke granted capabilities";
+      revoke.disabled = pending;
+      revoke.title = pending
+        ? "A revoke mutation is already in progress."
+        : `Explicitly revoke ${revocable.join(", ")} through the converged host revoke route (registry + upstream).`;
+      revoke.addEventListener("click", () => actions.onRevoke?.(addon));
+      cardActions.append(revoke);
+    }
+  }
+
+  card.append(header, meta, boundary, capabilityReviewElement(addon));
+  if (mutation) {
+    const line = document.createElement("small");
+    line.className = "addon-mutation-status";
+    line.dataset.tone = mutation.tone;
+    line.textContent = mutation.message;
+    card.append(line);
+  }
+  card.append(cardActions);
   return card;
 }
 
@@ -467,19 +574,76 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
     }
   };
 
+  // T5 operator grant/revoke UI: mutation state is transient, per-add-on.
+  // "pending" disables that add-on's mutation buttons (no duplicate actions);
+  // "error" surfaces a failure without ever claiming success. Authoritative
+  // state always comes from a re-read of GET /addons/status after a mutation.
+  const mutationState = new Map();
+  let workspaceAddons = [];
+
+  function renderWorkspaceCards() {
+    workspaceGrid.replaceChildren();
+    workspaceAddons.forEach((addon) => {
+      const mutation = mutationState.get(addon.id) ?? null;
+      workspaceGrid.append(createWorkspaceAddonCard(
+        { ...addon, mutation },
+        {
+          onOpenWorkspace,
+          onInstall: (selected) => runWorkspaceMutation(selected, "install", `Install ${selected.name}`),
+          onGrant: (selected) => runWorkspaceMutation(selected, "grant", `Grant ${selected.name}`),
+          onRevoke: (selected) => runWorkspaceMutation(selected, "revoke", `Revoke ${selected.name}`),
+        },
+      ));
+    });
+    workspaceSection.hidden = workspaceAddons.length === 0;
+  }
+
+  function workspaceMutationBody(kind, addon) {
+    if (kind === "install") return { addonId: addon.id };
+    if (kind === "grant") return { addonId: addon.id, grants: workspaceGrantPayload(addon) };
+    if (kind === "revoke") return { addonId: addon.id, capabilities: workspaceAddonRevocableCapabilities(addon) };
+    return {};
+  }
+
+  async function runWorkspaceMutation(addon, kind, actionLabel) {
+    if (mutationState.get(addon.id)?.status === "pending") return;
+    mutationState.set(addon.id, { status: "pending", tone: "pending", message: `${actionLabel}...` });
+    renderWorkspaceCards();
+    try {
+      await bridge()(`/addons/workspace/${kind}`, { method: "POST", body: workspaceMutationBody(kind, addon) });
+      mutationState.delete(addon.id);
+      // Success: authoritative re-read, never an optimistic local flip.
+      await loadAddons();
+    } catch (error) {
+      mutationState.set(addon.id, workspaceMutationFailure(error, actionLabel));
+      // Re-read so the card reflects the host's current (unchanged) state and
+      // shows the failure; a failed mutation is never displayed as success.
+      await loadAddons();
+    }
+  }
+
   const loadAddons = async () => {
     try {
       const result = await bridge()("/addons/status", { method: "GET" });
       const addons = Array.isArray(result.addons) ? result.addons : [];
       const workspaceManifests = Array.isArray(result.workspaceAddonManifests) ? result.workspaceAddonManifests : [];
-      const workspaceAddons = workspaceManifests.map((manifest) => ({
+      workspaceAddons = workspaceManifests.map((manifest) => ({
         id: manifest.id,
         name: manifest.name,
         available: Boolean(manifest.available),
+        installed: Boolean(manifest.installed),
         mode: manifest.mode ?? "workspace-addon",
         trust: manifest.trust ?? "host-mediated workspace add-on",
         category: manifest.category,
         requestedCapabilities: (manifest.requestedCapabilities ?? []).map((grant) => grant.capability),
+        // The requested grant shape (scope + revocationBehavior) is what the
+        // registry matches on when the operator explicitly grants. grantPresets
+        // are deliberately NOT consulted for UI authority.
+        requestedGrantShape: (manifest.requestedCapabilities ?? []).map((grant) => ({
+          capability: grant.capability,
+          scope: grant.scope,
+          revocationBehavior: grant.revocationBehavior,
+        })),
         // Phase 3 (P6): grantedCapabilities / deniedCapabilities come from
         // the host-owned registry snapshot the bridge carries in
         // `workspaceAddonManifests` (see `addon-delegation-service.mjs`
@@ -492,7 +656,6 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
         entrypoint: manifest.entrypoint,
         origin: manifest.origin,
         surfaces: manifest.surfaces,
-        grantPresets: manifest.grantPresets ?? [],
       }));
       grid.replaceChildren();
       addons.forEach((addon) => grid.append(createAddonCard(addon, {
@@ -524,9 +687,7 @@ export function renderAddOnsWorkspace({ container, bridgeRequest, getBridgeReque
       }
       status.textContent = statusParts.join(" ");
       status.dataset.tone = addons.some((addon) => addon.available) || workspaceAddons.some((addon) => addon.available) ? "success" : "warning";
-      workspaceGrid.replaceChildren();
-      workspaceAddons.forEach((addon) => workspaceGrid.append(createWorkspaceAddonCard(addon, { onOpenWorkspace })));
-      workspaceSection.hidden = workspaceAddons.length === 0;
+      renderWorkspaceCards();
     } catch (error) {
       status.textContent = addonWorkspaceMessage(error, "Add-on registry unavailable");
       status.dataset.tone = "error";

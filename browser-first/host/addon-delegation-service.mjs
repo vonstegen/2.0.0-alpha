@@ -2763,6 +2763,12 @@ except BaseException as exc:
         .map((grant) => grant.capability);
       workspaceAddonManifests.push({
         ...projection,
+        // T5: the renderer needs an explicit installed boundary. `installed`
+        // is true only when the operator explicitly installed the add-on via
+        // POST /addons/workspace/install (or the bootstrap route registered it
+        // with grants reset to denied). Discovery alone never installs, so a
+        // merely-discovered add-on reports installed: false and no grants.
+        installed: Boolean(installation),
         // The renderer reads grantedCapabilities from this field (Phase-3 P6).
         // Until the host grants anything, the field is empty — declarative
         // `grantPresets` no longer drive UI chip states.
@@ -2845,15 +2851,24 @@ except BaseException as exc:
   // Phase 3 (P6) — workspace add-on grant lifecycle handlers.
   // Each routes through the host-owned registry; consent is enforced at the
   // registry boundary (setGrants throws permission-denied without consent:true).
-  async function executeWorkspaceAddonInstall({ manifest }) {
+  async function executeWorkspaceAddonInstall({ manifest, addonId } = {}) {
     if (!workspaceAddonRegistry) {
       throw Object.assign(new Error("Workspace add-on registry unavailable."), { code: "runtime-unavailable" });
     }
-    if (!manifest || typeof manifest.id !== "string") {
+    // T1: REQUEST DESCRIBES INTENT. HOST DETERMINES AUTHORITY.
+    // The operator may install by addonId; the host resolves the canonical
+    // manifest from the discovery cache (populated by executeAddonsStatus), so
+    // a caller cannot inject an arbitrary manifest through the public route.
+    // The explicit { manifest } shape remains supported for host-side callers
+    // and tests that already hold the validated canonical file.
+    const resolvedManifest = manifest
+      ? manifest
+      : (typeof addonId === "string" ? workspaceAddonManifestCache.get(addonId) ?? null : null);
+    if (!resolvedManifest || typeof resolvedManifest.id !== "string") {
       throw Object.assign(new Error("Workspace add-on install requires a manifest with an id."), { code: "invalid-event" });
     }
-    await workspaceAddonRegistry.install(manifest, { enabled: false });
-    return { addonId: manifest.id, installation: workspaceAddonRegistry.snapshot().installations[manifest.id] ?? null };
+    await workspaceAddonRegistry.install(resolvedManifest, { enabled: false });
+    return { addonId: resolvedManifest.id, installation: workspaceAddonRegistry.snapshot().installations[resolvedManifest.id] ?? null };
   }
 
   async function executeWorkspaceAddonGrants({ addonId } = {}) {
