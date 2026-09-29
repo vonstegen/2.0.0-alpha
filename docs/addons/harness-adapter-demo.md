@@ -33,6 +33,62 @@ manifest or browser storage. Host configuration uses `RESONANTOS_HARNESS_BINDING
 name (`env`). The registry receives binding metadata; credential custody stays
 inside the host transport.
 
+## Generic Harness Provider Connection
+
+A provider-profile harness can declare, on its manifest, a descriptive
+`harnessProviderConnection` block instead of shipping its own credential
+resolver:
+
+```jsonc
+{
+  "harnessProviderConnection": {
+    "consumesProviderProfiles": true,
+    "providerFamilies": ["openai-compatible"],
+    "credentialDelivery": ["runtime-adapter"],
+    "modelSelection": true
+  }
+}
+```
+
+- `consumesProviderProfiles` — the harness consumes ROS Provider Profiles through
+  host mediation.
+- `providerFamilies` — the provider/protocol families it can consume
+  (`openai`, `anthropic`, `google`, `minimax`, `openai-compatible`, `local`,
+  `custom`). Descriptive only: declaring a family never grants access to a
+  profile.
+- `credentialDelivery` — the delivery mechanisms it supports, in host preference
+  order: `runtime-adapter`, `session-environment`, `self-auth`, `none`.
+- `modelSelection` — whether the harness supports host-mediated model selection.
+
+The [Pi harness](../../examples/addons/pi-harness.json) is the first reference
+consumer. The same generic host facility serves any authorized harness; nothing
+in it is Pi-specific. See
+[ADR-041](../architecture/ADR-041-harness-provider-connection.md) for the
+contract and [ADR-039](../architecture/ADR-039-harness-runtime-provider-profiles.md)
+for the host-owned credential resolver.
+
+### Credential delivery modes
+
+Only **`runtime-adapter`** is implemented in the Alpha: the host resolves the
+approved profile into a scoped, redacted credential lease at execution time
+(`createHarnessCredentials`), and the harness adapter receives the credential
+only inside that lease. **`session-environment`** (session-scoped child
+environment variables) is documented as planned, not implemented.
+**`self-auth`** is the existing `credentialSource: "self"` path (for example,
+OpenCode, which intentionally keeps its own login store). **`none`** is the
+local/keyless `credentialSource: "none"` path. A provider-profile harness whose
+`credentialDelivery` omits `runtime-adapter` fails closed today. A durable
+duplicate secret is out of scope and forbidden without separate approval.
+
+### Compatibility and discovery
+
+The host owns discovery and filtering. A harness only sees Provider
+Profiles/models whose family it declared; incompatible families are filtered
+out deterministically and never leak a credential, endpoint, or raw secret.
+The same compatibility check runs at credential resolution: a harness whose
+declared families do not match the profile bound to it is refused
+(`permission-denied`), so a provider declaration cannot bypass the resolver.
+
 ## DSH setup
 
 Use Node.js 24.21.0 and the repository's installed dependencies, including

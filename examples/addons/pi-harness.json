@@ -116,6 +116,12 @@
     },
     "credentialSource": "provider-profile"
   },
+  "harnessProviderConnection": {
+    "consumesProviderProfiles": true,
+    "providerFamilies": ["openai-compatible"],
+    "credentialDelivery": ["runtime-adapter"],
+    "modelSelection": true
+  },
   "providerRequirements": {
     "sharedProfiles": [],
     "supportsPrivateCredentials": false

@@ -40,10 +40,42 @@ Output is deterministic JSON (`resonant-sdk/category-description/v1`) with:
 | Surfaces | `surfaces` | WHERE it appears |
 | Capabilities | `requestedCapabilities` | WHAT authority it requests |
 | System slots | `systemSlots` | WHAT ResonantOS role it may occupy |
-| Provider/credential | `agentRuntime.credentialSource` | WHAT inference/auth it needs |
+| Provider/credential | `agentRuntime.credentialSource` + `harnessProviderConnection` | WHAT inference/auth it needs and which provider families it can consume |
 
 Classification never grants authority. A harness may be CLI or local-service;
 runtime is orthogonal.
+
+## Generic Harness Provider Connection
+
+A harness that consumes ROS Provider Profiles declares a descriptive
+`harnessProviderConnection` block. It is metadata/status only and grants no
+provider access:
+
+```jsonc
+{
+  "harnessProviderConnection": {
+    "consumesProviderProfiles": true,
+    "providerFamilies": ["openai-compatible", "anthropic"],
+    "credentialDelivery": ["runtime-adapter", "session-environment"],
+    "modelSelection": true
+  }
+}
+```
+
+- `consumesProviderProfiles` — whether the harness consumes ROS Provider
+  Profiles via host mediation.
+- `providerFamilies` — compatible provider/protocol families (descriptive;
+  never grants access to a profile).
+- `credentialDelivery` — supported delivery mechanisms in host preference order:
+  `runtime-adapter`, `session-environment`, `self-auth`, `none`. Only
+  `runtime-adapter` is implemented in the Alpha; declaring an unsupported-only
+  list fails closed.
+- `modelSelection` — whether the harness supports host-mediated model selection.
+
+Host-owned discovery returns ONLY profiles/models compatible with the specific
+installed/enabled/authorized harness and its declared `providerFamilies`; a
+harness never enumerates raw credentials or arbitrary provider secrets.
+Declaring an incompatible family is rejected at resolution, not just discovery.
 
 ## Minimal compliant manifest
 
@@ -71,7 +103,7 @@ path/URL/markup. `requiredCapabilities` must already be declared in
 
 ## Reference add-ons
 
-- `examples/addons/pi-harness.json` — `harness`/`coding-agent`, provider-profile
+- `examples/addons/pi-harness.json` — `harness`/`coding-agent`, provider-profile via `harnessProviderConnection` (openai-compatible family, runtime-adapter delivery)
 - `examples/addons/tool-utility.json` — `tool`/`utility`, no privileged authority
 
 ## Security invariants

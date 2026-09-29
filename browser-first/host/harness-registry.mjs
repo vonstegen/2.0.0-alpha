@@ -121,6 +121,16 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
       } : null,
     };
   }
+  function sanitizedProviderConnection(manifest) {
+    const connection = manifest.harnessProviderConnection;
+    if (!connection) return null;
+    return {
+      consumesProviderProfiles: Boolean(connection.consumesProviderProfiles),
+      providerFamilies: Array.isArray(connection.providerFamilies) ? connection.providerFamilies.filter((family) => typeof family === 'string') : [],
+      credentialDelivery: Array.isArray(connection.credentialDelivery) ? connection.credentialDelivery.filter((delivery) => typeof delivery === 'string') : [],
+      modelSelection: Boolean(connection.modelSelection),
+    };
+  }
   function sanitizedSurfaces(manifest) {
     return (Array.isArray(manifest.surfaces) ? manifest.surfaces : []).map(surface => ({
       id: typeof surface?.id === 'string' ? surface.id : '',
@@ -147,6 +157,7 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
       ...projectPolicy(addonId, entry),
       surfaces: sanitizedSurfaces(entry.manifest),
       agentRuntime: sanitizedRuntime(entry.manifest),
+      harnessProviderConnection: sanitizedProviderConnection(entry.manifest),
       providerProfileConfigured: null,
     }]));
     const projection = Object.fromEntries(Object.entries(state.slots).map(([slot, owner]) => [slot, { ...owner,

@@ -532,6 +532,11 @@ export type HarnessOperation = "createSession" | "invoke" | "cancel" | "history"
 // store (host injects nothing), and none is local/keyless.
 export type HarnessCredentialSource = "provider-profile" | "self" | "none";
 
+// Descriptive credential delivery mechanisms a harness can consume through the
+// generic Harness Provider Connection. Declaring a mechanism grants nothing:
+// the host owns resolution and picks the safest supported mechanism.
+export type HarnessCredentialDelivery = "runtime-adapter" | "session-environment" | "self-auth" | "none";
+
 // Declarative proposals only: reviewed host adapters and bindings supply authority.
 export interface AddOnAgentRuntimeAdapterContract {
   adapterVersion: 1;
@@ -543,6 +548,21 @@ export interface AddOnAgentRuntimeAdapterContract {
   supportedOperations: HarnessOperation[];
   contextRoleFidelity: "text-only" | "structured-messages";
   toolCallbacks: false;
+}
+
+// Descriptive provider-connection compatibility declaration (the generic Harness
+// Provider Connection contract). States what a harness can consume and how, but
+// grants no provider access, credential material, or authority: the host owns
+// profile resolution, credential delivery, and grant/revocation.
+export interface AddOnHarnessProviderConnectionContract {
+  /** Whether the harness can consume ROS Provider Profiles via host mediation. */
+  consumesProviderProfiles: boolean;
+  /** Compatible provider/protocol families (descriptive; never grants access). */
+  providerFamilies: ProviderType[];
+  /** Supported credential delivery mechanisms, in host preference order. */
+  credentialDelivery: HarnessCredentialDelivery[];
+  /** Whether the harness supports host-mediated model selection. */
+  modelSelection: boolean;
 }
 
 // One fixed vocabulary for public error types and runtime sanitization.
@@ -611,6 +631,31 @@ export interface HarnessAgentRuntimeProjection {
   } | null;
 }
 
+// Metadata-only provider discovery views (generic Harness Provider Connection).
+// Descriptive identity/label/models only — never a credential, endpoint, or
+// arbitrary provider secret. The host owns filtering and rendering.
+export interface HarnessCompatibleProviderProfile {
+  id: string;
+  label: string;
+  providerType: ProviderType;
+  models: readonly string[];
+}
+export interface HarnessCompatibleModel {
+  model: string;
+  label: string;
+  providerId: string;
+}
+
+// Sanitized, descriptive-only provider-connection view for host projections.
+// Carries compatibility metadata only — never a credential, endpoint, or
+// executable path.
+export interface HarnessProviderConnectionProjection {
+  consumesProviderProfiles: boolean;
+  providerFamilies: readonly string[];
+  credentialDelivery: readonly string[];
+  modelSelection: boolean;
+}
+
 // Read-only acknowledgement from the host; client storage is not governance.
 export interface HarnessRegistryProjection {
   bootEpoch: string;
@@ -634,6 +679,12 @@ export interface HarnessRegistryProjection {
     // true/false = provider-profile harness with/without a host-session
     // credential; null/undefined = not a provider-profile harness (self/none/legacy).
     providerProfileConfigured?: boolean | null;
+    // Sanitized provider-connection compatibility declaration (descriptive).
+    harnessProviderConnection?: HarnessProviderConnectionProjection | null;
+    // Metadata-only provider discovery: profiles/models compatible with the
+    // harness's declared provider families (generic Harness Provider Connection).
+    compatibleProviderProfiles?: readonly HarnessCompatibleProviderProfile[];
+    compatibleModels?: readonly HarnessCompatibleModel[];
   }>>;
   slots: Readonly<Partial<Record<SystemSlotId, {
     addonId: string | null;
@@ -728,6 +779,7 @@ export interface AddOnManifest {
   audit?: AddOnAuditContract;
   embeddedWorkspace?: AddOnEmbeddedWorkspaceContract;
   agentRuntime?: AddOnAgentRuntimeContract;
+  harnessProviderConnection?: AddOnHarnessProviderConnectionContract;
   memoryAccess?: AddOnMemoryAccessContract;
   smokeTests?: AddOnDeterministicSmokeTest[];
   compatibility: {

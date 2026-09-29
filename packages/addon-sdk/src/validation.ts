@@ -14,7 +14,9 @@ import type {
 import {
   ADDON_CAPABILITIES,
   ADDON_SERVICE_PROTOCOLS,
+  HARNESS_CREDENTIAL_DELIVERY_MECHANISMS,
   HARNESS_OPERATIONS,
+  HARNESS_PROVIDER_FAMILIES,
   type AddOnManifestSource,
   type AddOnManifestValidationResult,
   type AddOnValidationIssue,
@@ -131,6 +133,37 @@ const legacyRuntimeFields = [
 ];
 const bindingNamePattern = /^[a-zA-Z][a-zA-Z0-9_-]*(?:\.[a-zA-Z0-9_-]+)*$/;
 const credentialSources = ["provider-profile", "self", "none"] as const;
+
+
+const validateHarnessProviderConnection = (issues: AddOnValidationIssue[], hpc: Record<string, unknown>) => {
+  if (!isRecord(hpc)) {
+    pushIssue(issues, "error", "harness-provider-connection-object", "harnessProviderConnection", "harnessProviderConnection must be an object.");
+    return;
+  }
+  const reject = (code: string, field: string, message: string) =>
+    pushIssue(issues, "error", `harness-provider-connection-${code}`, field ? `harnessProviderConnection.${field}` : "harnessProviderConnection", message);
+  // Descriptive contract only: bound fields, no secret/credential channels.
+  const allowed = ["consumesProviderProfiles", "providerFamilies", "credentialDelivery", "modelSelection"];
+  for (const key of Object.keys(hpc)) if (!allowed.includes(key)) {
+    reject("field", key, "harnessProviderConnection may only declare the descriptive compatibility fields; credentials, endpoints and executable paths are forbidden.");
+  }
+  if (typeof hpc.consumesProviderProfiles !== "boolean") {
+    reject("consumes-boolean", "consumesProviderProfiles", "consumesProviderProfiles must be boolean.");
+  }
+  if (typeof hpc.modelSelection !== "boolean") {
+    reject("model-selection-boolean", "modelSelection", "modelSelection must be boolean.");
+  }
+  if (!Array.isArray(hpc.providerFamilies) || hpc.providerFamilies.length === 0 ||
+      hpc.providerFamilies.some((family) => !(HARNESS_PROVIDER_FAMILIES as readonly string[]).includes(family as string)) ||
+      new Set(hpc.providerFamilies).size !== hpc.providerFamilies.length) {
+    reject("provider-families", "providerFamilies", "providerFamilies must be a non-empty, unique list of supported provider/protocol families.");
+  }
+  if (!Array.isArray(hpc.credentialDelivery) || hpc.credentialDelivery.length === 0 ||
+      hpc.credentialDelivery.some((mechanism) => !(HARNESS_CREDENTIAL_DELIVERY_MECHANISMS as readonly string[]).includes(mechanism as string)) ||
+      new Set(hpc.credentialDelivery).size !== hpc.credentialDelivery.length) {
+    reject("credential-delivery", "credentialDelivery", "credentialDelivery must be a non-empty, unique list of supported delivery mechanisms.");
+  }
+};
 
 const validateRuntimeAdapter = (issues: AddOnValidationIssue[], runtime: Record<string, unknown>) => {
   if (!adapterFields.some(field => Object.hasOwn(runtime, field))) return;
@@ -1261,6 +1294,10 @@ export const validateAddOnManifest = (
         "Agent chat integrations should normally filter terminal/TUI output and return assistant-visible reply text.",
       );
     }
+  }
+
+  if (isRecord(candidate.harnessProviderConnection)) {
+    validateHarnessProviderConnection(issues, candidate.harnessProviderConnection);
   }
 
   if (Array.isArray(candidate.smokeTests)) {

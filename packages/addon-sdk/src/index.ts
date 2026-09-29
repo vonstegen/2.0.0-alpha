@@ -10,6 +10,8 @@ export type {
   AddOnRegistryReviewState,
   AddOnRegistrySource,
   AddOnManifest,
+  AddOnHarnessProviderConnectionContract,
+  HarnessCredentialDelivery,
   AddOnScriptDefinition,
   AddOnSkillDefinition,
   AddOnToolDefinition,
@@ -19,12 +21,15 @@ export type {
 } from "../../../src/core/contracts";
 export {
   ADDON_CAPABILITIES,
+  HARNESS_CREDENTIAL_DELIVERY_MECHANISMS,
+  HARNESS_PROVIDER_FAMILIES,
   ADDON_SDK_VERSION,
   ADDON_SERVICE_PROTOCOLS,
   type AddOnManifestSource,
   type AddOnManifestValidationResult,
   type AddOnSdkManifest,
   type AddOnValidationIssue,
+  type HarnessCredentialDeliveryMechanism,
 } from "./contracts";
 export { createAddOnRegistryEntry, createAddOnRegistrySnapshot } from "./registry";
 export type { AddOnRegistryBuildInput, AddOnRegistryEntryOptions, AddOnRegistrySnapshot } from "./registry";

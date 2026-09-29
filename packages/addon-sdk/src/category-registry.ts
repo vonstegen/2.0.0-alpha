@@ -76,7 +76,7 @@ const UNIVERSAL_REQUIRED = [
 const UNIVERSAL_OPTIONAL = [
   "sdkVersion", "provenance", "grantPresets", "runtimeIsolation",
   "systemSlots", "service", "tools", "delegation", "install", "audit",
-  "embeddedWorkspace", "agentRuntime", "memoryAccess", "smokeTests",
+  "embeddedWorkspace", "agentRuntime", "harnessProviderConnection", "memoryAccess", "smokeTests",
 ] as const;
 
 const _ADDON_CATEGORY_REGISTRY: readonly AddOnCategoryDescriptor[] = [
@@ -89,7 +89,7 @@ const _ADDON_CATEGORY_REGISTRY: readonly AddOnCategoryDescriptor[] = [
     recommendedSurfaces: ["tool-panel", "workspace"],
     eligibleSystemSlots: ["primary-agent", "chat-interface"],
     requiredManifestFields: ["agentRuntime"],
-    optionalManifestFields: ["systemSlots", "embeddedWorkspace", "modelSelection"],
+    optionalManifestFields: ["systemSlots", "embeddedWorkspace", "modelSelection", "harnessProviderConnection"],
     providerCredentialOptions: ["provider-profile", "self", "none"],
     securityInvariants: [
       "Classification describes identity/type, never grants authority.",
@@ -103,6 +103,7 @@ const _ADDON_CATEGORY_REGISTRY: readonly AddOnCategoryDescriptor[] = [
       { id: "manifest-validation", label: "Core manifest/validation contract", status: "implemented", note: "packages/addon-sdk/src/validation.ts" },
       { id: "harness-runtime", label: "Harness runtime contract", status: "implemented", note: "browser-first/host/harness-adapter-contract.mjs" },
       { id: "provider-profile", label: "Provider Profile integration", status: "implemented", note: "browser-first/host/harness-credentials.mjs" },
+      { id: "harness-provider-connection", label: "Generic Harness Provider Connection (compatibility + discovery)", status: "implemented", note: "packages/addon-sdk/src/contracts.ts (AddOnHarnessProviderConnectionContract); browser-first/host/harness-host-service.mjs" },
       { id: "primary-agent-slot", label: "primary-agent slot eligibility", status: "implemented", note: "browser-first/host/harness-registry.mjs" },
       { id: "tool-panel-surface", label: "tool-panel/workspace surface discovery", status: "implemented", note: "packages/addon-sdk/src/surface-routing.ts" },
       { id: "session-tool-permissions", label: "Session/tool permission guidance", status: "implemented", note: "browser-first/host/harness-boundary.mjs" },
@@ -124,6 +125,7 @@ const _ADDON_CATEGORY_REGISTRY: readonly AddOnCategoryDescriptor[] = [
     ],
     docs: [
       "docs/architecture/ADR-039-harness-runtime-provider-profiles.md",
+      "docs/architecture/ADR-041-harness-provider-connection.md",
       "docs/architecture/ADR-026-minimal-kernel-replaceable-default-addons.md",
       "docs/addons/harness-adapter-demo.md",
     ],

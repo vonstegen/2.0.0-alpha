@@ -900,6 +900,40 @@ describe("bound harness contracts", () => {
   });
 });
 
+const providerConnection = () => ({
+  consumesProviderProfiles: true,
+  providerFamilies: ["openai-compatible", "anthropic"],
+  credentialDelivery: ["runtime-adapter", "session-environment"],
+  modelSelection: true,
+});
+
+describe("harnessProviderConnection contract", () => {
+  it("accepts a descriptive compatibility declaration", () => {
+    const manifest = boundHarness();
+    const result = validateAddOnManifest({ ...manifest, harnessProviderConnection: providerConnection() });
+    expect(result.issues.filter(issue => issue.severity === "error")).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  it.each([
+    [{ privateToken: "secret-canary" }, "harness-provider-connection-field"],
+    [{ endpoint: "http://127.0.0.1:1" }, "harness-provider-connection-field"],
+    [{ consumesProviderProfiles: "yes" }, "harness-provider-connection-consumes-boolean"],
+    [{ modelSelection: "true" }, "harness-provider-connection-model-selection-boolean"],
+    [{ providerFamilies: ["anthropic", "unknown-vendor"] }, "harness-provider-connection-provider-families"],
+    [{ providerFamilies: [] }, "harness-provider-connection-provider-families"],
+    [{ providerFamilies: ["anthropic", "anthropic"] }, "harness-provider-connection-provider-families"],
+    [{ credentialDelivery: ["runtime-adapter", "durable-duplicate"] }, "harness-provider-connection-credential-delivery"],
+    [{ credentialDelivery: [] }, "harness-provider-connection-credential-delivery"],
+    [{ credentialDelivery: ["self-auth", "self-auth"] }, "harness-provider-connection-credential-delivery"],
+  ])("rejects invalid compatibility fields %j", (patch, code) => {
+    const manifest = boundHarness();
+    const result = validateAddOnManifest({ ...manifest, harnessProviderConnection: { ...providerConnection(), ...patch } });
+    expect(result.valid).toBe(false);
+    expect(result.issues.map(issue => issue.code)).toContain(code);
+    expect(JSON.stringify(result.issues)).not.toContain("secret-canary");
+  });
+});
 
 describe("harness review regressions", () => {
   it("locates unknown fields at their containing object without echoing field names", () => {

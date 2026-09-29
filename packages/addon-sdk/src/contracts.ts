@@ -5,6 +5,7 @@ import type {
   AddOnEngineerSetupRunbook,
   AddOnLocalServiceDefinition,
   AddOnManifest,
+  AddOnHarnessProviderConnectionContract,
   AddOnAgentRuntimeContract,
   AddOnAuditContract,
   AddOnConnectorDefinition,
@@ -19,6 +20,8 @@ import type {
   AddOnToolDefinition,
   AddOnWorkflowBoundary,
   Capability,
+  HarnessCredentialDelivery,
+  ProviderType,
 } from "../../../src/core/contracts";
 
 export const ADDON_SDK_VERSION = "0.1.0";
@@ -86,5 +89,14 @@ export const ADDON_SERVICE_PROTOCOLS: readonly AddOnServiceProtocol[] = [
 export const HARNESS_OPERATIONS = [
   "createSession", "invoke", "cancel", "history", "status", "modelCatalog", "selectModel",
 ] as const satisfies readonly import("../../../src/core/contracts").HarnessOperation[];
+
+// Descriptive credential delivery mechanisms a harness can declare for the
+// generic Harness Provider Connection (host owns the actual delivery).
+export const HARNESS_CREDENTIAL_DELIVERY_MECHANISMS = ["runtime-adapter", "session-environment", "self-auth", "none"] as const satisfies readonly HarnessCredentialDelivery[];
+export type HarnessCredentialDeliveryMechanism = (typeof HARNESS_CREDENTIAL_DELIVERY_MECHANISMS)[number];
+
+// Compatible provider/protocol families a harness can declare (descriptive;
+// never grants access to a profile).
+export const HARNESS_PROVIDER_FAMILIES = ["openai", "anthropic", "google", "minimax", "openai-compatible", "local", "custom"] as const satisfies readonly ProviderType[];
 
 export { HARNESS_PUBLIC_ERROR_MESSAGES } from "../../../src/core/contracts.ts";

@@ -11,6 +11,8 @@ import { createOpenAICompatibleAdapter } from './agent-adapters/openai-compatibl
 import { createDshTypertAdapter } from './agent-adapters/dsh-typert.mjs';
 import { createProviderFabricAdapter } from './agent-adapters/provider-fabric.mjs';
 import { publicHarnessError } from './harness-adapter-contract.mjs';
+import { discoverCompatibleProviderProfiles } from './harness-provider-discovery.mjs';
+import { createHarnessProviderAdapter } from './harness-provider-adapter.mjs';
 import { bridgeCorsHeaders, HarnessTransportError, validateLoopbackHost } from './bridge-server.mjs';
 
 // JSON data only: recursively sort object keys, preserve array order, no whitespace.
@@ -117,15 +119,26 @@ export async function createHarnessHostService({ userRoot, store = createHarness
   if (!Number.isSafeInteger(cleanupTimeoutMs) || cleanupTimeoutMs < 1 || cleanupTimeoutMs > 30000) throw new TypeError('Bounded cleanup required.');
   const approvedBindings = structuredClone(bindings);
   const credentials = createHarnessCredentials({ bindings: approvedBindings, env, resolveProviderProfileCredential });
+  const providerAdapter = createHarnessProviderAdapter({
+    allProviderProfiles: providerHost?.allProviderProfiles?.bind(providerHost),
+    allModelCatalog: providerHost?.allModelCatalog?.bind(providerHost),
+  });
   const manifests = new Map(), resources = new Set();
   let closed = false, closing;
+  const syncManifests = (document) => {
+    for (const entry of Object.values(document?.state?.installations ?? {})) if (entry?.manifest?.id) manifests.set(entry.manifest.id, structuredClone(entry.manifest));
+  };
   const trackedStore = {
+    // Keep the host-side manifest view in sync with every durable registry
+    // mutation (install/import/grants/remove), not only route-driven installs,
+    // so provider-profile discovery and supported-operations projections stay
+    // correct for direct registry consumers as well.
     async read() {
       const document = await store.read();
-      for (const entry of Object.values(document?.state?.installations ?? {})) if (entry?.manifest?.id) manifests.set(entry.manifest.id, structuredClone(entry.manifest));
+      syncManifests(document);
       return document;
     },
-    write: document => store.write(document),
+    write: (document) => { syncManifests(document); return store.write(document); },
   };
   const registry = await createHarnessRegistry({ store: trackedStore, reviewedAdapterIds: ['dsh-typert-v1', 'provider-fabric-v1', 'openai-compatible-v1'],
     bindings: approvedBindings.map(({ name, addonId, adapterId, authScheme, endpoint, source }) => ({
@@ -162,7 +175,20 @@ export async function createHarnessHostService({ userRoot, store = createHarness
   }
   async function resolveAdapter(authorization) {
     let adapter, transport;
-    if (authorization.runtime.adapterId === 'provider-fabric-v1') {
+    const runtime = authorization.runtime;
+    // Host-owned compatibility + delivery gate for provider-profile harnesses.
+    // The registry already enforced identity (binding addonId/adapter/scheme)
+    // and the grant gate; here the generic adapter verifies the approved
+    // profile's family is one the harness declared it can consume and that it
+    // accepts runtime-adapter delivery. Incompatible declarations fail closed.
+    if (runtime.credentialSource === 'provider-profile') {
+      const binding = approvedBindings.find(candidate => candidate.addonId === authorization.addonId &&
+        candidate.adapterId === runtime.adapterId && candidate.name === runtime.credentialBinding &&
+        candidate.source && typeof candidate.source.providerProfileId === 'string' && candidate.source.providerProfileId);
+      if (!binding) throw fail('permission-denied');
+      await providerAdapter.plan({ manifest: manifests.get(authorization.addonId), providerProfileId: binding.source.providerProfileId });
+    }
+    if (runtime.adapterId === 'provider-fabric-v1') {
       adapter = createProviderFabricAdapter({ executeRawProviderChat: providerHost?.executeRawProviderChat,
         readiness: async () => {
           const status = await providerHost.executeProviderStatus();
@@ -213,7 +239,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     // harnesses (null otherwise). A resolver miss reads as "not configured".
     await Promise.all(Object.entries(projection.installations).map(async ([addonId, entry]) => {
       if (entry.agentRuntime?.credentialSource !== 'provider-profile') return;
-      const runtime = manifests.get(addonId)?.agentRuntime;
+      const runtime = entry.agentRuntime;
       const binding = approvedBindings.find(candidate => candidate.addonId === addonId &&
         candidate.adapterId === runtime?.adapterId && candidate.name === runtime?.credentialBinding &&
         candidate.source && typeof candidate.source.providerProfileId === 'string' && candidate.source.providerProfileId);
@@ -223,6 +249,24 @@ export async function createHarnessHostService({ userRoot, store = createHarness
         entry.providerProfileConfigured = true;
       } catch { entry.providerProfileConfigured = false; }
     }));
+    // Host-owned provider-profile discovery: only profiles/models compatible
+    // with the harness's declared provider families. Metadata only — never a
+    // credential, endpoint, or secret. A harness with no family declaration
+    // receives an empty compatible set (no family claim, no catalog leak).
+    if (typeof providerHost?.allProviderProfiles === 'function' && typeof providerHost?.allModelCatalog === 'function') {
+      const profiles = await providerHost.allProviderProfiles();
+      const catalog = await providerHost.allModelCatalog();
+      for (const [, entry] of Object.entries(projection.installations)) {
+        if (!entry.harnessProviderConnection) continue;
+        const discovery = discoverCompatibleProviderProfiles({
+          manifest: { harnessProviderConnection: entry.harnessProviderConnection, agentRuntime: entry.agentRuntime },
+          profiles,
+          modelCatalog: catalog,
+        });
+        entry.compatibleProviderProfiles = discovery.profiles;
+        entry.compatibleModels = discovery.models;
+      }
+    }
     return { ...projection, candidates: structuredClone(candidates) };
   };
   function route(method, path, capability, required, optional, handler, streaming = false) {
