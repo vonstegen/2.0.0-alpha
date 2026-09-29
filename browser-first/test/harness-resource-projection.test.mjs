@@ -192,10 +192,12 @@ test("CP-2B4: root containment fails closed (traversal, symlink escape, sibling,
   assert.throws(() => createHarnessResourceProjection({ authorizedProject: { id: "p", label: "P", root: "relative/path" } }), TypeError);
 });
 
-test("CP-2B4: a symlinked authoritative root that escapes its own identity is not projected", async () => {
+test("CP-2B4: a symlinked authoritative root is canonicalized to its host-provided target and projected", async () => {
   const { proj, sibling } = await tempTree();
-  // Root that is itself a symlink pointing at a sibling directory: realpath
-  // yields a DIFFERENT root than the declared identity, and must fail closed.
+  // A root that is itself a symlink is canonicalized (realpath) to the trusted
+  // host-provided target. This is canonicalization, not an identity escape: the
+  // host owns the root, so the projection succeeds with the RESOLVED target as
+  // its root. The declared identity is never treated as a caller-widened root.
   const linkBase = await mkdtemp(path.join(tmpdir(), "ros-linkbase-"));
   const link = path.join(linkBase, "link");
   await symlink(sibling, link);
@@ -207,9 +209,8 @@ test("CP-2B4: a symlinked authoritative root that escapes its own identity is no
     request: { requests: { project: ["read"] } },
     grantedCapabilities: [filesystemGrant],
   });
-  // The canonicalized root is the symlink target (not under the declared
-  // project base). It is still a valid strict-descendant-of-home directory,
-  // so the projection succeeds but its root is the RESOLVED sibling path —
+  // Canonicalization succeeds: the projected root is the realpath of the
+  // host-provided symlink target (a valid strict-descendant-of-home directory),
   // never a caller-supplied widened root.
   assert.equal(result.ok, true);
   assert.equal(result.projection.root, realpathSync(sibling));
@@ -280,4 +281,177 @@ test("CP-2B7: public view never discloses a path, grant, or secret", async () =>
   assert.equal(JSON.stringify(view).includes(proj), false);
   assert.equal(JSON.stringify(view).includes(result.projection.root), false);
   assert.equal(JSON.stringify(view).includes("filesystem"), false);
+});
+
+
+// ---- Phase 2B.1: operation-level revocation lifecycle (CP-B1.3) ----
+
+const fullProjectionGrants = () => [
+  { family: "project", operation: "read", granted: true, grant: filesystemGrant },
+  { family: "files", operation: "read", granted: true, grant: filesystemGrant },
+  { family: "files", operation: "write", granted: true, grant: filesystemGrant },
+];
+
+async function issueReadWrite(svc, addonId = "addon.pi-harness", sessionId = "s1") {
+  return svc.project({
+    addonId, sessionId,
+    request: { requests: { project: ["read"], files: ["read", "write"] } },
+    grantedCapabilities: [filesystemGrant],
+  });
+}
+
+test("CP-B1.3 A: filesystem fully revoked -> existing projection DENY (filesystem-not-granted retained)", async () => {
+  const { proj } = await tempTree();
+  const svc = svcFor(proj);
+  const issued = await issueReadWrite(svc);
+  assert.equal(issued.ok, true);
+  const reuse = svc.consume(issued.projection, {
+    addonId: "addon.pi-harness", sessionId: "s1",
+    authorizedProject: { id: "project-a", root: proj },
+    grantedCapabilities: [],
+  });
+  assert.equal(reuse.ok, false);
+  assert.equal(reuse.code, "filesystem-not-granted");
+  assert.equal(reuse.view.state, "denied");
+});
+
+test("CP-B1.3 B: files.write revoked while filesystem remains active -> old read/write projection DENY", async () => {
+  const { proj } = await tempTree();
+  const svc = svcFor(proj);
+  const issued = await issueReadWrite(svc);
+  assert.equal(issued.ok, true);
+  assert.deepEqual(opKeys(issued.projection), ["project.read", "files.read", "files.write"]);
+  // Coarse filesystem capability still granted; CURRENT per-operation grants no
+  // longer grant files.write.
+  const narrowed = fullProjectionGrants().map((grant) =>
+    grant.operation === "write" ? { ...grant, granted: false } : grant);
+  const reuse = svc.consume(issued.projection, {
+    addonId: "addon.pi-harness", sessionId: "s1",
+    authorizedProject: { id: "project-a", root: proj },
+    grantedCapabilities: [filesystemGrant],
+    resourceGrants: narrowed,
+  });
+  assert.equal(reuse.ok, false);
+  assert.equal(reuse.code, "projection-stale");
+});
+
+test("CP-B1.3 C: files.read revoked while filesystem remains active -> old projection DENY", async () => {
+  const { proj } = await tempTree();
+  const svc = svcFor(proj);
+  const issued = await issueReadWrite(svc);
+  assert.equal(issued.ok, true);
+  const narrowed = fullProjectionGrants().map((grant) =>
+    grant.family === "files" && grant.operation === "read" ? { ...grant, granted: false } : grant);
+  const reuse = svc.consume(issued.projection, {
+    addonId: "addon.pi-harness", sessionId: "s1",
+    authorizedProject: { id: "project-a", root: proj },
+    grantedCapabilities: [filesystemGrant],
+    resourceGrants: narrowed,
+  });
+  assert.equal(reuse.ok, false);
+  assert.equal(reuse.code, "projection-stale");
+});
+
+test("CP-B1.3 D: current operation grants unchanged -> projection remains consumable", async () => {
+  const { proj } = await tempTree();
+  const svc = svcFor(proj);
+  const issued = await issueReadWrite(svc);
+  assert.equal(issued.ok, true);
+  const reuse = svc.consume(issued.projection, {
+    addonId: "addon.pi-harness", sessionId: "s1",
+    authorizedProject: { id: "project-a", root: proj },
+    grantedCapabilities: [filesystemGrant],
+    resourceGrants: fullProjectionGrants(),
+  });
+  assert.equal(reuse.ok, true);
+  assert.deepEqual(opKeys(reuse.projection), ["project.read", "files.read", "files.write"]);
+});
+
+test("CP-B1.3 E: authority expanded after issuance -> old projection DENY; fresh projection required", async () => {
+  const { proj } = await tempTree();
+  const svc = svcFor(proj);
+  const issued = await issueReadWrite(svc);
+  assert.equal(issued.ok, true);
+  // Represents a projection issued under a finer grant regime where files.write
+  // was requested but NOT granted: the issued operation set is read-only while
+  // the request still declares write. The coarse CapabilityGrant vocabulary
+  // cannot express this at issuance today; consume() must already fence it.
+  const readOnlyIssued = Object.freeze({
+    ...issued.projection,
+    operations: Object.freeze(issued.projection.operations.filter((op) => op.operation !== "write")),
+  });
+  assert.deepEqual(opKeys(readOnlyIssued), ["project.read", "files.read"]);
+  // Current authority now grants write too (expansion). The old read-only
+  // projection is stale; a fresh projection is required.
+  const reuse = svc.consume(readOnlyIssued, {
+    addonId: "addon.pi-harness", sessionId: "s1",
+    authorizedProject: { id: "project-a", root: proj },
+    grantedCapabilities: [filesystemGrant],
+    resourceGrants: fullProjectionGrants(),
+  });
+  assert.equal(reuse.ok, false);
+  assert.equal(reuse.code, "projection-stale");
+  // A fresh projection reflects the expanded authority and is consumable.
+  const fresh = await issueReadWrite(svc, "addon.pi-harness", "s2");
+  assert.deepEqual(opKeys(fresh.projection), ["project.read", "files.read", "files.write"]);
+  assert.equal(svc.consume(fresh.projection, {
+    addonId: "addon.pi-harness", sessionId: "s2",
+    authorizedProject: { id: "project-a", root: proj },
+    grantedCapabilities: [filesystemGrant],
+  }).ok, true);
+});
+
+test("CP-B1.3 F: cross-harness/session/project identity remains denied regardless of operation grants", async () => {
+  const { proj } = await tempTree();
+  const svc = svcFor(proj);
+  const issued = await issueReadWrite(svc);
+  assert.equal(issued.ok, true);
+  const current = { id: "project-a", root: proj };
+  const fullGrants = fullProjectionGrants();
+  // Wrong session, wrong harness, and wrong project are all denied even when
+  // the operation grants are unchanged (identity is checked before operations).
+  assert.equal(svc.consume(issued.projection, { addonId: "addon.pi-harness", sessionId: "other", authorizedProject: current, grantedCapabilities: [filesystemGrant], resourceGrants: fullGrants }).code, "projection-identity-mismatch");
+  assert.equal(svc.consume(issued.projection, { addonId: "addon.other-harness", sessionId: "s1", authorizedProject: current, grantedCapabilities: [filesystemGrant], resourceGrants: fullGrants }).code, "projection-identity-mismatch");
+  assert.equal(svc.consume(issued.projection, { addonId: "addon.pi-harness", sessionId: "s1", authorizedProject: { id: "project-b", root: proj }, grantedCapabilities: [filesystemGrant], resourceGrants: fullGrants }).code, "projection-identity-mismatch");
+});
+
+test("CP-B1.3 H: public view still exposes no root, grant, request, or secret", async () => {
+  const { proj } = await tempTree();
+  const svc = svcFor(proj);
+  const result = await svc.project({
+    addonId: "addon.pi-harness", sessionId: "s",
+    request: { requests: { project: ["read"], files: ["write"] } },
+    grantedCapabilities: [filesystemGrant],
+  });
+  assert.equal(result.ok, true);
+  // The internal projection carries the HOST-INTERNAL request authority basis...
+  assert.equal(typeof result.projection.request, "object");
+  assert.deepEqual(result.projection.request.requests.files, ["write"]);
+  const view = result.view;
+  // ...but the public view never discloses it, the root/cwd, the grant, or any secret.
+  assert.deepEqual(Object.keys(view).sort(),
+    ["addonId", "operations", "projectId", "projectLabel", "sessionId", "state"]);
+  const serialized = JSON.stringify(view);
+  assert.equal(serialized.includes(proj), false);
+  assert.equal(serialized.includes(result.projection.root), false);
+  assert.equal(serialized.includes("filesystem"), false);
+  assert.equal(serialized.includes("request"), false);
+  assert.equal("request" in view, false);
+});
+
+test("CP-B1.3: a projection without an issuance request basis fails closed at consume", async () => {
+  const { proj } = await tempTree();
+  const svc = svcFor(proj);
+  const issued = await issueReadWrite(svc);
+  assert.equal(issued.ok, true);
+  // A foreign/malformed projection lacking the authority basis cannot be
+  // re-evaluated and must be denied (fail closed, never default allow).
+  const noBasis = Object.freeze({ ...issued.projection, request: undefined });
+  const reuse = svc.consume(noBasis, {
+    addonId: "addon.pi-harness", sessionId: "s1",
+    authorizedProject: { id: "project-a", root: proj },
+    grantedCapabilities: [filesystemGrant],
+  });
+  assert.equal(reuse.ok, false);
+  assert.equal(reuse.code, "projection-stale");
 });

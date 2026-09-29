@@ -319,6 +319,39 @@ test("CP-2B8 L: Pi cwd comes from the authorized projection, not raw caller auth
   await assert.rejects(revoked.plan(planInput({ projection: issued.projection })), { code: "permission-denied" });
 });
 
+
+test("CP-B1.3 G: Pi planner cannot consume a stale-authority projection (operation narrowed)", async () => {
+  const projRoot = await mkdtemp(path.join(tmpdir(), "pi-cwd-stale-"));
+  const projectionSvc = createHarnessResourceProjection({ authorizedProject: { id: "project-a", label: "Project A", root: projRoot } });
+  const granted = [{ capability: "filesystem", granted: true, scope: "system", revocationBehavior: "hard-stop" }];
+  const issued = await projectionSvc.project({
+    addonId: "addon.pi-harness", sessionId: "pi-session-1",
+    request: { requests: { project: ["read"], files: ["read", "write"] } },
+    grantedCapabilities: granted,
+  });
+  assert.equal(issued.ok, true);
+  // CURRENT per-operation grants narrow files.write while the coarse filesystem
+  // capability stays active -> consume fails closed as projection-stale, and the
+  // Pi planner turns that into a public permission-denied (never a usable cwd).
+  const narrowed = [
+    { family: "project", operation: "read", granted: true, grant: granted[0] },
+    { family: "files", operation: "read", granted: true, grant: granted[0] },
+    { family: "files", operation: "write", granted: false, grant: granted[0] },
+  ];
+  const staleAdapter = adapter({
+    consumeProjection: (projection, ctx) => projectionSvc.consume(projection, {
+      ...ctx,
+      authorizedProject: { id: "project-a", root: projRoot },
+      grantedCapabilities: granted,
+      resourceGrants: narrowed,
+    }),
+  });
+  await assert.rejects(
+    staleAdapter.plan(planInput({ projection: issued.projection })),
+    { code: "permission-denied" },
+  );
+});
+
 // ---- pi executable allowlist ----
 const piOpts = ({ files = {}, real = {}, ...overrides } = {}) => ({
   platform: "linux", homeDir: "/home/u", npmPrefix: "/home/u/npm-global",

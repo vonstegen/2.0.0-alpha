@@ -6,6 +6,10 @@ history. For the 2.0.0 Alpha runtime, begin with the
 [module map](MODULE_MAP.md) and [module ownership contract](MODULE-OWNERSHIP.md)
 for the area being changed.
 
+For the Pi-native SDK Phase 2 (resource projection) line, see the
+[Phase 2 roadmap & qualification](PI-NATIVE-PHASE-2-ROADMAP.md) and the
+[Tom 2026-09-28 requirements traceability](TOM-2026-09-28-REQUIREMENTS-TRACEABILITY.md).
+
 An ADR's **decision status** records what happened to the decision. Its
 **Alpha applicability** records whether that decision governs the packaged
 Alpha. These fields are independent: an accepted long-term decision can be

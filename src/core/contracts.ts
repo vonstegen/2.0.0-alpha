@@ -711,6 +711,13 @@ export interface HarnessSessionProjection {
   cwd: string;
   /** Granted operation subset: requested ∩ granted, project and files only. */
   operations: readonly HarnessProjectionOperation[];
+  /**
+   * HOST-INTERNAL issuance authority basis: the normalized request that
+   * produced `operations`. consume() re-evaluates it against CURRENT grants and
+   * fails closed (`projection-stale`) when the recomputed set differs. It never
+   * crosses the public view and carries no path, grant, or secret material.
+   */
+  request: AddOnHarnessResourceRequestContract;
   /** Backing filesystem grant snapshot the projection was derived from. */
   grant: CapabilityGrant;
   issuedAt: string;

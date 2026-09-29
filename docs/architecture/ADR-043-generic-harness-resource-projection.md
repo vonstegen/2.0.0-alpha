@@ -104,6 +104,16 @@ NEW projections and blocks reuse of an issued projection; a disabled/unbound/
 wrong harness cannot create or reuse one; Session A's projection is never
 reusable as Session B; a project change requires a fresh projection.
 
+Operation-level revocation (Phase 2B.1): the issued projection carries the
+normalized request as a HOST-INTERNAL authority basis (never in the public
+view). `consume()` re-derives the requested∩granted operation set from CURRENT
+grants and requires it to equal the issued set. A narrowing (e.g. `files.write`
+revoked while the coarse filesystem grant stays active) and an expansion both
+fail closed as `projection-stale` — a stale projection must be re-issued, never
+silently downgraded in place. This fences issued projections when CURRENT
+operation-level authority diverges from issuance, complementing the coarse
+filesystem-grant check.
+
 ## Consequences
 
 - The `filesystem` grant no longer implies unrestricted filesystem authority: a

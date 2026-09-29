@@ -41,6 +41,10 @@ const isNonEmptyString = (value) => typeof value === "string" && value.trim().le
 
 const operationKey = (family, operation) => `${family}.${operation}`;
 
+/** Canonical, order-independent operation-set key for equality comparison. */
+const operationKeySet = (operations) =>
+  [...new Set((operations ?? []).map((op) => operationKey(op.family, op.operation)))].sort().join("\u0000");
+
 /**
  * Validate the authoritative host project identity shape. The root must be an
  * absolute, non-empty path with no NUL/newline (path-confusion guard). Validity
@@ -187,6 +191,15 @@ export function createHarnessResourceProjection({
         root,
         cwd: root,
         operations: Object.freeze(operations),
+        // HOST-INTERNAL issuance authority basis: the normalized request that
+        // produced this operation set. consume() re-evaluates it against CURRENT
+        // grants; it never crosses the public view. It carries no path, grant,
+        // or secret: only the manifest request declaration.
+        request: Object.freeze({
+          requests: Object.freeze(Object.fromEntries(
+            Object.entries(normalized.value.requests).map(([family, ops]) => [family, Object.freeze([...ops])]),
+          )),
+        }),
         grant: Object.freeze({ ...filesystemGrant }),
         issuedAt: now(),
       });
@@ -196,11 +209,13 @@ export function createHarnessResourceProjection({
     /**
      * Re-validate an existing projection against CURRENT host state before any
      * consumption. Denies when the add-on, session, or project identity differs,
-     * when the authoritative project root changed, or when the filesystem grant
-     * has since been revoked. Session A's projection is never reusable as
-     * Session B; a project change requires a fresh projection.
+     * when the authoritative project root changed, when the filesystem grant has
+     * since been revoked, or when the current requested∩granted operation set no
+     * longer equals the issued set (narrowed OR expanded authority). Session A's
+     * projection is never reusable as Session B; a project change or any
+     * operation-authority change requires a fresh projection.
      */
-    consume(projection, { addonId, sessionId, authorizedProject: currentProject, grantedCapabilities = [] } = {}) {
+    consume(projection, { addonId, sessionId, authorizedProject: currentProject, grantedCapabilities = [], resourceGrants } = {}) {
       if (!projection || typeof projection !== "object") {
         return deniedView(addonId, sessionId, "projection-identity-mismatch");
       }
@@ -213,6 +228,23 @@ export function createHarnessResourceProjection({
         grant?.capability === FILESYSTEM_CAPABILITY && grant?.granted === true) ?? null;
       if (!currentGrant) {
         return deniedView(addonId, sessionId, "filesystem-not-granted");
+      }
+      // Operation-level re-evaluation (Phase 2B.1). The issued projection carried
+      // the normalized request as its HOST-INTERNAL authority basis; re-derive the
+      // CURRENT requested∩granted∩supported operation set from CURRENT grants and
+      // require it to equal the issued set. A narrowing (e.g. files.write revoked
+      // while the coarse filesystem grant stays active) or an expansion both fail
+      // closed as projection-stale: a stale projection must be re-issued, never
+      // silently downgraded in place.
+      if (!projection.request || typeof projection.request !== "object") {
+        return deniedView(addonId, sessionId, "projection-stale");
+      }
+      const currentResourceGrants = Array.isArray(resourceGrants)
+        ? resourceGrants
+        : resolveHarnessResourceGrants(projection.request, grantedCapabilities);
+      const currentOperations = intersectProjectionOperations(projection.request, currentResourceGrants);
+      if (operationKeySet(projection.operations) !== operationKeySet(currentOperations)) {
+        return deniedView(addonId, sessionId, "projection-stale");
       }
       return { ok: true, projection, view: publicView(projection) };
     },
