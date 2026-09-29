@@ -17,6 +17,7 @@ import {
   normalizeSkillCatalog,
   isSkillEligible,
   deriveSkillsOperations,
+  deriveStagingIdentity,
   SKILLS_LIST_CAPABILITY,
 } from "../host/harness-skills-projection.mjs";
 import { normalizeHarnessResourceRequest } from "../../packages/addon-sdk/src/harness-resources.ts";
@@ -36,13 +37,18 @@ const realCatalog = buildSkillCatalogFromManifests([opencodeManifest, browserMan
 const opencodeSkill = realCatalog.find((s) => s.id === "opencode-coding-handoff");
 const browserSkill = realCatalog.find((s) => s.id === "browser-research-session");
 
-function svcFor(catalog, sourceRoot = repoRoot) {
+function svcFor(catalog, sourceRoot = repoRoot, stagingBase = path.join(tmpdir(), "ros-skills-stage-default")) {
   return createHarnessSkillsProjection({
     authorizedProject: { id: "project-a", label: "Project A" },
     skillCatalog: catalog,
     skillSourceRoot: sourceRoot,
+    stagingBase,
   });
 }
+
+// Host-derived owned staging root for a binding (mirrors the implementation).
+const ownedRoot = (stagingBase, addonId, sessionId, projectId = "project-a") =>
+  path.join(stagingBase, "skills", deriveStagingIdentity(addonId, sessionId, projectId));
 
 const skillsReadRequest = () => ({ requests: { skills: ["list", "read"] } });
 
@@ -111,19 +117,19 @@ test("CP-2C5 B: request list, authorized -> safe list metadata only", () => {
 test("CP-2C5 C: request read, authorized + eligible -> bounded materialization", async () => {
   const staging = await mkdtemp(path.join(tmpdir(), "ros-skills-stage-"));
   try {
-    const svc = svcFor(realCatalog);
+    const svc = svcFor(realCatalog, repoRoot, staging);
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
     assert.equal(result.ok, true);
     assert.deepEqual(OP(result.projection), ["skills.list", "skills.read"]);
     const read = svc.readSkill(result.projection, "opencode-coding-handoff");
     assert.equal(read.ok, true);
     assert.equal(read.skill.status, "eligible");
-    const materialized = await svc.materialize(result.projection, "opencode-coding-handoff", { stagingRoot: staging });
+    const materialized = await svc.materialize(result.projection, "opencode-coding-handoff");
     assert.equal(materialized.ok, true);
     assert.equal(materialized.name, "opencode-coding-handoff");
     const stagedPath = materialized.stagedPath;
-    // Host-derived Pi-native destination, never manifest-supplied.
-    assert.equal(stagedPath, path.join(staging, ".pi", "skills", "opencode-coding-handoff", "SKILL.md"));
+    // Host-derived Pi-native destination under the opaque owned staging root.
+    assert.equal(stagedPath, path.join(ownedRoot(staging, "addon.pi-harness", "s"), ".pi", "skills", "opencode-coding-handoff", "SKILL.md"));
     const content = await readFile(stagedPath, "utf8");
     assert.match(content, /^---\nname: opencode-coding-handoff\n/);
     assert.match(content, /description:/);
@@ -141,14 +147,14 @@ test("CP-2C5 C: request read, authorized + eligible -> bounded materialization",
 test("CP-2C5 D: list-only cannot read content", async () => {
   const staging = await mkdtemp(path.join(tmpdir(), "ros-skills-listonly-"));
   try {
-    const svc = svcFor(realCatalog);
+    const svc = svcFor(realCatalog, repoRoot, staging);
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: { requests: { skills: ["list"] } }, grantedCapabilities: opencodeEligibleGrants() });
     assert.equal(result.ok, true);
     assert.deepEqual(OP(result.projection), ["skills.list"]);
     const read = svc.readSkill(result.projection, "opencode-coding-handoff");
     assert.equal(read.ok, false);
     assert.equal(read.code, "skills-read-not-granted");
-    const materialized = await svc.materialize(result.projection, "opencode-coding-handoff", { stagingRoot: staging });
+    const materialized = await svc.materialize(result.projection, "opencode-coding-handoff");
     assert.equal(materialized.ok, false);
     assert.equal(materialized.code, "skills-read-not-granted");
   } finally {
@@ -182,7 +188,7 @@ test("CP-2C5 F: unknown skill denied", () => {
 test("CP-2C5 G: requiredCapabilities not granted -> skill unavailable/denied", async () => {
   const staging = await mkdtemp(path.join(tmpdir(), "ros-skills-ineligible-"));
   try {
-    const svc = svcFor(realCatalog);
+    const svc = svcFor(realCatalog, repoRoot, staging);
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: [agentRuntimeGrant] });
     assert.equal(result.ok, true);
     const opencode = result.view.skills.find((s) => s.id === "opencode-coding-handoff");
@@ -190,7 +196,7 @@ test("CP-2C5 G: requiredCapabilities not granted -> skill unavailable/denied", a
     const browser = result.view.skills.find((s) => s.id === "browser-research-session");
     assert.equal(browser.status, "unavailable");
     assert.equal(svc.readSkill(result.projection, "opencode-coding-handoff").code, "skill-unavailable");
-    const materialized = await svc.materialize(result.projection, "opencode-coding-handoff", { stagingRoot: staging });
+    const materialized = await svc.materialize(result.projection, "opencode-coding-handoff");
     assert.equal(materialized.ok, false);
     assert.equal(materialized.code, "skill-unavailable");
   } finally {
@@ -293,15 +299,15 @@ test("CP-2C8: synthetic non-Pi harness consumes the SAME generic projection/mate
       skills: [{ id: "synthetic-skill", name: "Synthetic skill", description: "A synthetic harness skill.", documentPath: "synthetic-skill.md", requiredCapabilities: ["network"] }],
     };
     const catalog = buildSkillCatalogFromManifests([syntheticManifest], { sourceRoot });
-    const svc = svcFor(catalog, sourceRoot);
+    const svc = svcFor(catalog, sourceRoot, staging);
     // Same generic seam, no addon.pi-harness branching.
     const result = svc.project({ addonId: "addon.synthetic-harness", sessionId: "synth-session-1", request: skillsReadRequest(), grantedCapabilities: [grant("agent-runtime"), grant("network")] });
     assert.equal(result.ok, true);
     assert.deepEqual(OP(result.projection), ["skills.list", "skills.read"]);
     assert.equal(result.view.skills[0].status, "eligible");
-    const materialized = await svc.materialize(result.projection, "synthetic-skill", { stagingRoot: staging });
+    const materialized = await svc.materialize(result.projection, "synthetic-skill");
     assert.equal(materialized.ok, true);
-    assert.equal(materialized.stagedPath, path.join(staging, ".pi", "skills", "synthetic-skill", "SKILL.md"));
+    assert.equal(materialized.stagedPath, path.join(ownedRoot(staging, "addon.synthetic-harness", "synth-session-1"), ".pi", "skills", "synthetic-skill", "SKILL.md"));
     const content = await readFile(materialized.stagedPath, "utf8");
     assert.match(content, /name: synthetic-skill/);
     assert.match(content, /Synthetic skill/);
@@ -328,13 +334,13 @@ test("CP-2C9: symlink escape from skill source fails closed", async () => {
       source: path.join(sourceRoot, "escape-link", "secret.md"), requiredCapabilities: [],
     }]);
     assert.equal(catalog.ok, true, "lexical source path is inside the root; symlink escape is caught at materialization");
-    const svc = svcFor(catalog.records, sourceRoot);
+    const svc = svcFor(catalog.records, sourceRoot, staging);
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: [agentRuntimeGrant] });
     assert.equal(result.ok, true);
-    const plan = svc.planMaterialization(result.projection, "escaped-skill", { stagingRoot: staging });
+    const plan = svc.planMaterialization(result.projection, "escaped-skill");
     assert.equal(plan.ok, false);
     assert.equal(plan.code, "skill-source-escape");
-    const materialized = await svc.materialize(result.projection, "escaped-skill", { stagingRoot: staging });
+    const materialized = await svc.materialize(result.projection, "escaped-skill");
     assert.equal(materialized.ok, false);
     assert.equal(materialized.code, "skill-source-escape");
   } finally {
@@ -350,16 +356,18 @@ test("CP-2C9: symlink escape from staging destination fails closed", async () =>
   const staging = await mkdtemp(path.join(tmpdir(), "ros-stage-dst-"));
   try {
     await writeFile(path.join(sourceRoot, "real-skill.md"), "# real");
-    // A `.pi` symlink inside staging pointing outside.
-    await symlink(outside, path.join(staging, ".pi"));
     const catalog = normalizeSkillCatalog([{
       id: "dst-skill", name: "dst-skill", label: "DST", description: "d", version: "1",
       source: path.join(sourceRoot, "real-skill.md"), requiredCapabilities: [],
     }]);
-    const svc = svcFor(catalog.records, sourceRoot);
+    const svc = svcFor(catalog.records, sourceRoot, staging);
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: [agentRuntimeGrant] });
     assert.equal(result.ok, true);
-    const materialized = await svc.materialize(result.projection, "dst-skill", { stagingRoot: staging });
+    // A `.pi` symlink inside THIS projection's owned staging root pointing outside.
+    const root = ownedRoot(staging, "addon.pi-harness", "s");
+    await mkdir(root, { recursive: true });
+    await symlink(outside, path.join(root, ".pi"));
+    const materialized = await svc.materialize(result.projection, "dst-skill");
     assert.equal(materialized.ok, false);
     assert.equal(materialized.code, "skill-destination-escape");
   } finally {
@@ -408,15 +416,21 @@ test("CP-2C9: canonical skill source unchanged after projection and cleanup", as
       id: "canonical-skill", name: "canonical-skill", label: "Canonical", description: "c", version: "1",
       source: canonicalPath, requiredCapabilities: [],
     }]);
-    const svc = svcFor(catalog.records, sourceRoot);
+    const svc = svcFor(catalog.records, sourceRoot, staging);
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: [agentRuntimeGrant] });
     assert.equal(result.ok, true);
     const before = await readFile(canonicalPath, "utf8");
-    const materialized = await svc.materialize(result.projection, "canonical-skill", { stagingRoot: staging });
+    const materialized = await svc.materialize(result.projection, "canonical-skill");
     assert.equal(materialized.ok, true);
     assert.equal(await readFile(canonicalPath, "utf8"), before, "canonical source must not change");
-    await svc.cleanup(staging);
-    const gone = await readFile(staging).catch((e) => e.code);
+    await svc.cleanup(result.projection, {
+      addonId: "addon.pi-harness",
+      sessionId: "s",
+      authorizedProject: { id: "project-a", label: "Project A" },
+      grantedCapabilities: [agentRuntimeGrant],
+      skillCatalog: catalog.records,
+    });
+    const gone = await readFile(ownedRoot(staging, "addon.pi-harness", "s")).catch((e) => e.code);
     assert.equal(gone, "ENOENT", "session staging root is disposed");
     assert.equal(await readFile(canonicalPath, "utf8"), before, "cleanup must not touch the canonical source");
   } finally {

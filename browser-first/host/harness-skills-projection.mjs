@@ -30,24 +30,30 @@
 // It never spawns a process, opens a PTY, resolves a credential/provider/model,
 // or exposes an arbitrary path to a manifest.
 //
-// Host-owned staging base (CP-2C1.1):
+// Host-owned staging base:
 //   - Host injects `stagingBase` in `createHarnessSkillsProjection`.
-//   - Projection-specific staging path is derived as: `${stagingBase}/skills/${sessionId}`
+//   - Projection staging identity is a host-derived opaque digest of the full
+//     session binding (addonId + NUL + sessionId + NUL + projectId), never a raw
+//     caller/session/project string. Staging path is derived as:
+//     `${stagingBase}/skills/<opaque-digest>`.
 //   - Caller cannot supply arbitrary staging root.
 //
-// Host-owned layout (CP-2C1.2):
+// Host-owned layout:
 //   - Layout (dir, file) is injected in `createHarnessSkillsProjection`.
 //   - Default: `.pi/skills/SKILL.md` (Pi native).
 //   - Caller cannot supply layout.
 //
-// Projection-owned cleanup (CP-2C1.3):
+// Projection-owned cleanup:
 //   - cleanup(projection, currentContext) replaces cleanup(stagingRoot).
-//   - Validates: projection identity, addon/session/project binding, staging ownership,
-//     containment under host staging base, symlink escape, forbidden roots.
-//   - Only removes staging tree for THIS projection/session.
+//   - Validates: projection identity, addon/session/project binding, staging
+//     ownership (exact structural equality, never substring/prefix), strict
+//     containment under stagingBase/skills, protected roots (exact equality,
+//     no blanket /home rejection), symlink escape.
+//   - Only removes the exact owned staging tree for THIS projection/session.
 
 import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { normalizeHarnessResourceRequest } from "../../packages/addon-sdk/src/harness-resources.ts";
 import { ADDON_CAPABILITIES } from "../../packages/addon-sdk/src/contracts.ts";
 import { pathContains } from "../../addons/resonant-browser-host/src/lib/path-contains.mjs";
@@ -75,6 +81,65 @@ const operationKey = (family, operation) => `${family}.${operation}`;
 /** Canonical, order-independent operation-set key for equality comparison. */
 const operationKeySet = (operations) =>
   [...new Set((operations ?? []).map((op) => operationKey(op.family, op.operation)))].sort().join("\u0000");
+
+/**
+ * Host-derived opaque staging identity for a full session binding (F2).
+ *
+ * The raw addon/session/project identity strings are NEVER used as filesystem
+ * path components. Instead the binding is folded into a fixed 64-char lowercase
+ * SHA-256 hex digest via the standard Node crypto module. This is deterministic
+ * (same binding -> same identity across the projection lifecycle) so a caller
+ * cannot predict/forge another binding's staging directory, nor inject path
+ * separators, traversal, absolute reroots, or path-confusing characters.
+ */
+export function deriveStagingIdentity(addonId, sessionId, projectId) {
+  return createHash("sha256")
+    .update(`${addonId}\u0000${sessionId}\u0000${projectId}`)
+    .digest("hex");
+}
+
+/**
+ * Exact-equality protected-root check (F4). A candidate canonical path is a
+ * protected root only when it EXACTLY equals one of the host protected roots —
+ * never by prefix/substring. Sub-paths under a protected root (e.g. a legitimate
+ * staging tree beneath `/home/<user>/...`) are NOT protected by this rule; they
+ * are governed instead by the strict-containment/escape checks.
+ */
+export function isProtectedStagingRoot(candidate, { stagingBase, skillSourceRoot, projectRoot = null } = {}) {
+  const canonical = path.resolve(candidate);
+  const roots = ["/", process.env.HOME, projectRoot, skillSourceRoot, stagingBase].filter(isNonEmptyString);
+  return roots.some((root) => path.resolve(root) === canonical);
+}
+
+/**
+ * Pure lexical ownership decision (F3/F4/F5) for a candidate staging root.
+ * Returns pass only when the candidate is EXACTLY the derived owned staging root
+ * for the binding, is strictly contained under `stagingBase/skills` (never equal
+ * to it), and is not a protected root. No prefix/substring identity test is ever
+ * used. Pure lexical validation (no filesystem writes); the caller layers the
+ * read-only symlink-resolved containment check on top.
+ */
+export function decideStagingOwnership(candidate, { stagingBase, skillSourceRoot, projectRoot = null, addonId, sessionId, projectId } = {}) {
+  if (!isNonEmptyString(candidate) || !path.isAbsolute(candidate) || ABS_PATH_ILLEGAL.test(candidate)) {
+    return { ok: false, code: "invalid-path" };
+  }
+  const skillsDir = path.resolve(stagingBase, "skills");
+  const identity = deriveStagingIdentity(addonId, sessionId, projectId);
+  const expected = path.resolve(skillsDir, identity);
+  const canonical = path.resolve(candidate);
+
+  if (isProtectedStagingRoot(canonical, { stagingBase, skillSourceRoot, projectRoot })) {
+    return { ok: false, code: "protected-root", canonical, expected, identity, skillsDir };
+  }
+  if (canonical !== expected) {
+    return { ok: false, code: "not-owned-staging", canonical, expected, identity, skillsDir };
+  }
+  const relative = path.relative(skillsDir, canonical);
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+    return { ok: false, code: "outside-skills-dir", canonical, expected, identity, skillsDir };
+  }
+  return { ok: true, canonical, expected, identity, skillsDir };
+}
 
 /**
  * Validate the authoritative host project identity shape (identity binding only:
@@ -244,6 +309,7 @@ export function createHarnessSkillsProjection({
   skillCatalog = [],
   skillSourceRoot,
   stagingBase,
+  projectRoot = null,
   listCapability = SKILLS_LIST_CAPABILITY,
   layout = { dir: path.join(".pi", "skills"), file: "SKILL.md" },
   now = () => new Date().toISOString(),
@@ -256,6 +322,9 @@ export function createHarnessSkillsProjection({
   }
   if (!isNonEmptyString(stagingBase) || !path.isAbsolute(stagingBase) || ABS_PATH_ILLEGAL.test(stagingBase)) {
     throw new TypeError("A host-owned absolute stagingBase is required for session staging management.");
+  }
+  if (projectRoot !== null && projectRoot !== undefined && (!isNonEmptyString(projectRoot) || !path.isAbsolute(projectRoot) || ABS_PATH_ILLEGAL.test(projectRoot))) {
+    throw new TypeError("A host-owned absolute projectRoot is required when provided.");
   }
   if (!isNonEmptyString(layout.dir) || !isNonEmptyString(layout.file) || ABS_PATH_ILLEGAL.test(layout.dir) || ABS_PATH_ILLEGAL.test(layout.file)) {
     throw new TypeError("A host-injected layout with dir and file is required.");
@@ -297,53 +366,41 @@ export function createHarnessSkillsProjection({
     projection?.catalog?.find((skill) => skill.id === skillId) ?? null;
 
   /**
-   * Compute the host-owned staging root for a projection/session. This is the
-   * derived staging path that MUST be used for materialization and cleanup.
-   * It is derived as: stagingBase/skills/sessionId
+   * The host-derived session binding (addon + session + project identity). The
+   * raw identity strings are never used as path components; they are folded into
+   * an opaque digest by deriveStagingIdentity.
    */
-  const computeProjectionStagingRoot = (sessionId) => {
-    const derived = path.resolve(stagingBase, "skills", sessionId);
-    return derived;
+  const projectionBinding = (projection) => ({
+    addonId: projection?.addonId ?? "",
+    sessionId: projection?.sessionId ?? "",
+    projectId: projection?.project?.id ?? "",
+  });
+
+  /**
+   * Derive the host-owned staging root for a projection from its opaque binding
+   * identity: stagingBase/skills/<opaque-digest>. Never uses a raw sessionId (or
+   * any caller string) as a path component.
+   */
+  const computeOwnedStagingRoot = (projection) => {
+    const binding = projectionBinding(projection);
+    return path.resolve(stagingBase, "skills", deriveStagingIdentity(binding.addonId, binding.sessionId, binding.projectId));
   };
 
   /**
-   * Validate that a path is owned by a projection/session:
-   * - Must be canonicalized and contained under stagingBase
-   * - Must contain the expected sessionId
-   * - Must not escape via symlink
-   * - Must not be forbidden root (/, ~, project root, skill source)
+   * Validate the DERIVED owned staging root (F5): the candidate is always
+   * host-derived (never caller-supplied), and this proves it is exactly owned
+   * (exact structural equality, never substring/prefix), strictly contained
+   * under stagingBase/skills, not a protected root, and does not escape via
+   * symlink.
    */
-  const validateStagingOwnership = async (stagingPath, expectedSessionId) => {
-    if (!isNonEmptyString(stagingPath) || !path.isAbsolute(stagingPath) || ABS_PATH_ILLEGAL.test(stagingPath)) {
-      return { ok: false, code: "invalid-path" };
-    }
-    // Canonicalize
-    let canonical;
-    try {
-      canonical = path.resolve(stagingPath);
-    } catch {
-      return { ok: false, code: "path-resolve-failed" };
-    }
-    // Must be under stagingBase
-    const baseCanonical = path.resolve(stagingBase);
-    const relativeToBase = path.relative(baseCanonical, canonical);
-    if (relativeToBase === "" || relativeToBase.startsWith("..") || path.isAbsolute(relativeToBase)) {
-      return { ok: false, code: "not-under-staging-base" };
-    }
-    // Must contain expected sessionId in path
-    if (!canonical.includes(expectedSessionId)) {
-      return { ok: false, code: "session-mismatch" };
-    }
-    // Symlink containment check
-    const verdict = pathContains(baseCanonical, canonical);
-    if (verdict.result !== "pass") {
-      return { ok: false, code: "symlink-escape" };
-    }
-    // Must not be forbidden paths
-    if (canonical === "/" || canonical === process.env.HOME || path.isAbsolute(stagingPath) && stagingPath.startsWith("/home/") && canonical.startsWith("/home/")) {
-      return { ok: false, code: "forbidden-root-path" };
-    }
-    return { ok: true, canonical };
+  const validateOwnedStagingRoot = async (projection) => {
+    const binding = projectionBinding(projection);
+    const candidate = path.resolve(stagingBase, "skills", deriveStagingIdentity(binding.addonId, binding.sessionId, binding.projectId));
+    const decision = decideStagingOwnership(candidate, { stagingBase, skillSourceRoot, projectRoot, ...binding });
+    if (!decision.ok) return decision;
+    const verdict = pathContains(stagingBase, decision.expected);
+    if (verdict.result !== "pass") return { ...decision, ok: false, code: "symlink-escape" };
+    return { ok: true, ...decision, realTarget: verdict.evidence.targetReal };
   };
 
   /**
@@ -380,11 +437,18 @@ export function createHarnessSkillsProjection({
     if (!isNonEmptyString(dir) || !isNonEmptyString(file) || ABS_PATH_ILLEGAL.test(dir) || ABS_PATH_ILLEGAL.test(file)) {
       return { ok: false, code: "invalid-layout" };
     }
-    // CP-2C1.4: Derive staging root from projection's sessionId
-    const stagingRoot = computeProjectionStagingRoot(projection.sessionId);
+    // F6: Derive the SAME opaque owned staging root from THIS projection binding.
+    const stagingRoot = computeOwnedStagingRoot(projection);
     const destination = path.resolve(stagingRoot, dir, skill.name, file);
-    const destVerdict = pathContains(path.resolve(stagingBase), destination);
+    // Destination must be strictly inside THIS projection's owned staging root
+    // (not merely somewhere under stagingBase). Validated skill name is the only
+    // skill-derived path component; dir/file are host-injected layout.
+    const destVerdict = pathContains(stagingRoot, destination);
     if (destVerdict.result !== "pass") return { ok: false, code: "skill-destination-escape" };
+    const relDest = path.relative(path.resolve(stagingRoot), path.resolve(destination));
+    if (relDest === "" || relDest.startsWith("..") || path.isAbsolute(relDest)) {
+      return { ok: false, code: "skill-destination-escape" };
+    }
     return Object.freeze({
       ok: true,
       skill: safeSkillMeta(skill, projection.eligibility),
@@ -482,14 +546,15 @@ export function createHarnessSkillsProjection({
         currentIds.some((id) => issuedEligibility[id] !== currentEligibility[id])) {
       return { ok: false, code: "eligibility-mismatch" };
     }
-    // CP-2C1.3: Derive and validate staging root from projection/session identity
-    const stagingRoot = computeProjectionStagingRoot(projection.sessionId);
-    const ownershipValid = await validateStagingOwnership(stagingRoot, projection.sessionId);
-    if (!ownershipValid.ok) {
-      return { ok: false, code: ownershipValid.code };
+    // F5: Derive the owned staging root from THIS projection binding, prove
+    // exact ownership + strict containment + protected roots + symlink safety,
+    // then remove ONLY that exact owned tree. Idempotent: removing an
+    // already-removed owned tree remains a pass.
+    const ownership = await validateOwnedStagingRoot(projection);
+    if (!ownership.ok) {
+      return { ok: false, code: ownership.code };
     }
-    // Idempotent removal
-    await rm(stagingRoot, { recursive: true, force: true });
+    await rm(ownership.expected, { recursive: true, force: true });
     return { ok: true };
   };
 

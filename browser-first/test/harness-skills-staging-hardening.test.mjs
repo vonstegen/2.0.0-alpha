@@ -22,6 +22,7 @@ import {
   normalizeSkillCatalog,
   isSkillEligible,
   deriveSkillsOperations,
+  deriveStagingIdentity,
   SKILLS_LIST_CAPABILITY,
 } from "../host/harness-skills-projection.mjs";
 import { normalizeHarnessResourceRequest } from "../../packages/addon-sdk/src/harness-resources.ts";
@@ -50,6 +51,10 @@ function svcFor(catalog, sourceRoot = repoRoot, stagingBase = path.join(tmpdir()
 }
 
 const skillsReadRequest = () => ({ requests: { skills: ["list", "read"] } });
+
+// Host-derived owned staging root for a binding (mirrors the implementation).
+const ownedRoot = (stagingBase, addonId, sessionId, projectId = "project-a") =>
+  path.join(stagingBase, "skills", deriveStagingIdentity(addonId, sessionId, projectId));
 
 // Grants that make the real opencode skill eligible (all requiredCapabilities).
 const opencodeEligibleGrants = () =>
@@ -89,7 +94,7 @@ test("CP-2C1.1 B: caller cannot supply arbitrary stagingRoot to materialize", as
     assert.equal(materialized.ok, true);
     // Staging root is derived from stagingBase, not caller input
     assert.ok(materialized.stagingRoot.startsWith(stagingBase), "staging root must be under stagingBase");
-    assert.equal(materialized.stagingRoot, path.join(stagingBase, "skills", "s"), "staging root must be stagingBase/skills/sessionId");
+    assert.equal(materialized.stagingRoot, ownedRoot(stagingBase, "addon.pi-harness", "s"), "staging root must be stagingBase/skills/<opaque-digest>");
     await rm(arbitraryRoot, { recursive: true, force: true });
   } finally {
     await rm(stagingBase, { recursive: true, force: true });
@@ -109,11 +114,11 @@ test("CP-2C1.1 C: projection-specific staging root derived from sessionId", asyn
     const matB = await svc.materialize(resultB.projection, "opencode-coding-handoff");
     assert.equal(matB.ok, true);
     // Each session has its own staging root
-    assert.equal(matA.stagingRoot, path.join(stagingBase, "skills", "session-a"));
-    assert.equal(matB.stagingRoot, path.join(stagingBase, "skills", "session-b"));
+    assert.equal(matA.stagingRoot, ownedRoot(stagingBase, "addon.pi-harness", "session-a"));
+    assert.equal(matB.stagingRoot, ownedRoot(stagingBase, "addon.pi-harness", "session-b"));
     // Both staging roots exist
-    const existsA = await stat(path.join(stagingBase, "skills", "session-a")).then(() => true).catch(() => false);
-    const existsB = await stat(path.join(stagingBase, "skills", "session-b")).then(() => true).catch(() => false);
+    const existsA = await stat(ownedRoot(stagingBase, "addon.pi-harness", "session-a")).then(() => true).catch(() => false);
+    const existsB = await stat(ownedRoot(stagingBase, "addon.pi-harness", "session-b")).then(() => true).catch(() => false);
     assert.equal(existsA, true);
     assert.equal(existsB, true);
   } finally {
@@ -152,7 +157,7 @@ test("CP-2C1.2 A: layout.dir/layout.file cannot be supplied by caller", async ()
     const plan = svc.planMaterialization(result.projection, "opencode-coding-handoff");
     assert.ok(plan.ok);
     // Layout is derived from host-injected layout, not caller input
-    assert.equal(plan.destination, path.join(stagingBase, "skills", "s", ".pi", "skills", "opencode-coding-handoff", "SKILL.md"));
+    assert.equal(plan.destination, path.join(ownedRoot(stagingBase, "addon.pi-harness", "s"), ".pi", "skills", "opencode-coding-handoff", "SKILL.md"));
   } finally {
     await rm(stagingBase, { recursive: true, force: true });
   }
@@ -376,7 +381,7 @@ test("CP-2C1.4 A: materialization path exactly matches trusted Pi layout", async
   const mat = await svc.materialize(result.projection, "opencode-coding-handoff");
   assert.ok(mat.ok);
   // Path must be: stagingBase/skills/sessionId/.pi/skills/skillName/SKILL.md
-  const expected = path.join(stagingBase, "skills", "s", ".pi", "skills", "opencode-coding-handoff", "SKILL.md");
+  const expected = path.join(ownedRoot(stagingBase, "addon.pi-harness", "s"), ".pi", "skills", "opencode-coding-handoff", "SKILL.md");
   assert.equal(mat.stagedPath, expected, "materialization path must match trusted Pi layout");
 });
 
