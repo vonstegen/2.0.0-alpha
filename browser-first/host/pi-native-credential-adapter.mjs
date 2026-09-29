@@ -5,6 +5,7 @@
 //   addon identity -> approved provider profile -> host-derived protocol gate
 //        -> host-owned identity mapping -> host-owned env var
 //        -> approved executable -> selected model
+//        -> authorized Project/Files projection (host-wired consume -> cwd)
 //        -> authorize (binding + grant, host-wired) -> secret-free argv + env
 //
 // This adapter is a pure planner: it resolves launch material, never spawns a
@@ -30,15 +31,33 @@ export function createPiNativeCredentialAdapter({
   allModelCatalog,
   credentialEnv,
   authorize,
+  consumeProjection,
   envAllowlist = [],
   baseEnv = {},
   now = () => new Date().toISOString(),
 } = {}) {
   async function plan(input = {}) {
-    const { addonId, manifest, providerProfileId, selectedModel, projectPath } = input ?? {};
+    const { addonId, manifest, providerProfileId, selectedModel, projection, sessionId } = input ?? {};
     if (typeof addonId !== "string" || !addonId) throw fail("permission-denied");
-    if (typeof projectPath !== "string" || !projectPath || !path.isAbsolute(projectPath) ||
-        /[\0\n]/.test(projectPath)) throw fail("permission-denied");
+    // The launch cwd is NEVER a caller-supplied path. It must be the cwd of an
+    // already-authorized Project/Files session projection, re-validated against
+    // CURRENT host state (identity + grant) before use. A raw caller path is
+    // ignored (not read); a missing/invalid/stale/revoked projection fails
+    // closed. The Pi planner cannot widen filesystem authority beyond the
+    // projected root.
+    if (typeof consumeProjection !== "function") throw fail("runtime-unavailable");
+    let consumed;
+    try {
+      consumed = await consumeProjection(projection, { addonId, sessionId });
+    } catch (error) {
+      throw fail(publicHarnessError(error).code);
+    }
+    const projectPath = consumed?.ok === true && typeof consumed.projection?.cwd === "string"
+      ? consumed.projection.cwd
+      : null;
+    if (!projectPath || !path.isAbsolute(projectPath) || /[\0\n]/.test(projectPath)) {
+      throw fail("permission-denied");
+    }
 
     const connection = manifest?.harnessProviderConnection;
     const consumes = connection

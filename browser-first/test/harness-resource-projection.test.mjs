@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createHarnessResourceProjection, deriveProjectionOperations } from "../host/harness-resource-projection.mjs";
+import { createHarnessResourceProjection, deriveProjectionOperations, intersectProjectionOperations } from "../host/harness-resource-projection.mjs";
 import { normalizeHarnessResourceRequest } from "../../packages/addon-sdk/src/harness-resources.ts";
 
 const repoRoot = realpathSync(path.resolve(import.meta.dirname, "..", ".."));
@@ -95,6 +95,29 @@ test("CP-2B3: operations are independent — read never implies write, write nev
     opKeysFrom(deriveProjectionOperations({ requests: { project: ["context"] } }, granted)),
     ["project.context"],
   );
+});
+
+test("CP-2B8 C/D: grant-level read/write authority — read-only grant cannot become write", () => {
+  const grant = { capability: "filesystem", granted: true, scope: "system", revocationBehavior: "hard-stop" };
+  const request = { requests: { files: ["read", "write"] } };
+  // C: request read/write + grant READ ONLY (write not granted) -> read only.
+  const readOnly = intersectProjectionOperations(request, [
+    { family: "files", operation: "read", granted: true, grant },
+    { family: "files", operation: "write", granted: false, grant },
+  ]);
+  assert.deepEqual(opKeysFrom(readOnly), ["files.read"]);
+  // D: request read/write + grant read/write -> read + write.
+  const readWrite = intersectProjectionOperations(request, [
+    { family: "files", operation: "read", granted: true, grant },
+    { family: "files", operation: "write", granted: true, grant },
+  ]);
+  assert.deepEqual(opKeysFrom(readWrite), ["files.read", "files.write"]);
+  // Unrequested write is structurally absent even when granted.
+  const readOnlyRequested = intersectProjectionOperations({ requests: { files: ["read"] } }, [
+    { family: "files", operation: "read", granted: true, grant },
+    { family: "files", operation: "write", granted: true, grant },
+  ]);
+  assert.deepEqual(opKeysFrom(readOnlyRequested), ["files.read"]);
 });
 
 function opKeysFrom(operations) {

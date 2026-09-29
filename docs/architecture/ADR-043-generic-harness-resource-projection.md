@@ -76,6 +76,16 @@ It never carries a credential, provider, model, executable, or command. A safe
 public view (`HarnessSessionProjectionView`) exposes only identity, operation
 names, and projection state — internal absolute paths remain private.
 
+### Pi launch cwd
+
+The Pi native credential adapter (`pi-native-credential-adapter.mjs`) consumes
+the authorized projection's `cwd` through a host-wired `consumeProjection` hook
+that re-validates addon/session/project identity and the current filesystem
+grant. The adapter never reads a caller-supplied path: a missing, stale,
+cross-harness, or revoked projection fails closed, and the launch plan's
+`projectPath` is derived solely from `projection.cwd`. The Pi planner therefore
+cannot widen filesystem authority beyond the projected root.
+
 ### Containment
 
 Root containment reuses the canonical symlink-aware path containment primitive

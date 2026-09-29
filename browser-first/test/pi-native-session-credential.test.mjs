@@ -6,12 +6,16 @@
 // executable allowlist. Runtime-adapter behavior is unchanged and covered by
 // the existing harness-provider-adapter.test.mjs suite.
 import assert from "node:assert/strict";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { PI_NATIVE_PROVIDER_MAP, resolvePiNativeProvider } from "../host/pi-native-provider-map.mjs";
 import { piCommand } from "../host/pi-runtime.mjs";
 import { buildSessionEnvironment, redactEnvironment } from "../host/harness-session-environment.mjs";
 import { createPiNativeCredentialAdapter, redactLaunchPlan } from "../host/pi-native-credential-adapter.mjs";
+import { createHarnessResourceProjection } from "../host/harness-resource-projection.mjs";
 
 const CREDENTIAL = "pi-native-canary-credential-0123456789abcdef";
 const EXECUTABLE = {
@@ -46,6 +50,19 @@ const harness = (overrides = {}) => ({
   ...overrides,
 });
 
+const PROJECTED_CWD = "/home/u/project";
+const authorizedProjection = (overrides = {}) => Object.freeze({
+  addonId: "addon.pi-harness",
+  sessionId: "pi-session-1",
+  project: Object.freeze({ id: "project-a", label: "Project A" }),
+  root: PROJECTED_CWD,
+  cwd: PROJECTED_CWD,
+  operations: Object.freeze([{ family: "project", operation: "read" }, { family: "files", operation: "read" }]),
+  grant: Object.freeze({ capability: "filesystem", granted: true, scope: "system", revocationBehavior: "hard-stop" }),
+  issuedAt: "2026-09-29T00:00:00.000Z",
+  ...overrides,
+});
+
 function adapter(overrides = {}) {
   return createPiNativeCredentialAdapter({
     resolveExecutable: async () => EXECUTABLE,
@@ -53,6 +70,16 @@ function adapter(overrides = {}) {
     allModelCatalog: async () => CATALOG,
     credentialEnv: async ({ providerProfileId }) => (providerProfileId === "p-openai" ? CREDENTIAL : undefined),
     authorize: async () => {},
+    consumeProjection: async (projection, { addonId, sessionId }) => {
+      if (!projection || typeof projection !== "object") return { ok: false, code: "projection-identity-mismatch" };
+      if (projection.addonId !== addonId || projection.sessionId !== sessionId) {
+        return { ok: false, code: "projection-identity-mismatch" };
+      }
+      if (projection.grant?.capability !== "filesystem" || projection.grant?.granted !== true) {
+        return { ok: false, code: "filesystem-not-granted" };
+      }
+      return { ok: true, projection };
+    },
     envAllowlist: ["LANG"],
     baseEnv: { TERM: "xterm-256color" },
     ...overrides,
@@ -62,7 +89,8 @@ function adapter(overrides = {}) {
 const planInput = (overrides = {}) => ({
   addonId: "addon.pi-harness",
   manifest: harness(),
-  projectPath: "/home/u/project",
+  sessionId: "pi-session-1",
+  projection: authorizedProjection(),
   providerProfileId: "p-openai",
   selectedModel: "m-openai",
   ...overrides,
@@ -249,6 +277,46 @@ test("shared-profile peers build independent launch material", async () => {
   assert.notEqual(first.env, second.env, "each plan owns a fresh env object");
   first.env.OPENAI_API_KEY = "tampered";
   assert.equal(second.env.OPENAI_API_KEY, CREDENTIAL, "mutating one plan cannot corrupt a peer");
+});
+
+test("CP-2B8 L: Pi cwd comes from the authorized projection, not raw caller authority", async () => {
+  const projRoot = await mkdtemp(path.join(tmpdir(), "pi-cwd-"));
+  const projectionSvc = createHarnessResourceProjection({ authorizedProject: { id: "project-a", label: "Project A", root: projRoot } });
+  const granted = [{ capability: "filesystem", granted: true, scope: "system", revocationBehavior: "hard-stop" }];
+  const issued = await projectionSvc.project({
+    addonId: "addon.pi-harness", sessionId: "pi-session-1",
+    request: { requests: { project: ["read"], files: ["read"] } },
+    grantedCapabilities: granted,
+  });
+  assert.equal(issued.ok, true);
+  const consume = (projection, ctx) => projectionSvc.consume(projection, {
+    ...ctx,
+    authorizedProject: { id: "project-a", root: projRoot },
+    grantedCapabilities: granted,
+  });
+  const a = adapter({ consumeProjection: consume });
+
+  // A raw caller projectPath is ignored: cwd equals the authorized projection cwd.
+  const plan = await a.plan(planInput({ projection: issued.projection, projectPath: "/etc/passwd" }));
+  assert.equal(plan.projectPath, issued.projection.cwd);
+  assert.equal(plan.projectPath, projRoot);
+
+  // A projection bound to another session or harness is denied (no raw-path fallback).
+  await assert.rejects(a.plan(planInput({ projection: issued.projection, sessionId: "other-session" })), { code: "permission-denied" });
+  await assert.rejects(a.plan(planInput({ projection: issued.projection, addonId: "addon.other-harness" })), { code: "permission-denied" });
+
+  // No projection at all -> denied: the caller cannot supply a cwd.
+  await assert.rejects(a.plan(planInput({ projection: undefined })), { code: "permission-denied" });
+
+  // A revoked grant blocks a NEW plan (consume re-checks current grant state).
+  const revoked = adapter({
+    consumeProjection: (projection, ctx) => projectionSvc.consume(projection, {
+      ...ctx,
+      authorizedProject: { id: "project-a", root: projRoot },
+      grantedCapabilities: [],
+    }),
+  });
+  await assert.rejects(revoked.plan(planInput({ projection: issued.projection })), { code: "permission-denied" });
 });
 
 // ---- pi executable allowlist ----

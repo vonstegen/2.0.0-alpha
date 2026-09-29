@@ -54,23 +54,38 @@ function validProjectIdentity(project) {
 }
 
 /**
- * Pure derivation: the granted project/files operation subset. Reuses the
- * canonical grant resolver (which maps project/files to the filesystem backing
- * capability) and filters to the two Phase 2B families. Operations are granted
- * independently: read never implies write, write never implies read, and an
- * unrequested operation is structurally absent from the result.
+ * Pure intersection: requested ∩ granted project/files operation subset. A
+ * resource grant may be coarser or finer than the raw filesystem capability; the
+ * intersection honors the per-operation `granted` flag from the canonical
+ * HarnessResourceGrant view. Operations are granted independently: read never
+ * implies write, write never implies read, and an unrequested operation is
+ * structurally absent. A read-only grant (files.write not granted) can therefore
+ * never yield a write projection, and write requires BOTH request and grant.
  */
-export function deriveProjectionOperations(request, grantedCapabilities) {
-  const grants = resolveHarnessResourceGrants(request, grantedCapabilities);
+export function intersectProjectionOperations(request, resourceGrants) {
+  const requests = request?.requests ?? {};
   const operations = [];
   for (const family of PROJECTED_FAMILIES) {
-    for (const grant of grants) {
-      if (grant.family === family && grant.granted) {
+    const requestedOperations = Array.isArray(requests[family]) ? requests[family] : [];
+    if (requestedOperations.length === 0) continue;
+    for (const grant of resourceGrants ?? []) {
+      if (grant?.family === family && grant?.granted === true &&
+          requestedOperations.includes(grant.operation)) {
         operations.push({ family, operation: grant.operation });
       }
     }
   }
   return operations;
+}
+
+/**
+ * Pure derivation: resolves the coarse filesystem grant into per-operation
+ * authority via the canonical SDK resolver, then intersects requested ∩
+ * granted. Equivalent to `intersectProjectionOperations(request,
+ * resolveHarnessResourceGrants(request, grantedCapabilities))`.
+ */
+export function deriveProjectionOperations(request, grantedCapabilities) {
+  return intersectProjectionOperations(request, resolveHarnessResourceGrants(request, grantedCapabilities));
 }
 
 /**
