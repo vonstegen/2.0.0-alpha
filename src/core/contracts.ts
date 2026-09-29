@@ -662,6 +662,75 @@ export interface HarnessResourceProjection {
   granted: boolean;
 }
 
+// ============================================================================
+// Generic Harness Resource Projection (Phase 2B) — host-owned session seam
+// ----------------------------------------------------------------------------
+// The filesystem CapabilityGrant is coarse: it answers WHAT KIND of authority
+// (filesystem) but never WHERE, WHICH OPERATIONS, or FOR THIS SESSION. A
+// session projection binds that grant to a single authoritative host project
+// root and the requested∩granted project/files operation subset.
+//
+//   RESOURCE REQUEST != CAPABILITY GRANT != SESSION PROJECTION
+//
+// A projection is derived ONLY from request + existing grant + authoritative
+// host project root. The manifest and caller can never supply or widen the
+// root, and a projection carries no credential, provider, model, executable,
+// or command. Internal absolute paths stay host-side; the public view exposes
+// only identity, operation names, and projection state (no path disclosure).
+
+/** Authoritative host project identity carried by a projection. */
+export interface HarnessProjectIdentity {
+  id: string;
+  label: string;
+}
+
+/** The only resource families projected in Phase 2B (project + files). */
+export type HarnessProjectionFamily = "project" | "files";
+
+/** One granted operation in a projection: family + operation, never a path. */
+export interface HarnessProjectionOperation {
+  family: HarnessProjectionFamily;
+  operation: HarnessProjectOperation | HarnessFilesOperation;
+}
+
+/**
+ * Host-owned INTERNAL session projection. `root` and `cwd` are absolute,
+ * symlink-canonicalized, host-derived paths and MUST NOT cross a public
+ * boundary. Carries only the granted project/files operation subset and the
+ * backing filesystem grant snapshot; never a credential, provider, model,
+ * executable, or command. Session-scoped: the identity fields bind it to one
+ * add-on, one session, and one authoritative project.
+ */
+export interface HarnessSessionProjection {
+  addonId: string;
+  sessionId: string;
+  project: HarnessProjectIdentity;
+  /** Authorized absolute project root (realpath-canonicalized). */
+  root: string;
+  /** Authorized absolute working directory (=== root for Phase 2B). */
+  cwd: string;
+  /** Granted operation subset: requested ∩ granted, project and files only. */
+  operations: readonly HarnessProjectionOperation[];
+  /** Backing filesystem grant snapshot the projection was derived from. */
+  grant: CapabilityGrant;
+  issuedAt: string;
+}
+
+/**
+ * Safe public/audit view of a projection. Exposes identity, operation names,
+ * and projection state only; never a filesystem path, credential, provider,
+ * model, executable, or command. Internal `root`/`cwd` remain private.
+ */
+export interface HarnessSessionProjectionView {
+  addonId: string;
+  sessionId: string;
+  projectId: string;
+  projectLabel: string;
+  /** Allowlisted operation names, e.g. "project.read", "files.write". */
+  operations: readonly string[];
+  state: "projected" | "denied";
+}
+
 // One fixed vocabulary for public error types and runtime sanitization.
 export const HARNESS_PUBLIC_ERROR_MESSAGES = Object.freeze({
   "invalid-manifest": "Invalid harness manifest.",

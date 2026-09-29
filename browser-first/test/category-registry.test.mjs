@@ -211,6 +211,21 @@ test("harness category discovery surfaces the Harness Resource Request contract"
   );
 });
 
+test("harness category discovery surfaces the Harness Resource Projection (Phase 2B)", () => {
+  const description = describeCategory("harness");
+  const module = description.descriptor.sdkModules.find((m) => m.id === "harness-resource-projection");
+  assert.ok(module, "harness-resource-projection SDK module must be described");
+  assert.equal(module.status, "implemented");
+  assert.ok(
+    description.descriptor.securityInvariants.some((line) => line.includes("capability answers WHAT KIND")),
+    "invariants must distinguish capability (what kind) from projection (where/which/for this session)",
+  );
+  assert.ok(
+    description.descriptor.docs.some((path) => path.includes("ADR-043")),
+    "harness docs must reference the resource projection ADR",
+  );
+});
+
 test("the canonical Pi reference manifest declares resources and validates", () => {
   assert.ok(pi.harnessResources, "Pi must declare harnessResources");
   assert.equal(validateAddOnManifest(pi).valid, true, "Pi reference manifest must validate");

@@ -25,6 +25,11 @@ import type {
   ProviderProtocolFamily,
   HarnessResourceFamily,
   HarnessResourceOperation,
+  HarnessProjectIdentity,
+  HarnessProjectionFamily,
+  HarnessProjectionOperation,
+  HarnessSessionProjection,
+  HarnessSessionProjectionView,
 } from "../../../src/core/contracts";
 
 export const ADDON_SDK_VERSION = "0.1.0";
