@@ -1,0 +1,18 @@
+\documentclass[10pt,landscape]{article}
+\usepackage[margin=.55in]{geometry}\usepackage{longtable}\usepackage[T1]{fontenc}
+\title{ResonantOS Add-on / Module Capability Matrix}\date{2026-09-28}
+\begin{document}\maketitle
+\small
+\begin{longtable}{p{2.2cm}p{2cm}p{2.6cm}p{2.5cm}p{3.4cm}p{3.4cm}p{2.6cm}}
+\textbf{Layer}&\textbf{Category}&\textbf{Example}&\textbf{Status}&\textbf{Provides}&\textbf{Requires}&\textbf{Target}\\\hline
+System module&data-source&Memory&Current/partial&memory search/read/intake&project/provenance&0.1 candidate\\
+System module&service&Skills Manager&Future&skills list/read/prepare&profile/project/tools&post-0.1\\
+System module&service&Credential Vault&Current pattern/future durable&credential status/authorize/use&kernel identity/policy&post-0.1\\
+Harness&harness&Pi&Built/tested&agent invoke/status&provider profile&0.1\\
+Harness&harness&OpenCode&Current&coding operations&self auth/files/tools&0.1/next\\
+Tool&tool&Utility&Built/tested&bounded tool&none&0.1\\
+Connector&connector&GitHub&Planned reference&repository/issue/PR&credential.use&0.1 next\\
+Communication&communication&Email&Planned&email search/read/draft/send&credential + approval&future\\
+AI client&connector&Frontier AI apps&R\&D&client access&scoped context/tools&future\\
+\end{longtable}
+\end{document}
