@@ -1,0 +1,13 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}\usepackage{booktabs}\usepackage{hyperref}\usepackage[T1]{fontenc}
+\title{ResonantOS Internal Modular Architecture and Roadmap}\date{2026-09-28}
+\begin{document}\maketitle
+\section{Kernel modules}
+Identity/Trust, Capability/Policy, Contract Validation, SDK/Port Router, System Slots, Lifecycle/Recovery, Audit/Provenance, and Guardian/Engineer are internal trusted-kernel modules, not ordinary installable add-ons.
+\section{System modules}
+Memory, Skills Manager, Credential Vault, User Profile, Projects, Map, DAR/Artifacts, and Context Projection are candidates for stable system-module contracts above the kernel. Their data assets are not themselves add-ons.
+\section{Guardian}
+The Guardian/Engineer is Ground Zero. Its diagnostic model may be configurable; authority, policy, recovery, audit, health monitoring, and emergency UI remain kernel-owned.
+\section{Roadmap}
+Formalize kernel boundaries; add provides/requires ports; move existing systems behind contracts incrementally; build the sovereign Context Fabric; then add the external AI Client Gateway.
+\end{document}
