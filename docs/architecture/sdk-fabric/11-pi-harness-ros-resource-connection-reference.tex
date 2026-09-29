@@ -1,0 +1,39 @@
+\documentclass{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\title{Pi Harness to ResonantOS Resource Connection Reference Architecture}
+\author{ResonantOS SDK Fabric}
+\date{2026-09-29}
+\begin{document}\maketitle
+\section{Purpose}
+Pi is the first advanced reference harness for showing how an external coding/agent harness connects to the ResonantOS sovereign resource fabric while retaining its native runtime, interface, tools and session model. Pi is a reference map, not a special-case architecture.
+\section{Resource Domains}
+The reference integration covers Provider/Model, Skills, Tools, MCP, Memory, Project/Filesystem, Project Context, Extensions, Sessions, User Profile, GitHub/Connectors and DAR/Artifacts.
+\section{Provider and Model}
+ROS owns provider identity, protocol compatibility, credential authority, model authorization and grants. Pi owns inference execution. Provider identity and protocol compatibility remain separate gates.
+\section{Skills}
+ROS remains canonical owner of skills. Authorized skills are projected into Pi-compatible native locations and may be ephemeral/session-scoped.
+\section{Tools}
+Pi-native filesystem and shell tools remain native. ROS-provided tools flow through a generic ROS Resource Extension exposing only session-authorized operations.
+\section{MCP}
+MCP is primarily a portable/external integration bridge. Native ROS resource APIs are preferred for local sovereign services where practical.
+\section{Memory}
+Pi conversation/session context is distinct from ROS sovereign memory. Initial operations are bounded search/read; trusted writes remain host-gated through proposal/intake.
+\section{Project and Context}
+ROS authorizes the project root/cwd and projects architecture, rules, goals, decisions and working conventions. Pi uses its native tools within the granted boundary.
+\section{Generic Pi ROS Adapter}
+One generic Pi-side adapter should connect to the ROS Resource Broker for Memory, Tools, Context, Skills, Project and Profile rather than one extension per resource.
+\section{Sessions and User Profile}
+ROS tracks lifecycle/audit identity and resource projection while Pi retains transcript/runtime state. User Profile is a minimum relevant authorized projection, never wholesale database access.
+\section{Connectors and DAR}
+Reusable ROS connectors centralize credentials, account selection, policy and audit. DAR is exposed through bounded artifact/decision operations rather than internal implementation access.
+\section{Three Connection Mechanisms}
+The generic resource fabric uses Native Projection for harness-native conventions, a ROS Adapter Extension for sovereign local services, and an MCP Gateway primarily for portable/external integrations.
+\section{Genericity}
+Canonical resources stay in ROS while consumer-specific adapters change. The same Memory, Skills, Tools, Projects, Providers and Connectors can serve Pi, Hermes, Grok Build, provider-native applications and future harnesses.
+\section{Phase 2}
+Implementation order: Project/Files native projection; Skills native projection; Memory search/read through the Pi adapter; one bounded ROS Tool; then User Profile, DAR, Map and other buses as defined extension seams. Resource request, capability grant and session projection remain distinct.
+\section{Security}
+Declarations grant no authority; roots are host-authorized; skills cannot grant capabilities; trusted memory writes are host-gated; credentials remain centralized; gateways expose only authorized operations; projections are bounded, revocable, auditable and disposable.
+\end{document}
