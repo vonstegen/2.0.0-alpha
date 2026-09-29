@@ -1,0 +1,8 @@
+\documentclass[10pt]{article}\usepackage[margin=.8in]{geometry}\usepackage[T1]{fontenc}\title{Pi.dev Reference Add-on -- Qualification and Test Plan}\begin{document}\maketitle
+\section{Qualification Layers}
+T0 baseline/build; T1 manifest and Dynamic SDK; T2 Harness Provider Connection; T3 Harness Resource Projection; T4 native Pi runtime; T5 external terminal; T6 generic PTY; T7 embedded Pi; T8 ROS control surface; T9 lifecycle/revocation; T10 adversarial security; T11 graphical end-to-end; T12 regression; T13 generic reusability; T14 fresh-developer Community SDK test.
+\section{Critical Acceptance}
+The user starts ResonantOS normally, installs/grants/enables Pi, selects project/provider/model/resources, uses real Pi in embedded and external terminal modes, then revokes/disables it. No manual bridge, wrapper, RPC process, key export, directory change or manual Pi command is permitted.
+\section{Evidence}
+Preserve exact SHA/branch, commands and test counts, screenshots for both terminal modes, sanitized provider/model metadata, Pi version, lifecycle/audit evidence, security results, changed files, clean-tree result, known limitations and no secrets.
+\end{document}
