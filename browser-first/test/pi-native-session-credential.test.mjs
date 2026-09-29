@@ -126,6 +126,78 @@ test("adapter: unknown mapping fails closed", async () => {
   await assert.rejects(adapter().plan(planInput({ providerProfileId: "p-generic", selectedModel: "m-generic" })), { code: "permission-denied" });
 });
 
+test("protocol gate A: openai-compatible harness + OpenAI profile -> PASS", async () => {
+  const plan = await adapter().plan(planInput({ providerProfileId: "p-openai", selectedModel: "m-openai" }));
+  assert.equal(plan.providerProfileId, "p-openai");
+  assert.equal(plan.piProvider, "openai");
+});
+
+test("protocol gate B: openai-compatible harness + MiniMax profile -> DENY", async () => {
+  await assert.rejects(adapter().plan(planInput({ providerProfileId: "p-minimax", selectedModel: "m-minimax" })), { code: "permission-denied" });
+});
+
+test("protocol gate C: minimax-compatible harness + MiniMax profile -> PASS", async () => {
+  const minimaxHarness = harness({
+    harnessProviderConnection: {
+      consumesProviderProfiles: true,
+      providerProtocols: ["minimax-compatible"],
+      credentialDelivery: ["session-environment"],
+      modelSelection: true,
+    },
+  });
+  const a = adapter({ credentialEnv: async ({ providerProfileId }) => (providerProfileId === "p-minimax" ? CREDENTIAL : undefined) });
+  const plan = await a.plan(planInput({ manifest: minimaxHarness, providerProfileId: "p-minimax", selectedModel: "m-minimax" }));
+  assert.equal(plan.piProvider, "minimax");
+  assert.equal(plan.envVar, "MINIMAX_API_KEY");
+  assert.equal(plan.env.MINIMAX_API_KEY, CREDENTIAL);
+});
+
+test("protocol gate D: unsupported/null-derived profile -> DENY", async () => {
+  // anthropic derives to null (adapter-pending); no manifest can declare it compatible.
+  await assert.rejects(adapter().plan(planInput({ providerProfileId: "p-anthropic", selectedModel: "m-anthropic" })), { code: "permission-denied" });
+  // Unknown profile id also fails closed.
+  await assert.rejects(adapter().plan(planInput({ providerProfileId: "p-missing", selectedModel: undefined })), { code: "permission-denied" });
+});
+
+test("protocol gate E: spoofed profile providerProtocols/protocolFamily cannot bypass", async () => {
+  const spoofProfiles = PROFILES.map((candidate) => candidate.id === "p-minimax"
+    ? { ...candidate, providerProtocols: ["openai-compatible"], protocolFamily: "openai-compatible" }
+    : candidate);
+  const a = adapter({ allProviderProfiles: async () => spoofProfiles });
+  await assert.rejects(a.plan(planInput({ providerProfileId: "p-minimax", selectedModel: "m-minimax" })), { code: "permission-denied" });
+  // protocolFamily spoof on an unsupported type still derives to null.
+  const anthropicSpoof = PROFILES.map((candidate) => candidate.id === "p-anthropic"
+    ? { ...candidate, protocolFamily: "openai-compatible" }
+    : candidate);
+  const b = adapter({ allProviderProfiles: async () => anthropicSpoof });
+  await assert.rejects(b.plan(planInput({ providerProfileId: "p-anthropic", selectedModel: "m-anthropic" })), { code: "permission-denied" });
+});
+
+test("protocol gate F: empty/missing providerProtocols -> DENY", async () => {
+  const emptyProtocols = harness({
+    harnessProviderConnection: {
+      consumesProviderProfiles: true,
+      providerProtocols: [],
+      credentialDelivery: ["session-environment"],
+      modelSelection: true,
+    },
+  });
+  await assert.rejects(adapter().plan(planInput({ manifest: emptyProtocols })), { code: "permission-denied" });
+  const missingProtocols = harness({
+    harnessProviderConnection: {
+      consumesProviderProfiles: true,
+      credentialDelivery: ["session-environment"],
+      modelSelection: true,
+    },
+  });
+  await assert.rejects(adapter().plan(planInput({ manifest: missingProtocols })), { code: "permission-denied" });
+});
+
+test("protocol gate G: compatible protocol alone never substitutes for a native mapping", async () => {
+  // p-generic derives openai-compatible but has no native Pi mapping -> DENY.
+  await assert.rejects(adapter().plan(planInput({ providerProfileId: "p-generic", selectedModel: "m-generic" })), { code: "permission-denied" });
+});
+
 test("adapter: wrong harness fails closed (no session-environment or non-consumer)", async () => {
   const runtimeOnly = harness({ harnessProviderConnection: { consumesProviderProfiles: true, providerProtocols: ["openai-compatible"], credentialDelivery: ["runtime-adapter"], modelSelection: true } });
   await assert.rejects(adapter().plan(planInput({ manifest: runtimeOnly })), { code: "permission-denied" });

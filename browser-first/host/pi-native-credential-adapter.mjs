@@ -2,8 +2,9 @@
 // material for the reviewed native Pi harness through the generic
 // session-environment delivery chain:
 //
-//   addon identity -> approved provider profile -> host-owned identity mapping
-//        -> host-owned env var -> approved executable -> selected model
+//   addon identity -> approved provider profile -> host-derived protocol gate
+//        -> host-owned identity mapping -> host-owned env var
+//        -> approved executable -> selected model
 //        -> authorize (binding + grant, host-wired) -> secret-free argv + env
 //
 // This adapter is a pure planner: it resolves launch material, never spawns a
@@ -17,6 +18,7 @@
 import path from "node:path";
 import process from "node:process";
 import { publicHarnessError } from "./harness-adapter-contract.mjs";
+import { deriveProviderProtocol } from "./provider-fabric-core.mjs";
 import { resolvePiNativeProvider } from "./pi-native-provider-map.mjs";
 import { buildSessionEnvironment, redactEnvironment } from "./harness-session-environment.mjs";
 
@@ -45,13 +47,21 @@ export function createPiNativeCredentialAdapter({
     if (!consumes) throw fail("permission-denied");
     const delivery = connection ? [...(connection.credentialDelivery ?? [])] : [];
     if (!delivery.includes("session-environment")) throw fail("permission-denied");
+    const protocols = connection ? [...(connection.providerProtocols ?? [])] : [];
 
     if (typeof allProviderProfiles !== "function") throw fail("runtime-unavailable");
     const profiles = await allProviderProfiles();
     const profile = profiles.find((candidate) => candidate?.id === providerProfileId);
     if (!profile) throw fail("permission-denied");
+    // Host-derived protocol compatibility gate. Re-derived from the selected
+    // profile's host providerType, never from a manifest, caller, template
+    // label, or a spoofable profile field. An unsupported/null protocol fails
+    // closed here — protocol compatibility is enforced locally in this
+    // session-environment path, independent of the runtime-adapter path.
+    const providerProtocol = deriveProviderProtocol(profile);
+    if (!providerProtocol || !protocols.includes(providerProtocol)) throw fail("permission-denied");
     // Host-owned identity mapping. Unknown identity fails closed; protocol
-    // alone is never sufficient.
+    // compatibility alone is never sufficient.
     const mapping = resolvePiNativeProvider(profile);
     if (!mapping) throw fail("permission-denied");
 
