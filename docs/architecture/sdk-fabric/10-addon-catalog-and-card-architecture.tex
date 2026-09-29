@@ -1,0 +1,54 @@
+\documentclass{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{enumitem}
+\title{ResonantOS Add-on Catalog and Add-on Card Architecture}
+\author{ResonantOS SDK Fabric}
+\date{2026-09-29}
+\begin{document}
+\maketitle
+\section{Decision}
+ResonantOS shall maintain an Add-on Catalog in which each known add-on is represented by a normalized Add-on Card analogous to a library catalog/index card. The add-on is the book, the manifest is the publisher declaration, and the Add-on Card is the validated normalized library record. The card shall not become a second manually maintained manifest.
+
+\section{Catalog Card vs. Installation Record}
+The Catalog Card describes relatively stable identity, classification, runtime, interface, provider compatibility, resource requests, capabilities, surfaces, slot eligibility, platforms, SDK compatibility, security profiles, documentation, reference status and relationships. The Installation Record separately describes mutable state: installed/enabled version, grants, selected provider/model/project, resource projection, health, sessions, assigned slots, local configuration and revocation state. Capability description is not authority.
+
+\section{Normalization}
+Cards are generated from canonical manifest/package metadata plus Category, Interface, Resource and Capability registries and host validation/compatibility derivation. Outputs serve Dynamic SDK, SDK Guide, compatibility evaluation, Add-ons UI and the future ROS Map.
+
+\section{Relationship Graph}
+The Catalog should support typed derived relationships such as consumes Provider Profile, consumes Memory, uses Terminal interface, or provides Models. Relationship edges are descriptive and never independent authority.
+
+\section{Dynamic SDK and SDK Guide}
+Dynamic SDK uses category definitions, registries, reference cards, tests and security profiles to assemble an appropriate developer kit. SDK Guide is the human-facing browser of the same canonical catalog and must not maintain a separate hard-coded category database.
+
+\section{Credential Ownership}
+Provider-native applications generally own model authentication and require only ROS gateway/resource authorization. Credential-bearing harnesses may consume ROS Provider Profiles, native self-auth or session credentials. API/model providers expose credentials, protocol and model metadata through the Provider Fabric.
+
+\section{Security Invariants}
+\begin{enumerate}[leftmargin=*]
+\item Catalog classification grants no authority.
+\item Resource requests are not grants.
+\item Installation grants remain host-owned.
+\item No raw credential is stored in an Add-on Card.
+\item Provider compatibility is host-derived where applicable.
+\item Cards cannot widen filesystem/project/resource scope.
+\item Skills and relationships cannot implicitly grant capabilities.
+\item Unknown categories/resources/interfaces fail closed.
+\item UI/external projections contain safe metadata only.
+\item Relationship edges are never authority.
+\end{enumerate}
+
+\section{Storage Evolution}
+Begin with deterministic generated cards. Later add a persisted searchable index/cache, then optional remote/community federation, then relationship-graph integration with the ROS Map. Do not begin with a complex graph database.
+
+\section{Reference Cards}
+Community SDK 0.1 should include cards for SDK Echo, SDK Guide, Pi, Reference Memory and GitHub Connector, followed by Grok Build/Hermes and provider-native application examples. Each card must identify its implementation/qualification status.
+
+\section{Testing}
+Tests cover deterministic generation, manifest/card consistency, normalization, secret non-projection, compatibility, Installation Record separation, cache invalidation, unknown values, relationship derivation, reference discovery, Dynamic SDK machine output, SDK Guide rendering, version/update behavior, revocation semantics and fresh-developer use.
+
+\section{Final Principle}
+The Add-on Catalog is the library catalog of ResonantOS: add-on equals book; manifest equals publisher declaration; Add-on Card equals normalized library record; Installation Record equals checkout/current-use record; Dynamic SDK equals librarian for developers and AI; SDK Guide equals human catalog browser; and the future ROS Map is the relationship view. Metadata describes capability but never grants authority.
+\end{document}
