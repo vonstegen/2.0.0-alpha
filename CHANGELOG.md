@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Added a host-owned Pi native session-credential foundation: an authoritative ROS-identity-to-Pi-provider/env-var mapping, generic session-environment launch material, and a plan-only Pi credential adapter that delivers the session credential under the host-owned environment variable (never argv, projections, logs, or Pi auth.json).
+
 ### Security
 
 - OpenCode's local server now binds to an ephemeral loopback port with a bridge-minted credential; unauthenticated access to the former fixed port 4231 is closed, the bridge and side panel authenticate their requests and event stream, and orphaned servers are reaped on the next bridge start (#320).

@@ -119,7 +119,7 @@
   "harnessProviderConnection": {
     "consumesProviderProfiles": true,
     "providerProtocols": ["openai-compatible"],
-    "credentialDelivery": ["runtime-adapter"],
+    "credentialDelivery": ["runtime-adapter", "session-environment"],
     "modelSelection": true
   },
   "providerRequirements": {
