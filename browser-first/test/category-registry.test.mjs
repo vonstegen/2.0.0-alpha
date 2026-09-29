@@ -202,8 +202,8 @@ test("harness category discovery surfaces the Harness Resource Request contract"
     "invariants must state request != grant != projection",
   );
   assert.ok(
-    description.descriptor.securityInvariants.some((line) => line.includes("Phase 2B+")),
-    "invariants must state projection adapters are not yet implemented",
+    description.descriptor.securityInvariants.some((line) => line.includes("Phase 2C")),
+    "invariants must state Skills projection is Phase 2C (Memory/tools remain future)",
   );
   assert.ok(
     description.descriptor.docs.some((path) => path.includes("ADR-042")),
@@ -223,6 +223,21 @@ test("harness category discovery surfaces the Harness Resource Projection (Phase
   assert.ok(
     description.descriptor.docs.some((path) => path.includes("ADR-043")),
     "harness docs must reference the resource projection ADR",
+  );
+});
+
+test("harness category discovery surfaces the Harness Skills Projection (Phase 2C)", () => {
+  const description = describeCategory("harness");
+  const module = description.descriptor.sdkModules.find((m) => m.id === "harness-skills-projection");
+  assert.ok(module, "harness-skills-projection SDK module must be described");
+  assert.equal(module.status, "implemented");
+  assert.ok(
+    description.descriptor.securityInvariants.some((line) => line.includes("requiredCapabilities")),
+    "invariants must state skills authority resolves from requiredCapabilities",
+  );
+  assert.ok(
+    description.descriptor.docs.some((path) => path.includes("ADR-044")),
+    "harness docs must reference the skills projection ADR",
   );
 });
 

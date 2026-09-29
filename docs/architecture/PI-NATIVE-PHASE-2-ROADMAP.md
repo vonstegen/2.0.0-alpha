@@ -15,7 +15,7 @@ this SDK line; issue state and Project 2 remain the release-planning authority.
 | 2A | Generic Harness Resource Request contract (request != grant != projection; pure normalization/resolution helpers). | Done | `1a442f7`; `docs/architecture/ADR-042-generic-harness-resource-request.md` |
 | 2B | Generic Project + Files projection (authoritative root, requested∩granted operation subset, session identity binding, symlink-aware containment). | Done | `26eb6c7`, `914ff57`; `docs/architecture/ADR-043-generic-harness-resource-projection.md` |
 | 2B.1 | Operation-level revocation: an issued projection is fenced when CURRENT operation authority differs (narrowed or expanded); no silent in-place downgrade. | Done (this change) | `browser-first/host/harness-resource-projection.mjs` `consume()`; `CP-B1.3` lifecycle tests |
-| 2C | Skills resource family projection. | Not started | ADR-043 states "Skills is Phase 2C" |
+| 2C | Skills resource family projection. | Done | `browser-first/host/harness-skills-projection.mjs`; `browser-first/test/harness-skills-projection.test.mjs`; `docs/architecture/ADR-044-generic-harness-skills-projection.md` |
 | 2G | Qualification gate (below). | Mapped here; not yet executed | This document |
 
 Intermediate phases not yet recorded in repository evidence are intentionally

@@ -128,11 +128,17 @@ Ordering, retry/recovery, and fail-closed behavior require evidence.
   from the issued set fails closed at `consume()` as `projection-stale`
   (`browser-first/host/harness-resource-projection.mjs`). This is PART of R3,
   not the entire requirement.
+- Phase 2C (this change): Skills held-authority revocation — an issued Skills
+  projection whose CURRENT harness-session authority, catalog identity (skill
+  version/source/requiredCapabilities), or per-skill eligibility differs from
+  issuance fails closed at `consume()` as `projection-stale`
+  (`browser-first/host/harness-skills-projection.mjs`). This is PART of R3,
+  not the entire requirement.
 
 **What remains.** Full lifecycle evidence across authority types: ordering,
 retry/recovery, and fail-closed behavior when upstream authority becomes
-unavailable for non-filesystem authority (skills/memory/tools, Phase 2C+), and
-the held-authority revocation proofs.
+unavailable for non-filesystem authority (memory/tools, Phase 2D+), and the
+held-authority revocation proofs.
 
 **Assigned gate.** Phase 2G qualification (upstream-unavailable fail-closed
 tests + held-authority revocation tests).

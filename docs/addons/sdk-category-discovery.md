@@ -129,15 +129,19 @@ no access:
   `tools` (`list`, `invoke`).
 - `RESOURCE REQUEST != CAPABILITY GRANT != SESSION PROJECTION`: a request
   declares possible need and never grants authority; grants are host-owned
-  `CapabilityGrant` records; projection adapters are Phase 2B+ and are **not
-  yet implemented**.
+  `CapabilityGrant` records; a projection is session-specific material/access.
+- Projection status (truthful): Project + Files projection is implemented
+  (Phase 2B, `browser-first/host/harness-resource-projection.mjs`); Skills
+  projection is implemented (Phase 2C,
+  `browser-first/host/harness-skills-projection.mjs`); Memory and Tools are
+  contract-only/planned and fail closed.
 - Provider Connection (`harnessProviderConnection`) remains separate; provider/
   model is never declared inside `harnessResources`.
 - The block is category-gated to `harness`; unknown families/operations and
   ungranted resources fail closed.
 
-Do not treat resource access as complete: Phase 2A ships the contract,
-validation, and the type seam only.
+Memory and Tools have no projection adapter yet and fail closed; do not treat
+them as projected.
 
 ## Reference add-ons
 
