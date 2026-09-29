@@ -108,7 +108,7 @@ that migration is complete.
   capability, and slot authority; it is descriptive and grants nothing.
 - Validation bounds the block to the four declared fields and rejects unknown
   fields, so no credential/endpoint/executable channel can ride through it.
-- Incompatible provider families are filtered at discovery; harness A cannot
+- Incompatible protocol families are filtered at discovery; harness A cannot
   resolve harness B's provider authority (per-harness binding + grant gate
   still enforced).
 - Revoking a harness grant fences that harness's discovery while other

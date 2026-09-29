@@ -7,9 +7,14 @@
 // Identity/grants are enforced upstream by the registry (binding addonId match
 // + grant gate); this adapter owns the compatibility and delivery-decision
 // step so no harness (Pi included) carries its own credential-resolution
-// logic. It only ever reads provider metadata — never a credential, endpoint,
-// or secret. Classification/provider declarations grant no authority.
+// logic. Compatibility is re-derived from the selected profile's host data at
+// resolution time (deriveProviderProtocol) and checked against the harness's
+// providerProtocols — a UI filter, caller-supplied protocol, manifest-supplied
+// profile protocol metadata, or profile label/id naming convention is never
+// trusted. It only ever reads provider metadata — never a credential,
+// endpoint, or secret. Classification/provider declarations grant no authority.
 
+import { deriveProviderProtocol } from './provider-fabric-core.mjs';
 import { publicHarnessError } from './harness-adapter-contract.mjs';
 
 const fail = code => Object.assign(new Error(publicHarnessError({ code }).message), { code });
@@ -28,7 +33,7 @@ export function createHarnessProviderAdapter({ allProviderProfiles, allModelCata
       ? connection.consumesProviderProfiles === true
       : manifest?.agentRuntime?.credentialSource === 'provider-profile';
     if (!consumes) throw fail('permission-denied');
-    const families = connection ? [...(connection.providerFamilies ?? [])] : [];
+    const protocols = connection ? [...(connection.providerProtocols ?? [])] : [];
     const delivery = connection ? [...(connection.credentialDelivery ?? [])] : [];
     // Runtime-adapter is the only host delivery implemented today; a harness
     // that cannot consume it cannot receive a provider-profile credential.
@@ -36,7 +41,11 @@ export function createHarnessProviderAdapter({ allProviderProfiles, allModelCata
     if (typeof allProviderProfiles !== 'function') throw fail('runtime-unavailable');
     const profiles = await allProviderProfiles();
     const profile = profiles.find(candidate => candidate?.id === providerProfileId);
-    if (!profile || !families.includes(profile.providerType)) throw fail('permission-denied');
+    if (!profile) throw fail('permission-denied');
+    // Re-derive the protocol from host profile data, never from the manifest or
+    // caller. An unsupported/null protocol cannot be declared into compatibility.
+    const providerProtocol = deriveProviderProtocol(profile);
+    if (!providerProtocol || !protocols.includes(providerProtocol)) throw fail('permission-denied');
     if (selectedModel) {
       const catalog = typeof allModelCatalog === 'function' ? await allModelCatalog() : [];
       const entry = catalog.find(candidate => candidate?.model === selectedModel && candidate?.providerId === providerProfileId);
@@ -46,6 +55,7 @@ export function createHarnessProviderAdapter({ allProviderProfiles, allModelCata
     return {
       providerProfileId,
       providerType: profile.providerType,
+      providerProtocol,
       deliveryMechanism: mechanism,
       selectedModel: selectedModel ?? null,
     };
