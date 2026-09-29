@@ -395,3 +395,37 @@ export function providerRouteForWorkload({
     requestedModel: explicitModel || "__auto__",
   };
 }
+
+// ---- Host-owned protocol derivation ----------------------------------------
+//
+// Canonical protocol/API-compatibility vocabulary, separate from providerType.
+// providerType is legacy/mixed: it bundles vendor identity (openai, anthropic,
+// google, minimax), wire protocol (openai-compatible), deployment locality
+// (local), and an unspecified escape hatch (custom). The host derives a profile's
+// protocol family purely from its authoritative providerType, mirroring the host
+// execution adapters (ProviderExecutionAdapterId) and their supportedProviderTypes
+// (see src/core/defaults.ts providerExecutionAdapters):
+//
+//   openai-compatible  <- cloud-openai-compatible (openai, openai-compatible)
+//   minimax-compatible <- cloud-minimax-compatible (minimax)
+//   ollama             <- local-ollama (local)
+//
+// anthropic, google, and custom have no host execution adapter today
+// (adapter-pending), so they derive to null (fail-closed). A harness/manifest
+// field can never override this: the mapping reads only profile.providerType,
+// never a manifest or a spoofable profile field. No credential or endpoint is
+// read or returned.
+export const PROVIDER_PROTOCOL_BY_TYPE = Object.freeze({
+  openai: "openai-compatible",
+  "openai-compatible": "openai-compatible",
+  minimax: "minimax-compatible",
+  local: "ollama",
+});
+
+export function deriveProviderProtocol(profile) {
+  if (!profile || typeof profile !== "object") return null;
+  const providerType = typeof profile.providerType === "string"
+    ? profile.providerType.trim().toLowerCase()
+    : "";
+  return PROVIDER_PROTOCOL_BY_TYPE[providerType] ?? null;
+}

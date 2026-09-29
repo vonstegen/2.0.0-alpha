@@ -59,6 +59,30 @@ export type ChannelType = "desktop" | "telegram" | "voice" | "mobile";
 export type WorkspaceKind = "main" | "delegated" | "embedded-tool";
 export type WorkspaceVisibility = "user-facing" | "background";
 export type ProviderType = "openai" | "anthropic" | "google" | "minimax" | "openai-compatible" | "local" | "custom";
+
+/**
+ * Canonical protocol/API-compatibility vocabulary, separate from
+ * {@link ProviderType}.
+ *
+ * ProviderType is legacy/mixed: it bundles vendor identity (`openai`,
+ * `anthropic`, `google`, `minimax`), wire protocol (`openai-compatible`),
+ * deployment locality (`local`), and an unspecified escape hatch (`custom`).
+ * This type names only the protocol/API family a host execution adapter can
+ * actually serve, so a harness or native TUI can declare "I speak this
+ * protocol" without naming a vendor.
+ *
+ * Every value is grounded in a host execution adapter
+ * ({@link ProviderExecutionAdapterId}) and its `supportedProviderTypes`
+ * (see defaults.ts `providerExecutionAdapters`):
+ * - `"openai-compatible"`  <- `cloud-openai-compatible` (openai, openai-compatible)
+ * - `"minimax-compatible"` <- `cloud-minimax-compatible` (minimax)
+ * - `"ollama"`             <- `local-ollama` (local)
+ *
+ * `anthropic`, `google`, and `custom` have no host execution adapter today
+ * (provider-templates `executionState: "adapter-pending"`), so they have no
+ * protocol family here. This list must not grow speculatively.
+ */
+export type ProviderProtocolFamily = "openai-compatible" | "minimax-compatible" | "ollama";
 export type AuthSource = "shared-vault" | "addon-private" | "manual";
 export type AuthTier = "supported" | "experimental" | "unavailable";
 export type ProviderAuthMethod = "api-key" | "subscription" | "oauth" | "local-runtime" | "custom";
