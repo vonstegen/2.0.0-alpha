@@ -79,7 +79,7 @@ test("T5 status reports installed:false on discovery and installed:true after ex
     assert.equal(echo.installed, false, "discovered add-on must report installed:false");
     assert.equal(echo.grantedCapabilities.length, 0);
 
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     assert.ok(registry.snapshot().installations["addon.resonant-echo"], "registry must contain installation");
 
     echo = await echoInStatus(service);

@@ -123,7 +123,7 @@ test("T7 authorized happy path: grant opens the endpoint", async () => {
   const base = `http://127.0.0.1:${started.port}`;
   const { service, registry, cleanup } = await buildService(`${base}/admin/deny`);
   try {
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     assert.equal(await ping(base), 403, "precondition: fail closed before grant");
     const result = await service.executeWorkspaceAddonGrant({ addonId: ID, grants: [NETWORK_GRANT] });
     assert.equal(regGranted(registry), true, "registry grant must be true");
@@ -142,7 +142,7 @@ test("T7 revoked authority remains denied (converged revoke)", async () => {
   const base = `http://127.0.0.1:${started.port}`;
   const { service, registry, cleanup } = await buildService(`${base}/admin/deny`);
   try {
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     await service.executeWorkspaceAddonGrant({ addonId: ID, grants: [NETWORK_GRANT] });
     assert.equal(await ping(base), 200, "precondition: open after grant");
     await service.executeWorkspaceAddonRevoke({ addonId: ID, capabilities: ["network"] });
@@ -159,7 +159,7 @@ test("T7 stale bearer after revoke is denied even after an upstream restart", as
   let started = await echo.start();
   const { service, registry, cleanup } = await buildService(`http://127.0.0.1:${started.port}/admin/deny`);
   try {
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     await service.executeWorkspaceAddonGrant({ addonId: ID, grants: [NETWORK_GRANT] });
     await service.executeWorkspaceAddonRevoke({ addonId: ID, capabilities: ["network"] });
     assert.equal(regGranted(registry), false, "registry must be denied");
@@ -182,7 +182,7 @@ test("T7 regrant after revoke re-opens the endpoint (symmetric convergence)", as
   const base = `http://127.0.0.1:${started.port}`;
   const { service, registry, cleanup } = await buildService(`${base}/admin/deny`);
   try {
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     await service.executeWorkspaceAddonGrant({ addonId: ID, grants: [NETWORK_GRANT] });
     await service.executeWorkspaceAddonRevoke({ addonId: ID, capabilities: ["network"] });
     assert.equal(await ping(base), 403, "precondition: revoked");
@@ -200,7 +200,7 @@ test("T7 regrant after revoke re-opens the endpoint (symmetric convergence)", as
 test("T7 grant fails closed (5xx) when the upstream cannot be opened", async () => {
   const { service, registry, cleanup } = await buildService("http://127.0.0.1:1/admin/deny");
   try {
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     await assert.rejects(
       service.executeWorkspaceAddonGrant({ addonId: ID, grants: [NETWORK_GRANT] }),
       (err) => err.code === "runtime-unavailable",
@@ -218,7 +218,7 @@ test("T7 grant rejects caller-forged credential/endpoint fields", async () => {
   const base = `http://127.0.0.1:${started.port}`;
   const { service, registry, cleanup } = await buildService(`${base}/admin/deny`);
   try {
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     await assert.rejects(
       service.executeWorkspaceAddonGrant({
         addonId: ID,

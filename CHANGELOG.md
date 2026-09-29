@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security
 
+- Hardened workspace add-on credential authority (SDK-DEMO-003R review R1/R2): `POST /addons/workspace/install` is intent-only and rejects caller-supplied manifests, the loopback target check is replaced with a shared exact-loopback validator (no prefix matching; DNS re-resolution and redirect refusal at the credential-bearing boundary), and `POST /addons/workspace/admin-revoke` requires an explicit boolean `granted` (missing/non-boolean intent is a deterministic 4xx with no mutation).
 - OpenCode's local server now binds to an ephemeral loopback port with a bridge-minted credential; unauthenticated access to the former fixed port 4231 is closed, the bridge and side panel authenticate their requests and event stream, and orphaned servers are reaped on the next bridge start (#320).
 
 ### Changed

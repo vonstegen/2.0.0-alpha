@@ -170,3 +170,73 @@ issuing the bearer call. The T7 production contract is unchanged: registry is
 source of truth; allow-ordering persists registry grant first, then upstream
 open; an unreachable upstream still fails the grant 5xx with enforcement
 closed.
+
+## September 28 review — R1–R4 (SDK-DEMO-003R architecture hardening)
+
+The September 28 Action Items report acknowledges all nine SDK-DEMO-003R
+implementation items and green suites, but reports four defects against the
+post-T7.1 candidate (`914ff57`). The referenced *detailed review with eight
+further findings* is **not present in this repository** (searched all branches,
+`--all` history, and review-artifact trees; only the T1–T7.1 records on
+`origin/docs/sdk-demo-003r-rd-audit-record` and this file exist). That detailed
+review is recorded as an **unresolved source dependency**; the eight findings
+are not invented here and full review closure is not claimed.
+
+### Review-integration register
+
+| # | Finding | Code boundary | Test | Status | Owner / next increment | Acceptance evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| R1 | Install trusted a caller-supplied manifest and derived the admin credential destination from it; the loopback **prefix** check (`hostname.startsWith("127.")`) accepted hostile hostnames | `addon-delegation-service.mjs` (`executeWorkspaceAddonInstall`, `applyWorkspaceAddonUpstreamEnforcement`), `workspace-addon-credentials.mjs` (`deriveUpstreamAdminUrl`/`validateAdminUrl`), `workspace-addon-discovery.mjs` (entrypoint guard) | `sd003r-review-r1-r2.test.mjs` | **CLOSED** in this increment (candidate on `feature/sdk-review-architecture-hardening-20260929`) | R1/R2 increment (this work order) | Mechanical pre-fix reproduction (hostile hosts accepted, forged install accepted); post-fix hostile/userinfo/non-loopback rejected, redirect refused with zero credential forwarded |
+| R2 | admin-revoke body `{ addonId }` without an explicit boolean granted everything (`granted !== false`) | `addon-delegation-service.mjs` (`executeWorkspaceAddonAdminRevoke`) | `sd003r-review-r1-r2.test.mjs` | **CLOSED** in this increment | R1/R2 increment (this work order) | Pre-fix `{ addonId }` mutated registry to `network:true`; post-fix missing/non-boolean intent is `invalid-event` with no mutation, explicit `true`/`false` round-trips |
+| R3 | Denial through grant commits the registry first; an unreachable upstream leaves a held bearer usable (registry says denied while the endpoint is still open) | `addon-delegation-service.mjs` (`executeWorkspaceAddonGrant` allow-ordering applied to a deny-shaped grant; `convergeWorkspaceAddonEnforcement` deny-ordering is correct but grant does not reuse it) | follow-up (not yet written) | **DEFERRED** — CP4 follow-up increment | Phase 2C+ / R3 failure-injection increment | See `R3 — failure-injection follow-up` below |
+| R4 | Graphical `*-extension-live` tests run in no mandatory gate and silently skip without a browser; root documents fail `docs:check` | `package.json` (`test:sdk-demo:extension` separate from `test:browser-first`; `t.skip` when `!chromeAvailable()`); `scripts/validate-docs.mjs` (7 unreachable tracked docs) | `docs:check` + merge-gate lane (follow-up) | **DEFERRED** — CP4 follow-up increment | Phase 2C+ / R4 graphical+docs-gate increment | See `R4 — graphical/docs-gate follow-up` below |
+
+### Capability floor (recorded; pending Tom's decision)
+
+The September 28 review records a requirement that an adapter/add-on's
+*operation* requirements cannot be understated by a manifest's *requested
+consent*. This is **not implemented** here: the existing host capability
+catalog (`ADDON_CAPABILITIES` in `packages/addon-sdk/src/contracts.ts`; 14
+capabilities) and the harness policy (`harness-policy.mjs`) project authority
+from host-owned grants, but no "capability floor" (operation → minimum
+required grant) mechanism exists. This is marked **proposed / pending Tom's
+decision**; no broad new policy is silently introduced in this increment.
+
+### R3 — failure-injection follow-up (deferred)
+
+Not fixed by architectural text. Exact work for the next bounded increment:
+
+- **Boundary.** `browser-first/host/addon-delegation-service.mjs` →
+  `executeWorkspaceAddonGrant` must converge a deny-shaped grant through the
+  same fail-closed deny-ordering as `convergeWorkspaceAddonEnforcement` (close
+  upstream first, then persist registry denial), or refuse a grant that would
+  deny while leaving a live bearer effective.
+- **Acceptance cases.** (a) grant-to-deny with the upstream down must leave the
+  held bearer **denied** and never advertise the denial as converged; (b) after
+  upstream recovery, a retry converges both layers; (c) concurrent grant/revoke
+  and revision (CAS) semantics under timeout/disconnect/non-2xx/partial failure;
+  (d) restart semantics: a denied registry state re-opens nothing on upstream
+  restart. Retaining the grant until acknowledgment alone is **not sufficient**
+  if denial can leave effective access active.
+- **Dependencies.** none beyond the existing registry/upstream convergence
+  machinery; the shared loopback validator added here is reused.
+
+### R4 — graphical/docs-gate follow-up (deferred)
+
+Not fixed by architectural text. Exact work for the next bounded increment:
+
+- **Boundary.** `package.json` `test:sdk-demo:extension` (the five
+  `examples/sdk-demo/tests/*-extension-live.test.mjs` files) must become a
+  mandatory merge-gate lane, not a separate opt-in script; a missing
+  display/browser must report **BLOCKED**, never PASS, and must not silently
+  drop out of the gate.
+- **Infrastructure.** Qualify the Xvfb / Test Lab pattern
+  (`browser-first/test/live-sdk-lane.mjs` already pairs headed launch with
+  xvfb) for the extension-live tests; record exact-SHA independent verification
+  for the qualified environment.
+- **docs:check.** Fix the seven `docs:check` failures without disabling checks:
+  `docs/addons/sdk-category-discovery.md`, `examples/sdk-demo/README.md`,
+  `examples/sdk-demo/{counter,echo,sdk-guide}/index.html`,
+  `SDK-DEMO-003-ARCHITECTURE-MAP.md`, `SDK-DEMO-003-FINDINGS.md` are tracked but
+  not reachable from a canonical entrypoint or an explicit runtime/GitHub
+  consumer.

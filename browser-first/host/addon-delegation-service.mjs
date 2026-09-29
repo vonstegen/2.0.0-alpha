@@ -20,6 +20,7 @@ import {
   discoverWorkspaceAddonManifests,
 } from "./workspace-addon-discovery.mjs";
 import { createWorkspaceAddonCredentialResolver } from "./workspace-addon-credentials.mjs";
+import { parseLoopbackHttpOrigin, resolveLoopbackHttpOrigin } from "./loopback-url.mjs";
 
 const DEFAULT_OPENCODE_MODEL = "openai/gpt-5.4-mini";
 const MINIMAX_OPENCODE_MODEL = "minimax/MiniMax-M3";
@@ -2852,28 +2853,50 @@ except BaseException as exc:
   // Phase 3 (P6) — workspace add-on grant lifecycle handlers.
   // Each routes through the host-owned registry; consent is enforced at the
   // registry boundary (setGrants throws permission-denied without consent:true).
+  // R1 hardening: public install is intent-only. The operator names the add-on
+  // by `addonId` and the host resolves the canonical manifest from its own
+  // discovery/install cache (populated by executeAddonsStatus from the
+  // host-owned discovery root). A caller-supplied `manifest` is never accepted
+  // on this path, so a forged same-ID manifest cannot override the host's
+  // canonical manifest, redirect the derived admin credential destination, or
+  // mutate the host-owned administrative mapping.
   async function executeWorkspaceAddonInstall({ manifest, addonId } = {}) {
     if (!workspaceAddonRegistry) {
       throw Object.assign(new Error("Workspace add-on registry unavailable."), { code: "runtime-unavailable" });
     }
-    // T1: REQUEST DESCRIBES INTENT. HOST DETERMINES AUTHORITY.
-    // The operator may install by addonId; the host resolves the canonical
-    // manifest from the discovery cache (populated by executeAddonsStatus), so
-    // a caller cannot inject an arbitrary manifest through the public route.
-    // The explicit { manifest } shape remains supported for host-side callers
-    // and tests that already hold the validated canonical file.
-    const resolvedManifest = manifest
-      ? manifest
-      : (typeof addonId === "string" ? workspaceAddonManifestCache.get(addonId) ?? null : null);
-    if (!resolvedManifest || typeof resolvedManifest.id !== "string") {
-      throw Object.assign(new Error("Workspace add-on install requires a manifest with an id."), { code: "invalid-event" });
+    if (manifest !== undefined) {
+      throw Object.assign(
+        new Error("Workspace add-on install requires { addonId } (intent only); a caller-supplied manifest is not honored."),
+        { code: "invalid-event", audit: "install-caller-manifest-injection-attempt" },
+      );
     }
-    // Cache the full manifest so the host-owned admin endpoint can always be
-    // derived from `service.entrypoint` (T6) even when install was driven by
-    // an explicit { manifest } payload rather than the discovery cache.
-    workspaceAddonManifestCache.set(resolvedManifest.id, resolvedManifest);
+    const resolvedManifest = typeof addonId === "string" ? workspaceAddonManifestCache.get(addonId) ?? null : null;
+    if (!resolvedManifest || typeof resolvedManifest.id !== "string") {
+      throw Object.assign(new Error("Workspace add-on install requires { addonId } resolving to a discovered canonical manifest."), { code: "invalid-event" });
+    }
     await workspaceAddonRegistry.install(resolvedManifest, { enabled: false });
     return { addonId: resolvedManifest.id, installation: workspaceAddonRegistry.snapshot().installations[resolvedManifest.id] ?? null };
+  }
+
+  // Trusted host-side install path (not exposed through the bridge route). Used
+  // by host-owned callers and tests that already hold the validated canonical
+  // manifest file. It re-validates the declared `service.entrypoint` is a
+  // canonical loopback http(s) origin before caching, so even a trusted caller
+  // cannot seed a non-loopback admin destination.
+  async function installWorkspaceAddonManifest(manifest) {
+    if (!workspaceAddonRegistry) {
+      throw Object.assign(new Error("Workspace add-on registry unavailable."), { code: "runtime-unavailable" });
+    }
+    if (!manifest || typeof manifest.id !== "string") {
+      throw Object.assign(new Error("Workspace add-on install requires a manifest with an id."), { code: "invalid-event" });
+    }
+    const entrypoint = manifest?.service?.entrypoint;
+    if (typeof entrypoint === "string" && !parseLoopbackHttpOrigin(entrypoint)) {
+      throw Object.assign(new Error(`Workspace add-on manifest entrypoint is not a canonical loopback http(s) URL: ${manifest.id}`), { code: "invalid-event" });
+    }
+    workspaceAddonManifestCache.set(manifest.id, manifest);
+    await workspaceAddonRegistry.install(manifest, { enabled: false });
+    return { addonId: manifest.id, installation: workspaceAddonRegistry.snapshot().installations[manifest.id] ?? null };
   }
 
   async function executeWorkspaceAddonGrants({ addonId } = {}) {
@@ -2963,6 +2986,18 @@ except BaseException as exc:
   // only, never the target URL or the credential.
   async function applyWorkspaceAddonUpstreamEnforcement(addonId, granted) {
     const { upstreamAdminUrl: targetUrl, adminToken: credential } = resolveWorkspaceAddonAdminCredential(addonId);
+    // R1: validate the administrative endpoint at the final credential-bearing
+    // network boundary. Re-resolve any hostname (`localhost`) and require every
+    // resolved address to be loopback, then send with redirects disabled so a
+    // 3xx cannot carry the host admin credential off-loopback. No credentials
+    // are ever forwarded to a redirect or to a non-loopback host.
+    const validated = await resolveLoopbackHttpOrigin(targetUrl);
+    if (!validated) {
+      throw Object.assign(
+        new Error("Upstream admin enforcement target is not a loopback http(s) URL; refusing to send host credentials."),
+        { code: "runtime-unavailable" },
+      );
+    }
     let response;
     try {
       response = await fetch(targetUrl, {
@@ -2972,11 +3007,19 @@ except BaseException as exc:
           authorization: `Bearer ${credential}`,
         },
         body: JSON.stringify({ granted }),
+        redirect: "manual",
       });
     } catch {
       throw Object.assign(
         new Error("Upstream admin enforcement failed: upstream unreachable."),
         { code: "runtime-unavailable" },
+      );
+    }
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel?.().catch(() => undefined);
+      throw Object.assign(
+        new Error("Upstream admin enforcement refused a redirect; host credentials are never forwarded to a redirect target."),
+        { code: "runtime-unavailable", upstreamStatus: response.status },
       );
     }
     let body = null;
@@ -3076,6 +3119,14 @@ except BaseException as exc:
     if (typeof addonId !== "string") {
       throw Object.assign(new Error("Workspace add-on admin revoke requires { addonId }."), { code: "invalid-event" });
     }
+    // R2: grant/revoke intent requires an explicit validated boolean. A missing
+    // or non-boolean `granted` (undefined/null/string/number/object/array) is a
+    // deterministic 4xx with no registry mutation and no upstream grant. Without
+    // this, `{ addonId }` alone (or `granted: "false"`) silently GRANTED the
+    // whole surface via `granted !== false`.
+    if (typeof granted !== "boolean") {
+      throw Object.assign(new Error("Workspace add-on admin revoke requires { addonId, granted } with a boolean granted."), { code: "invalid-event" });
+    }
     // Ignore any caller-supplied upstreamAdminUrl or adminToken fields
     if ("upstreamAdminUrl" in request || "adminToken" in request) {
       throw Object.assign(new Error("Caller-supplied upstreamAdminUrl/adminToken fields are not honored."), { code: "permission-denied", audit: "revoked-caller-injection-attempt" });
@@ -3095,8 +3146,9 @@ except BaseException as exc:
     }
     // Admin-revoke sets the add-on's whole grant surface to the enforcement
     // boolean (for the single-`network`-capability demo add-ons this is exactly
-    // one grant) and converges the upstream flag to the same value.
-    const enforcementGranted = granted !== false;
+    // one grant) and converges the upstream flag to the same value. `granted`
+    // is already validated as an explicit boolean above.
+    const enforcementGranted = granted;
     const targetGrants = (installation.grantedCapabilities ?? []).map((grant) => ({
       capability: grant.capability,
       scope: grant.scope,
@@ -3341,6 +3393,7 @@ except BaseException as exc:
     executeAddonExecutionSettingsUpdate,
     // Phase 3 (P6) — workspace add-on lifecycle handlers.
     executeWorkspaceAddonInstall,
+    installWorkspaceAddonManifest,
     executeWorkspaceAddonGrants,
     executeWorkspaceAddonGrant,
     executeWorkspaceAddonRevoke,

@@ -31,8 +31,8 @@ const COUNTER_BEARER = "admin-revoke-bridge-counter-bearer";
 const COUNTER_ADMIN = "admin-revoke-bridge-counter-admin";
 const BRIDGE_TOKEN = "admin-revoke-bridge-bridge-token";
 const CONTROL_TOKEN = "admin-revoke-bridge-control-token";
+const READ_TOKEN = "admin-revoke-bridge-read-token";
 const COUNTER_PORT = 47322;
-const COUNTER_MANIFEST = JSON.parse(readFileSync(path.join(repoRoot, "examples/sdk-demo/counter/addon.json"), "utf8"));
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -83,6 +83,7 @@ test("live bridge admin-revoke uses host-owned mapping (T1) and flips the Counte
     `--bridge-port=${bridgePort}`,
     `--bridge-token=${BRIDGE_TOKEN}`,
     `--addon-runtime-control-token=${CONTROL_TOKEN}`,
+    `--addon-runtime-read-token=${READ_TOKEN}`,
     `--workspace-addon-credentials-file=${credentialFile}`,
     `--user-root=${userRoot}`,
   ], {
@@ -97,23 +98,39 @@ test("live bridge admin-revoke uses host-owned mapping (T1) and flips the Counte
   let bridgeStderr = "";
   bridge.stderr.on("data", (chunk) => { bridgeStderr += chunk.toString("utf8"); });
 
-  const bridgePost = async (routePath, body) => {
+  const bridgePost = async (routePath, body, capabilityToken = CONTROL_TOKEN) => {
     const cfg = await waitForBridgeConfig(configPath);
     return fetch(`${cfg.bridgeUrl.replace(/\/$/, "")}${routePath}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-resonantos-bridge-token": BRIDGE_TOKEN,
-        "x-resonantos-bridge-capability-token": CONTROL_TOKEN,
+        "x-resonantos-bridge-capability-token": capabilityToken,
       },
       body: JSON.stringify(body ?? {}),
+    });
+  };
+
+  const bridgeGet = async (routePath) => {
+    const cfg = await waitForBridgeConfig(configPath);
+    return fetch(`${cfg.bridgeUrl.replace(/\/$/, "")}${routePath}`, {
+      method: "GET",
+      headers: {
+        "x-resonantos-bridge-token": BRIDGE_TOKEN,
+        "x-resonantos-bridge-capability-token": READ_TOKEN,
+      },
     });
   };
 
   try {
     // 0. Install the Counter add-on so the converged admin-revoke path has a
     //    registry grant surface to flip (T4: registry + upstream converge).
-    const installRes = await bridgePost("/addons/workspace/install", { manifest: COUNTER_MANIFEST });
+    //    Public install is intent-only: first populate the host-owned discovery
+    //    cache (GET /addons/status), then install by addonId. A caller-supplied
+    //    manifest is rejected by the bridge (R1).
+    const statusRes = await bridgeGet("/addons/status");
+    assert.equal(statusRes.status, 200, `status must succeed (got ${statusRes.status})`);
+    const installRes = await bridgePost("/addons/workspace/install", { addonId: "addon.resonant-counter" });
     assert.equal(installRes.status, 200, `counter install must succeed (got ${installRes.status})`);
 
     // 1. Host-owned intent-only revoke must converge BOTH the registry grant

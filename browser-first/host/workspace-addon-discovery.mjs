@@ -23,12 +23,11 @@
 
 import { readFile, readdir, stat } from "node:fs/promises";
 import { validateAddOnManifest } from "../../packages/addon-sdk/src/validation.ts";
+import { parseLoopbackHttpOrigin } from "./loopback-url.mjs";
 
 const DEFAULT_DISCOVERY_ROOT = "examples/sdk-demo";
 const PROBE_TIMEOUT_MS = 800;
 const HEALTH_PROBE_PATH_HINT = "/health";
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
-
 function asString(value, fallback = "") {
   if (typeof value !== "string") return fallback;
   return value;
@@ -36,29 +35,6 @@ function asString(value, fallback = "") {
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function isLoopbackHostname(hostname) {
-  if (typeof hostname !== "string" || !hostname) return false;
-  const lower = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (LOOPBACK_HOSTS.has(lower)) return true;
-  if (lower.startsWith("127.")) return true;
-  // T7: `0.0.0.0` is bind-any, not a loopback destination. Reject it so a
-  // manifest cannot declare a non-loopback-ish service.entrypoint (matches the
-  // T6.1 admin-destination validator in workspace-addon-credentials.mjs).
-  return false;
-}
-
-function parseLoopbackOrigin(entrypoint) {
-  if (typeof entrypoint !== "string") return null;
-  try {
-    const url = new URL(entrypoint);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    if (!isLoopbackHostname(url.hostname)) return null;
-    return { origin: url.origin, hostname: url.hostname, port: url.port || (url.protocol === "https:" ? "443" : "80") };
-  } catch {
-    return null;
-  }
 }
 
 function deriveProbePath(manifest) {
@@ -181,7 +157,7 @@ export async function discoverWorkspaceAddonManifests({
     }
 
     const entrypoint = parsed?.service?.entrypoint;
-    const parsedOrigin = parseLoopbackOrigin(entrypoint);
+    const parsedOrigin = parseLoopbackHttpOrigin(entrypoint);
     if (!parsedOrigin) {
       errors.push({
         code: "manifest-entrypoint-not-loopback",
@@ -246,7 +222,7 @@ export function createLoopbackHealthProbe({ fetchImpl = globalThis.fetch, timeou
       const raw = await readFile(manifestPath, "utf8");
       const parsed = JSON.parse(raw);
       const entrypoint = parsed?.service?.entrypoint;
-      const origin = parseLoopbackOrigin(entrypoint);
+      const origin = parseLoopbackHttpOrigin(entrypoint);
       if (!origin) return false;
       const probePath = deriveProbePath(parsed);
       const url = `${origin.origin}${probePath}`;

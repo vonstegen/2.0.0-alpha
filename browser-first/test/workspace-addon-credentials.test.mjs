@@ -263,7 +263,7 @@ test("T6 service: bootstrap delivers only the intentionally-scoped bearer, never
     credentials: { "addon.resonant-echo": { bearer: "echo-bearer-secret", adminToken: "echo-admin-secret" } },
   });
   try {
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     // T7: the grant route now converges upstream (needs a reachable upstream);
     // this test asserts bootstrap credential scoping only, so set the registry
     // grant directly for setup.

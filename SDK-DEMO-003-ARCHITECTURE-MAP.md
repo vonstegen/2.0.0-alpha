@@ -612,3 +612,59 @@ after grant re-closes.
 + harness) or read (`addon-runtime-read`) by inspecting the route declarations
 directly. Adding a workspace route without an enforcement classification fails
 the suite.
+
+## 12. Phase 8.5 (R1/R2) — credential-authority hardening (2026-09-29 review)
+
+Integrates the September 28 review's R1/R2 defects into the existing
+architecture. No new registry, grants database, credential resolver, endpoint
+guard, or project/files subsystem is introduced: the correction reuses the
+host-owned registry, the credential resolver, the established endpoint guard
+semantics, and the existing bridge route surface.
+
+### 12.1 Install authority (R1)
+
+`POST /addons/workspace/install` is **intent-only**: the caller names `addonId`
+and the host resolves the canonical manifest from its discovery/install cache
+(`executeAddonsStatus` → `workspaceAddonManifestCache`). A caller-supplied
+`manifest` is rejected (`invalid-event`, no mutation). The trusted host-side
+install of an already-validated canonical file is the separate internal method
+`installWorkspaceAddonManifest(manifest)`, which re-validates the declared
+`service.entrypoint` is a canonical loopback http(s) origin before caching.
+`executeWorkspaceAddonBootstrap` continues to read only the host-owned cache.
+
+### 12.2 Loopback validation (R1)
+
+The prefix check (`hostname.startsWith("127.")`) is removed. A shared module
+(`browser-first/host/loopback-url.mjs`) provides:
+
+- `isLoopbackAddress` — numeric 127.0.0.0/8 + `::1` only (rejects `0.0.0.0`,
+  IPv4-mapped IPv6, external addresses).
+- `parseLoopbackHttpOrigin` — synchronous structural check: http(s) only, no
+  userinfo, canonical loopback hostname (`127/8` literal, `::1`, or exactly
+  `localhost`), no explicit `:0` port.
+- `resolveLoopbackHttpOrigin` — the credential-bearing check: structural check,
+  then DNS re-resolution of any non-literal hostname with every answer required
+  to be loopback.
+
+`workspace-addon-discovery.mjs` and `workspace-addon-credentials.mjs` reuse the
+structural validator. The **final credential-bearing network boundary**
+(`applyWorkspaceAddonUpstreamEnforcement`) additionally runs
+`resolveLoopbackHttpOrigin` and sends with `redirect: "manual"`, rejecting any
+3xx — host credentials are never forwarded to a redirect or a non-loopback
+host.
+
+### 12.3 Explicit boolean intent (R2)
+
+`POST /addons/workspace/admin-revoke` requires an explicit boolean `granted`.
+Missing/null/string/number/object/array values are `invalid-event` (deterministic
+4xx) with no registry mutation and no upstream grant. Explicit `true` (regrant)
+and `false` (revoke) round-trip through the existing T4 convergence.
+
+### 12.4 Tests and follow-ups
+
+- Focused regression: `browser-first/test/sd003r-review-r1-r2.test.mjs`.
+- Live bridge: `browser-first/test/addons-admin-revoke-live-bridge.test.mjs`
+  now drives intent-only install (status → install by `addonId`).
+- Deferred (recorded in `SDK-DEMO-003-FINDINGS.md`): R3 (failure-injection
+  grant/deny convergence) and R4 (mandatory graphical/docs gate) are Phase
+  2C+ follow-up increments, not claimed fixed here.

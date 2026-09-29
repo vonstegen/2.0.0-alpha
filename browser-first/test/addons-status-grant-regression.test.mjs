@@ -91,7 +91,7 @@ test("P6 regression: a grant survives a subsequent /addons/status poll", async (
   const { service, registry, cleanup } = await buildService();
   try {
     // Step 1 — explicit install into registry first (T2 semantics).
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     const installations1 = registry.snapshot().installations;
     assert.ok(
       installations1["addon.resonant-echo"],
@@ -140,7 +140,7 @@ test("P6 regression: grants survive multiple /addons/status polls (idempotent)",
   const { service, registry, cleanup } = await buildService();
   try {
     // Explicit install first.
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
 
     // Grant.
     await registry.setGrants("addon.resonant-echo", [

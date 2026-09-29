@@ -104,7 +104,7 @@ test("T4 converged revoke: registry route denies BOTH registry and upstream", as
   const base = `http://127.0.0.1:${started.port}`;
   const { service, registry, cleanup } = await buildHarness({ adminUrl: `${base}/admin/deny` });
   try {
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     await service.executeWorkspaceAddonGrant({ addonId: ID, grants: [NETWORK_GRANT] });
     assert.equal(regGranted(registry), true, "precondition: granted");
     assert.equal(await upstreamPing(base), 200, "precondition: upstream open");
@@ -126,7 +126,7 @@ test("T4 converged admin-revoke: enforcement route denies BOTH upstream and regi
   const base = `http://127.0.0.1:${started.port}`;
   const { service, registry, cleanup } = await buildHarness({ adminUrl: `${base}/admin/deny` });
   try {
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     await service.executeWorkspaceAddonGrant({ addonId: ID, grants: [NETWORK_GRANT] });
     assert.equal(regGranted(registry), true, "precondition: granted");
 
@@ -148,7 +148,7 @@ test("T4 supported regrant: admin-revoke { granted: true } converges BOTH layers
   const base = `http://127.0.0.1:${started.port}`;
   const { service, registry, cleanup } = await buildHarness({ adminUrl: `${base}/admin/deny` });
   try {
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     await service.executeWorkspaceAddonGrant({ addonId: ID, grants: [NETWORK_GRANT] });
     await service.executeWorkspaceAddonRevoke({ addonId: ID, capabilities: ["network"] });
     assert.equal(await upstreamPing(base), 403, "precondition: revoked");
@@ -173,7 +173,7 @@ test("T4 bootstrap cannot resurrect revoked authority (even after registry remov
     // Populate the manifest cache via discovery so bootstrap has a cached
     // manifest it could theoretically re-install from.
     await service.executeAddonsStatus();
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     await service.executeWorkspaceAddonGrant({ addonId: ID, grants: [NETWORK_GRANT] });
     await service.executeWorkspaceAddonRevoke({ addonId: ID, capabilities: ["network"] });
 
@@ -201,7 +201,7 @@ test("T4 caller privileged-field injection is denied and mutates nothing", async
   const base = `http://127.0.0.1:${started.port}`;
   const { service, registry, cleanup } = await buildHarness({ adminUrl: `${base}/admin/deny` });
   try {
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     await service.executeWorkspaceAddonGrant({ addonId: ID, grants: [NETWORK_GRANT] });
 
     await assert.rejects(
@@ -233,7 +233,7 @@ test("T4 partial upstream failure is reported as runtime-unavailable, never succ
   const base = `http://127.0.0.1:${started.port}`;
   const { service, registry, cleanup } = await buildHarness({ adminUrl: `${base}/admin/deny` });
   try {
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     await service.executeWorkspaceAddonGrant({ addonId: ID, grants: [NETWORK_GRANT] });
     const before = registry.snapshot().revision;
 
@@ -260,7 +260,7 @@ test("T4 revoke is idempotent and retry-safe", async () => {
   const base = `http://127.0.0.1:${started.port}`;
   const { service, registry, cleanup } = await buildHarness({ adminUrl: `${base}/admin/deny` });
   try {
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     await service.executeWorkspaceAddonGrant({ addonId: ID, grants: [NETWORK_GRANT] });
 
     await service.executeWorkspaceAddonRevoke({ addonId: ID, capabilities: ["network"] });

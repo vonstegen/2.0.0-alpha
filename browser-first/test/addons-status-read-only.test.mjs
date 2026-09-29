@@ -186,9 +186,7 @@ test("T2-3: explicit workspace install creates installation", async () => {
       "status must not install",
     );
     
-    const installRes = await service.executeWorkspaceAddonInstall({
-      manifest: echoManifest,
-    });
+    const installRes = await service.installWorkspaceAddonManifest(echoManifest);
     assert.equal(installRes.addonId, "addon.resonant-echo", "install must return addonId");
     assert.ok(installRes.installation, "install must return installation");
     assert.ok(
@@ -205,7 +203,7 @@ test("T2-3: explicit workspace install creates installation", async () => {
 test("T2-4: status polling cannot duplicate installation", async () => {
   const { service, registry, cleanup } = await buildService();
   try {
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     assert.ok(registry.snapshot().installations["addon.resonant-echo"], "must be installed");
     
     for (let i = 0; i < 3; i += 1) {
@@ -271,7 +269,7 @@ test("T2-5: discovery error does not create registry state", async () => {
 test("T2-6: status reports registry grants for installed add-ons", async () => {
   const { service, registry, cleanup } = await buildService();
   try {
-    await service.executeWorkspaceAddonInstall({ manifest: echoManifest });
+    await service.installWorkspaceAddonManifest(echoManifest);
     // T7: grant now converges the upstream enforcement projection, so the
     // grant *route* needs a reachable upstream. This T2 test asserts status
     // projection only, so set the registry grant directly for setup.

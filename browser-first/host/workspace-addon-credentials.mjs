@@ -75,14 +75,13 @@
 // restart-bound. See SDK-DEMO-003-ARCHITECTURE-MAP.md §T6 for the semantics.
 
 import { readFile } from "node:fs/promises";
+import { parseLoopbackHttpOrigin } from "./loopback-url.mjs";
 
 export const WORKSPACE_ADDON_CREDENTIAL_PURPOSES = Object.freeze(["bearer", "admin"]);
 
 const CREDENTIALS_FILE_ARG = "workspace-addon-credentials-file";
 const CREDENTIALS_ENV = "RESONANTOS_WORKSPACE_ADDON_CREDENTIALS";
 const CREDENTIALS_FILE_ENV = "RESONANTOS_WORKSPACE_ADDON_CREDENTIALS_FILE";
-
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
 function fail(code, message) {
   return Object.assign(new Error(message), { code });
@@ -94,35 +93,6 @@ function isString(value) {
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-// True-loopback-only hostname check. Accepts 127.0.0.0/8, ::1, and localhost.
-// `0.0.0.0` (bind-any) and all other non-loopback hosts are rejected.
-function isLoopbackHostname(hostname) {
-  if (!isString(hostname) || !hostname) return false;
-  const lower = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (LOOPBACK_HOSTS.has(lower)) return true;
-  if (lower.startsWith("127.")) return true;
-  return false;
-}
-
-// Parse a loopback-only http(s) origin from a URL string. Returns
-// { origin, hostname, port } or null. Mirrors the discovery guard so the admin
-// URL derived here can never leave true loopback.
-export function parseLoopbackHttpOrigin(entrypoint) {
-  if (!isString(entrypoint)) return null;
-  try {
-    const url = new URL(entrypoint);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    if (!isLoopbackHostname(url.hostname)) return null;
-    return {
-      origin: url.origin,
-      hostname: url.hostname,
-      port: url.port || (url.protocol === "https:" ? "443" : "80"),
-    };
-  } catch {
-    return null;
-  }
 }
 
 // Derive the host-only admin endpoint from the add-on's validated manifest
