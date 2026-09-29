@@ -16,7 +16,7 @@ import {
   ADDON_SERVICE_PROTOCOLS,
   HARNESS_CREDENTIAL_DELIVERY_MECHANISMS,
   HARNESS_OPERATIONS,
-  HARNESS_PROVIDER_FAMILIES,
+  HARNESS_PROVIDER_PROTOCOLS,
   type AddOnManifestSource,
   type AddOnManifestValidationResult,
   type AddOnValidationIssue,
@@ -143,8 +143,13 @@ const validateHarnessProviderConnection = (issues: AddOnValidationIssue[], hpc: 
   const reject = (code: string, field: string, message: string) =>
     pushIssue(issues, "error", `harness-provider-connection-${code}`, field ? `harnessProviderConnection.${field}` : "harnessProviderConnection", message);
   // Descriptive contract only: bound fields, no secret/credential channels.
-  const allowed = ["consumesProviderProfiles", "providerFamilies", "credentialDelivery", "modelSelection"];
-  for (const key of Object.keys(hpc)) if (!allowed.includes(key)) {
+  const allowed = ["consumesProviderProfiles", "providerProtocols", "credentialDelivery", "modelSelection"];
+  for (const key of Object.keys(hpc)) {
+    if (allowed.includes(key)) continue;
+    if (key === "providerFamilies") {
+      reject("obsolete-provider-families", "providerFamilies", "providerFamilies is obsolete; declare the canonical providerProtocols field instead.");
+      continue;
+    }
     reject("field", key, "harnessProviderConnection may only declare the descriptive compatibility fields; credentials, endpoints and executable paths are forbidden.");
   }
   if (typeof hpc.consumesProviderProfiles !== "boolean") {
@@ -153,10 +158,10 @@ const validateHarnessProviderConnection = (issues: AddOnValidationIssue[], hpc: 
   if (typeof hpc.modelSelection !== "boolean") {
     reject("model-selection-boolean", "modelSelection", "modelSelection must be boolean.");
   }
-  if (!Array.isArray(hpc.providerFamilies) || hpc.providerFamilies.length === 0 ||
-      hpc.providerFamilies.some((family) => !(HARNESS_PROVIDER_FAMILIES as readonly string[]).includes(family as string)) ||
-      new Set(hpc.providerFamilies).size !== hpc.providerFamilies.length) {
-    reject("provider-families", "providerFamilies", "providerFamilies must be a non-empty, unique list of supported provider/protocol families.");
+  if (!Array.isArray(hpc.providerProtocols) || hpc.providerProtocols.length === 0 ||
+      hpc.providerProtocols.some((protocol) => !(HARNESS_PROVIDER_PROTOCOLS as readonly string[]).includes(protocol as string)) ||
+      new Set(hpc.providerProtocols).size !== hpc.providerProtocols.length) {
+    reject("provider-protocols", "providerProtocols", "providerProtocols must be a non-empty, unique list of supported protocol families (openai-compatible, minimax-compatible, ollama).");
   }
   if (!Array.isArray(hpc.credentialDelivery) || hpc.credentialDelivery.length === 0 ||
       hpc.credentialDelivery.some((mechanism) => !(HARNESS_CREDENTIAL_DELIVERY_MECHANISMS as readonly string[]).includes(mechanism as string)) ||

@@ -902,7 +902,7 @@ describe("bound harness contracts", () => {
 
 const providerConnection = () => ({
   consumesProviderProfiles: true,
-  providerFamilies: ["openai-compatible", "anthropic"],
+  providerProtocols: ["openai-compatible"],
   credentialDelivery: ["runtime-adapter", "session-environment"],
   modelSelection: true,
 });
@@ -915,14 +915,30 @@ describe("harnessProviderConnection contract", () => {
     expect(result.valid).toBe(true);
   });
 
+  it.each(["openai-compatible", "minimax-compatible", "ollama"])(
+    "accepts the canonical protocol family %s",
+    (protocol) => {
+      const manifest = boundHarness();
+      const result = validateAddOnManifest({
+        ...manifest,
+        harnessProviderConnection: { ...providerConnection(), providerProtocols: [protocol] },
+      });
+      expect(result.issues.filter(issue => issue.severity === "error")).toEqual([]);
+      expect(result.valid).toBe(true);
+    },
+  );
+
   it.each([
     [{ privateToken: "secret-canary" }, "harness-provider-connection-field"],
     [{ endpoint: "http://127.0.0.1:1" }, "harness-provider-connection-field"],
     [{ consumesProviderProfiles: "yes" }, "harness-provider-connection-consumes-boolean"],
     [{ modelSelection: "true" }, "harness-provider-connection-model-selection-boolean"],
-    [{ providerFamilies: ["anthropic", "unknown-vendor"] }, "harness-provider-connection-provider-families"],
-    [{ providerFamilies: [] }, "harness-provider-connection-provider-families"],
-    [{ providerFamilies: ["anthropic", "anthropic"] }, "harness-provider-connection-provider-families"],
+    [{ providerFamilies: ["openai-compatible"] }, "harness-provider-connection-obsolete-provider-families"],
+    [{ providerProtocols: ["anthropic"] }, "harness-provider-connection-provider-protocols"],
+    [{ providerProtocols: ["google"] }, "harness-provider-connection-provider-protocols"],
+    [{ providerProtocols: ["openai-compatible", "unknown-vendor"] }, "harness-provider-connection-provider-protocols"],
+    [{ providerProtocols: [] }, "harness-provider-connection-provider-protocols"],
+    [{ providerProtocols: ["openai-compatible", "openai-compatible"] }, "harness-provider-connection-provider-protocols"],
     [{ credentialDelivery: ["runtime-adapter", "durable-duplicate"] }, "harness-provider-connection-credential-delivery"],
     [{ credentialDelivery: [] }, "harness-provider-connection-credential-delivery"],
     [{ credentialDelivery: ["self-auth", "self-auth"] }, "harness-provider-connection-credential-delivery"],

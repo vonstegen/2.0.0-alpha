@@ -118,7 +118,7 @@
   },
   "harnessProviderConnection": {
     "consumesProviderProfiles": true,
-    "providerFamilies": ["openai-compatible"],
+    "providerProtocols": ["openai-compatible"],
     "credentialDelivery": ["runtime-adapter"],
     "modelSelection": true
   },

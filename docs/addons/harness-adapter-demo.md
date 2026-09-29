@@ -43,7 +43,7 @@ resolver:
 {
   "harnessProviderConnection": {
     "consumesProviderProfiles": true,
-    "providerFamilies": ["openai-compatible"],
+    "providerProtocols": ["openai-compatible"],
     "credentialDelivery": ["runtime-adapter"],
     "modelSelection": true
   }
@@ -52,10 +52,11 @@ resolver:
 
 - `consumesProviderProfiles` — the harness consumes ROS Provider Profiles through
   host mediation.
-- `providerFamilies` — the provider/protocol families it can consume
-  (`openai`, `anthropic`, `google`, `minimax`, `openai-compatible`, `local`,
-  `custom`). Descriptive only: declaring a family never grants access to a
-  profile.
+- `providerProtocols` — the protocol/API families it can consume, from the
+  canonical `ProviderProtocolFamily` vocabulary (`openai-compatible`,
+  `minimax-compatible`, `ollama`). Descriptive only: declaring a protocol never
+  grants access to a profile. Provider identity/type is a separate concept from
+  protocol/API compatibility.
 - `credentialDelivery` — the delivery mechanisms it supports, in host preference
   order: `runtime-adapter`, `session-environment`, `self-auth`, `none`.
 - `modelSelection` — whether the harness supports host-mediated model selection.

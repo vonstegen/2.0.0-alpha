@@ -34,7 +34,7 @@ A harness may declare a `harnessProviderConnection` block on its manifest:
 {
   "harnessProviderConnection": {
     "consumesProviderProfiles": true,
-    "providerFamilies": ["openai-compatible", "anthropic"],
+    "providerProtocols": ["openai-compatible"],
     "credentialDelivery": ["runtime-adapter", "session-environment"],
     "modelSelection": true
   }
@@ -43,11 +43,12 @@ A harness may declare a `harnessProviderConnection` block on its manifest:
 
 - `consumesProviderProfiles` — whether the harness can consume ROS Provider
   Profiles through host mediation.
-- `providerFamilies` — compatible provider/protocol families (OpenAI-compatible,
-  Anthropic, etc.). Reuses the `ProviderType` vocabulary
-  (`openai`, `anthropic`, `google`, `minimax`, `openai-compatible`, `local`,
-  `custom`). Descriptive only: declaring a family grants no access to any
-  profile.
+- `providerProtocols` — compatible protocol/API families from the canonical
+  `ProviderProtocolFamily` vocabulary (`openai-compatible`,
+  `minimax-compatible`, `ollama`). Descriptive only: declaring a protocol grants
+  no access to any profile. Provider identity/type is a separate concept
+  (`ProviderType`) from protocol/API compatibility (`ProviderProtocolFamily`);
+  a harness declares the protocol it speaks, never a vendor.
 - `credentialDelivery` — supported credential delivery mechanisms in host
   preference order: `runtime-adapter`, `session-environment`, `self-auth`,
   `none`.
@@ -71,10 +72,35 @@ supports:
 
 Host-owned discovery returns ONLY Provider Profiles/models compatible with the
 specific installed/enabled/authorized harness and its declared
-`providerFamilies` + `credentialDelivery`. The harness never enumerates raw
+`providerProtocols` + `credentialDelivery`. The harness never enumerates raw
 credentials or arbitrary provider secrets; UI/control surfaces receive
 metadata/status only (profile identity/label, compatible models, configured
 boolean, availability/health where supported).
+
+## Amendment (1.1B): protocol vocabulary, not provider identity
+
+The original `providerFamilies` field reused the mixed `ProviderType`
+vocabulary, which bundles vendor identity (`openai`, `anthropic`, `google`,
+`minimax`), wire protocol (`openai-compatible`), deployment locality (`local`),
+and an escape hatch (`custom`). That conflates *who the provider is* with *what
+API protocol the harness can speak*.
+
+This decision is amended so the descriptive declaration names only the audited
+protocol/API vocabulary (`ProviderProtocolFamily`):
+
+- The canonical field is `providerProtocols: ProviderProtocolFamily[]`.
+- `ProviderProtocolFamily` is `openai-compatible | minimax-compatible | ollama`,
+  grounded one-to-one in the host execution adapters; `anthropic`, `google`, and
+  `custom` have no host adapter today and are not protocol families.
+- `ProviderType` remains the separate provider identity/type vocabulary and is
+  unchanged.
+- The legacy `providerFamilies` field is rejected by validation; there is no
+  production add-on ecosystem to preserve an alias for.
+
+The host-owned discovery and runtime-adapter matching still compare the
+declared field against provider *identity* and are migrated to the protocol
+vocabulary (`deriveProviderProtocol`) in 1.1C; this decision does not yet claim
+that migration is complete.
 
 ## Consequences
 

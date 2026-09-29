@@ -581,8 +581,10 @@ export interface AddOnAgentRuntimeAdapterContract {
 export interface AddOnHarnessProviderConnectionContract {
   /** Whether the harness can consume ROS Provider Profiles via host mediation. */
   consumesProviderProfiles: boolean;
-  /** Compatible provider/protocol families (descriptive; never grants access). */
-  providerFamilies: ProviderType[];
+  /** Compatible protocol/API families from the canonical protocol vocabulary
+   *  ({@link ProviderProtocolFamily}); descriptive, never grants access.
+   *  Provider identity/type is a separate concept from protocol compatibility. */
+  providerProtocols: ProviderProtocolFamily[];
   /** Supported credential delivery mechanisms, in host preference order. */
   credentialDelivery: HarnessCredentialDelivery[];
   /** Whether the harness supports host-mediated model selection. */
@@ -675,7 +677,7 @@ export interface HarnessCompatibleModel {
 // executable path.
 export interface HarnessProviderConnectionProjection {
   consumesProviderProfiles: boolean;
-  providerFamilies: readonly string[];
+  providerProtocols: readonly string[];
   credentialDelivery: readonly string[];
   modelSelection: boolean;
 }

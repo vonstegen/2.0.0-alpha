@@ -21,7 +21,7 @@ import type {
   AddOnWorkflowBoundary,
   Capability,
   HarnessCredentialDelivery,
-  ProviderType,
+  ProviderProtocolFamily,
 } from "../../../src/core/contracts";
 
 export const ADDON_SDK_VERSION = "0.1.0";
@@ -95,8 +95,10 @@ export const HARNESS_OPERATIONS = [
 export const HARNESS_CREDENTIAL_DELIVERY_MECHANISMS = ["runtime-adapter", "session-environment", "self-auth", "none"] as const satisfies readonly HarnessCredentialDelivery[];
 export type HarnessCredentialDeliveryMechanism = (typeof HARNESS_CREDENTIAL_DELIVERY_MECHANISMS)[number];
 
-// Compatible provider/protocol families a harness can declare (descriptive;
-// never grants access to a profile).
-export const HARNESS_PROVIDER_FAMILIES = ["openai", "anthropic", "google", "minimax", "openai-compatible", "local", "custom"] as const satisfies readonly ProviderType[];
+// Canonical protocol/API-compatibility vocabulary a harness can declare
+// (descriptive; never grants access to a profile). Mirrors the core
+// `ProviderProtocolFamily` union so the SDK never re-declares values that can
+// drift. Provider identity/type is a separate vocabulary (ProviderType).
+export const HARNESS_PROVIDER_PROTOCOLS = ["openai-compatible", "minimax-compatible", "ollama"] as const satisfies readonly ProviderProtocolFamily[];
 
 export { HARNESS_PUBLIC_ERROR_MESSAGES } from "../../../src/core/contracts.ts";

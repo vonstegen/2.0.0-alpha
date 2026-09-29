@@ -55,7 +55,7 @@ provider access:
 {
   "harnessProviderConnection": {
     "consumesProviderProfiles": true,
-    "providerFamilies": ["openai-compatible", "anthropic"],
+    "providerProtocols": ["openai-compatible"],
     "credentialDelivery": ["runtime-adapter", "session-environment"],
     "modelSelection": true
   }
@@ -64,8 +64,11 @@ provider access:
 
 - `consumesProviderProfiles` — whether the harness consumes ROS Provider
   Profiles via host mediation.
-- `providerFamilies` — compatible provider/protocol families (descriptive;
-  never grants access to a profile).
+- `providerProtocols` — compatible protocol/API families from the canonical
+  `ProviderProtocolFamily` vocabulary (`openai-compatible`,
+  `minimax-compatible`, `ollama`); descriptive, never grants access to a
+  profile. Provider identity/type (`ProviderType`) is a separate concept from
+  protocol/API compatibility.
 - `credentialDelivery` — supported delivery mechanisms in host preference order:
   `runtime-adapter`, `session-environment`, `self-auth`, `none`. Only
   `runtime-adapter` is implemented in the Alpha; declaring an unsupported-only
@@ -73,7 +76,7 @@ provider access:
 - `modelSelection` — whether the harness supports host-mediated model selection.
 
 Host-owned discovery returns ONLY profiles/models compatible with the specific
-installed/enabled/authorized harness and its declared `providerFamilies`; a
+installed/enabled/authorized harness and its declared `providerProtocols`; a
 harness never enumerates raw credentials or arbitrary provider secrets.
 Declaring an incompatible family is rejected at resolution, not just discovery.
 

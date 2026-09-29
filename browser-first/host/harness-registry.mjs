@@ -126,7 +126,7 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
     if (!connection) return null;
     return {
       consumesProviderProfiles: Boolean(connection.consumesProviderProfiles),
-      providerFamilies: Array.isArray(connection.providerFamilies) ? connection.providerFamilies.filter((family) => typeof family === 'string') : [],
+      providerProtocols: Array.isArray(connection.providerProtocols) ? connection.providerProtocols.filter((protocol) => typeof protocol === 'string') : [],
       credentialDelivery: Array.isArray(connection.credentialDelivery) ? connection.credentialDelivery.filter((delivery) => typeof delivery === 'string') : [],
       modelSelection: Boolean(connection.modelSelection),
     };
