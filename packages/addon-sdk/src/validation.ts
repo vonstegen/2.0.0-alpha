@@ -22,6 +22,7 @@ import {
   type AddOnValidationIssue,
 } from "./contracts.ts";
 import { ADDON_CATEGORY_IDS, isRegisteredAddOnCategory } from "./category-registry.ts";
+import { normalizeHarnessResourceRequest } from "./harness-resources.ts";
 
 const runtimeTypes: readonly AddOnRuntimeType[] = ["ui-module", "embedded-module", "local-service", "agent-addon", "channel-addon"];
 const surfaceTypes: readonly AddOnSurfaceType[] = [
@@ -134,6 +135,31 @@ const legacyRuntimeFields = [
 const bindingNamePattern = /^[a-zA-Z][a-zA-Z0-9_-]*(?:\.[a-zA-Z0-9_-]+)*$/;
 const credentialSources = ["provider-profile", "self", "none"] as const;
 
+
+const validateHarnessResources = (issues: AddOnValidationIssue[], candidate: Record<string, unknown>) => {
+  const value = candidate.harnessResources;
+  if (value === undefined) return;
+  // Category-gated: only the `harness` category may declare resource requests.
+  // A resource declaration on any other category is rejected, never elevated
+  // into an authority channel.
+  const classification = candidate.classification;
+  const category = isRecord(classification) && isString(classification.category) ? classification.category : null;
+  if (category !== "harness") {
+    pushIssue(
+      issues,
+      "error",
+      "harness-resources-category-gated",
+      "harnessResources",
+      "harnessResources may only be declared by the `harness` category; resource requests describe a harness's possible resource consumption and are never authority.",
+    );
+  }
+  const result = normalizeHarnessResourceRequest(value);
+  if (!result.ok) {
+    for (const issue of result.issues) {
+      pushIssue(issues, "error", issue.code, issue.path, issue.message);
+    }
+  }
+};
 
 const validateHarnessProviderConnection = (issues: AddOnValidationIssue[], hpc: Record<string, unknown>) => {
   if (!isRecord(hpc)) {
@@ -1303,6 +1329,10 @@ export const validateAddOnManifest = (
 
   if (isRecord(candidate.harnessProviderConnection)) {
     validateHarnessProviderConnection(issues, candidate.harnessProviderConnection);
+  }
+
+  if (candidate.harnessResources !== undefined) {
+    validateHarnessResources(issues, candidate);
   }
 
   if (Array.isArray(candidate.smokeTests)) {

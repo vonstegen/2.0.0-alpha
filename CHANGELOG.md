@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Added the generic Harness Resource Request contract (Phase 2A): a declarative `harnessResources` manifest block with initial resource families/operations (project, files, skills, memory, tools), category-gated to `harness`, validated against finite allowlists, and the request/grant/projection type seam. Declarations grant no authority; projection adapters remain Phase 2B+.
+
 - Added a host-owned Pi native session-credential foundation: an authoritative ROS-identity-to-Pi-provider/env-var mapping, generic session-environment launch material, and a plan-only Pi credential adapter that delivers the session credential under the host-owned environment variable (never argv, projections, logs, or Pi auth.json).
 
 ### Security

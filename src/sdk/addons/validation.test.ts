@@ -1001,3 +1001,69 @@ describe("replacement and revocation dependency validation", () => {
     expect(validateAddOnManifest(manifest).issues.map(issue => issue.code)).toEqual(["model-selection-unrequested-capability"]);
   });
 });
+
+describe("harnessResources contract", () => {
+  const harnessManifest = (harnessResources: unknown) => ({
+    ...validManifest({ classification: { category: "harness", subtype: "coding-agent" } }),
+    harnessResources,
+  });
+
+  it("accepts a canonical Pi-style resource request on a harness", () => {
+    const manifest = harnessManifest({
+      requests: {
+        project: ["read", "context"],
+        files: ["read", "write"],
+        skills: ["list", "read"],
+        memory: ["search", "read"],
+        tools: ["list", "invoke"],
+      },
+    });
+    expect(validateAddOnManifest(manifest).valid).toBe(true);
+  });
+
+  it("accepts the committed Pi reference manifest", () => {
+    const pi = JSON.parse(readFileSync(new URL("../../../examples/addons/pi-harness.json", import.meta.url), "utf8"));
+    expect(validateAddOnManifest(pi).valid).toBe(true);
+  });
+
+  it("category-gates resource requests to the harness category", () => {
+    const manifest = validManifest({ harnessResources: { requests: { files: ["read"] } } });
+    const result = validateAddOnManifest(manifest);
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((issue) => issue.code === "harness-resources-category-gated")).toBe(true);
+  });
+
+  it("rejects unknown families and unknown operations", () => {
+    for (const [requests, code] of [
+      [{ "user-profile": ["read"] }, "harness-resources-unknown-family"],
+      [{ files: ["execute"] }, "harness-resources-unknown-operation"],
+      [{ project: ["delete"] }, "harness-resources-unknown-operation"],
+    ]) {
+      const result = validateAddOnManifest(harnessManifest({ requests }));
+      expect(result.valid).toBe(false);
+      expect(result.issues.some((issue) => issue.code === code)).toBe(true);
+    }
+  });
+
+  it("rejects empty and malformed declarations", () => {
+    for (const requests of [[], {}, { files: [] }, { files: "read" }]) {
+      const result = validateAddOnManifest(harnessManifest({ requests }));
+      expect(result.valid).toBe(false);
+    }
+  });
+
+  it("rejects paths, credentials, env names, commands, and raw tool declarations", () => {
+    const cases = [
+      { requests: { files: ["/etc/passwd"] } },
+      { requests: { files: ["~/.aws/credentials"] } },
+      { requests: { memory: ["OPENAI_API_KEY"] } },
+      { requests: { tools: [{ name: "bash", command: "curl x" }] } },
+      { requests: { project: ["read"] }, credentials: { apiKey: "x" } },
+      { requests: { project: ["read"] }, model: "gpt-5" },
+    ];
+    for (const block of cases) {
+      const result = validateAddOnManifest(harnessManifest(block));
+      expect(result.valid).toBe(false);
+    }
+  });
+});

@@ -104,6 +104,41 @@ installed + enabled + authorized. `icon` is a safe kebab-case identifier, never 
 path/URL/markup. `requiredCapabilities` must already be declared in
 `requestedCapabilities` — a surface request can never self-grant.
 
+## Generic Harness Resource Request
+
+A harness that consumes ROS resources declares a descriptive
+`harnessResources` block. It states possible resource consumption and grants
+no access:
+
+```jsonc
+{
+  "harnessResources": {
+    "requests": {
+      "project": ["read", "context"],
+      "files": ["read", "write"],
+      "skills": ["list", "read"],
+      "memory": ["search", "read"],
+      "tools": ["list", "invoke"]
+    }
+  }
+}
+```
+
+- Initial resource families/operations: `project` (`read`, `context`), `files`
+  (`read`, `write`), `skills` (`list`, `read`), `memory` (`search`, `read`),
+  `tools` (`list`, `invoke`).
+- `RESOURCE REQUEST != CAPABILITY GRANT != SESSION PROJECTION`: a request
+  declares possible need and never grants authority; grants are host-owned
+  `CapabilityGrant` records; projection adapters are Phase 2B+ and are **not
+  yet implemented**.
+- Provider Connection (`harnessProviderConnection`) remains separate; provider/
+  model is never declared inside `harnessResources`.
+- The block is category-gated to `harness`; unknown families/operations and
+  ungranted resources fail closed.
+
+Do not treat resource access as complete: Phase 2A ships the contract,
+validation, and the type seam only.
+
 ## Reference add-ons
 
 - `examples/addons/pi-harness.json` — `harness`/`coding-agent`, provider-profile via `harnessProviderConnection` (openai-compatible family, runtime-adapter delivery)

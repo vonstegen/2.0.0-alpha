@@ -147,5 +147,14 @@
   "classification": {
     "category": "harness",
     "subtype": "coding-agent"
+  },
+  "harnessResources": {
+    "requests": {
+      "project": ["read", "context"],
+      "files": ["read", "write"],
+      "skills": ["list", "read"],
+      "memory": ["search", "read"],
+      "tools": ["list", "invoke"]
+    }
   }
 }

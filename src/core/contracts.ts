@@ -591,6 +591,77 @@ export interface AddOnHarnessProviderConnectionContract {
   modelSelection: boolean;
 }
 
+// ============================================================================
+// Generic Harness Resource Request (Phase 2A)
+// ----------------------------------------------------------------------------
+// A harness declares the ROS resources it may consume during a session.
+//
+// RESOURCE REQUEST != CAPABILITY GRANT != SESSION PROJECTION:
+//   - request    = declarative possible need (this contract); never authority.
+//   - grant      = host/user authority, expressed through the EXISTING
+//                  CapabilityGrant records (registry grantedCapabilities).
+//   - projection = session-specific material/access; Phase 2B+ (not 2A).
+//
+// A request names allowlisted operations only: no paths, credentials, command
+// strings, tool executable names, provider, or model. Provider/model authority
+// remains under the separate Harness Provider Connection contract
+// (AddOnHarnessProviderConnectionContract) and is NOT duplicated here.
+
+/** Initial Phase 2 resource families a harness may declare it consumes. */
+export type HarnessResourceFamily = "project" | "files" | "skills" | "memory" | "tools";
+
+export type HarnessProjectOperation = "read" | "context";
+export type HarnessFilesOperation = "read" | "write";
+export type HarnessSkillsOperation = "list" | "read";
+export type HarnessMemoryOperation = "search" | "read";
+export type HarnessToolsOperation = "list" | "invoke";
+
+export type HarnessResourceOperation =
+  | HarnessProjectOperation
+  | HarnessFilesOperation
+  | HarnessSkillsOperation
+  | HarnessMemoryOperation
+  | HarnessToolsOperation;
+
+/**
+ * Declarative resource-request block on a harness manifest. Names operations
+ * only; it never carries a path, credential, command, tool executable,
+ * provider, or model, and it never grants capability or authority.
+ */
+export interface AddOnHarnessResourceRequestContract {
+  requests: {
+    project?: HarnessProjectOperation[];
+    files?: HarnessFilesOperation[];
+    skills?: HarnessSkillsOperation[];
+    memory?: HarnessMemoryOperation[];
+    tools?: HarnessToolsOperation[];
+  };
+}
+
+/**
+ * Host authority view for one requested resource operation. Reuses the
+ * existing CapabilityGrant record as the single source of authority rather than
+ * introducing a competing grant system. `granted` is derived from the backing
+ * grant and is false when the resource has no backing authority (fail closed).
+ */
+export interface HarnessResourceGrant {
+  family: HarnessResourceFamily;
+  operation: HarnessResourceOperation;
+  granted: boolean;
+  grant: CapabilityGrant | null;
+}
+
+/**
+ * Session projection seam (Phase 2B+). Phase 2A types the distinction only; it
+ * never carries projected material, secrets, or filesystem paths. `granted:
+ * false` means fail closed (no material is projected).
+ */
+export interface HarnessResourceProjection {
+  family: HarnessResourceFamily;
+  operations: readonly HarnessResourceOperation[];
+  granted: boolean;
+}
+
 // One fixed vocabulary for public error types and runtime sanitization.
 export const HARNESS_PUBLIC_ERROR_MESSAGES = Object.freeze({
   "invalid-manifest": "Invalid harness manifest.",
@@ -807,6 +878,7 @@ export interface AddOnManifest {
   agentRuntime?: AddOnAgentRuntimeContract;
   harnessProviderConnection?: AddOnHarnessProviderConnectionContract;
   memoryAccess?: AddOnMemoryAccessContract;
+  harnessResources?: AddOnHarnessResourceRequestContract;
   smokeTests?: AddOnDeterministicSmokeTest[];
   compatibility: {
     shellVersion: string;

@@ -50,6 +50,9 @@ test("provider-profile escalation fails closed without an approved binding regar
   // denied. Classification can neither grant nor hide authority.
   const spoof = structuredClone(pi);
   spoof.classification = { category: "tool", subtype: "utility" };
+  // harnessResources is category-gated to `harness`; strip it so this test
+  // isolates the provider-profile binding gate rather than manifest validation.
+  delete spoof.harnessResources;
   const noBinding = await open(memoryStore());
   await assert.rejects(noBinding.install(spoof, { enabled: true }), { code: "permission-denied" });
 });

@@ -112,6 +112,7 @@ Add-on skill contracts:
 | [ADR-039: Harness Runtime Category And Central Provider Profiles](ADR-039-harness-runtime-provider-profiles.md) | Accepted | Partial | - | Core and add-ons | One host-owned provider profile/credential resolver serves authorized harnesses; provider-profile/self/none credential modes; session-only credential persistence. |
 | [ADR-040: Add-on Classification, Category Registry, And Dynamic Surface Discovery](ADR-040-addon-classification-category-discovery.md) | Accepted | Partial | - | Core and add-ons | Six orthogonal dimensions (classification/runtime/surfaces/capabilities/slots/provider); extensible category registry; machine category discovery; declarative tool-panel surface routing with no hard-coded add-on ids. |
 | [ADR-041: Generic Harness Provider Connection Contract](ADR-041-harness-provider-connection.md) | Accepted | Partial | - | Core and add-ons | Descriptive manifest `harnessProviderConnection` block declares protocol families + credential delivery mechanisms; host-owned discovery filters shared profiles to compatible authorized harnesses; never grants authority. |
+| [ADR-042: Generic Harness Resource Request Contract](ADR-042-generic-harness-resource-request.md) | Accepted | Partial | - | Core and add-ons | Descriptive manifest `harnessResources` block declares resource families (project/files/skills/memory/tools) + finite operation vocabularies; request != grant != projection; grants reuse existing CapabilityGrant records; projection adapters are Phase 2B+. |
 
 ## Authority Rules
 

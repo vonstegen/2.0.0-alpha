@@ -190,3 +190,31 @@ test("tool add-on cannot receive harness-only surface authority", () => {
   assert.equal(routes.length, 1);
   assert.equal(routes[0].label, "Utility");
 });
+
+test("harness category discovery surfaces the Harness Resource Request contract", () => {
+  const description = describeCategory("harness");
+  const module = description.descriptor.sdkModules.find((m) => m.id === "harness-resource-request");
+  assert.ok(module, "harness-resource-request SDK module must be described");
+  assert.equal(module.status, "implemented");
+  assert.ok(description.descriptor.optionalManifestFields.includes("harnessResources"));
+  assert.ok(
+    description.descriptor.securityInvariants.some((line) => line.includes("RESOURCE REQUEST != CAPABILITY GRANT != SESSION PROJECTION")),
+    "invariants must state request != grant != projection",
+  );
+  assert.ok(
+    description.descriptor.securityInvariants.some((line) => line.includes("Phase 2B+")),
+    "invariants must state projection adapters are not yet implemented",
+  );
+  assert.ok(
+    description.descriptor.docs.some((path) => path.includes("ADR-042")),
+    "harness docs must reference the resource request ADR",
+  );
+});
+
+test("the canonical Pi reference manifest declares resources and validates", () => {
+  assert.ok(pi.harnessResources, "Pi must declare harnessResources");
+  assert.equal(validateAddOnManifest(pi).valid, true, "Pi reference manifest must validate");
+  for (const family of ["project", "files", "skills", "memory", "tools"]) {
+    assert.ok(Array.isArray(pi.harnessResources.requests[family]), `Pi must declare the ${family} family`);
+  }
+});

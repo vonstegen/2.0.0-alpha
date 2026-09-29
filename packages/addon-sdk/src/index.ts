@@ -11,7 +11,12 @@ export type {
   AddOnRegistrySource,
   AddOnManifest,
   AddOnHarnessProviderConnectionContract,
+  AddOnHarnessResourceRequestContract,
   HarnessCredentialDelivery,
+  HarnessResourceFamily,
+  HarnessResourceGrant,
+  HarnessResourceOperation,
+  HarnessResourceProjection,
   AddOnScriptDefinition,
   AddOnSkillDefinition,
   AddOnToolDefinition,
@@ -23,6 +28,8 @@ export {
   ADDON_CAPABILITIES,
   HARNESS_CREDENTIAL_DELIVERY_MECHANISMS,
   HARNESS_PROVIDER_PROTOCOLS,
+  HARNESS_RESOURCE_FAMILIES,
+  HARNESS_RESOURCE_OPERATIONS,
   ADDON_SDK_VERSION,
   ADDON_SERVICE_PROTOCOLS,
   type AddOnManifestSource,
@@ -36,6 +43,13 @@ export type { AddOnRegistryBuildInput, AddOnRegistryEntryOptions, AddOnRegistryS
 export { createAddOnSurfaceDockRoutes, createAddOnToolPanelRoutes } from "./surface-routing";
 export type { AddOnSurfaceDockRoute, AddOnToolPanelRoute } from "./surface-routing";
 export { assertValidAddOnManifest, validateAddOnManifest } from "./validation";
+export {
+  HARNESS_RESOURCE_CAPABILITY,
+  createHarnessResourceProjection,
+  normalizeHarnessResourceRequest,
+  resolveHarnessResourceGrants,
+} from "./harness-resources";
+export type { HarnessResourceNormalizationIssue, HarnessResourceNormalizationResult } from "./harness-resources";
 export {
   ADDON_CATEGORY_IDS,
   ADDON_CATEGORY_REGISTRY,
