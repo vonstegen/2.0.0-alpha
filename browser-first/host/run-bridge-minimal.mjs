@@ -2,6 +2,7 @@
 
 import { spawn } from "node:child_process";
 import { existsSync, realpathSync, statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -40,9 +41,16 @@ import {
 import { buildBridgeCapabilityTokens } from "./bridge-capability-tokens.mjs";
 import { createAddonDelegationHostService } from "./addon-delegation-host-service.mjs";
 import { createAddonDelegationService } from "./addon-delegation-service.mjs";
-import { createOpencodeHttpClient, ensureOpencodeServer, forgetOpencodeServer } from "./opencode-client.mjs";
+import {
+  createOpencodeHttpClient,
+  ensureOpencodeServer,
+  forgetOpencodeServer,
+} from "./opencode-client.mjs";
 import { createOpenCodeBoundary } from "./opencode-boundary.mjs";
-import { createOpencodeSessionHandlers, createOpencodeSessionHostService } from "./opencode-session-host-service.mjs";
+import {
+  createOpencodeSessionHandlers,
+  createOpencodeSessionHostService,
+} from "./opencode-session-host-service.mjs";
 import { createArchiveReviewHostService } from "./archive-review-host-service.mjs";
 import { createBrowserDiagnosticsHostService } from "./browser-diagnostics-host-service.mjs";
 import { createExtensionPrefsHostService } from "./extension-prefs-host-service.mjs";
@@ -50,13 +58,10 @@ import { createMemoryHostService } from "./memory-host-service.mjs";
 import { createMemorySourceIntakeHostService } from "./memory-source-intake-host-service.mjs";
 import { createMemorySourceSettingsService } from "./memory-source-settings-service.mjs";
 import { opencodeRuntimeDiagnostics } from "./opencode-runtime.mjs";
-import {
-  hermesCommand,
-  hermesHome,
-  hermesPythonRuntimeDiagnostics,
-} from "./hermes-runtime.mjs";
+import { hermesCommand, hermesHome, hermesPythonRuntimeDiagnostics } from "./hermes-runtime.mjs";
 import { createHarnessHostService } from "./harness-host-service.mjs";
 import { createProviderHostService } from "./provider-host-service.mjs";
+import { createPiNativeSessionService } from "./pi-native-session-service.mjs";
 import {
   memorySourceMoveHistoryPath as sourceMoveHistoryPath,
   memorySourceRepairHistoryPath as sourceRepairHistoryPath,
@@ -64,7 +69,11 @@ import {
 } from "./memory-source-history.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
-const defaultResonantExtension = path.join(repoRoot, "browser-first", "resonantos-side-panel-extension");
+const defaultResonantExtension = path.join(
+  repoRoot,
+  "browser-first",
+  "resonantos-side-panel-extension",
+);
 const resonantExtension = resolveResonantExtensionRoot();
 const defaultBridgePort = 47773;
 const resonantExtensionId = "cdpdmmalhmokbfcfgogoepnjplaakgnl";
@@ -91,7 +100,9 @@ function resolveResonantExtensionRoot() {
 }
 
 function userRoot() {
-  return path.resolve(process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT || path.join(os.homedir(), "ResonantOS_User"));
+  return path.resolve(
+    process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT || path.join(os.homedir(), "ResonantOS_User"),
+  );
 }
 
 function memoryRoot() {
@@ -150,18 +161,16 @@ function extractJsonObject(value) {
 const bridgePublicUrlHolder = { value: undefined };
 const getBridgePublicUrlValue = () => bridgePublicUrlHolder.value;
 let addonRuntimeSelfTestHomeDir = null;
-const addonRuntimeResolverOptions = () => addonRuntimeSelfTestHomeDir
-  ? { homeDir: addonRuntimeSelfTestHomeDir }
-  : {};
+const addonRuntimeResolverOptions = () =>
+  addonRuntimeSelfTestHomeDir ? { homeDir: addonRuntimeSelfTestHomeDir } : {};
 const resolveHermesCommand = () => hermesCommand(addonRuntimeResolverOptions());
 const resolveHermesPythonRuntime = (command) =>
   hermesPythonRuntimeDiagnostics(command, addonRuntimeResolverOptions());
-const resolveOpenCodeRuntimeDiagnostics = () => opencodeRuntimeDiagnostics(addonRuntimeResolverOptions());
+const resolveOpenCodeRuntimeDiagnostics = () =>
+  opencodeRuntimeDiagnostics(addonRuntimeResolverOptions());
 const resolveOpenCodeCommand = () => resolveOpenCodeRuntimeDiagnostics().command;
 const setAddonRuntimeSelfTestHomeDir = (homeDir) => {
-  addonRuntimeSelfTestHomeDir = homeDir
-    ? realpathSync.native(path.resolve(homeDir))
-    : null;
+  addonRuntimeSelfTestHomeDir = homeDir ? realpathSync.native(path.resolve(homeDir)) : null;
 };
 
 const providerHostService = createProviderHostService({ redactDiagnosticText, extractJsonObject });
@@ -202,11 +211,50 @@ const resolveProviderProfileCredential = async (providerProfileId) => {
   return { endpoint: profile.apiBaseUrl, actionToken };
 };
 
+const approvedBindings = JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]");
+
 const harnessService = await createHarnessHostService({
-  userRoot: userRoot(), providerHost: providerHostService,
+  userRoot: userRoot(),
+  providerHost: providerHostService,
   resolveProviderProfileCredential,
-  bindings: JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]"),
+  bindings: approvedBindings,
   env: process.env,
+});
+
+// P2-A: wire the reviewed native Pi session-credential planner into the real
+// host. The private launch plan flows host -> planner -> launcher directly; the
+// raw (secret-bearing) plan never leaves this process. The host supplies every
+// authority: provider profiles/model catalog (providerHostService), credential
+// resolution (resolveProviderProfileCredential), registry binding/grant
+// authorization, the reviewed piCommand() executable, and the host-approved
+// project path. Only redactLaunchPlan() output may cross an observability
+// boundary (the /pi-native/proof route returns only that projection).
+const piHarnessManifest = JSON.parse(
+  await readFile(new URL("../../examples/addons/pi-harness.json", import.meta.url), "utf8"),
+);
+const piNativeSessionService = createPiNativeSessionService({
+  providerHost: providerHostService,
+  resolveProviderProfileCredential,
+  authorize: async ({ addonId, providerProfileId }) => {
+    // Mirror the runtime-adapter authorization: the addon must be the current
+    // eligible primary-agent owner (installed + enabled + agent-runtime granted
+    // + approved binding), and its approved binding must name this profile id.
+    harnessService.registry.authorize("primary-agent", addonId);
+    const binding = approvedBindings.find(
+      (candidate) =>
+        candidate.addonId === addonId &&
+        candidate.source &&
+        typeof candidate.source.providerProfileId === "string" &&
+        candidate.source.providerProfileId === providerProfileId,
+    );
+    if (!binding)
+      throw Object.assign(new Error("permission-denied"), { code: "permission-denied" });
+  },
+  projectPath: repoRoot,
+  homeDir: os.homedir(),
+  // Pi's headless launcher needs a shell environment to resolve `node` (its
+  // shebang) and its config dir; nothing else from the parent env is inherited.
+  envAllowlist: ["PATH", "HOME"],
 });
 
 const addonDelegationService = createAddonDelegationService({
@@ -258,7 +306,8 @@ function getPublicPort() {
   if (!publicUrl) return undefined;
   try {
     const parsed = new URL(publicUrl);
-    if (!isLoopbackBridgeHost(parsed.hostname) || parsed.username || parsed.password) return undefined;
+    if (!isLoopbackBridgeHost(parsed.hostname) || parsed.username || parsed.password)
+      return undefined;
     if (parsed.port) return parsed.port;
     if (parsed.protocol === "http:") return "80";
     if (parsed.protocol === "https:") return "443";
@@ -273,22 +322,26 @@ function logOpenCodeBoundary({ code, operation } = {}) {
 }
 
 const openCodeBoundary = createOpenCodeBoundary({
-  ensureServer: () => ensureOpencodeServer({
-    fetchImpl: (...args) => fetch(...args),
-    spawnImpl: (cmd, cmdArgs, opts) => spawn(cmd, cmdArgs, opts),
-    command: resolveOpenCodeCommand(),
-    hostname: "127.0.0.1",
-    port: process.env.RESONANTOS_OPENCODE_PORT ? Number(process.env.RESONANTOS_OPENCODE_PORT) : undefined,
-    env: process.env,
-  }),
-  createClient: (baseUrl, opts = {}) => createOpencodeHttpClient({ fetchImpl: (...args) => fetch(...args), baseUrl, ...opts }),
+  ensureServer: () =>
+    ensureOpencodeServer({
+      fetchImpl: (...args) => fetch(...args),
+      spawnImpl: (cmd, cmdArgs, opts) => spawn(cmd, cmdArgs, opts),
+      command: resolveOpenCodeCommand(),
+      hostname: "127.0.0.1",
+      port: process.env.RESONANTOS_OPENCODE_PORT
+        ? Number(process.env.RESONANTOS_OPENCODE_PORT)
+        : undefined,
+      env: process.env,
+    }),
+  createClient: (baseUrl, opts = {}) =>
+    createOpencodeHttpClient({ fetchImpl: (...args) => fetch(...args), baseUrl, ...opts }),
   fetchImpl: (...args) => fetch(...args),
   executionEnabled: () => addonDelegationService.openCodeProxyExecutionEnabled(),
   forgetServer: forgetOpencodeServer,
   log: logOpenCodeBoundary,
 });
-const unsubscribeOpenCodeExecution = addonDelegationService.subscribeOpenCodeExecution(
-  (enabled) => (enabled ? undefined : openCodeBoundary.revoke()),
+const unsubscribeOpenCodeExecution = addonDelegationService.subscribeOpenCodeExecution((enabled) =>
+  enabled ? undefined : openCodeBoundary.revoke(),
 );
 const opencodeSessionHandlers = createOpencodeSessionHandlers({ boundary: openCodeBoundary });
 const { opencodeSessionRoutes } = createOpencodeSessionHostService(opencodeSessionHandlers);
@@ -450,10 +503,41 @@ const { agentControlRoutes } = createAgentControlHostService({
   sanitizeAssistantContent,
 });
 
-const { extensionPrefsRoutes, flushPendingExtensionPrefs } = createExtensionPrefsHostService({ userRoot });
+const { extensionPrefsRoutes, flushPendingExtensionPrefs } = createExtensionPrefsHostService({
+  userRoot,
+});
 
 const { harnessRoutes } = harnessService;
 const providerBridgeRoutes = harnessService.composeProviderRoutes(legacyProviderBridgeRoutes);
+
+// P2 proof trigger. Loopback-only, bridge-token + provider-model-invoke
+// capability gated, and harness error family. It runs the proof IN the bridge
+// process (so it shares the Settings-configured session credential) and returns
+// ONLY redacted evidence: redactLaunchPlan(plan) projection + sanitized process
+// output. The raw plan (secret-bearing env) never crosses this boundary.
+const piNativeProofRoute = {
+  method: "POST",
+  path: "/pi-native/proof",
+  requiredCapability: "provider-model-invoke",
+  loopbackHostOnly: true,
+  errorFamily: "harness",
+  async handler(payload = {}) {
+    const providerProfileId = String(payload.providerProfileId ?? "").trim();
+    const prompt = String(payload.prompt ?? "").trim();
+    if (!providerProfileId || !prompt) {
+      throw Object.assign(new Error("invalid-event"), { code: "invalid-event" });
+    }
+    const selectedModel =
+      typeof payload.selectedModel === "string" ? payload.selectedModel.trim() : "";
+    return piNativeSessionService.launchProof({
+      addonId: piHarnessManifest.id,
+      manifest: piHarnessManifest,
+      providerProfileId,
+      selectedModel,
+      prompt,
+    });
+  },
+};
 
 const bridgeRoutes = [
   ...browserDiagnosticsRoutes,
@@ -464,10 +548,15 @@ const bridgeRoutes = [
   ...opencodeSessionRoutes,
   ...extensionPrefsRoutes,
   ...harnessRoutes,
+  piNativeProofRoute,
 ];
 
-const bridgeToken = args.get("bridge-token") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? createBridgeToken();
-const capabilityBootstrapToken = args.get("capability-bootstrap-token") ??
+const bridgeToken =
+  args.get("bridge-token") ??
+  process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ??
+  createBridgeToken();
+const capabilityBootstrapToken =
+  args.get("capability-bootstrap-token") ??
   process.env.RESONANTOS_BROWSER_FIRST_CAPABILITY_BOOTSTRAP_TOKEN ??
   createBridgeToken();
 const bridgeCapabilityTokens = buildBridgeCapabilityTokens({ args, mint: createBridgeToken });
@@ -477,7 +566,11 @@ const invokeBridgeRouteForSelfTest = createBridgeRouteSelfTestInvoker({
   bridgeCapabilityTokens,
   capabilityBootstrapToken,
   routes: bridgeRoutes,
-  listenerPort: Number(args.get("bridge-port") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_PORT ?? defaultBridgePort),
+  listenerPort: Number(
+    args.get("bridge-port") ??
+      process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_PORT ??
+      defaultBridgePort,
+  ),
   getPublicPort,
 });
 
@@ -507,7 +600,9 @@ if (!existsSync(path.join(resonantExtension, "manifest.json"))) {
   process.exit(1);
 }
 
-const bridgePort = Number(args.get("bridge-port") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_PORT ?? defaultBridgePort);
+const bridgePort = Number(
+  args.get("bridge-port") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_PORT ?? defaultBridgePort,
+);
 const bridgeInfo = await startBridgeServerWithFallback({
   port: bridgePort,
   bridgeToken,
@@ -530,21 +625,31 @@ const bridgeConfigPath = await writeBridgeConfig({
   publicUrl: bridgePublicUrl,
 });
 
-console.log(JSON.stringify({
-  event: "browser.first.bridge_started",
-  requestedPort: bridgeInfo.requestedPort,
-  attemptedPort: bridgeInfo.attemptedPort,
-  actualPort: activeBridgePort,
-  recovered: bridgeInfo.recovered,
-  bridgeUrl: bridgePublicUrl,
-  bridgeConfigPath,
-  extensionRoot: resonantExtension,
-}, null, 2));
+console.log(
+  JSON.stringify(
+    {
+      event: "browser.first.bridge_started",
+      requestedPort: bridgeInfo.requestedPort,
+      attemptedPort: bridgeInfo.attemptedPort,
+      actualPort: activeBridgePort,
+      recovered: bridgeInfo.recovered,
+      bridgeUrl: bridgePublicUrl,
+      bridgeConfigPath,
+      extensionRoot: resonantExtension,
+    },
+    null,
+    2,
+  ),
+);
 console.log(`Load ${resonantExtension} in Chrome as an unpacked extension.`);
 
 const shutdown = async () => {
   await flushPendingExtensionPrefs().catch(() => undefined);
-  try { unsubscribeOpenCodeExecution(); } catch { /* noop */ }
+  try {
+    unsubscribeOpenCodeExecution();
+  } catch {
+    /* noop */
+  }
   await openCodeBoundary.dispose().catch(() => undefined);
   await harnessService.close();
   await new Promise((resolve) => bridgeInfo.server.close(resolve));
