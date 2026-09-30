@@ -1,0 +1,647 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[
+  10pt,
+]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\usepackage[margin=1in]{geometry}
+\usepackage{longtable,booktabs,array}
+\usepackage{calc} % for calculating minipage widths
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\ifLuaTeX
+  \usepackage{selnolig}  % disable illegal ligatures
+\fi
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.18}
+\hypersetup{
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\author{}
+\date{}
+
+\begin{document}
+
+\hypertarget{resonantos-sdk-documentation-index-and-inventory}{%
+\section{ResonantOS SDK Documentation Index and
+Inventory}\label{resonantos-sdk-documentation-index-and-inventory}}
+
+\textbf{Document ID:} ROS-SDK-DOC-INDEX-001\\
+\textbf{Status:} Inventory complete for the inspected branch set;
+consolidation recommendations pending review.\\
+\textbf{Date:} 29 September 2026 (America/New\_York); repository
+retrieval performed 30 September 2026 UTC.\\
+\textbf{Revision:} 1.0\\
+\textbf{Architecture scope:} ResonantOS External SDK, relevant internal
+module boundaries, harness/provider/resource contracts, reference
+add-ons, qualification and presentation documents.\\
+\textbf{Implementation status:} Documentation-only inventory. No runtime
+change, integration, acceptance decision or merge is performed.\\
+\textbf{Evidence boundary:} Pinned GitHub trees, document bodies, commit
+metadata, the committed P2 report, work-order \#74 report, and
+Tom\textquotesingle s supplied September 28 action-items report.\\
+\textbf{Related ADRs:} ADR-006, 018, 022, 023, 026, 038 and
+candidate-line ADR-039 through ADR-044.\\
+\textbf{Unresolved work:} Candidate acceptance, source reconciliation,
+full requirements traceability, pair parity and documentation gates.\\
+\textbf{Next phase:} Execute
+\href{SDK-DOCUMENTATION-CONSOLIDATION-PLAN.md}{the consolidation plan}
+after resolving its evidence checkpoints.
+
+\hypertarget{read-this-first}{%
+\subsection{Read this first}\label{read-this-first}}
+
+This is an index of existing architecture, evidence and plans. It does
+not promote feature-branch behavior into the shipped Alpha or redesign
+runtime architecture. SAIF is excluded.
+
+The seven-task cutoff is SDK-DEMO-003R T7.1 candidate
+\nolinkurl{180f3067906d4782df5b923ca46ef77b80828333}, committed 28
+September 2026 at 13:08:23 UTC. Its commit records T7.1 graphical race
+closure and reported regression results. The independent acceptance
+record is a separate item to reconcile; a commit message is not that
+acceptance record.
+
+At retrieval, \nolinkurl{dev} resolved to
+\nolinkurl{19665c063a6b3054863e4302fece82a7a9c8077d}. Tom\textquotesingle s
+report describes a different upstream \nolinkurl{dev} snapshot,
+\nolinkurl{8df507c5}. These are distinct repository snapshots: do not claim
+the fork\textquotesingle s current \nolinkurl{dev} contains all reviewed
+work or that the two snapshots were reconciled.
+
+The inspected post-cutoff SDK set contains \textbf{45 distinct paths and
+58 path/blob versions} across the relevant documentation and engineering
+branches: \textbf{31 Markdown paths, 12 LaTeX paths and 2 CSV paths}. Of
+these, 11 document bodies have both Markdown and LaTeX, and P2 has LaTeX
+without a same-stem Markdown source. The counts exclude earlier SDK-demo
+audit records and unrelated planning documents. The file register below
+records every path in this bounded set. This is a current-branch
+inventory, not a claim to have recovered deleted files or every document
+in private/local history.
+
+\hypertarget{authority-and-status-rules}{%
+\subsection{Authority and status
+rules}\label{authority-and-status-rules}}
+
+\begin{longtable}[]{@{}>{\raggedright\arraybackslash}p{\dimexpr 0.22\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr 0.35\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr 0.43\linewidth-2\tabcolsep\relax}@{}}
+\toprule\noalign{}
+Layer & Authority & Practical rule \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Shipped Alpha & Pinned \nolinkurl{dev} runtime boundary, current status,
+module ownership, issues and Project 2 & Extension plus authenticated
+Node bridge. Feature-branch terminal plans do not redefine release
+scope. \\
+Accepted decision on a candidate line & ADR body and metadata at the
+applicable candidate SHA, together with its acceptance evidence & ADR
+``Accepted'' is decision status; it does not mean merged, fully
+implemented, independently tested or live-proven. \\
+Implementation & Actual code and tests at the named SHA & Scope every
+implementation claim to its branch/commit. \\
+Live proof & Exact candidate, environment, provider/model, execution and
+cleanup evidence & A standalone proof does not prove a later composed
+session or product UI. \\
+Architecture synthesis & Reviewed Markdown with evidence links &
+Recommended readable entry point; cannot override a current scoped ADR
+or code evidence. \\
+Presentation & LaTeX derived from the same Markdown revision & No
+separate authority and no stronger claim. \\
+Historical / R\&D & Frozen original files and explicit successors &
+Preserve provenance; do not interpret target diagrams as runtime
+evidence. \\
+\end{longtable}
+
+Required implementation vocabulary is independent of document review
+state:
+
+\begin{longtable}[]{@{}>{\raggedright\arraybackslash}p{\dimexpr 0.24\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr 0.76\linewidth-2\tabcolsep\relax}@{}}
+\toprule\noalign{}
+Label & Meaning \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+IMPLEMENTED & Code for the stated behavior exists at a named commit. \\
+TESTED & Named tests have executed against that commit; identify runner,
+result and limits. Distinguish reported from independently verified
+results. \\
+PROVEN LIVE & The exact stated path executed using real components; name
+environment and proof limits. \\
+PLANNED & A documented target or future phase; no completion claim. \\
+NOT YET IMPLEMENTED & The inspected line does not supply the stated
+runtime connection or behavior. \\
+\end{longtable}
+
+``Proposed'', ``Accepted'', ``Historical'' and ``Superseded'' describe
+document/decision governance, not test or implementation results. No
+existing ADR metadata is changed by this index.
+
+\hypertarget{recommended-reading-order-and-document-roles}{%
+\subsection{Recommended reading order and document
+roles}\label{recommended-reading-order-and-document-roles}}
+
+\begin{longtable}[]{@{}>{\raggedright\arraybackslash}p{\dimexpr 0.07\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr 0.31\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr 0.32\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr 0.3\linewidth-2\tabcolsep\relax}@{}}
+\toprule\noalign{}
+Order & Topic / existing source & Authority and implementation boundary
+& Consolidation action \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+1 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/01-ros-alpha-architecture-baseline.md}{\nolinkurl{docs/architecture/sdk-fabric/01-ros-alpha-architecture-baseline.md}}
+& Candidate baseline \nolinkurl{c594ca3}, not current shipped \nolinkurl{dev}
+& Retain as a dated baseline; refresh a current overview with a new
+revision. \\
+2 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/02-external-community-sdk-architecture.md}{\nolinkurl{docs/architecture/sdk-fabric/02-external-community-sdk-architecture.md}}
+& External SDK synthesis; mixes current contracts with near-term
+facilities & Preferred synthesis input; annotate each claim and ADR.
+Existing .md/.tex pair needs parity review. \\
+3 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/03-internal-modular-ros-architecture.md}{\nolinkurl{docs/architecture/sdk-fabric/03-internal-modular-ros-architecture.md}}
+& Internal development boundary and roadmap. Uniform module/port fabric
+is PLANNED & Keep External/Internal separation; do not imply all listed
+modules have stable runtime ports. \\
+4 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/architecture/ADR-040-addon-classification-category-discovery.md}{\nolinkurl{docs/architecture/ADR-040-addon-classification-category-discovery.md}}
+and
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/addons/sdk-category-discovery.md}{\nolinkurl{docs/addons/sdk-category-discovery.md}}
+& Candidate Dynamic Category Framework: classification, category
+registry and machine discovery. Classification grants nothing & ADR is
+scoped decision authority; discovery guide is operational reference. Add
+an official paired narrative. \\
+5 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/architecture/ADR-039-harness-runtime-provider-profiles.md}{\nolinkurl{docs/architecture/ADR-039-harness-runtime-provider-profiles.md}}
+& Host-owned Provider Profiles and per-harness resolution; durable
+encrypted storage is outside current Alpha guarantees & Pair official
+Provider Profiles narrative; retain ADR history. \\
+6 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/architecture/ADR-041-harness-provider-connection.md}{\nolinkurl{docs/architecture/ADR-041-harness-provider-connection.md}}
+& Provider identity differs from protocol compatibility. Body still
+describes 1.1C migration as future despite later candidate work & Retain
+decision; reconcile implementation chronology before refreshing it. Pair
+provider-connection narrative. \\
+7 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/architecture/ADR-042-generic-harness-resource-request.md}{\nolinkurl{docs/architecture/ADR-042-generic-harness-resource-request.md}}
+& Declarative generic contract; request != grant != projection &
+Canonical contract decision on Phase-II line; add official pair. \\
+8 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/a12d78721d54af07f419dc1ae540049ed499db0a/docs/architecture/ADR-043-generic-harness-resource-projection.md}{\nolinkurl{docs/architecture/ADR-043-generic-harness-resource-projection.md}}
+& Project/Files projection, current-authority stale fencing,
+host-derived cwd and containment. Projection helpers do not prove native
+Pi tool sandboxing & Use 2B.1 version for lifecycle semantics; add
+official pair. \\
+9 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/0f4917fb5db2e2eb54e3ced51c02098b225dd4f8/docs/architecture/ADR-044-generic-harness-skills-projection.md}{\nolinkurl{docs/architecture/ADR-044-generic-harness-skills-projection.md}}
+& Accepted Skills architecture; 2C.2 corrected staging is an
+implementation candidate. No live launch wiring & Preserve all
+revisions. Pair only the independently accepted implementation version;
+do not promote the latest automatically. \\
+10 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/11-pi-harness-ros-resource-connection-reference.md}{\nolinkurl{docs/architecture/sdk-fabric/11-pi-harness-ros-resource-connection-reference.md}}
+& Explicit ``Proposed official'' reference map; Memory, Tools, MCP,
+Profile/DAR and other adapters are targets & Use as PLANNED reference
+architecture with per-resource status, not a live composed diagram. \\
+11 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/5ac7c248ed85cd07ff02c882f09d45ccb9cbcd99/docs/pi-native-credential-p2-report.tex}{\nolinkurl{docs/pi-native-credential-p2-report.tex}}
+& Records PROVEN LIVE standalone headless Pi credential path, auth.json
+unchanged and subsequent permission-denied launch. Not Phase-II
+composition or interactive UI & Preserve frozen original .tex; create
+matching Markdown and resolve proof SHA fields. \\
+12 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/architecture/PI-P2-PHASE2-INTEGRATION-ARCHITECTURE.md}{\nolinkurl{docs/architecture/PI-P2-PHASE2-INTEGRATION-ARCHITECTURE.md}}
+& Design contract, no runtime integration; accepted staging hardening is
+prerequisite & Add missing LaTeX from unchanged scoped design Markdown
+after metadata review. \\
+13 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/10-addon-catalog-and-card-architecture.md}{\nolinkurl{docs/architecture/sdk-fabric/10-addon-catalog-and-card-architecture.md}}
+& Proposed normalized catalog/Card separated from Installation Record;
+generated catalog runtime NOT YET IMPLEMENTED by this document &
+Preserve proposal; avoid conflating existing UI cards with this proposed
+normalized catalog model. \\
+14 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/architecture/TOM-2026-09-28-REQUIREMENTS-TRACEABILITY.md}{\nolinkurl{docs/architecture/TOM-2026-09-28-REQUIREMENTS-TRACEABILITY.md}}
+& Phase-II-local R1 PARTIAL / R2 OPEN / R3 PARTIAL / R4 PARTIAL;
+hardening on a sibling branch is not integrated here & Expand
+traceability using original review, branch-specific proof and remaining
+gates. Add .tex. \\
+15 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/architecture/PI-NATIVE-PHASE-2-ROADMAP.md}{\nolinkurl{docs/architecture/PI-NATIVE-PHASE-2-ROADMAP.md}}
+and
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/08-pi-dev-reference-addon-test-plan.md}{\nolinkurl{docs/architecture/sdk-fabric/08-pi-dev-reference-addon-test-plan.md}}
+& Roadmap records 2A/2B/2B.1/2C and unexecuted 2G; broad T0--T14 plan is
+PLANNED qualification & Retain detailed test plan; separate test design,
+execution evidence and acceptance. Add roadmap .tex. \\
+16 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/07-sdk-guide-echo-reference-addons.md}{\nolinkurl{docs/architecture/sdk-fabric/07-sdk-guide-echo-reference-addons.md}}
+& ``2.0'' refresh target; earlier Echo/Counter/Guide implementations are
+distinct evidence & Split current reference behavior from PLANNED
+registry-driven refresh. Existing pair needs full-content parity. \\
+17 &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/06-community-sdk-0.1-revision-end-state.md}{\nolinkurl{docs/architecture/sdk-fabric/06-community-sdk-0.1-revision-end-state.md}}
+& Target end state / fresh-developer proof, not delivered SDK 0.1 &
+Retain roadmap; compose with Pi interface and qualification plans. \\
+\end{longtable}
+
+\hypertarget{complete-post-cutoff-file-register}{%
+\subsection{Complete post-cutoff file
+register}\label{complete-post-cutoff-file-register}}
+
+Pinned source families:
+
+\begin{longtable}[]{@{}>{\raggedright\arraybackslash}p{\dimexpr 0.06\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr 0.43\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr 0.51\linewidth-2\tabcolsep\relax}@{}}
+\toprule\noalign{}
+Key & Branch & Commit \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+F & docs/sdk-architecture-knowledge-pack &
+\nolinkurl{34a2be796ffc062605f1a638c1e666dafce88250} \\
+K & docs/sdk-architecture-knowledge-pack-20260928 &
+\nolinkurl{2d9ea164c76699e0180f6da123e6da95e7a0f91a} \\
+N & docs/pi-native-interface-rnd &
+\nolinkurl{a8ccedeb900d67a45bd9efd884c87ebf45033cc4} \\
+I & docs/pi-p2-phase2-integration-architecture &
+\nolinkurl{297e64ad4946bd44f4497c5dfedc11c58a8b1314} \\
+P & feature/pi-native-session-credential-p2 &
+\nolinkurl{5ac7c248ed85cd07ff02c882f09d45ccb9cbcd99} \\
+S & feature/pi-phase2c2-skills-staging-audit-fixes &
+\nolinkurl{0f4917fb5db2e2eb54e3ced51c02098b225dd4f8} \\
+B & feature/pi-phase2b1-revocation-tom0928 &
+\nolinkurl{a12d78721d54af07f419dc1ae540049ed499db0a} \\
+\end{longtable}
+
+For compactness, paired bodies are grouped in one row. Each extension
+listed is a separate confirmed path. Readme routers do not require
+standalone presentation documents. The register records pair existence,
+not content parity.
+
+\begin{longtable}[]{@{}>{\raggedright\arraybackslash}p{\dimexpr 0.06\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr 0.5\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr 0.1\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr 0.34\linewidth-2\tabcolsep\relax}@{}}
+\toprule\noalign{}
+Src. & Exact path(s), relative to repository root & Formats &
+Disposition \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+F &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/01-ros-alpha-architecture-baseline.md}{\nolinkurl{docs/architecture/sdk-fabric/01-ros-alpha-architecture-baseline.md}}\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/01-ros-alpha-architecture-baseline.tex}{\nolinkurl{docs/architecture/sdk-fabric/01-ros-alpha-architecture-baseline.tex}}
+& md, tex & Retain dated baseline; supersede current overview after
+review. \\
+F &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/02-external-community-sdk-architecture.md}{\nolinkurl{docs/architecture/sdk-fabric/02-external-community-sdk-architecture.md}}\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/02-external-community-sdk-architecture.tex}{\nolinkurl{docs/architecture/sdk-fabric/02-external-community-sdk-architecture.tex}}
+& md, tex & Preferred synthesis input; annotate evidence and synchronize
+pair. \\
+F &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/03-internal-modular-ros-architecture.md}{\nolinkurl{docs/architecture/sdk-fabric/03-internal-modular-ros-architecture.md}}\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/03-internal-modular-ros-architecture.tex}{\nolinkurl{docs/architecture/sdk-fabric/03-internal-modular-ros-architecture.tex}}
+& md, tex & Retain scoped internal roadmap; pair parity required. \\
+F &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/04-sovereign-sdk-fabric-rnd.md}{\nolinkurl{docs/architecture/sdk-fabric/04-sovereign-sdk-fabric-rnd.md}}\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/04-sovereign-sdk-fabric-rnd.tex}{\nolinkurl{docs/architecture/sdk-fabric/04-sovereign-sdk-fabric-rnd.tex}}
+& md, tex & Keep in explicitly separated ResonantOS R\&D annex; not
+normative runtime. \\
+F &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/05-addon-module-capability-matrix.md}{\nolinkurl{docs/architecture/sdk-fabric/05-addon-module-capability-matrix.md}}\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/05-addon-module-capability-matrix.tex}{\nolinkurl{docs/architecture/sdk-fabric/05-addon-module-capability-matrix.tex}}\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/05-addon-module-capability-matrix.csv}{\nolinkurl{docs/architecture/sdk-fabric/05-addon-module-capability-matrix.csv}}
+& md, tex, csv & Preserve CSV detail; derive tables consistently before
+superseding. \\
+F &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/06-community-sdk-0.1-revision-end-state.md}{\nolinkurl{docs/architecture/sdk-fabric/06-community-sdk-0.1-revision-end-state.md}}\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/06-community-sdk-0.1-revision-end-state.tex}{\nolinkurl{docs/architecture/sdk-fabric/06-community-sdk-0.1-revision-end-state.tex}}
+& md, tex & PLANNED end state; synchronize pair. \\
+F &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/07-sdk-guide-echo-reference-addons.md}{\nolinkurl{docs/architecture/sdk-fabric/07-sdk-guide-echo-reference-addons.md}}\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/07-sdk-guide-echo-reference-addons.tex}{\nolinkurl{docs/architecture/sdk-fabric/07-sdk-guide-echo-reference-addons.tex}}
+& md, tex & Current/target split and pair parity required. \\
+F &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/08-pi-dev-reference-addon-test-plan.md}{\nolinkurl{docs/architecture/sdk-fabric/08-pi-dev-reference-addon-test-plan.md}}\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/08-pi-dev-reference-addon-test-plan.tex}{\nolinkurl{docs/architecture/sdk-fabric/08-pi-dev-reference-addon-test-plan.tex}}
+& md, tex & Retain full test matrix; TeX summary needs expansion. \\
+F &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/10-addon-catalog-and-card-architecture.md}{\nolinkurl{docs/architecture/sdk-fabric/10-addon-catalog-and-card-architecture.md}}\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/10-addon-catalog-and-card-architecture.tex}{\nolinkurl{docs/architecture/sdk-fabric/10-addon-catalog-and-card-architecture.tex}}
+& md, tex & Proposed catalog specification; retain proposal status. \\
+F &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/11-pi-harness-ros-resource-connection-reference.md}{\nolinkurl{docs/architecture/sdk-fabric/11-pi-harness-ros-resource-connection-reference.md}}\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/11-pi-harness-ros-resource-connection-reference.tex}{\nolinkurl{docs/architecture/sdk-fabric/11-pi-harness-ros-resource-connection-reference.tex}}
+& md, tex & Proposed map; annotate planned resource connections. \\
+F &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/README.md}{\nolinkurl{docs/architecture/sdk-fabric/README.md}}
+& md & Preferred pack router after revision; not an acceptance
+record. \\
+F &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/pi-native-interface/HARNESS-RESOURCE-PROJECTION-RND-001.md}{\nolinkurl{docs/architecture/sdk-fabric/pi-native-interface/HARNESS-RESOURCE-PROJECTION-RND-001.md}}\href{https://github.com/vonstegen/2.0.0-alpha/blob/34a2be796ffc062605f1a638c1e666dafce88250/docs/architecture/sdk-fabric/pi-native-interface/HARNESS-RESOURCE-PROJECTION-RND-001.tex}{\nolinkurl{docs/architecture/sdk-fabric/pi-native-interface/HARNESS-RESOURCE-PROJECTION-RND-001.tex}}
+& md, tex & Historical resource proposal; ADR-042--044 govern
+implemented subsets. \\
+K &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/2d9ea164c76699e0180f6da123e6da95e7a0f91a/docs/architecture/sdk-knowledge-pack/01-ROS-2.0.0-alpha-ARCHITECTURE-BASELINE.md}{\nolinkurl{docs/architecture/sdk-knowledge-pack/01-ROS-2.0.0-alpha-ARCHITECTURE-BASELINE.md}}
+& md & Overlap with F/01; proposed historical predecessor. \\
+K &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/2d9ea164c76699e0180f6da123e6da95e7a0f91a/docs/architecture/sdk-knowledge-pack/02-EXTERNAL-COMMUNITY-SDK-ARCHITECTURE.md}{\nolinkurl{docs/architecture/sdk-knowledge-pack/02-EXTERNAL-COMMUNITY-SDK-ARCHITECTURE.md}}
+& md & Overlap with F/02; preserve unique details before
+supersession. \\
+K &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/2d9ea164c76699e0180f6da123e6da95e7a0f91a/docs/architecture/sdk-knowledge-pack/03-INTERNAL-MODULAR-ROS-ARCHITECTURE-ROADMAP.md}{\nolinkurl{docs/architecture/sdk-knowledge-pack/03-INTERNAL-MODULAR-ROS-ARCHITECTURE-ROADMAP.md}}
+& md & Overlap with F/03; preserve roadmap details. \\
+K &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/2d9ea164c76699e0180f6da123e6da95e7a0f91a/docs/architecture/sdk-knowledge-pack/04-SOVEREIGN-SDK-FABRIC-RND.md}{\nolinkurl{docs/architecture/sdk-knowledge-pack/04-SOVEREIGN-SDK-FABRIC-RND.md}}
+& md & Overlap with F/04; segregated R\&D annex. \\
+K &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/2d9ea164c76699e0180f6da123e6da95e7a0f91a/docs/architecture/sdk-knowledge-pack/05-ROS-SDK-ADDON-MODULE-CAPABILITY-MATRIX.csv}{\nolinkurl{docs/architecture/sdk-knowledge-pack/05-ROS-SDK-ADDON-MODULE-CAPABILITY-MATRIX.csv}}
+& csv & 15-column detailed matrix; do not discard as duplicate. \\
+K &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/2d9ea164c76699e0180f6da123e6da95e7a0f91a/docs/architecture/sdk-knowledge-pack/README.md}{\nolinkurl{docs/architecture/sdk-knowledge-pack/README.md}}
+& md & Historical router after successor is reviewed. \\
+N &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/a8ccedeb900d67a45bd9efd884c87ebf45033cc4/docs/architecture/sdk-fabric/pi-native-interface/PI-NATIVE-INTERFACE-RND-001.md}{\nolinkurl{docs/architecture/sdk-fabric/pi-native-interface/PI-NATIVE-INTERFACE-RND-001.md}}
+& md & Native TUI/interface target; needs official .tex if retained. \\
+N &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/a8ccedeb900d67a45bd9efd884c87ebf45033cc4/docs/architecture/sdk-fabric/pi-native-interface/PI-NATIVE-INTERFACE-RND-002-SECURITY-AND-LIFECYCLE.md}{\nolinkurl{docs/architecture/sdk-fabric/pi-native-interface/PI-NATIVE-INTERFACE-RND-002-SECURITY-AND-LIFECYCLE.md}}
+& md & Lifecycle/security design; needs official .tex. \\
+N &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/a8ccedeb900d67a45bd9efd884c87ebf45033cc4/docs/architecture/sdk-fabric/pi-native-interface/PI-NATIVE-INTERFACE-ROADMAP-001.md}{\nolinkurl{docs/architecture/sdk-fabric/pi-native-interface/PI-NATIVE-INTERFACE-ROADMAP-001.md}}
+& md & Earlier M0--M12 roadmap; reconcile with current Phase-II/I1--I8
+roadmap. \\
+N &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/a8ccedeb900d67a45bd9efd884c87ebf45033cc4/docs/architecture/sdk-fabric/pi-native-interface/README.md}{\nolinkurl{docs/architecture/sdk-fabric/pi-native-interface/README.md}}
+& md & R\&D router; merge navigation only after reconciliation. \\
+I &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/architecture/ADR-039-harness-runtime-provider-profiles.md}{\nolinkurl{docs/architecture/ADR-039-harness-runtime-provider-profiles.md}}
+& md & Scoped Accepted ADR; pair official narrative. \\
+I &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/architecture/ADR-040-addon-classification-category-discovery.md}{\nolinkurl{docs/architecture/ADR-040-addon-classification-category-discovery.md}}
+& md & Scoped Accepted ADR; retain original and corrected versions. \\
+I &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/architecture/ADR-041-harness-provider-connection.md}{\nolinkurl{docs/architecture/ADR-041-harness-provider-connection.md}}
+& md & Scoped Accepted ADR; stale migration statement needs
+evidence-backed refresh. \\
+I &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/architecture/ADR-042-generic-harness-resource-request.md}{\nolinkurl{docs/architecture/ADR-042-generic-harness-resource-request.md}}
+& md & Scoped Accepted ADR; pair contract narrative. \\
+B &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/a12d78721d54af07f419dc1ae540049ed499db0a/docs/architecture/ADR-043-generic-harness-resource-projection.md}{\nolinkurl{docs/architecture/ADR-043-generic-harness-resource-projection.md}}
+& md & Use revocation-aware version; preserve earlier 2B version. \\
+S &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/0f4917fb5db2e2eb54e3ced51c02098b225dd4f8/docs/architecture/ADR-044-generic-harness-skills-projection.md}{\nolinkurl{docs/architecture/ADR-044-generic-harness-skills-projection.md}}
+& md & Correction candidate; accepted architecture != accepted
+staging. \\
+I &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/architecture/PI-NATIVE-PHASE-2-ROADMAP.md}{\nolinkurl{docs/architecture/PI-NATIVE-PHASE-2-ROADMAP.md}}
+& md & Current phase/qualification roadmap; needs .tex. \\
+I &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/architecture/PI-P2-PHASE2-INTEGRATION-ARCHITECTURE.md}{\nolinkurl{docs/architecture/PI-P2-PHASE2-INTEGRATION-ARCHITECTURE.md}}
+& md & Design-only integration contract; needs .tex. \\
+I &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/architecture/TOM-2026-09-28-REQUIREMENTS-TRACEABILITY.md}{\nolinkurl{docs/architecture/TOM-2026-09-28-REQUIREMENTS-TRACEABILITY.md}}
+& md & Branch-local traceability; needs .tex and source-review
+completion. \\
+I &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/297e64ad4946bd44f4497c5dfedc11c58a8b1314/docs/addons/sdk-category-discovery.md}{\nolinkurl{docs/addons/sdk-category-discovery.md}}
+& md & Operational reference; multiple evolving versions. \\
+P &
+\href{https://github.com/vonstegen/2.0.0-alpha/blob/5ac7c248ed85cd07ff02c882f09d45ccb9cbcd99/docs/pi-native-credential-p2-report.tex}{\nolinkurl{docs/pi-native-credential-p2-report.tex}}
+& tex & Frozen live report; missing matching .md. \\
+\end{longtable}
+
+The numbering gap at 09 is present in the inspected SDK Fabric pack. No
+missing document is inferred from numbering alone. No PDF appears in
+this bounded GitHub architecture set; existing presentation PDFs were
+found separately among the two September 29 review-draft bundles.
+
+\hypertarget{duplication-divergence-and-supersession-findings}{%
+\subsection{Duplication, divergence and supersession
+findings}\label{duplication-divergence-and-supersession-findings}}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \textbf{Knowledge Pack vs SDK Fabric.} Baseline, External SDK,
+  Internal modules, Sovereign R\&D and capability matrix overlap. They
+  are semantic overlaps, not identical blobs. Prefer SDK Fabric as a
+  synthesis destination, but retain the fuller predecessor details and
+  CSV columns. No old file is deleted or marked superseded in this task.
+\item
+  \textbf{Same path on multiple engineering branches.} Identical Git
+  blob SHA is one content version, not duplicate authorship. Distinct
+  blobs represent revisions. Category discovery has six versions;
+  ADR-040 and ADR-043 each have two; ADR-044 has three across 2C,
+  rejected 2C.1 and corrected 2C.2. ADR-041 has three. Resolve by scope
+  and acceptance, not branch name or recency alone.
+\item
+  \textbf{Markdown/LaTeX drift.} Existing TeX files commonly condense
+  the Markdown. For example, the 08 Markdown enumerates T0--T14, whereas
+  its TeX lists qualification layers and a shorter acceptance summary.
+  The 05 CSV has 15 columns while the TeX presents seven. Treat these as
+  presentation summaries until full parity is established.
+\item
+  \textbf{Overlapping roadmaps.} Native Interface M0--M12, Community SDK
+  end-state, broad Pi T0--T14, Phase-II 2A--2G and P2 integration I1--I8
+  describe related but different gates. Preserve identifiers and make a
+  crosswalk; do not silently rename phases.
+\item
+  \textbf{Narrative vs ADR chronology.} Early resource R\&D and Pi
+  reference maps describe a complete target. ADR-042--044 now define
+  implemented subsets. ADR-041 still says the protocol migration is
+  future; later candidate-line code/test history must resolve that
+  chronology.
+\item
+  \textbf{Historical SDK demo audit.} \nolinkurl{docs/sdk-demo-003r/} on
+  \nolinkurl{docs/sdk-demo-003r-rd-audit-record} is a valuable earlier
+  audit set, not a complete post-T7.1 acceptance ledger. Its six
+  per-finding files run T1--T6; root \nolinkurl{SDK-DEMO-003-FINDINGS.md}
+  at \nolinkurl{180f3067} records T7/T7.1. Preserve and link both.
+\item
+  \textbf{Existing Tom presentation bundles.}
+  \nolinkurl{ROS-SDK-Update-for-Tom-2026-09-29} and
+  \nolinkurl{ROS-SDK-Architecture-and-Workflow-2026-09-29} each exist as
+  .md/.tex/.pdf, Revision 1.1. Their Markdown explicitly says they are
+  conversation/report syntheses. They still describe 2B and P2 as
+  pending; retain as dated review drafts and replace their
+  current-status role after this inventory drives a reviewed update.
+  Their existence is not verified GitHub publication.
+\end{enumerate}
+
+Recommended supersession is an editorial action, not already-established
+repository status. Preserve originals, revision dates, successor links
+and unique evidence before applying it.
+
+\hypertarget{coverage-gaps-and-required-pairs}{%
+\subsection{Coverage gaps and required
+pairs}\label{coverage-gaps-and-required-pairs}}
+
+\begin{longtable}[]{@{}>{\raggedright\arraybackslash}p{\dimexpr 0.21\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr 0.29\linewidth-2\tabcolsep\relax}>{\raggedright\arraybackslash}p{\dimexpr 0.5\linewidth-2\tabcolsep\relax}@{}}
+\toprule\noalign{}
+Scope & Exists & Missing or unresolved \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+External SDK & F/02 pair, candidate SDK README, category contracts & One
+evidence-linked public-boundary reference with current vs planned
+facilities and version policy. \\
+Internal SDK & F/03 pair and historical ADRs & Implemented module
+interfaces vs proposed universal ports must be separated; no uniform
+fabric completion claim. \\
+Dynamic Category Framework & ADR-040 and evolving category guide &
+Official narrative pair and complete old/new vocabulary chronology. \\
+Provider Profiles / Harness Provider Connection & ADR-039/041 and
+protocol candidate branches & Two official narrative pairs; ADR-041
+migration chronology; qualification execution ledger. \\
+Generic resource contract / Project+Files & ADR-042/043,
+implementation/test paths & Official pairs, acceptance links, and
+explicit native-tool confinement limits. \\
+Skills & ADR-044 and staging correction history & Official
+accepted-version pair; independent 2C.2 acceptance;
+source/version/staging/lifecycle evidence. \\
+Memory / Tools & R\&D maps and target references & Dedicated roadmap
+pair with bounded scope and actual phase authorization. Harness
+projection/adapter connections are NOT YET IMPLEMENTED on inspected
+Phase-II line. \\
+Pi reference and catalog & F/10/11 pairs, native interface R\&D &
+Status-qualified diagrams; catalog proposal vs existing UI cards;
+interface .tex counterparts. \\
+P2 live proof & P2 .tex, launcher/service commit and evidence commit &
+Matching Markdown; distinguish planner \nolinkurl{8ab442c}, implementation
+\nolinkurl{d545edae}, evidence \nolinkurl{5ac7c248}. The
+report\textquotesingle s result table cites the planner SHA; freeze
+original and reconcile exact executed tree without guessing. \\
+P2 + Phase-II integration & I integration Markdown & .tex, acceptance of
+staging prerequisite and future combined/live proof; integration itself
+NOT YET IMPLEMENTED by this document. \\
+Tom September 28 & Original action-items PDF; branch-local traceability
+& Exact detailed companion review with eight additional findings, named
+root-doc violations, T1--T7/T7.1 crosswalk, shared capability-floor
+decision and evidence. \\
+Qualification/testing & F/08 pair, Phase-II roadmap, P2 tests/report &
+Tests planned vs executed vs independently accepted; mandatory browser
+gate evidence; qualification .md/.tex pair. \\
+Echo / Guide & Earlier demo source plus F/07 target pair & Current
+implementation evidence and PLANNED 2.0 refresh separated; paired
+current guide and Echo reference. \\
+Pi demo roadmap & F/06/08/11 plus native-interface and Phase-II plans &
+One phase crosswalk; no unapproved terminal/PTY release commitment. \\
+\end{longtable}
+
+Tom\textquotesingle s four numbered blockers remain inherited
+requirements: trusted install/credential destination identity; explicit
+boolean admin-revoke intent; denial with upstream unavailable/held
+authority; graphical gates and root-document compliance. Sibling
+hardening commit \nolinkurl{5aaab43} does not establish their closure on
+the Phase-II line. The supplied action-items PDF also requests a shared
+capability floor, lists ADR governance changes dependent on \#496, and
+references eight further findings not contained in that PDF.
+
+\hypertarget{evidence-and-test-limits}{%
+\subsection{Evidence and test limits}\label{evidence-and-test-limits}}
+
+\begin{itemize}
+\tightlist
+\item
+  Repository commit \nolinkurl{180f3067} records T7.1 closure results; this
+  inventory has not rerun those runtime suites.
+\item
+  P2\textquotesingle s committed report records real Pi 0.74.2 /
+  OpenRouter / \nolinkurl{anthropic/claude-sonnet-4.5}, session-environment
+  credential delivery, unchanged auth.json and denied next launch after
+  revocation. This is narrower than live revocation of a running
+  process, interactive TUI, general provider qualification or composed
+  resource access.
+\item
+  P2 reports expected Pi 0.80.3 vs installed 0.74.2, catalog skew,
+  primary-agent slot coupling and deferred UI. Those limits survive
+  consolidation.
+\item
+  Work-order \#74 final report at candidate \nolinkurl{0f4917f} reports
+  72/72 Skills tests, 152/152 targeted checks, 758/758 Vitest, 290/290
+  docs tests, and a browser comparison with one identical environmental
+  failure and two skips on baseline/candidate. It also reports seven
+  pre-existing docs:check issues. These are producer-reported results,
+  not a new independent acceptance performed here.
+\item
+  The Phase-II roadmap\textquotesingle s ``Done'' 2C row must not erase
+  rejected staging hardening or pending correction acceptance.
+\item
+  A working directory is not an OS sandbox. A bounded projection helper
+  does not prove Pi\textquotesingle s native bash/read/write/edit
+  operations are confined during a future real launch.
+\item
+  P2 + Phase-II, Memory/Tools, terminal/PTY and fresh-developer proof
+  remain separate gates.
+\end{itemize}
+
+Primary links:
+\href{https://github.com/vonstegen/2.0.0-alpha/commit/180f3067906d4782df5b923ca46ef77b80828333}{T7.1
+commit},
+\href{https://github.com/vonstegen/2.0.0-alpha/commit/5ac7c248ed85cd07ff02c882f09d45ccb9cbcd99}{P2
+evidence commit},
+\href{https://github.com/vonstegen/2.0.0-alpha/commit/297e64ad4946bd44f4497c5dfedc11c58a8b1314}{integration
+design commit},
+\href{https://github.com/vonstegen/vigil-mcp-work-orders-test/issues/74\#issuecomment-5901163827}{2C.2
+report}, \href{https://github.com/orgs/ResonantOS/projects/2}{Project
+2}.
+
+The action-items PDF source is the supplied
+\nolinkurl{ResonantOS-Action-Items-2026-09-28.pdf}, pages 1--4. Its
+statements are historical September 28 review observations, not current
+PR/merge-state claims.
+
+\enlargethispage{2\baselineskip}
+\hypertarget{document-governance-outcome}{%
+\subsection{Document governance
+outcome}\label{document-governance-outcome}}
+
+The SDK Fabric pack is the recommended consolidation destination for
+readable architecture. Scoped ADRs remain decision authority; current
+code/tests and candidate-specific acceptance determine implementation.
+The knowledge pack and older research become historical predecessors
+only after their unique details are preserved and successors are
+reviewed. Existing official pairs need content parity and metadata
+normalization. No source rewrite, archive move, ADR status change,
+runtime change or branch merge has been made as part of this inventory.
+
+\end{document}

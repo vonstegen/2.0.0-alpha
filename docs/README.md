@@ -122,3 +122,13 @@ the exact commands and live Chrome checks performed.
 Use the [ADR Index](architecture/README.md). An ADR's decision status and its
 applicability to the current Alpha are separate facts; historical and deferred
 records do not redefine the runtime boundary.
+
+## SDK Architecture Documentation Inventory
+
+The [SDK documentation index](architecture/sdk-documentation/SDK-DOCUMENTATION-INDEX.md)
+registers the post-T7.1 architecture sources, branch-specific authority, proof
+limits, and missing Markdown/LaTeX pairs. Read the
+[consolidation plan](architecture/sdk-documentation/SDK-DOCUMENTATION-CONSOLIDATION-PLAN.md)
+before rewriting the existing architecture set. This inventory is documentation
+work; candidate architecture and planned integrations do not redefine the
+shipped Alpha runtime.
