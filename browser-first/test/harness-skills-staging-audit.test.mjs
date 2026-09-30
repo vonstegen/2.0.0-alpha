@@ -100,6 +100,113 @@ test("E: same binding deterministically produces same staging identity for lifec
 });
 
 // ============================================================================
+// CP-2C3 — unambiguous, injective binding serialization (length-prefixed UTF-8)
+// ============================================================================
+
+// The preimage is length-prefixed UTF-8 bytes, so a NUL embedded in a field can
+// never shift the addon/session/project boundary. These pairs collided under the
+// old `addonId + NUL + sessionId + NUL + projectId` concatenation (or were not
+// provably distinct) and must now serialize to distinct identities.
+
+test("CP-2C3.A: embedded NUL cannot shift addonId/sessionId boundary", () => {
+  assert.notEqual(
+    deriveStagingIdentity("a\u0000b", "c", "d"),
+    deriveStagingIdentity("a", "b\u0000c", "d"),
+  );
+});
+
+test("CP-2C3.B: embedded NUL cannot shift sessionId/projectId boundary", () => {
+  assert.notEqual(
+    deriveStagingIdentity("a", "b\u0000c", "d"),
+    deriveStagingIdentity("a", "b", "c\u0000d"),
+  );
+});
+
+test("CP-2C3.C: empty and boundary-confusing values remain unambiguous", () => {
+  // Empty strings, NUL-only fields, and NUL at either end of a field must all
+  // serialize distinctly from one another and from non-empty values.
+  const values = [
+    ["", "s", "p"],
+    ["a", "", "p"],
+    ["a", "s", ""],
+    ["\u0000", "s", "p"],
+    ["a", "\u0000", "p"],
+    ["a", "s", "\u0000"],
+    ["a\u0000", "s", "p"],
+    ["a", "s\u0000", "p"],
+    ["a", "s", "p\u0000"],
+    ["\u0000a", "s", "p"],
+    ["a", "\u0000s", "p"],
+    ["a", "s", "\u0000p"],
+  ];
+  const seen = new Set();
+  for (const [a, sId, p] of values) {
+    const id = deriveStagingIdentity(a, sId, p);
+    assert.match(id, HEX, "must remain fixed hex");
+    assert.ok(!seen.has(id), `tuple ${JSON.stringify([a, sId, p])} must be unique`);
+    seen.add(id);
+  }
+  // Distinct from the plain non-empty baseline.
+  assert.notEqual(deriveStagingIdentity("", "s", "p"), deriveStagingIdentity("a", "s", "p"));
+  assert.notEqual(deriveStagingIdentity("a", "s", ""), deriveStagingIdentity("a", "s", "p"));
+});
+
+test("CP-2C3.D: unicode values with different UTF-8 byte lengths serialize distinctly", () => {
+  // Same code-point count, different UTF-8 byte lengths.
+  const twoByte = deriveStagingIdentity("addon", "é", "p"); // 2 UTF-8 bytes
+  const threeByte = deriveStagingIdentity("addon", "€", "p"); // 3 UTF-8 bytes
+  const fourByte = deriveStagingIdentity("addon", "𝄞", "p"); // 4 UTF-8 bytes
+  assert.notEqual(twoByte, threeByte);
+  assert.notEqual(threeByte, fourByte);
+  assert.notEqual(twoByte, fourByte);
+  // Same byte length, different code points, still distinct.
+  assert.notEqual(
+    deriveStagingIdentity("addon", "技能", "p"),
+    deriveStagingIdentity("addon", "测试", "p"),
+  );
+  // Lengths are BYTE lengths: a single astral char must not equal its UTF-8 bytes.
+  assert.notEqual(deriveStagingIdentity("a", "𝄞", "p"), deriveStagingIdentity("a", "x", "p"));
+});
+
+test("CP-2C3.E: same tuple remains deterministic", () => {
+  const tuple = ["addon.x", "sess-1", "proj-2"];
+  const a = deriveStagingIdentity(...tuple);
+  const b = deriveStagingIdentity(...tuple);
+  assert.equal(a, b);
+});
+
+test("CP-2C3.F: identity remains fixed 64-char lowercase hex", () => {
+  for (const id of [
+    deriveStagingIdentity("a", "s", "p"),
+    deriveStagingIdentity("a\u0000b", "c", "d"),
+    deriveStagingIdentity("", "", ""),
+    deriveStagingIdentity("addon", "𝄞", "p"),
+  ]) {
+    assert.match(id, HEX);
+  }
+});
+
+test("CP-2C3.G: traversal/absolute/path-confusing strings remain inert/path-safe", () => {
+  for (const raw of ["../../../etc/passwd", "/abs/root", "..", "a/b", "..\\..", "C:\\evil", "~", "\u0000../../x"]) {
+    for (const field of [0, 1, 2]) {
+      const args = ["a", "s", "p"];
+      args[field] = raw;
+      const id = deriveStagingIdentity(...args);
+      assert.match(id, HEX, `field ${field} = ${JSON.stringify(raw)} must map to opaque hex`);
+      assert.ok(!id.includes("/") && !id.includes("\\") && !id.includes(".."), "opaque id is path-safe");
+      assert.equal(id.includes(raw), false, "raw value must never appear in the id");
+    }
+  }
+});
+
+test("CP-2C3.H: distinct addon/session/project bindings remain distinct", () => {
+  const base = deriveStagingIdentity("addon.pi-harness", "s", "project-a");
+  assert.notEqual(deriveStagingIdentity("addon.other", "s", "project-a"), base, "addonId change");
+  assert.notEqual(deriveStagingIdentity("addon.pi-harness", "s2", "project-a"), base, "sessionId change");
+  assert.notEqual(deriveStagingIdentity("addon.pi-harness", "s", "project-b"), base, "projectId change");
+});
+
+// ============================================================================
 // F — exact structural ownership, never substring/prefix
 // ============================================================================
 

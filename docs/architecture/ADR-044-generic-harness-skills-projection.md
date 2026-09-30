@@ -85,10 +85,17 @@ source abstraction; a canonical skills database does not yet exist.
 
 - `createHarnessSkillsProjection` receives `stagingBase` (host-owned runtime base)
   as a required parameter.
-- Projection-specific staging identity is a host-derived opaque digest of the full
-  session binding: `deriveStagingIdentity(addonId, sessionId, projectId)` =
-  `SHA-256(addonId + NUL + sessionId + NUL + projectId)`, rendered as fixed
-  lowercase hex (standard Node crypto only).
+- Projection-specific staging identity is a host-derived deterministic
+  opaque/path-safe digest of the full session binding:
+  `deriveStagingIdentity(addonId, sessionId, projectId)` =
+  `SHA-256(lengthPrefixedUTF8(addonId) || lengthPrefixedUTF8(sessionId) ||
+  lengthPrefixedUTF8(projectId))`, rendered as fixed lowercase hex (standard
+  Node crypto only). Each `lengthPrefixedUTF8` field is a fixed-width big-endian
+  BYTE length (UTF-8, not a JS character count) followed by the field's UTF-8
+  bytes. The encoding is injective (an embedded NUL cannot shift a field
+  boundary), so distinct bindings always serialize to distinct preimages. The
+  digest is NOT keyed or secret; it provides path-safety and determinism, not
+  unforgeability.
 - Projection-specific staging path is derived as: `stagingBase/skills/<opaque-digest>`.
   No raw caller/session/project string is ever used as a filesystem path component.
 - Caller cannot supply arbitrary staging root; this prevents path injection and

@@ -32,10 +32,12 @@
 //
 // Host-owned staging base:
 //   - Host injects `stagingBase` in `createHarnessSkillsProjection`.
-//   - Projection staging identity is a host-derived opaque digest of the full
-//     session binding (addonId + NUL + sessionId + NUL + projectId), never a raw
-//     caller/session/project string. Staging path is derived as:
-//     `${stagingBase}/skills/<opaque-digest>`.
+//   - Projection staging identity is a host-derived deterministic opaque/
+//     path-safe digest of the full session binding. The binding is serialized
+//     with a canonical length-prefixed UTF-8 byte encoding (fixed-width
+//     big-endian byte length + UTF-8 bytes, per field), never a raw
+//     caller/session/project string, and then SHA-256 folded. Staging path is
+//     derived as: `${stagingBase}/skills/<opaque-digest>`.
 //   - Caller cannot supply arbitrary staging root.
 //
 // Host-owned layout:
@@ -83,18 +85,50 @@ const operationKeySet = (operations) =>
   [...new Set((operations ?? []).map((op) => operationKey(op.family, op.operation)))].sort().join("\u0000");
 
 /**
- * Host-derived opaque staging identity for a full session binding (F2).
+ * Host-derived deterministic opaque/path-safe staging identity for a full
+ * session binding (F2).
  *
  * The raw addon/session/project identity strings are NEVER used as filesystem
- * path components. Instead the binding is folded into a fixed 64-char lowercase
- * SHA-256 hex digest via the standard Node crypto module. This is deterministic
- * (same binding -> same identity across the projection lifecycle) so a caller
- * cannot predict/forge another binding's staging directory, nor inject path
- * separators, traversal, absolute reroots, or path-confusing characters.
+ * path components. Instead the binding is serialized with an unambiguous,
+ * injective canonical encoding (length-prefixed UTF-8 bytes: a fixed-width
+ * big-endian byte length followed by the UTF-8 bytes of each field, in order),
+ * then folded into a fixed 64-char lowercase SHA-256 hex digest via the
+ * standard Node crypto module. Deterministic (same binding -> same identity
+ * across the projection lifecycle); distinct triples always serialize to
+ * distinct byte preimages (embedded NUL cannot shift a field boundary); and
+ * path separators, traversal, absolute reroots, and path-confusing characters
+ * remain inert. This is NOT keyed or secret: no secret material is required,
+ * and unpredictability is not a relied-upon property.
  */
+const UINT32_BE_LENGTH_BYTES = 4;
+
+/**
+ * Serialize one identity field as `<4-byte big-endian UTF-8 byte length>
+ * <UTF-8 bytes>`. Lengths are BYTE lengths (UTF-8), never JS character counts.
+ */
+const encodeIdentityField = (value) => {
+  const bytes = Buffer.from(String(value), "utf8");
+  const length = Buffer.alloc(UINT32_BE_LENGTH_BYTES);
+  length.writeUInt32BE(bytes.length, 0);
+  return Buffer.concat([length, bytes]);
+};
+
+/**
+ * Canonical unambiguous binding preimage for SHA-256. Length-prefixed UTF-8
+ * byte encoding makes the tuple serialization injective: an embedded NUL in any
+ * field cannot shift a field boundary, so two distinct string triples can never
+ * serialize to the same byte sequence.
+ */
+const encodeStagingBinding = (addonId, sessionId, projectId) =>
+  Buffer.concat([
+    encodeIdentityField(addonId),
+    encodeIdentityField(sessionId),
+    encodeIdentityField(projectId),
+  ]);
+
 export function deriveStagingIdentity(addonId, sessionId, projectId) {
   return createHash("sha256")
-    .update(`${addonId}\u0000${sessionId}\u0000${projectId}`)
+    .update(encodeStagingBinding(addonId, sessionId, projectId))
     .digest("hex");
 }
 
