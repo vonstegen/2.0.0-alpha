@@ -56,10 +56,12 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 8-4 4 4 4"/><path d="m15 8 4 4-4 4"/></svg>
             <span class="rail-text">OpenCode</span>
           </button>
-          <button type="button" class="rail-project" data-workspace="tool-workspace" data-addon-id="addon.pi-harness" hidden>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0Z"/><path d="M12 7.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0Z"/><path d="M15.5 16.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0Z"/><path d="m7.4 10.8 2.7-2.1"/><path d="m9.7 13.2 2.4 1.2"/></svg>
-            <span class="rail-text">Pi</span>
-          </button>
+        </section>
+
+        <section class="rail-section" aria-label="Add-on surfaces">
+          <h2>Add-on Surfaces</h2>
+          <nav id="tool-rail-list" class="tool-rail-list" aria-label="Installed tool panels"></nav>
+          <p id="tool-rail-empty" class="tool-rail-empty" hidden>No authorized tool-panel surfaces.</p>
         </section>
 
         <!-- Projects + Chats moved to the top-bar "Chats" tab (see #dock-popout). -->
@@ -186,11 +188,6 @@
           <div id="composer-notice" class="composer-notice" role="status" aria-live="polite" hidden></div>
         </form>
       </section>
-      <aside id="tool-rail" class="tool-rail" aria-label="Tool rail">
-        <header class="tool-rail-header"><span class="eyebrow">Tools</span><strong>Add-on surfaces</strong></header>
-        <nav id="tool-rail-list" class="tool-rail-list" aria-label="Installed tool panels"></nav>
-        <p id="tool-rail-empty" class="tool-rail-empty" hidden>No authorized tool-panel surfaces.</p>
-      </aside>
       <div id="rail-resize" class="rail-resize" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0"></div>
     </main>
     <script src="./bridge-config.generated.js"></script>
