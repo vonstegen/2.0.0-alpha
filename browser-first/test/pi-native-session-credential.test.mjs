@@ -7,6 +7,7 @@
 // the existing harness-provider-adapter.test.mjs suite.
 import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -299,7 +300,7 @@ test("CP-2B8 L: Pi cwd comes from the authorized projection, not raw caller auth
   // A raw caller projectPath is ignored: cwd equals the authorized projection cwd.
   const plan = await a.plan(planInput({ projection: issued.projection, projectPath: "/etc/passwd" }));
   assert.equal(plan.projectPath, issued.projection.cwd);
-  assert.equal(plan.projectPath, projRoot);
+  assert.equal(plan.projectPath, realpathSync(projRoot));
 
   // A projection bound to another session or harness is denied (no raw-path fallback).
   await assert.rejects(a.plan(planInput({ projection: issued.projection, sessionId: "other-session" })), { code: "permission-denied" });

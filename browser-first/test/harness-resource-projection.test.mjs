@@ -165,9 +165,9 @@ test("CP-2B4: root containment fails closed (traversal, symlink escape, sibling,
   // Absolute sibling project path.
   assert.throws(() => svc.resolveWithinRoot(result.projection, path.join(sibling, "secret.txt")),
     (err) => err.code === "EPATH_CONTAINMENT");
-  // In-root target resolves to its real path.
+  // In-root target resolves to its canonical real path.
   assert.equal(svc.resolveWithinRoot(result.projection, path.join(proj, "note.txt")),
-    path.join(proj, "note.txt"));
+    realpathSync(path.join(proj, "note.txt")));
 
   // Symlink leaf pointing outside the root escapes: blocked.
   const escapeLink = path.join(proj, "escape-link");

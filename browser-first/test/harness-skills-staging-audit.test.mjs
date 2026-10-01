@@ -403,7 +403,7 @@ test("R: repeated own cleanup PASS (idempotent)", async () => {
 });
 
 test("S: materialization destination is inside exact own staging root", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-audit-s-"));
+  const stagingBase = realpathSync(await mkdtemp(path.join(tmpdir(), "ros-audit-s-")));
   try {
     const svc = svcFor({ stagingBase });
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -418,7 +418,7 @@ test("S: materialization destination is inside exact own staging root", async ()
 });
 
 test("T: caller cannot override layout/staging/cleanup path", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-audit-t-"));
+  const stagingBase = realpathSync(await mkdtemp(path.join(tmpdir(), "ros-audit-t-")));
   try {
     const svc = svcFor({ stagingBase });
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });

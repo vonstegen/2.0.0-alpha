@@ -148,7 +148,7 @@ test("CP-2C1.1 D: project root cannot become staging root", async () => {
 // ============================================================================
 
 test("CP-2C1.2 A: layout.dir/layout.file cannot be supplied by caller", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = realpathSync(await mkdtemp(path.join(tmpdir(), "ros-staging-base-")));
   try {
     const svc = svcFor(realCatalog, repoRoot, stagingBase);
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -374,7 +374,7 @@ test("CP-2C1.3 I: repeated own cleanup PASS/idempotent", async () => {
 // ============================================================================
 
 test("CP-2C1.4 A: materialization path exactly matches trusted Pi layout", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = realpathSync(await mkdtemp(path.join(tmpdir(), "ros-staging-base-")));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);
@@ -434,7 +434,7 @@ test("CP-2C1.4 D: unowned staging identity rejected", async () => {
 test("CP-2C1.4 E: destination symlink escape rejected", async () => {
   // This test verifies that destination path is validated for containment
   // The implementation uses pathContains which validates lexical containment
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = realpathSync(await mkdtemp(path.join(tmpdir(), "ros-staging-base-")));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);

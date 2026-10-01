@@ -24,6 +24,7 @@
 // credential/provider/model, or exposes an arbitrary path to a manifest.
 
 import { realpath as fsRealpath, stat as fsStat } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { normalizeHarnessResourceRequest, resolveHarnessResourceGrants, HARNESS_RESOURCE_CAPABILITY } from "../../packages/addon-sdk/src/harness-resources.ts";
@@ -38,6 +39,22 @@ if (FILESYSTEM_CAPABILITY !== "filesystem" || HARNESS_RESOURCE_CAPABILITY.files 
 }
 
 const isNonEmptyString = (value) => typeof value === "string" && value.trim().length > 0;
+
+/**
+ * Canonical form of an absolute root for identity comparison, or null when the
+ * candidate is not an absolute path or is not canonicalizable. consume() must
+ * compare CANONICAL roots: the issued projection.root is a realpath while the
+ * host may re-supply the configured (unresolved) form, e.g. macOS `/var` vs
+ * `/private/var`. An uncanonicalizable current root fails closed.
+ */
+const canonicalRoot = (candidate) => {
+  if (typeof candidate !== "string" || !path.isAbsolute(candidate) || ABS_PATH_ILLEGAL.test(candidate)) return null;
+  try {
+    return realpathSync.native(candidate);
+  } catch {
+    return null;
+  }
+};
 
 const operationKey = (family, operation) => `${family}.${operation}`;
 
@@ -219,9 +236,11 @@ export function createHarnessResourceProjection({
       if (!projection || typeof projection !== "object") {
         return deniedView(addonId, sessionId, "projection-identity-mismatch");
       }
+      const issuedRoot = canonicalRoot(projection.root);
+      const currentRoot = canonicalRoot(currentProject?.root);
       if (projection.addonId !== addonId || projection.sessionId !== sessionId ||
           projection.project?.id !== currentProject?.id ||
-          path.resolve(projection.root ?? "") !== path.resolve(currentProject?.root ?? "")) {
+          !issuedRoot || !currentRoot || issuedRoot !== currentRoot) {
         return deniedView(addonId, sessionId, "projection-identity-mismatch");
       }
       const currentGrant = (grantedCapabilities ?? []).find((grant) =>
