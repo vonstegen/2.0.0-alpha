@@ -149,3 +149,59 @@ test("createReachabilityBanner: dispose clears banner state", () => {
   assert.equal(element.classList.contains(REACHABILITY_BANNER_CLASSES.online), false);
   assert.equal(element.dataset.bridgeState, undefined);
 });
+
+test("createReachabilityBanner: probe() resolves immediately when state is online", async () => {
+  const element = makeFakeElement(true);
+  let calls = 0;
+  const client = createBridgeClient({
+    bridgeUrl: "http://127.0.0.1:45125",
+    bridgeToken: randomBytes(16).toString("hex"),
+    fetchImpl: async () => { calls += 1; return new Response(JSON.stringify({ ok: true }), { status: 200 }); },
+  });
+  const banner = createReachabilityBanner({ bridgeRequest: client, document: makeFakeDocument(element) });
+  const before = calls;
+  await banner.probe();
+  // State was already online from the constructor; no fetch should fire.
+  assert.equal(calls, before);
+  banner.dispose();
+});
+
+test("createReachabilityBanner: probe() fires a fetch when state is persistent", async () => {
+  const element = makeFakeElement(true);
+  let calls = 0;
+  const client = createBridgeClient({
+    bridgeUrl: "http://127.0.0.1:45125",
+    bridgeToken: randomBytes(16).toString("hex"),
+    fetchImpl: async () => {
+      calls += 1;
+      // Fail the entire retry budget (6 attempts) plus a buffer so the
+      // first call lands the store in "persistent", then succeed to let the
+      // probe drive it back to "online".
+      if (calls <= 6) throw makeNetworkError();
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    },
+  });
+  const banner = createReachabilityBanner({ bridgeRequest: client, document: makeFakeDocument(element) });
+  // Drive the state to persistent first.
+  try { await client("/addons/registry", { method: "GET" }); } catch { /* expected */ }
+  assert.equal(element.dataset.bridgeState, "persistent");
+  const before = calls;
+  await banner.probe();
+  // The probe should have driven another set of attempts that recover.
+  assert.equal(calls > before, true);
+  assert.equal(element.dataset.bridgeState, "online");
+  banner.dispose();
+});
+
+test("createReachabilityBanner: probe() swallows errors and resolves", async () => {
+  const element = makeFakeElement(true);
+  const client = createBridgeClient({
+    bridgeUrl: "http://127.0.0.1:45125",
+    bridgeToken: randomBytes(16).toString("hex"),
+    fetchImpl: async () => { throw makeNetworkError(); },
+  });
+  const banner = createReachabilityBanner({ bridgeRequest: client, document: makeFakeDocument(element) });
+  try { await client("/addons/registry", { method: "GET" }); } catch { /* expected */ }
+  await assert.doesNotReject(() => banner.probe());
+  banner.dispose();
+});

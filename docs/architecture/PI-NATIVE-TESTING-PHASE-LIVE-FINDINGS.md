@@ -3,6 +3,121 @@
 Staged and executed against the testing bridge on `127.0.0.1:47773`
 (isolated registry `/tmp/pi-testing-user-root`, real Settings provider store).
 
+## Postmortem — workspace said "Bridge unavailable" while the bridge was fine (2026-10-01, ~17:24 EDT)
+
+**Symptom.** Workspace banner: red "Bridge unavailable. Check Settings →
+Bridge Target and the bridge process." Left rail: "Add-on Surfaces: No
+authorized tool-panel surfaces." User reported: "NO Pi or Grok-Build add-ons
+and this message."
+
+**Real state (contradicting the banner).** `lsof -nP -iTCP:47773 -sTCP:LISTEN`
+showed the bridge node process (pid 85574) alive and listening. 120/120 raw
+sockets to 127.0.0.1:47773 succeeded over a 60-second sample. The bridge
+*was* healthy.
+
+**Root cause.** Config drift between worktrees.
+
+```
+2.0.0-alpha/.../src/bridge-config.generated.js
+  bridgeUrl: http://127.0.0.1:47773  ← live bridge's port + token  (last
+  bridgeToken: rdfyjPeEx0Xy4NSrEEjpoctS4O-VBIfo1TfTkCdA2a0        written 28 Sep
+  capabilityBootstrapToken: 48QCyNLy1asBkKF2bQhUc5dkFFxXFCaq2UIJrKiMOCE
+
+pi-phase2/.../src/bridge-config.generated.js
+  bridgeUrl: http://127.0.0.1:49636  ← dead bridge port from an old
+  bridgeToken: p8-collision-token    run; last written 1 Oct 17:24 by a
+                                       different (now-dead) bridge process
+```
+
+The user has been loading the **pi-phase2** extension folder (per the URL
+`chrome-extension://cdpdmmalhmokbfcfgogoepnjplaakgnl/src/main-workspace.html`
+and the work we've been doing here). The pi-phase2 generated config was
+written by a previous bridge process that ran on port 49636 — a port that
+no longer has anything listening. The user's Chrome was dutifully calling
+127.0.0.1:49636, getting ECONNREFUSED every fetch, retrying, and eventually
+marking the bridge as `persistent` in the reachability store.
+
+**Why the launch script didn't catch this.**
+
+`/tmp/pi-testing-bridge-launch.sh` extracts the bridge token and bootstrap
+token from `2.0.0-alpha/.../bridge-config.generated.js` (the main worktree),
+but does **not** set `RESONANTOS_EXTENSION_ROOT`. So:
+
+1. The bridge code writes its own generated config to its own `repoRoot` —
+   the pi-phase2 worktree (since the bridge was started from
+   `pi-phase2/browser-first/host/run-bridge-minimal.mjs`).
+2. The bridge used the **tokens from 2.0.0-alpha** (because the launch
+   script read them from there) but the **port from its own `startBridgeServer`**
+   — which honors a fixed `--bridge-port=47773` request.
+3. In an earlier session, a different bridge (or test) had run on port 49636
+   and overwritten the pi-phase2 config with that port + a different token.
+4. On the most recent bridge restart, the new bridge correctly self-rewrote
+   the pi-phase2 config — but the actual file on disk at the time of the
+   user-reported outage was the stale 49636 entry (the restart I did
+   *during* this session, 17:24, was still writing to that file but the
+   file's effective contents at the moment of the screenshot showed 65047
+   → then 49636 → now 47773 as I traced it across reads).
+5. Chrome MV3 caches the loaded config in the service worker. The workspace
+   tab was still alive from before the restart, so its in-memory
+   `__RESONANTOS_BRIDGE_CONFIG__` pointed at the dead port and never
+   re-read the file.
+
+**Why the banner couldn't recover.** Even with my new retry layer, the
+reachability store only transitions out of `persistent` when a fetch
+succeeds. With the config pointing at the wrong port, every fetch hits
+ECONNREFUSED on the dead bridge — not a transient burst on the live one.
+The store can't tell the difference; retrying a dead port looks exactly
+like a sustained outage on the right port.
+
+**Fix applied.**
+
+1. Copied the live (2.0.0-alpha) generated config over the stale pi-phase2
+   one — the ports/tokens now match.
+2. Killed the running bridge (pid 85574) and restarted it with
+   `RESONANTOS_EXTENSION_ROOT=/Users/andrewjochl/.../pi-phase2/.../resonantos-side-panel-extension`
+   so every future restart writes its own config into the pi-phase2 worktree
+   (no more drift).
+3. Live HTTP probe against the new config: `200 OK` from
+   `POST /api/capability-tokens`, `200 OK` from `GET /addons/registry`,
+   installations: `['addon.pi-harness', 'addon.grok-build']`.
+4. User reloaded the extension and confirmed: "Add-ons are back."
+
+**Defenses to add (follow-ups).**
+
+- **Launch script should set `RESONANTOS_EXTENSION_ROOT`** explicitly to the
+  worktree whose extension the user is loading. Today it reads tokens from
+  2.0.0-alpha but doesn't tell the bridge which worktree owns the config.
+  Trivial fix: set `RESONANTOS_EXTENSION_ROOT` to the same path that owns
+  the tokens. Until that's done, every restart is a coin flip whether the
+  written config matches the loaded extension.
+- **Bridge should sanity-check at startup** that its own
+  `writeBridgeConfig` target dir actually contains the same tokens it was
+  started with, and fail loudly if they diverge. Cheap; prevents silent
+  drift.
+- **Extension should re-read the generated config on a 401/token mismatch
+  error**, not only on rebindBridge. A 401 with a different token in the
+  response (or any bootstrap mismatch the bridge detects) should trigger
+  `resolveBridgeConfig` and a rebind. Today the config is only refreshed
+  on `chrome.runtime.onInstalled` / `chrome.runtime.onStartup`.
+- **Reachability store should distinguish "wrong port" from "burst"** — if
+  every retry attempt refuses with ECONNREFUSED and the bursts don't
+  correlate with socket open/close timing, escalate to a settings-level
+  hint ("bridge target URL may be wrong") rather than a transient banner.
+  Defer until we have a heuristic that doesn't false-positive on real
+  bursts.
+- **Workspace should not cache the resolved bridge URL across reloads when
+  the bridge is unreachable** — currently the boot path can resolve a
+  dead URL and pin it for the session lifetime. A periodic re-check
+  (e.g. when the tab is foregrounded, the network changes, or the user
+  clicks Settings → Bridge Target) would self-heal faster.
+
+**Lesson.** The banner is doing its job (correctly saying "unavailable")
+but the user's mental model ("the bridge is broken") didn't match reality
+("the bridge is fine, the extension is calling the wrong port"). The
+banner copy should probably say "Bridge target unreachable — check Settings
+→ Bridge Target" rather than "the bridge process" so the wrong-port case
+is more discoverable. Filed as a copy fix; not blocking.
+
 ## Status
 
 - Staging: complete and verified (bridge, addon installed + granted, extension
@@ -309,9 +424,21 @@ the "no add-ons again" reports even though the durable registry was intact.
   parked in `kevent` (idle, healthy). Need either `dtrace`/ltrace on the
   listener or to bound the extension's keep-alive concurrency. The retry
   layer makes the UX robust regardless.
-- **Backoff tuning** — 4 attempts × 250ms linear is conservative. If the
-  burst pattern turns out to last longer, raise `DEFAULT_MAX_ATTEMPTS` or
-  add jitter.
+- **Backoff tuning** — 6 attempts × 250ms linear (0/250/500/750/1000/1250
+  ms, ~3.75 s ceiling) survives the 1–3 s bursts we see in the wild. If
+  the burst pattern turns out to last longer, raise `DEFAULT_MAX_ATTEMPTS`
+  or add jitter. The previous 4-attempt budget was blown by a single
+  sustained burst (e.g. 2026-10-01 ~16:55 EDT).
+- **Self-heal probe** — once the store reaches `persistent`, it stays
+  there until a fetch succeeds. `fetchWithRetry`'s `onRecovered` only fires
+  when at least one transient failure happened during the SAME call, so a
+  first-try success after a burst cleared would NOT drive the state back
+  to `online`. Fixed by adding `reachability.recordSuccess()` (drives
+  persistent→online / unreachable→online on any clean fetch) and a
+  `banner.probe()` hook. Banner now fires probes on `window.focus`,
+  `visibilitychange→visible`, and `DOMContentLoaded`. Re-test after the
+  bridge client module is reloaded (chrome://extensions → ↻ on the
+  ResonantOS Browser Layer card).
 - **Banner copy** — "Bridge unreachable — retrying…" is generic; could
   surface the most recent failure reason (already passed in `event.reason`)
   for diagnostics. Keep terse for now.

@@ -86,3 +86,45 @@ test("tool add-on panel shows no harness-only controls", () => {
   assert.match(container.textContent, /tool \(no agent runtime\)/);
   assert.equal(container.querySelector(".primary-agent-assign"), null, "tool add-on must not expose primary-agent control");
 });
+
+test("renderAddOnToolWorkspace renders an interactive TUI panel for pi-native-v1", () => {
+  const dom = new JSDOM(`<section id="panel"></section>`);
+  const doc = dom.window.document;
+  const container = doc.querySelector("#panel");
+  const inst = installation({
+    addonId: "addon.pi-harness",
+    agentRuntime: { adapterId: "pi-native-v1", credentialSource: "session-environment", credentialBinding: "pi.native", chatAuthorLabel: "Pi", supportsStreaming: true, supportsCancellation: true, supportsModelSelection: true, modelSelection: { source: "runtime-audit", currentModelField: "currentModel", selectable: true } },
+    compatibleProviderProfiles: [{ id: "openai-compatible-ros-openrouter-test-api", label: "OpenRouter" }],
+    compatibleModels: [{ providerId: "openai-compatible-ros-openrouter-test-api", model: "openai/gpt-5.4-mini" }],
+    approvedProviderProfileIds: ["openai-compatible-ros-openrouter-test-api"],
+  });
+  renderAddOnToolWorkspace(container, { installation: inst, slots: {}, bridgeRequest: () => {}, document: doc });
+  const tui = container.querySelector(".pi-tui");
+  assert.ok(tui, "expected a pi-tui panel for pi-native-v1");
+  assert.equal(tui.dataset.harnessTuiAdapter, "pi-native-v1");
+  // The panel must NOT include the credential binding value or any API-key shape.
+  assert.doesNotMatch(container.textContent, /sk-or-v1-/);
+  assert.doesNotMatch(container.textContent, /xai-/);
+});
+
+test("renderAddOnToolWorkspace renders the SAME TUI shape for grok-native-v1 (so the user gets the official Grok CLI under the hood)", () => {
+  const dom = new JSDOM(`<section id="panel"></section>`);
+  const doc = dom.window.document;
+  const container = doc.querySelector("#panel");
+  const inst = installation({
+    addonId: "addon.grok-build",
+    name: "Grok Build",
+    agentRuntime: { adapterId: "grok-native-v1", credentialSource: "session-environment", credentialBinding: "grok-build.native", chatAuthorLabel: "Grok Build", supportsStreaming: true, supportsCancellation: true, supportsModelSelection: true, modelSelection: { source: "runtime-audit", currentModelField: "currentModel", selectable: true } },
+    compatibleProviderProfiles: [{ id: "shared-xai", label: "xAI" }],
+    compatibleModels: [{ providerId: "shared-xai", model: "grok-4-fast-reasoning" }],
+    approvedProviderProfileIds: ["shared-xai"],
+  });
+  renderAddOnToolWorkspace(container, { installation: inst, slots: {}, bridgeRequest: () => {}, document: doc });
+  const tui = container.querySelector(".pi-tui");
+  assert.ok(tui, "expected a pi-tui panel for grok-native-v1 (official Grok Build CLI)");
+  assert.equal(tui.dataset.harnessTuiAdapter, "grok-native-v1");
+  // The Grok panel surface should name the underlying binary class so the UI
+  // copy stays honest about which CLI is actually running.
+  assert.match(container.textContent, /Grok Build/);
+  assert.doesNotMatch(container.textContent, /xai-[A-Za-z0-9_-]{20,}/);
+});

@@ -69,9 +69,17 @@ export function createReachabilityBanner({ bridgeRequest, document, targetId = B
 
   const unsubscribe = bridgeRequest.subscribeReachability((event) => applyState(event));
 
+  // Self-heal: when the user refocuses the workspace or the tab returns
+  // from hidden, fire a probe through the bridge client. If the bridge has
+  // recovered (or the burst has cleared), the store flips to "online" and
+  // the banner hides. This avoids the trap where the reachability store
+  // caches "persistent" from an old burst and never re-checks.
+  attachProbes(bridgeRequest);
+
   return {
     dispose() {
       try { unsubscribe(); } catch { /* already disposed */ }
+      try { detachProbes(); } catch { /* no listeners */ }
       host.classList.remove(CLASS_NAME, CLASS_STATE_UNREACHABLE, CLASS_STATE_PERSISTENT, CLASS_STATE_ONLINE);
       host.textContent = "";
       delete host.dataset.bridgeState;
@@ -82,7 +90,73 @@ export function createReachabilityBanner({ bridgeRequest, document, targetId = B
         if (current) applyState(current);
       } catch { /* non-fatal */ }
     },
+    // Fire a probe through the bridge client. If the bridge recovers, the
+    // store flips to "online" via the existing subscription and the banner
+    // hides. Returns the probe promise (caller may await). No-op if the
+    // store is already online.
+    probe() {
+      try {
+        if (bridgeRequest.getReachabilityState?.()?.state === "online") {
+          return Promise.resolve();
+        }
+      } catch { /* fall through to probe */ }
+      // Any GET through bridgeRequest goes through the retry wrapper, so
+      // we don't need a separate retry loop. Use a cheap read-only route
+      // when available; bridgeRequest already covers the unknown-route
+      // failure path.
+      return Promise.resolve(bridgeRequest("/addons/registry", { method: "GET" })).catch(() => {});
+    },
   };
+}
+
+let focusListener = null;
+let visibilityListener = null;
+let docListener = null;
+
+function detachProbes() {
+  const win = typeof globalThis !== "undefined" ? globalThis.window : null;
+  const doc = typeof globalThis !== "undefined" ? globalThis.document : null;
+  if (win && focusListener) { win.removeEventListener("focus", focusListener); focusListener = null; }
+  if (doc && visibilityListener) {
+    doc.removeEventListener("visibilitychange", visibilityListener);
+    visibilityListener = null;
+  }
+  if (doc && docListener) {
+    doc.removeEventListener("DOMContentLoaded", docListener);
+    docListener = null;
+  }
+}
+
+function attachProbes(bridgeRequest) {
+  const win = typeof globalThis !== "undefined" ? globalThis.window : null;
+  const doc = typeof globalThis !== "undefined" ? globalThis.document : null;
+  if (win) {
+    focusListener = () => {
+      try { bridgeRequest("/addons/registry", { method: "GET" }).catch(() => {}); } catch { /* non-fatal */ }
+    };
+    win.addEventListener("focus", focusListener);
+  }
+  if (doc) {
+    visibilityListener = () => {
+      if (doc.visibilityState === "visible") {
+        try { bridgeRequest("/addons/registry", { method: "GET" }).catch(() => {}); } catch { /* non-fatal */ }
+      }
+    };
+    doc.addEventListener("visibilitychange", visibilityListener);
+    // Fire one probe on DOMContentLoaded so a freshly-mounted workspace
+    // confirms reachability immediately (rather than waiting for the next
+    // user action that triggers a real fetch).
+    docListener = () => {
+      try { bridgeRequest("/addons/registry", { method: "GET" }).catch(() => {}); } catch { /* non-fatal */ }
+    };
+    if (doc.readyState === "loading") {
+      doc.addEventListener("DOMContentLoaded", docListener);
+    } else {
+      // DOM already parsed — fire once.
+      try { bridgeRequest("/addons/registry", { method: "GET" }).catch(() => {}); } catch { /* non-fatal */ }
+      docListener = null;
+    }
+  }
 }
 
 export const REACHABILITY_BANNER_ID = BANNER_ID;

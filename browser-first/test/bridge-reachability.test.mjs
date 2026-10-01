@@ -47,8 +47,8 @@ test("bridgeRequest retries ECONNREFUSED and emits unreachable then recovered", 
   assert.equal(unreachableEvents.length, 2);
   assert.equal(recoveredEvents.length, 1);
 });
-
 test("bridgeRequest gives up after max attempts and emits persistent failure", async () => {
+  // First call: all 6 attempts fail with ECONNREFUSED → persistent failure.
   let calls = 0;
   const client = createBridgeClient({
     bridgeUrl: "http://127.0.0.1:45125",
@@ -69,15 +69,15 @@ test("bridgeRequest gives up after max attempts and emits persistent failure", a
     caught = error;
   }
   assert.ok(caught, "expected client to throw");
-  assert.equal(calls, 4, "should have made 4 attempts (initial + 3 retries)");
-  // One unreachable event per failed attempt (4), then the persistent
+  assert.equal(calls, 6, "should have made 6 attempts (initial + 5 retries)");
+  // One unreachable event per failed attempt (6), then the persistent
   // failure event after retries are exhausted.
-  assert.deepEqual(states, ["unreachable", "unreachable", "unreachable", "unreachable", "persistent"]);
+  assert.deepEqual(states, ["unreachable", "unreachable", "unreachable", "unreachable", "unreachable", "unreachable", "persistent"]);
   assert.equal(client.getReachabilityState().state, "persistent");
 });
 
 test("bridgeRequest recovers after persistent failure", async () => {
-  // First call: all 4 attempts fail with ECONNREFUSED → persistent failure.
+  // First call: all 6 attempts fail with ECONNREFUSED → persistent failure.
   let calls = 0;
   const alwaysFail = async () => {
     calls += 1;
@@ -97,7 +97,7 @@ test("bridgeRequest recovers after persistent failure", async () => {
     firstError = error;
   }
   assert.ok(firstError, "first call should fail with persistent error");
-  assert.equal(calls, 4);
+  assert.equal(calls, 6);
   assert.equal(client.getReachabilityState().state, "persistent");
 
   // Subsequent successful call should restore online.

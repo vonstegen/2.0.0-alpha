@@ -713,6 +713,22 @@ const { piNativeTuiRoutes } = createPiNativeTuiHostService({
   resolveProjection: ({ addonId, sessionId, manifest }) => issuePiProjection({ addonId, sessionId, manifest }),
 });
 
+// Parallel TUI route set for the official Grok CLI chain. Same dispatcher
+// wiring; only the URL namespace changes so the bridge's route registry has
+// separate audit entries for grok-native-v1 (matches the UI panel which
+// renders under "Grok Build" via addon.grok-build).
+const { piNativeTuiRoutes: grokNativeTuiRoutes } = createPiNativeTuiHostService({
+  piNativeSessionService: grokNativeSessionService,
+  issuePiProjection,
+  resolveManifest: (addonId) => harnessService.registry.manifest(addonId),
+  resolveSessionService: ({ addonId }) => {
+    if (addonId === "addon.grok-build") return grokNativeSessionService;
+    return piNativeSessionService;
+  },
+  resolveProjection: ({ addonId, sessionId, manifest }) => issuePiProjection({ addonId, sessionId, manifest }),
+  pathPrefix: "/grok-native/tui-session",
+});
+
 const bridgeRoutes = [
   ...browserDiagnosticsRoutes,
   ...providerBridgeRoutes,
@@ -724,6 +740,7 @@ const bridgeRoutes = [
   ...harnessRoutes,
   piNativeProofRoute,
   ...piNativeTuiRoutes,
+  ...grokNativeTuiRoutes,
 ];
 
 const bridgeToken = args.get("bridge-token") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? createBridgeToken();

@@ -90,6 +90,11 @@ export function createPiNativeTuiHostService({
   resolveSessionService,
   resolveProjection,
   createSubscription = createPiTuiStreamSubscription,
+  // URL prefix for the TUI routes. Defaults to "/pi-native/tui-session"
+  // (backwards compatible). Pass "/grok-native/tui-session" for the
+  // Grok CLI adapter so the bridge can register a parallel set of routes
+  // under the right namespace without duplicating logic.
+  pathPrefix = "/pi-native/tui-session",
 } = {}) {
   if (typeof resolveManifest !== "function") {
     throw new Error("createPiNativeTuiHostService requires a resolveManifest(addonId) function.");
@@ -103,7 +108,7 @@ export function createPiNativeTuiHostService({
   const nativeTuiSessions = new Map();
   const nativeTuiSessionRoute = {
     method: "POST",
-    path: "/pi-native/tui-session",
+    path: pathPrefix,
     requiredCapability: "provider-model-invoke",
     loopbackHostOnly: true,
     errorFamily: "harness",
@@ -154,7 +159,7 @@ export function createPiNativeTuiHostService({
   };
   const nativeTuiEventRoute = {
     method: "GET",
-    path: "/pi-native/tui-session/events",
+    path: `${pathPrefix}/events`,
     requiredCapability: "provider-model-invoke",
     loopbackHostOnly: true,
     errorFamily: "harness",
@@ -170,7 +175,7 @@ export function createPiNativeTuiHostService({
   };
   const nativeTuiSessionAction = (action) => ({
     method: "POST",
-    path: `/pi-native/tui-session/${action}`,
+    path: `${pathPrefix}/${action}`,
     requiredCapability: "provider-model-invoke",
     loopbackHostOnly: true,
     errorFamily: "harness",

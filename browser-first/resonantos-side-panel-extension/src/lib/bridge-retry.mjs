@@ -51,8 +51,11 @@ const TRANSIENT_ERROR_CODES = new Set([
   "ENETUNREACH",
 ]);
 
-// Hard ceiling on attempts (initial + 3 retries = 4 fetches). Tests override.
-const DEFAULT_MAX_ATTEMPTS = 4;
+// Hard ceiling on attempts (initial + 5 retries = 6 fetches). Tests override.
+// 6 × ~250ms linear = 0, 250, 500, 750, 1000, 1250 ms backoff between
+// attempts, ~3.75s ceiling — survives the 1–3s ECONNREFUSED bursts we see
+// in the wild while still failing fast enough to be useful.
+const DEFAULT_MAX_ATTEMPTS = 6;
 const DEFAULT_DELAY_MS = 250;
 
 export function isTransientNetworkError(error) {
@@ -203,6 +206,19 @@ export function createReachabilityStore() {
         emit({ state, ...payload });
       } else {
         lastReason = payload?.reason ?? null;
+        emit({ state, ...payload });
+      }
+    },
+    // First-try success: a fetch that did NOT need retry to succeed. The
+    // `onRecovered` callback in fetchWithRetry only fires when at least one
+    // transient failure happened during the SAME call, so we use this hook
+    // to drive a persistent→online transition on any clean fetch (e.g. a
+    // probe fired after the burst cleared).
+    recordSuccess(payload = {}) {
+      consecutiveFailures = 0;
+      if (state !== "online") {
+        state = "online";
+        lastReason = null;
         emit({ state, ...payload });
       }
     },

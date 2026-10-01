@@ -166,6 +166,15 @@ async function withBridgeRoutes(callback) {
       issuePiProjection: async () => ({ projection: { ok: true } }),
       resolveManifest: (addonId) => (addonId === "addon.pi-harness" ? { id: "addon.pi-harness" } : null),
     });
+    // Parallel TUI route set for the official Grok CLI chain. Same factory,
+    // different URL namespace so the audit can prove each adapter's routes
+    // are constructed with the expected capability boundary.
+    const grokTui = createPiNativeTuiHostService({
+      piNativeSessionService: { startSession: async () => ({ projection: {}, handle: {} }) },
+      issuePiProjection: async () => ({ projection: { ok: true } }),
+      resolveManifest: (addonId) => (addonId === "addon.grok-build" ? { id: "addon.grok-build" } : null),
+      pathPrefix: "/grok-native/tui-session",
+    });
     const routeArrays = {
       harnessRoutes: harness.harnessRoutes,
       browserDiagnosticsRoutes: diagnostics.browserDiagnosticsRoutes,
@@ -176,6 +185,7 @@ async function withBridgeRoutes(callback) {
       opencodeSessionRoutes: opencodeSession.opencodeSessionRoutes,
       extensionPrefsRoutes: prefs.extensionPrefsRoutes,
       piNativeTuiRoutes: piTui.piNativeTuiRoutes,
+      grokNativeTuiRoutes: grokTui.piNativeTuiRoutes,
     };
     const routes = Object.values(routeArrays).flat();
 

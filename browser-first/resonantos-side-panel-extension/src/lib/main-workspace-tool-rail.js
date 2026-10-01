@@ -144,8 +144,9 @@ export function renderAddOnToolWorkspace(container, { installation, slots = {}, 
     section.append(assign);
   }
 
-  if (runtime?.adapterId === "pi-native-v1" && typeof bridgeRequest === "function") {
-    section.append(renderPiTuiSession(doc, { installation, bridgeRequest }));
+  const tuiAdapterId = runtime?.adapterId ?? "";
+  if ((tuiAdapterId === "pi-native-v1" || tuiAdapterId === "grok-native-v1") && typeof bridgeRequest === "function") {
+    section.append(renderHarnessTuiSession(doc, { installation, bridgeRequest, adapterId: tuiAdapterId }));
   }
 
   container.append(section);
@@ -155,9 +156,14 @@ export function renderAddOnToolWorkspace(container, { installation, slots = {}, 
 // host-owned pseudo-TTY and renders its raw output in a vendored xterm.js
 // terminal. Keystrokes stream back to the PTY over the input route; the
 // credential never appears here (env-only on the host side).
-function renderPiTuiSession(doc, { installation, bridgeRequest }) {
-  const box = doc.createElement("div");
-  box.className = "pi-tui";
+function renderHarnessTuiSession(doc, { installation, bridgeRequest, adapterId }) {
+  // Routes are namespaced per adapter (pi-native-v1 -> /pi-native/tui-session/*,
+  // grok-native-v1 -> /grok-native/tui-session/*). The bridge dispatcher
+  // resolves the right session service from the payload's addonId.
+  const routePrefix = adapterId === "grok-native-v1" ? "/grok-native/tui-session" : "/pi-native/tui-session";
+  const tui = doc.createElement("div");
+  tui.className = "pi-tui";
+  tui.dataset.harnessTuiAdapter = adapterId;
 
   const row = doc.createElement("div");
   row.className = "pi-tui-controls";
@@ -169,7 +175,7 @@ function renderPiTuiSession(doc, { installation, bridgeRequest }) {
   status.dataset.tone = "neutral";
   status.textContent = "idle";
   row.append(label, status);
-  box.append(row);
+  tui.append(row);
 
   const allProfiles = Array.isArray(installation?.compatibleProviderProfiles) ? installation.compatibleProviderProfiles : [];
   const models = Array.isArray(installation?.compatibleModels) ? installation.compatibleModels : [];
@@ -210,12 +216,12 @@ function renderPiTuiSession(doc, { installation, bridgeRequest }) {
   cancelButton.textContent = "Cancel";
   cancelButton.disabled = true;
   pick.append(profileSelect, modelSelect, startButton, cancelButton);
-  box.append(pick);
+  tui.append(pick);
 
   const terminalHost = doc.createElement("div");
   terminalHost.className = "pi-tui-terminal";
   terminalHost.hidden = true;
-  box.append(terminalHost);
+  tui.append(terminalHost);
 
   const setStatus = (text, tone = "neutral") => {
     status.textContent = text;
@@ -300,7 +306,7 @@ function renderPiTuiSession(doc, { installation, bridgeRequest }) {
     setStatus("starting…", "neutral");
     startButton.disabled = true;
     try {
-      const created = await bridgeRequest("/pi-native/tui-session", {
+      const created = await bridgeRequest(routePrefix, {
         method: "POST",
         body: {
           addonId: installation.addonId,
@@ -341,17 +347,17 @@ function renderPiTuiSession(doc, { installation, bridgeRequest }) {
         const cols = term?.cols;
         const rows = term?.rows;
         if (Number.isInteger(cols) && Number.isInteger(rows)) {
-          void bridgeRequest("/pi-native/tui-session/resize", { method: "POST", body: { sessionId, cols, rows } }).catch(() => {});
+          void bridgeRequest(`${routePrefix}/resize`, { method: "POST", body: { sessionId, cols, rows } }).catch(() => {});
         }
       } catch { /* not fatal */ }
     });
     resizeObserver.observe(terminalHost);
 
     term.onData((input) => {
-      void bridgeRequest("/pi-native/tui-session/input", { method: "POST", body: { sessionId, input } }).catch(() => {});
+      void bridgeRequest(`${routePrefix}/input`, { method: "POST", body: { sessionId, input } }).catch(() => {});
     });
 
-    const response = await bridgeRequest(`/pi-native/tui-session/events?sessionId=${encodeURIComponent(sessionId)}`, {
+    const response = await bridgeRequest(`${routePrefix}/events?sessionId=${encodeURIComponent(sessionId)}`, {
       responseType: "sse",
     }).catch(() => null);
     if (response && !streamDone) {
@@ -365,21 +371,21 @@ function renderPiTuiSession(doc, { installation, bridgeRequest }) {
   cancelButton.addEventListener("click", () => {
     if (!sessionId) return;
     setStatus("cancelling…", "warning");
-    void bridgeRequest("/pi-native/tui-session/cancel", { method: "POST", body: { sessionId } }).catch(() => {});
+    void bridgeRequest(`${routePrefix}/cancel`, { method: "POST", body: { sessionId } }).catch(() => {});
   });
 
   // Surface teardown: never leaves a host PTY behind.
   const originalDispose = () => {
     if (sessionId && running) {
-      void bridgeRequest("/pi-native/tui-session/dispose", { method: "POST", body: { sessionId } }).catch(() => {});
+      void bridgeRequest(`${routePrefix}/dispose`, { method: "POST", body: { sessionId } }).catch(() => {});
     }
     try { resizeObserver?.disconnect(); } catch { /* noop */ }
     try { term?.dispose?.(); } catch { /* noop */ }
   };
-  box.dataset.piTuiDispose = "true";
-  if (typeof window !== "undefined" && !box._disposeHooked) {
-    box._disposeHooked = true;
+  tui.dataset.piTuiDispose = "true";
+  if (typeof window !== "undefined" && !tui._disposeHooked) {
+    tui._disposeHooked = true;
     window.addEventListener("beforeunload", originalDispose, { once: true });
   }
-  return box;
+  return tui;
 }

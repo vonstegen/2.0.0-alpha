@@ -48,6 +48,12 @@ const BRIDGE_ROUTE_CAPABILITIES = Object.freeze({
   "POST /pi-native/tui-session/resize": "provider-model-invoke",
   "POST /pi-native/tui-session/cancel": "provider-model-invoke",
   "POST /pi-native/tui-session/dispose": "provider-model-invoke",
+  "POST /grok-native/tui-session": "provider-model-invoke",
+  "GET /grok-native/tui-session/events": "provider-model-invoke",
+  "POST /grok-native/tui-session/input": "provider-model-invoke",
+  "POST /grok-native/tui-session/resize": "provider-model-invoke",
+  "POST /grok-native/tui-session/cancel": "provider-model-invoke",
+  "POST /grok-native/tui-session/dispose": "provider-model-invoke",
   "POST /augmentor/control-plan": "agent-control-plan",
   "POST /augmentor/next-action": "agent-control-plan",
   "POST /web/news": "agent-control-plan",
@@ -356,7 +362,8 @@ const OPENCODE_HTTP_CODES = Object.freeze({
 });
 const OPENCODE_EVENTS_PATH = "/opencode/session/events";
 const PI_TUI_EVENTS_PATH = "/pi-native/tui-session/events";
-const SSE_ROUTE_PATHS = new Set([OPENCODE_EVENTS_PATH, PI_TUI_EVENTS_PATH]);
+const GROK_TUI_EVENTS_PATH = "/grok-native/tui-session/events";
+const SSE_ROUTE_PATHS = new Set([OPENCODE_EVENTS_PATH, PI_TUI_EVENTS_PATH, GROK_TUI_EVENTS_PATH]);
 
 function openCodeErrorCode(payload, status) {
   const code = typeof payload?.code === "string" ? payload.code : "";
@@ -416,6 +423,15 @@ export function createBridgeClient(config = globalThis.__RESONANTOS_BRIDGE_CONFI
       onUnreachable: (event) => reachability.onUnreachable(event),
       onRecovered: (event) => reachability.onRecovered(event),
       onPersistentFailure: (event) => reachability.onPersistentFailure(event),
+    }).then((response) => {
+      // Clean first-try success: drive the state out of "persistent" or
+      // "unreachable" even when no transient failures happened during
+      // THIS call. fetchWithRetry's `onRecovered` only fires when at least
+      // one transient failure happened in the same call; this hook covers
+      // the case where the burst cleared between calls (e.g. probe fires
+      // after the user returns focus).
+      queueMicrotask(() => reachability.recordSuccess({ route }));
+      return response;
     });
   }
 

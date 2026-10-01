@@ -103,6 +103,37 @@ The xterm runtime is vendored under
 `browser-first/resonantos-side-panel-extension/src/vendor/xterm/` and loads as
 plain scripts (MV3 `script-src 'self'`), so no remote CDN or eval is involved.
 
+## Stage 2C — Interactive Grok Build session (TUI, human + agent)
+
+The extension's Grok Build panel (left rail → **Add-on Surfaces → grok-build**
+→ "Grok Build session") runs the **official Grok CLI** (`~/.grok/bin/grok`,
+installed via `curl -fsSL https://x.ai/cli/install.sh | bash`) inside the
+same host-owned PTY as the Pi chain. Verified live: `grokCommand()` resolves
+the binary to `/Users/andrewjochl/.grok/bin/grok -> ../downloads/grok-1.0.34-macos-aarch64`,
+canonicalized into the `~/.grok/bin` install root.
+
+- Pick the provider profile (`shared-xai` or another xAI-bound profile) and
+  the model (`grok-4-fast-reasoning`, `grok-4-fast-non-reasoning`, …), then
+  **Start session**. The bridge dispatches to `grokNativeSessionService`
+  via the addonId in the payload (same dispatcher pattern as the proof
+  route) and the reviewed `grokCommand()` allowlist validates the
+  executable. The credential is delivered via the `XAI_API_KEY` env var
+  inside the same env-only projection chain — the raw plan never crosses
+  the bridge boundary.
+- SSE wire contract is identical to the Pi chain but the URL namespace is
+  `/grok-native/tui-session/*` so the bridge route registry has separate
+  audit entries for `grok-native-v1`. The UI panel's
+  `renderHarnessTuiSession(adapterId="grok-native-v1")` mirrors the Pi
+  render — same xterm terminal, same input/resize/cancel/dispose handles.
+- Session continuity: `GROK_HOME` is redirected to a disposable per-user-root
+  directory in `baseEnv` so the durable `~/.grok` (auth.json, config, leader
+  socket, session records) is invisible to harness turns — same isolation
+  pattern as the `PI_CODING_AGENT_DIR` countermeasure for pi.
+
+If the official Grok CLI is not installed, `grokCommand()` returns `null`
+and the panel surfaces a "binary unavailable" status (no fallback to a
+mock or generic harness adapter). To install: `curl -fsSL https://x.ai/cli/install.sh | bash`.
+
 ## Stage 3 — Revocation check (agent-driven)
 
 The agent-runtime grant is revoked through `/addons/grants`; a new proof request
