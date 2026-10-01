@@ -36,7 +36,9 @@ flow reaches it with no reload or Bridge-Target override needed.
    port) makes Settings → Providers report the bridge as unreachable. Both
    extension folders (`pi-phase2` and `2.0.0-alpha`) share one extension ID
    and the same token set, so loading either works once its generated config
-   is current.
+   is current. See `docs/DEV-LAYOUT.md` for the full machine layout and the
+   load rule; `scripts/dev-extension-current.sh` prints the exact folder to
+   load for each running bridge.
 3. **Settings → Providers → OpenRouter** (the `ros-openrouter-test-api`
    account) → enter the OpenRouter test API key → **Save**. The value lives
    only in the bridge's session memory — never in argv, auth.json, a file, or
