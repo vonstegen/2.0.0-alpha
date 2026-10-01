@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, symlink, writeFile, readFile, rm, stat } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
+const tmp = realpathSync(tmpdir());
 import path from "node:path";
 import test from "node:test";
 
@@ -273,7 +274,7 @@ test("K: skill source root cannot be cleaned", () => {
 // ============================================================================
 
 test("L: Session A cannot clean Session B", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-audit-l-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-audit-l-"));
   try {
     const svc = svcFor({ stagingBase });
     const a = svc.project({ addonId: "addon.pi-harness", sessionId: "session-a", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -290,7 +291,7 @@ test("L: Session A cannot clean Session B", async () => {
 });
 
 test("M: Harness A cannot clean Harness B", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-audit-m-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-audit-m-"));
   try {
     const svc = svcFor({ stagingBase });
     const a = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -305,7 +306,7 @@ test("M: Harness A cannot clean Harness B", async () => {
 });
 
 test("N: Project A cannot clean Project B", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-audit-n-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-audit-n-"));
   try {
     const svc = svcFor({ stagingBase, projectId: "project-a" });
     const a = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -324,8 +325,8 @@ test("N: Project A cannot clean Project B", async () => {
 // ============================================================================
 
 test("O: symlink redirect outside owned staging root denied", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-audit-o-"));
-  const outside = await mkdtemp(path.join(tmpdir(), "ros-audit-o-out-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-audit-o-"));
+  const outside = await mkdtemp(path.join(tmp, "ros-audit-o-out-"));
   try {
     const svc = svcFor({ stagingBase });
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -375,7 +376,7 @@ test("P: legitimate host staging under /home/<user>/... is allowed", () => {
 // ============================================================================
 
 test("Q: own staging cleanup PASS", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-audit-q-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-audit-q-"));
   try {
     const svc = svcFor({ stagingBase });
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -390,7 +391,7 @@ test("Q: own staging cleanup PASS", async () => {
 });
 
 test("R: repeated own cleanup PASS (idempotent)", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-audit-r-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-audit-r-"));
   try {
     const svc = svcFor({ stagingBase });
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -403,7 +404,7 @@ test("R: repeated own cleanup PASS (idempotent)", async () => {
 });
 
 test("S: materialization destination is inside exact own staging root", async () => {
-  const stagingBase = realpathSync(await mkdtemp(path.join(tmpdir(), "ros-audit-s-")));
+  const stagingBase = realpathSync(await mkdtemp(path.join(tmp, "ros-audit-s-")));
   try {
     const svc = svcFor({ stagingBase });
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -418,7 +419,7 @@ test("S: materialization destination is inside exact own staging root", async ()
 });
 
 test("T: caller cannot override layout/staging/cleanup path", async () => {
-  const stagingBase = realpathSync(await mkdtemp(path.join(tmpdir(), "ros-audit-t-")));
+  const stagingBase = realpathSync(await mkdtemp(path.join(tmp, "ros-audit-t-")));
   try {
     const svc = svcFor({ stagingBase });
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -442,7 +443,7 @@ test("T: caller cannot override layout/staging/cleanup path", async () => {
 // ============================================================================
 
 test("U: public view exposes no staging identity/path/source/grants/secrets", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-audit-u-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-audit-u-"));
   try {
     const svc = svcFor({ stagingBase });
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -463,8 +464,8 @@ test("U: public view exposes no staging identity/path/source/grants/secrets", as
 });
 
 test("V: canonical skill source unchanged", async () => {
-  const sourceRoot = await mkdtemp(path.join(tmpdir(), "ros-audit-v-src-"));
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-audit-v-stage-"));
+  const sourceRoot = await mkdtemp(path.join(tmp, "ros-audit-v-src-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-audit-v-stage-"));
   try {
     const canonicalPath = path.join(sourceRoot, "canonical-skill.md");
     await writeFile(canonicalPath, "# Canonical\n\nBody stays identical.\n");

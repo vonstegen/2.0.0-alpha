@@ -566,7 +566,7 @@ export interface AddOnAgentRuntimeAdapterContract {
   adapterVersion: 1;
   adapterId: string;
   endpoint?: string;
-  authScheme: "none" | "dsh-action-token" | "bearer";
+  authScheme: "none" | "dsh-action-token" | "bearer" | "session-environment";
   credentialBinding?: string;
   credentialSource?: HarnessCredentialSource;
   supportedOperations: HarnessOperation[];

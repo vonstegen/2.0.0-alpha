@@ -1,0 +1,70 @@
+/* Pi Workspace — session-spin surface for the Pi add-on (pi-native-v1). */
+
+.pi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.pi-session-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--surface-line);
+  border-bottom: 1px solid var(--surface-line);
+}
+
+.pi-session-strip .eyebrow {
+  margin: 0;
+}
+
+.pi-session-strip em {
+  opacity: 0.7;
+  font-style: normal;
+}
+
+.pi-chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 380px;
+  overflow-y: auto;
+  padding: var(--space-3) 0;
+}
+
+.pi-chat-message {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.pi-chat-user {
+  background: var(--surface-raised);
+  align-self: flex-end;
+}
+
+.pi-chat-assistant {
+  background: var(--surface-inset);
+  align-self: flex-start;
+}
+
+.pi-composer {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+}
+
+.pi-composer textarea {
+  flex: 1;
+  min-height: 72px;
+  resize: vertical;
+}
+
+.pi-notice {
+  margin-top: var(--space-2);
+}

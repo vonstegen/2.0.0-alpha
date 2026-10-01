@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, symlink, writeFile, readFile, rm, stat } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
+const tmp = realpathSync(tmpdir());
 import path from "node:path";
 import test from "node:test";
 
@@ -40,7 +41,7 @@ const OP = (projection) => projection.operations.map((op) => `${op.family}.${op.
 const realCatalog = buildSkillCatalogFromManifests([opencodeManifest, browserManifest], { sourceRoot: repoRoot });
 const opencodeSkill = realCatalog.find((s) => s.id === "opencode-coding-handoff");
 
-function svcFor(catalog, sourceRoot = repoRoot, stagingBase = path.join(tmpdir(), "ros-staging-base"), layout = { dir: path.join(".pi", "skills"), file: "SKILL.md" }) {
+function svcFor(catalog, sourceRoot = repoRoot, stagingBase = path.join(tmp, "ros-staging-base"), layout = { dir: path.join(".pi", "skills"), file: "SKILL.md" }) {
   return createHarnessSkillsProjection({
     authorizedProject: { id: "project-a", label: "Project A" },
     skillCatalog: catalog,
@@ -65,7 +66,7 @@ const opencodeEligibleGrants = () =>
 // ============================================================================
 
 test("CP-2C1.1 A: stagingBase injection required for host-owned staging root", async () => {
-  const tmpRoot = await mkdtemp(path.join(tmpdir(), "ros-test-"));
+  const tmpRoot = await mkdtemp(path.join(tmp, "ros-test-"));
   try {
     // Without stagingBase, creation should fail
     const svc = createHarnessSkillsProjection({
@@ -81,8 +82,8 @@ test("CP-2C1.1 A: stagingBase injection required for host-owned staging root", a
 });
 
 test("CP-2C1.1 B: caller cannot supply arbitrary stagingRoot to materialize", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
-  const arbitraryRoot = path.join(tmpdir(), "arbitrary-root");
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
+  const arbitraryRoot = path.join(tmp, "arbitrary-root");
   await mkdir(arbitraryRoot, { recursive: true });
   try {
     const svc = svcFor(realCatalog, repoRoot, stagingBase);
@@ -102,7 +103,7 @@ test("CP-2C1.1 B: caller cannot supply arbitrary stagingRoot to materialize", as
 });
 
 test("CP-2C1.1 C: projection-specific staging root derived from sessionId", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
   try {
     const svc = svcFor(realCatalog, repoRoot, stagingBase);
     const resultA = svc.project({ addonId: "addon.pi-harness", sessionId: "session-a", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -127,7 +128,7 @@ test("CP-2C1.1 C: projection-specific staging root derived from sessionId", asyn
 });
 
 test("CP-2C1.1 D: project root cannot become staging root", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
   try {
     const svc = svcFor(realCatalog, repoRoot, stagingBase);
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "project-a", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -148,7 +149,7 @@ test("CP-2C1.1 D: project root cannot become staging root", async () => {
 // ============================================================================
 
 test("CP-2C1.2 A: layout.dir/layout.file cannot be supplied by caller", async () => {
-  const stagingBase = realpathSync(await mkdtemp(path.join(tmpdir(), "ros-staging-base-")));
+  const stagingBase = realpathSync(await mkdtemp(path.join(tmp, "ros-staging-base-")));
   try {
     const svc = svcFor(realCatalog, repoRoot, stagingBase);
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -164,7 +165,7 @@ test("CP-2C1.2 A: layout.dir/layout.file cannot be supplied by caller", async ()
 });
 
 test("CP-2C1.2 B: default layout is Pi-native (.pi/skills/SKILL.md)", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
   try {
     const svc = svcFor(realCatalog, repoRoot, stagingBase);
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -179,8 +180,8 @@ test("CP-2C1.2 B: default layout is Pi-native (.pi/skills/SKILL.md)", async () =
 });
 
 test("CP-2C1.2 C: synthetic harness uses host-injected alternate layout, not caller input", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-synth-base-"));
-  const sourceRoot = await mkdtemp(path.join(tmpdir(), "ros-synth-src-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-synth-base-"));
+  const sourceRoot = await mkdtemp(path.join(tmp, "ros-synth-src-"));
   try {
     await writeFile(path.join(sourceRoot, "synthetic-skill.md"), "# Synthetic skill\n\nUse this to do synthetic things.\n");
     const syntheticManifest = {
@@ -218,7 +219,7 @@ test("CP-2C1.2 C: synthetic harness uses host-injected alternate layout, not cal
 // ============================================================================
 
 test("CP-2C1.3 A: cleanup(projectRoot) DENY", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);
@@ -232,7 +233,7 @@ test("CP-2C1.3 A: cleanup(projectRoot) DENY", async () => {
 });
 
 test("CP-2C1.3 B: cleanup(homeDirectory) DENY", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);
@@ -242,7 +243,7 @@ test("CP-2C1.3 B: cleanup(homeDirectory) DENY", async () => {
 });
 
 test("CP-2C1.3 C: cleanup(filesystemRoot) DENY", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);
@@ -251,7 +252,7 @@ test("CP-2C1.3 C: cleanup(filesystemRoot) DENY", async () => {
 });
 
 test("CP-2C1.3 D: cleanup(skillSourceRoot) DENY", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);
@@ -260,7 +261,7 @@ test("CP-2C1.3 D: cleanup(skillSourceRoot) DENY", async () => {
 });
 
 test("CP-2C1.3 E: Session A cleanup of Session B staging DENY", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const resultA = svc.project({ addonId: "addon.pi-harness", sessionId: "session-a", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   const resultB = svc.project({ addonId: "addon.pi-harness", sessionId: "session-b", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -282,7 +283,7 @@ test("CP-2C1.3 E: Session A cleanup of Session B staging DENY", async () => {
 });
 
 test("CP-2C1.3 F: Harness A cleanup of Harness B staging DENY", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);
@@ -300,8 +301,8 @@ test("CP-2C1.3 F: Harness A cleanup of Harness B staging DENY", async () => {
 });
 
 test("CP-2C1.3 G: symlink staging root/destination redirected outside host staging base DENY", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
-  const outside = await mkdtemp(path.join(tmpdir(), "ros-outside-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
+  const outside = await mkdtemp(path.join(tmp, "ros-outside-"));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);
@@ -326,7 +327,7 @@ test("CP-2C1.3 G: symlink staging root/destination redirected outside host stagi
 });
 
 test("CP-2C1.3 H: own projection staging cleanup PASS", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);
@@ -344,7 +345,7 @@ test("CP-2C1.3 H: own projection staging cleanup PASS", async () => {
 });
 
 test("CP-2C1.3 I: repeated own cleanup PASS/idempotent", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);
@@ -374,7 +375,7 @@ test("CP-2C1.3 I: repeated own cleanup PASS/idempotent", async () => {
 // ============================================================================
 
 test("CP-2C1.4 A: materialization path exactly matches trusted Pi layout", async () => {
-  const stagingBase = realpathSync(await mkdtemp(path.join(tmpdir(), "ros-staging-base-")));
+  const stagingBase = realpathSync(await mkdtemp(path.join(tmp, "ros-staging-base-")));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);
@@ -386,7 +387,7 @@ test("CP-2C1.4 A: materialization path exactly matches trusted Pi layout", async
 });
 
 test("CP-2C1.4 B: stale projection rejected", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);
@@ -399,7 +400,7 @@ test("CP-2C1.4 B: stale projection rejected", async () => {
 });
 
 test("CP-2C1.4 C: wrong session/project rejected in cleanup", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);
@@ -415,7 +416,7 @@ test("CP-2C1.4 C: wrong session/project rejected in cleanup", async () => {
 });
 
 test("CP-2C1.4 D: unowned staging identity rejected", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);
@@ -434,7 +435,7 @@ test("CP-2C1.4 D: unowned staging identity rejected", async () => {
 test("CP-2C1.4 E: destination symlink escape rejected", async () => {
   // This test verifies that destination path is validated for containment
   // The implementation uses pathContains which validates lexical containment
-  const stagingBase = realpathSync(await mkdtemp(path.join(tmpdir(), "ros-staging-base-")));
+  const stagingBase = realpathSync(await mkdtemp(path.join(tmp, "ros-staging-base-")));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);
@@ -461,8 +462,8 @@ test("CP-2C1.5 A: public view contains no staging/source paths", () => {
 });
 
 test("CP-2C1.5 B: canonical skill source remains unchanged", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
-  const sourceRoot = await mkdtemp(path.join(tmpdir(), "ros-src-unchanged-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
+  const sourceRoot = await mkdtemp(path.join(tmp, "ros-src-unchanged-"));
   try {
     const canonicalPath = path.join(sourceRoot, "canonical-skill.md");
     await writeFile(canonicalPath, "# Canonical skill\n\nBody stays identical.\n");
@@ -503,7 +504,7 @@ test("CP-2C1.5 B: canonical skill source remains unchanged", async () => {
 // ============================================================================
 
 test("CP-2C1.5 Destructive safety: no cleanup can point at real project/home/source", async () => {
-  const stagingBase = await mkdtemp(path.join(tmpdir(), "ros-staging-base-"));
+  const stagingBase = await mkdtemp(path.join(tmp, "ros-staging-base-"));
   const svc = svcFor(realCatalog, repoRoot, stagingBase);
   const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
   assert.equal(result.ok, true);

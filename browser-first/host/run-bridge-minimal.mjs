@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, realpathSync, statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -56,6 +58,9 @@ import {
   hermesPythonRuntimeDiagnostics,
 } from "./hermes-runtime.mjs";
 import { createHarnessHostService } from "./harness-host-service.mjs";
+import { createPiNativeSessionService } from "./pi-native-session-service.mjs";
+import { createHarnessResourceProjection } from "./harness-resource-projection.mjs";
+import { buildSkillCatalogFromManifests, createHarnessSkillsProjection } from "./harness-skills-projection.mjs";
 import { createProviderHostService } from "./provider-host-service.mjs";
 import {
   memorySourceMoveHistoryPath as sourceMoveHistoryPath,
@@ -202,11 +207,158 @@ const resolveProviderProfileCredential = async (providerProfileId) => {
   return { endpoint: profile.apiBaseUrl, actionToken };
 };
 
-const harnessService = await createHarnessHostService({
+const approvedBindings = JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]");
+
+// ---- Pi-native testing-phase wiring (session-environment credential chain) ----
+//
+// The host owns every authority in the native Pi chain:
+//   * authorized project           — repoRoot (host-approved Project identity)
+//   * session cwd                  — resourceProjection.consume() re-validates an
+//                                    issued Project/Files projection; a caller
+//                                    path is never accepted
+//   * authorize                    — CLEAN gate: installed + enabled +
+//                                    agent-runtime granted + approved binding via
+//                                    registry.snapshot(). Never the
+//                                    authorize("primary-agent", …) slot
+//                                    displacement P2 used. A revocation fences
+//                                    NEW launch material while the shared
+//                                    provider credential stays usable elsewhere.
+//   * credential                   — resolveProviderProfileCredential (the same
+//                                    ROS provider/vault mechanism as Augmentor)
+//   * executable                   — piCommand() allowlist (pi-runtime.mjs)
+//
+// The raw (secret-bearing) plan never leaves the session service; only
+// redactLaunchPlan() projections cross any observability/UI boundary.
+//
+// The clean authorize gate reads registry state only when a launch plan is
+// being built, so the harness service may be constructed after this wiring.
+let harnessService;
+
+const piAuthorizedProject = Object.freeze({ id: "resonant-os", label: "ResonantOS Project", root: repoRoot });
+const piResourceProjection = createHarnessResourceProjection({ authorizedProject: piAuthorizedProject, homeDir: os.homedir() });
+
+// Phase 2C: host-owned skills staging. The catalog comes from the reviewed
+// bundled add-on manifests; materialization writes only into the host-owned
+// staging base and is cleaned up with the session.
+const bundledAddonIndex = JSON.parse(await readFile(new URL("../../public/addons/index.json", import.meta.url), "utf8"));
+const bundledAddonManifests = [];
+for (const name of bundledAddonIndex) {
+  bundledAddonManifests.push(JSON.parse(await readFile(new URL(`../../public/addons/${name}`, import.meta.url), "utf8")));
+}
+const piSkillCatalog = buildSkillCatalogFromManifests(bundledAddonManifests, { sourceRoot: repoRoot });
+const piSkillsProjection = createHarnessSkillsProjection({
+  authorizedProject: piAuthorizedProject,
+  skillCatalog: piSkillCatalog,
+  skillSourceRoot: repoRoot,
+  stagingBase: path.join(userRoot(), "harness-skills-staging"),
+  projectRoot: repoRoot,
+  layout: { dir: ".pi/skills", file: "SKILL.md" },
+});
+
+const piDenied = () => Object.assign(new Error("permission-denied"), { code: "permission-denied" });
+
+// Clean launch authorization: registry state + approved binding only. Slot
+// ownership is irrelevant here — installing, enabling, granting agent-runtime,
+// and approving the binding is what authorizes a native Pi launch.
+const piNativeAuthorize = ({ addonId, providerProfileId }) => {
+  const projection = harnessService.registry.snapshot();
+  const installation = projection.installations[addonId];
+  if (!installation?.installed || !installation.enabled) throw piDenied();
+  const agentGranted = (installation.grantedCapabilities ?? []).some(
+    (grant) => grant.capability === "agent-runtime" && grant.granted === true,
+  );
+  if (!agentGranted) throw piDenied();
+  const binding = approvedBindings.find((candidate) =>
+    candidate.addonId === addonId &&
+    candidate.adapterId === "pi-native-v1" &&
+    typeof installation.agentRuntime?.credentialBinding === "string" &&
+    candidate.name === installation.agentRuntime.credentialBinding &&
+    candidate.authScheme === "session-environment" &&
+    candidate.source && typeof candidate.source.providerProfileId === "string" &&
+    candidate.source.providerProfileId === providerProfileId);
+  if (!binding) throw piDenied();
+};
+
+const piGrantedCapabilities = (addonId) =>
+  harnessService.registry.snapshot().installations[addonId]?.grantedCapabilities ?? [];
+
+const piNativeSessionService = createPiNativeSessionService({
+  providerHost: providerHostService,
+  resolveProviderProfileCredential,
+  authorize: piNativeAuthorize,
+  consumeProjection: (projection, { addonId, sessionId }) =>
+    piResourceProjection.consume(projection, {
+      addonId,
+      sessionId,
+      authorizedProject: piAuthorizedProject,
+      grantedCapabilities: piGrantedCapabilities(addonId),
+    }),
+  envAllowlist: ["PATH", "HOME"],
+  homeDir: os.homedir(),
+});
+
+// Host-issued session projection: the ONLY source of the launch cwd. Issued
+// per adapter session from the manifest's declared resource request and the
+// CURRENT granted capabilities.
+const issuePiProjection = async ({ addonId, sessionId, manifest }) => {
+  const request = manifest?.harnessResources ?? { requests: { project: ["read"], files: ["read"] } };
+  const result = await piResourceProjection.project({
+    addonId,
+    sessionId,
+    request,
+    grantedCapabilities: piGrantedCapabilities(addonId),
+  });
+  if (result.ok !== true) throw piDenied();
+  return result;
+};
+
+// Phase 2C staging (best-effort): materialize read-eligible skills into the
+// host-owned disposable staging tree for this session. A staging failure never
+// blocks the session (skills are optional), but the projection is retained so
+// dispose() can clean the owned tree.
+const stagePiSkills = async ({ addonId, sessionId, manifest, projection }) => {
+  const issued = piSkillsProjection.project({
+    addonId,
+    sessionId,
+    request: manifest?.harnessResources,
+    grantedCapabilities: piGrantedCapabilities(addonId),
+  });
+  if (issued.ok !== true) return null;
+  for (const skill of piSkillsProjection.listSkills(issued.projection)) {
+    const materialized = await piSkillsProjection.materialize(issued.projection, skill.id);
+    if (!materialized.ok) {
+      console.error(JSON.stringify({ event: "pi.skills.materialize_failed", code: materialized.code, skill: skill.id }));
+    }
+  }
+  return issued;
+};
+
+const cleanupPiSkills = async ({ addonId, sessionId, projection }) => {
+  if (!projection) return;
+  await piSkillsProjection.cleanup(projection, {
+    addonId,
+    sessionId,
+    authorizedProject: piAuthorizedProject,
+    grantedCapabilities: piGrantedCapabilities(addonId),
+    skillCatalog: piSkillCatalog,
+  });
+};
+
+// The adapter-side session chain (agent-adapters/pi-native.mjs) composes these
+// host authorities behind the same interface as every other reviewed adapter.
+const piNativeHost = Object.freeze({
+  sessionService: piNativeSessionService,
+  issueProjection: issuePiProjection,
+  stageSkills: stagePiSkills,
+  cleanupSkills: cleanupPiSkills,
+});
+
+harnessService = await createHarnessHostService({
   userRoot: userRoot(), providerHost: providerHostService,
   resolveProviderProfileCredential,
-  bindings: JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]"),
+  bindings: approvedBindings,
   env: process.env,
+  piNative: piNativeHost,
 });
 
 const addonDelegationService = createAddonDelegationService({
@@ -455,6 +607,47 @@ const { extensionPrefsRoutes, flushPendingExtensionPrefs } = createExtensionPref
 const { harnessRoutes } = harnessService;
 const providerBridgeRoutes = harnessService.composeProviderRoutes(legacyProviderBridgeRoutes);
 
+// Pi-native proof trigger. Loopback-only, bridge-token + provider-model-invoke
+// capability gated, harness error family. Runs the proof IN the bridge process
+// (sharing the Settings-configured session credential) through the FULL testing
+// chain: clean authorize gate -> issued Project/Files projection (the only cwd
+// source) -> reviewed planner -> bounded launcher. Returns ONLY redacted
+// evidence: redactLaunchPlan(plan) projection + sanitized process output. The
+// raw plan (secret-bearing env) never crosses this boundary.
+const piHarnessManifest = JSON.parse(
+  await readFile(new URL("../../examples/addons/pi-harness.json", import.meta.url), "utf8"),
+);
+const piNativeProofRoute = {
+  method: "POST",
+  path: "/pi-native/proof",
+  requiredCapability: "provider-model-invoke",
+  loopbackHostOnly: true,
+  errorFamily: "harness",
+  async handler(payload = {}) {
+    const providerProfileId = String(payload.providerProfileId ?? "").trim();
+    const prompt = String(payload.prompt ?? "").trim();
+    if (!providerProfileId || !prompt) {
+      throw Object.assign(new Error("invalid-event"), { code: "invalid-event" });
+    }
+    const selectedModel = typeof payload.selectedModel === "string" ? payload.selectedModel.trim() : "";
+    const sessionId = randomUUID();
+    // One-shot session projection for this proof turn: the cwd is the authorized
+    // project root, never a caller path.
+    const issued = await issuePiProjection({ addonId: piHarnessManifest.id, sessionId, manifest: piHarnessManifest });
+    const result = await piNativeSessionService.launchProof({
+      addonId: piHarnessManifest.id,
+      manifest: piHarnessManifest,
+      providerProfileId,
+      selectedModel,
+      projection: issued.projection,
+      sessionId,
+      prompt,
+    });
+    const { evidence, projection } = result;
+    return { projection, evidence: { ...evidence, exitCode: evidence.exitCode ?? null } };
+  },
+};
+
 const bridgeRoutes = [
   ...browserDiagnosticsRoutes,
   ...providerBridgeRoutes,
@@ -464,6 +657,7 @@ const bridgeRoutes = [
   ...opencodeSessionRoutes,
   ...extensionPrefsRoutes,
   ...harnessRoutes,
+  piNativeProofRoute,
 ];
 
 const bridgeToken = args.get("bridge-token") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? createBridgeToken();

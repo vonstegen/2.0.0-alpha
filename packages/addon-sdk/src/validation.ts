@@ -215,7 +215,7 @@ const validateRuntimeAdapter = (issues: AddOnValidationIssue[], runtime: Record<
   if (runtime.credentialSource !== undefined && !credentialSources.includes(runtime.credentialSource as (typeof credentialSources)[number])) {
     reject("credential-source", "credentialSource", "Unsupported credential source; declare provider-profile, self, or none.");
   }
-  if (!["none", "dsh-action-token", "bearer"].includes(runtime.authScheme as string)) {
+  if (!["none", "dsh-action-token", "bearer", "session-environment"].includes(runtime.authScheme as string)) {
     reject("auth-scheme", "authScheme", "Unsupported authentication scheme.");
   }
   const rejectInvalidEndpoint = () => {
@@ -233,8 +233,11 @@ const validateRuntimeAdapter = (issues: AddOnValidationIssue[], runtime: Record<
     // The host resolves the credential from the shared provider store and
     // derives the endpoint from the approved provider profile. A manifest must
     // name only the non-secret host binding; it cannot propose an endpoint.
-    if (runtime.authScheme !== "bearer") {
-      reject("auth-scheme", "authScheme", "provider-profile runtimes use the bearer scheme.");
+    // `bearer` delivers through the runtime adapter transport; the newer
+    // `session-environment` scheme delivers only through a reviewed process
+    // session environment (e.g. the native Pi launcher), never a header.
+    if (runtime.authScheme !== "bearer" && runtime.authScheme !== "session-environment") {
+      reject("auth-scheme", "authScheme", "provider-profile runtimes use the bearer or session-environment scheme.");
     }
     if (typeof runtime.credentialBinding !== "string" || runtime.credentialBinding.length > 128 ||
         !bindingNamePattern.test(runtime.credentialBinding)) {
@@ -1274,6 +1277,24 @@ export const validateAddOnManifest = (
 
   if (isRecord(candidate.agentRuntime)) {
     validateRuntimeAdapter(issues, candidate.agentRuntime);
+    // Cross-field coherence: a session-environment auth scheme is only usable
+    // when the harness declares it consumes session-environment credential
+    // delivery. Incoherent declarations fail at install, before any session.
+    if (candidate.agentRuntime.authScheme === "session-environment") {
+      const delivery = isRecord(candidate.harnessProviderConnection) &&
+        Array.isArray(candidate.harnessProviderConnection.credentialDelivery)
+        ? candidate.harnessProviderConnection.credentialDelivery
+        : [];
+      if (!delivery.includes("session-environment")) {
+        pushIssue(
+          issues,
+          "error",
+          "agent-runtime-session-environment-delivery",
+          "harnessProviderConnection.credentialDelivery",
+          "A session-environment auth scheme requires harnessProviderConnection.credentialDelivery to include session-environment.",
+        );
+      }
+    }
     validateRequiredToolReference(issues, candidate.agentRuntime.invocationTool, "agentRuntime.invocationTool", declaredToolNames);
     validateStringValue(issues, candidate.agentRuntime.chatAuthorLabel, "agentRuntime.chatAuthorLabel");
     validateEnum(issues, candidate.agentRuntime.displayNameSource, ["manifest", "runtime-profile"] as const, "agentRuntime.displayNameSource");

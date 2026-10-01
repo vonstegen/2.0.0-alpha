@@ -173,6 +173,50 @@ test("timeout sends SIGTERM then SIGKILL and reports timedOut", async () => {
   assert.deepEqual(child.killed, ["SIGTERM", "SIGKILL"]);
 });
 
+test("abort signal sends the same deterministic SIGTERM->SIGKILL path and reports aborted", async () => {
+  let child;
+  const run = launcher({
+    spawnImpl: () => {
+      child = new FakeChild();
+      child.kill = (signal) => {
+        child.killed.push(signal);
+        if (signal === "SIGKILL") child.exit(null, "SIGKILL");
+        return true;
+      };
+      return child;
+    },
+  });
+  const controller = new AbortController();
+  const pending = run.launch(PLAN, { prompt: PROMPT, signal: controller.signal });
+  controller.abort();
+  const evidence = await pending;
+  assert.deepEqual(child.killed, ["SIGTERM", "SIGKILL"]);
+  assert.equal(evidence.aborted, true);
+  assert.equal(evidence.timedOut, false);
+  assert.ok(!JSON.stringify(evidence).includes(CREDENTIAL));
+});
+
+test("a pre-aborted signal kills the child immediately without spawning work", async () => {
+  let spawned = 0;
+  const run = launcher({
+    spawnImpl: () => {
+      spawned++;
+      const child = new FakeChild();
+      child.kill = (signal) => {
+        child.killed.push(signal);
+        if (signal === "SIGKILL") child.exit(null, "SIGKILL");
+        return true;
+      };
+      return child;
+    },
+  });
+  const controller = new AbortController();
+  controller.abort();
+  const evidence = await run.launch(PLAN, { prompt: PROMPT, signal: controller.signal });
+  assert.equal(spawned, 1, "the child still spawns but is killed immediately");
+  assert.equal(evidence.aborted, true);
+});
+
 test("spawn error resolves with spawnError instead of throwing", async () => {
   const run = launcher({
     spawnImpl: () => {

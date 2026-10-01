@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, symlink, writeFile, readFile, rm, stat } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
+const tmp = realpathSync(tmpdir());
 import path from "node:path";
 import test from "node:test";
 
@@ -37,7 +38,7 @@ const realCatalog = buildSkillCatalogFromManifests([opencodeManifest, browserMan
 const opencodeSkill = realCatalog.find((s) => s.id === "opencode-coding-handoff");
 const browserSkill = realCatalog.find((s) => s.id === "browser-research-session");
 
-function svcFor(catalog, sourceRoot = repoRoot, stagingBase = path.join(tmpdir(), "ros-skills-stage-default")) {
+function svcFor(catalog, sourceRoot = repoRoot, stagingBase = path.join(tmp, "ros-skills-stage-default")) {
   return createHarnessSkillsProjection({
     authorizedProject: { id: "project-a", label: "Project A" },
     skillCatalog: catalog,
@@ -115,7 +116,7 @@ test("CP-2C5 B: request list, authorized -> safe list metadata only", () => {
 });
 
 test("CP-2C5 C: request read, authorized + eligible -> bounded materialization", async () => {
-  const staging = await mkdtemp(path.join(tmpdir(), "ros-skills-stage-"));
+  const staging = await mkdtemp(path.join(tmp, "ros-skills-stage-"));
   try {
     const svc = svcFor(realCatalog, repoRoot, staging);
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: opencodeEligibleGrants() });
@@ -145,7 +146,7 @@ test("CP-2C5 C: request read, authorized + eligible -> bounded materialization",
 });
 
 test("CP-2C5 D: list-only cannot read content", async () => {
-  const staging = await mkdtemp(path.join(tmpdir(), "ros-skills-listonly-"));
+  const staging = await mkdtemp(path.join(tmp, "ros-skills-listonly-"));
   try {
     const svc = svcFor(realCatalog, repoRoot, staging);
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: { requests: { skills: ["list"] } }, grantedCapabilities: opencodeEligibleGrants() });
@@ -186,7 +187,7 @@ test("CP-2C5 F: unknown skill denied", () => {
 });
 
 test("CP-2C5 G: requiredCapabilities not granted -> skill unavailable/denied", async () => {
-  const staging = await mkdtemp(path.join(tmpdir(), "ros-skills-ineligible-"));
+  const staging = await mkdtemp(path.join(tmp, "ros-skills-ineligible-"));
   try {
     const svc = svcFor(realCatalog, repoRoot, staging);
     const result = svc.project({ addonId: "addon.pi-harness", sessionId: "s", request: skillsReadRequest(), grantedCapabilities: [agentRuntimeGrant] });
@@ -289,8 +290,8 @@ test("CP-2C6: skill removed from catalog -> stale", () => {
 });
 
 test("CP-2C8: synthetic non-Pi harness consumes the SAME generic projection/materialization seam", async () => {
-  const sourceRoot = await mkdtemp(path.join(tmpdir(), "ros-synth-src-"));
-  const staging = await mkdtemp(path.join(tmpdir(), "ros-synth-stage-"));
+  const sourceRoot = await mkdtemp(path.join(tmp, "ros-synth-src-"));
+  const staging = realpathSync(await mkdtemp(path.join(tmp, "ros-synth-stage-")));
   try {
     await writeFile(path.join(sourceRoot, "synthetic-skill.md"), "# Synthetic skill\n\nUse this to do synthetic things.\n");
     const syntheticManifest = {
@@ -321,9 +322,9 @@ test("CP-2C8: synthetic non-Pi harness consumes the SAME generic projection/mate
 });
 
 test("CP-2C9: symlink escape from skill source fails closed", async () => {
-  const sourceRoot = await mkdtemp(path.join(tmpdir(), "ros-src-sym-"));
-  const outside = await mkdtemp(path.join(tmpdir(), "ros-outside-"));
-  const staging = await mkdtemp(path.join(tmpdir(), "ros-stage-sym-"));
+  const sourceRoot = await mkdtemp(path.join(tmp, "ros-src-sym-"));
+  const outside = await mkdtemp(path.join(tmp, "ros-outside-"));
+  const staging = await mkdtemp(path.join(tmp, "ros-stage-sym-"));
   try {
     await writeFile(path.join(outside, "secret.md"), "TOP SECRET");
     await writeFile(path.join(sourceRoot, "real-skill.md"), "# real");
@@ -351,9 +352,9 @@ test("CP-2C9: symlink escape from skill source fails closed", async () => {
 });
 
 test("CP-2C9: symlink escape from staging destination fails closed", async () => {
-  const sourceRoot = await mkdtemp(path.join(tmpdir(), "ros-src-dst-"));
-  const outside = await mkdtemp(path.join(tmpdir(), "ros-out-dst-"));
-  const staging = await mkdtemp(path.join(tmpdir(), "ros-stage-dst-"));
+  const sourceRoot = await mkdtemp(path.join(tmp, "ros-src-dst-"));
+  const outside = await mkdtemp(path.join(tmp, "ros-out-dst-"));
+  const staging = await mkdtemp(path.join(tmp, "ros-stage-dst-"));
   try {
     await writeFile(path.join(sourceRoot, "real-skill.md"), "# real");
     const catalog = normalizeSkillCatalog([{
@@ -407,8 +408,8 @@ test("CP-2C9: public view exposes no private paths, grants, or secrets", () => {
 });
 
 test("CP-2C9: canonical skill source unchanged after projection and cleanup", async () => {
-  const sourceRoot = await mkdtemp(path.join(tmpdir(), "ros-src-unchanged-"));
-  const staging = await mkdtemp(path.join(tmpdir(), "ros-stage-unchanged-"));
+  const sourceRoot = await mkdtemp(path.join(tmp, "ros-src-unchanged-"));
+  const staging = await mkdtemp(path.join(tmp, "ros-stage-unchanged-"));
   try {
     const canonicalPath = path.join(sourceRoot, "canonical-skill.md");
     await writeFile(canonicalPath, "# Canonical skill\n\nBody stays identical.\n");

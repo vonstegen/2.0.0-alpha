@@ -100,7 +100,7 @@ test("non-provider harness yields empty discovery", () => {
 
 test("host snapshot surfaces compatible metadata for an authorized provider-profile harness", async () => {
   const providerHost = { allProviderProfiles: async () => PROFILES, allModelCatalog: async () => CATALOG };
-  const binding = { name: "openai.compatible", addonId: "addon.pi-harness", adapterId: "openai-compatible-v1", authScheme: "bearer", source: { providerProfileId: "p-openai" } };
+  const binding = { name: "pi.native", addonId: "addon.pi-harness", adapterId: "pi-native-v1", authScheme: "session-environment", source: { providerProfileId: "p-openai" } };
   const resolveProviderProfileCredential = async () => ({ endpoint: "http://127.0.0.1:1/v1", actionToken: SECRET });
   let stored = null;
   const host = await createHarnessHostService({
@@ -117,8 +117,10 @@ test("host snapshot surfaces compatible metadata for an authorized provider-prof
     const snapshot = await route.handler({}, { url: "http://127.0.0.1/addons/registry" });
     const entry = snapshot.installations["addon.pi-harness"];
     assert.ok(entry, "Pi installation present in registry snapshot");
-    assert.deepEqual(entry.compatibleProviderProfiles.map((profile) => profile.id).sort(), ["p-openai", "p-zai"]);
-    assert.deepEqual(entry.compatibleModels.map((model) => model.model).sort(), ["m-openai", "m-zai"]);
+    // The native Pi harness declares every protocol family the Pi CLI speaks:
+    // openai-compatible, minimax-compatible, and ollama.
+    assert.deepEqual(entry.compatibleProviderProfiles.map((profile) => profile.id).sort(), ["p-local", "p-minimax", "p-openai", "p-zai"]);
+    assert.deepEqual(entry.compatibleModels.map((model) => model.model).sort(), ["m-local", "m-minimax", "m-openai", "m-zai"]);
     assert.equal(entry.providerProfileConfigured, true);
     const json = JSON.stringify(snapshot);
     assert.ok(!json.includes(SECRET), "snapshot never exposes the credential");

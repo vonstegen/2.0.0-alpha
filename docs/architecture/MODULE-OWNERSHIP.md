@@ -99,6 +99,7 @@ required Alpha processes.
 | `src/modules/opencode/` | Optional OpenCode workspace presentation | OpenCode remains an optional local service |
 | `src/modules/overview/` | Shared overview and workbench framing | UI navigation only |
 | `src/modules/paperclip/` | Deferred Paperclip workspace presentation | Development-only add-on boundary |
+| `src/modules/pi/` | Pi workspace session-spin presentation (model selection, invoke, streaming /agent/events, status, cancel) | Every authority is host-owned; the view only drives the harness client with host-acknowledged references and receives redacted projections — never a credential, path, or launch plan |
 | `src/modules/recovery/` | Recovery product workflow | Recovery tools remain bounded and audited |
 | `src/modules/settings/` | Shared settings UI and controllers | Secrets stay host-side |
 | `src/modules/shell/controller.ts` | Shell boot with the acknowledged host projection and explicit first-run selection of bundled Augmentor and Living Archive | Passes the host projection to hydration and shell consumers; sequences existing harness install, enable, grant and slot commands; only acknowledgements establish authority; writes local setup/layout preferences, never local installations, grants or owners |

@@ -143,6 +143,7 @@ import { Panel } from "./components/Panel";
 import { HermesWorkspace } from "./modules/hermes/HermesWorkspace";
 import { OpenCodeWorkspace } from "./modules/opencode/OpenCodeWorkspace";
 import { PaperclipWorkspace } from "./modules/paperclip/PaperclipWorkspace";
+import { PiWorkspace } from "./modules/pi/PiWorkspace";
 import { promoteRecoveryRoute, RECOVERY_RUNBOOK_PROMPT, setRecoveryMode } from "./modules/recovery/controller";
 import {
   applyFirstRunRecommendedAddOns,
@@ -232,6 +233,7 @@ type DockIconId =
   | "opencode"
   | "paperclip"
   | "hermes"
+  | "pi"
   | "agent"
   | "settings";
 type VendorIconId =
@@ -247,7 +249,7 @@ type VendorIconId =
   | "settings"
   | "world";
 
-const dockIconMap: Record<Exclude<DockIconId, "obsidian" | "opencode" | "paperclip" | "hermes">, VendorIconId> = {
+const dockIconMap: Record<Exclude<DockIconId, "obsidian" | "opencode" | "paperclip" | "hermes" | "pi">, VendorIconId> = {
   home: "home",
   archive: "database",
   delegation: "route-alt-left",
@@ -1525,6 +1527,8 @@ export function App() {
   const paperclipInstallation = state.installations["addon.paperclip"];
   const hermesManifest = allManifests.find((manifest) => manifest.id === "addon.hermes");
   const hermesInstallation = state.installations["addon.hermes"];
+  const piManifest = allManifests.find((manifest) => manifest.id === "addon.pi-harness");
+  const piInstallation = harnessProjection?.installations["addon.pi-harness"];
   const addonMutationDeps = {
     client: harnessClient,
     getManifest: (addonId: string) => allManifests.find(manifest => manifest.id === addonId),
@@ -2299,6 +2303,20 @@ export function App() {
             />
           )}
 
+          {!recoveryModeActive && (
+            <PiWorkspace
+              active={currentSection === "pi"}
+              manifest={piManifest}
+              installation={piInstallation}
+              client={harnessClient}
+              projection={harnessProjection}
+              onConfigureAddon={() => {
+                setSelectedAddonId("addon.pi-harness");
+                setSection("addons");
+              }}
+            />
+          )}
+
           {!recoveryModeActive && currentSection === "obsidian" && (
             <div className="full-pane-route notes-pane-route">
               <Suspense
@@ -2802,6 +2820,14 @@ function DockIcon(props: { icon: DockIconId }) {
     return (
       <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
         <use href="/icons/resonant.svg#ros-opencode" />
+      </svg>
+    );
+  }
+
+  if (props.icon === "pi") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 5v14M9 5h2.5a3.5 3.5 0 0 1 0 7H9" />
       </svg>
     );
   }

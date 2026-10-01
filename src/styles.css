@@ -9,6 +9,7 @@
 @import "./modules/chat/messages.css";
 @import "./styles/workspace-cards.css";
 @import "./modules/archive/archive.css";
+@import "./modules/pi/pi-workspace.css";
 @import "./modules/settings/settings.css";
 @import "./modules/chat/chat-rail.css";
 @import "./styles/responsive.css";

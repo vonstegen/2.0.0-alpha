@@ -14,5 +14,6 @@
   "shield.json",
   "telegram-channel.json",
   "tts-enforcer.json",
-  "usage-tracker.json"
+  "usage-tracker.json",
+  "pi-harness.json"
 ]

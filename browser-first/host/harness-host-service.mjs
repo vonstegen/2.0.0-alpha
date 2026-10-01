@@ -10,6 +10,7 @@ import { createHarnessTransport } from './harness-transport.mjs';
 import { createOpenAICompatibleAdapter } from './agent-adapters/openai-compatible.mjs';
 import { createDshTypertAdapter } from './agent-adapters/dsh-typert.mjs';
 import { createProviderFabricAdapter } from './agent-adapters/provider-fabric.mjs';
+import { createPiNativeAdapter } from './agent-adapters/pi-native.mjs';
 import { publicHarnessError } from './harness-adapter-contract.mjs';
 import { discoverCompatibleProviderProfiles } from './harness-provider-discovery.mjs';
 import { createHarnessProviderAdapter } from './harness-provider-adapter.mjs';
@@ -115,7 +116,8 @@ export function createHarnessStreamSubscription(reader) {
 
 export async function createHarnessHostService({ userRoot, store = createHarnessRegistryStore({ userRoot }),
   bindings = [], env = process.env, providerHost, resolveProviderProfileCredential, cleanupTimeoutMs = 1000, onReceipt = () => {}, fixtureSigningKey,
-  transportFactory = createHarnessTransport, dshAdapterFactory = createDshTypertAdapter, openaiAdapterFactory = createOpenAICompatibleAdapter } = {}) {
+  transportFactory = createHarnessTransport, dshAdapterFactory = createDshTypertAdapter, openaiAdapterFactory = createOpenAICompatibleAdapter,
+  piNativeAdapterFactory = createPiNativeAdapter, piNative = null } = {}) {
   if (!Number.isSafeInteger(cleanupTimeoutMs) || cleanupTimeoutMs < 1 || cleanupTimeoutMs > 30000) throw new TypeError('Bounded cleanup required.');
   const approvedBindings = structuredClone(bindings);
   const credentials = createHarnessCredentials({ bindings: approvedBindings, env, resolveProviderProfileCredential });
@@ -140,7 +142,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     },
     write: (document) => { syncManifests(document); return store.write(document); },
   };
-  const registry = await createHarnessRegistry({ store: trackedStore, reviewedAdapterIds: ['dsh-typert-v1', 'provider-fabric-v1', 'openai-compatible-v1'],
+  const registry = await createHarnessRegistry({ store: trackedStore, reviewedAdapterIds: ['dsh-typert-v1', 'provider-fabric-v1', 'openai-compatible-v1', 'pi-native-v1'],
     bindings: approvedBindings.map(({ name, addonId, adapterId, authScheme, endpoint, source }) => ({
       name, addonId, adapterId, authScheme, endpoint,
       providerProfile: Boolean(source && typeof source.providerProfileId === 'string' && source.providerProfileId),
@@ -186,7 +188,14 @@ export async function createHarnessHostService({ userRoot, store = createHarness
         candidate.adapterId === runtime.adapterId && candidate.name === runtime.credentialBinding &&
         candidate.source && typeof candidate.source.providerProfileId === 'string' && candidate.source.providerProfileId);
       if (!binding) throw fail('permission-denied');
-      await providerAdapter.plan({ manifest: manifests.get(authorization.addonId), providerProfileId: binding.source.providerProfileId });
+      const delivery = manifests.get(authorization.addonId)?.harnessProviderConnection?.credentialDelivery ?? [];
+      // The runtime-adapter gate enforces protocol compatibility + delivery for
+      // header-based transports. The pi-native-v1 session-environment chain
+      // re-derives the SAME protocol gate and its delivery gate inside the
+      // reviewed planner on every plan; it is not a runtime-adapter consumer.
+      if (!(runtime.adapterId === 'pi-native-v1' && delivery.includes('session-environment'))) {
+        await providerAdapter.plan({ manifest: manifests.get(authorization.addonId), providerProfileId: binding.source.providerProfileId });
+      }
     }
     if (runtime.adapterId === 'provider-fabric-v1') {
       adapter = createProviderFabricAdapter({ executeRawProviderChat: providerHost?.executeRawProviderChat,
@@ -202,6 +211,28 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     } else if (authorization.runtime.adapterId === 'openai-compatible-v1') {
       try { adapter = await openaiAdapterFactory({ credentials, addonId: authorization.addonId, runtime: authorization.runtime }); }
       catch (error) { await bounded(() => adapter?.dispose()); throw error; }
+    } else if (runtime.adapterId === 'pi-native-v1') {
+      // The reviewed native Pi session chain. The credential never reaches this
+      // adapter: the host-wired session service resolves it into the private
+      // session env and only redacted evidence returns. The approved binding
+      // names the host-owned provider profile; the launch cwd comes from the
+      // host-issued Project/Files projection (never a caller path).
+      if (!piNative?.sessionService || typeof piNative.issueProjection !== 'function') throw fail('runtime-unavailable');
+      const binding = approvedBindings.find(candidate => candidate.addonId === authorization.addonId &&
+        candidate.adapterId === runtime.adapterId && candidate.name === runtime.credentialBinding &&
+        candidate.source && typeof candidate.source.providerProfileId === 'string' && candidate.source.providerProfileId);
+      if (!binding) throw fail('permission-denied');
+      adapter = piNativeAdapterFactory({
+        addonId: authorization.addonId,
+        runtime,
+        manifest: manifests.get(authorization.addonId),
+        sessionService: piNative.sessionService,
+        providerProfileId: binding.source.providerProfileId,
+        issueProjection: piNative.issueProjection,
+        stageSkills: piNative.stageSkills,
+        cleanupSkills: piNative.cleanupSkills,
+      });
+      if (!(await adapter.probe()).available) throw fail('runtime-unavailable');
     } else throw fail('permission-denied');
     let disposed = false;
     const resource = {

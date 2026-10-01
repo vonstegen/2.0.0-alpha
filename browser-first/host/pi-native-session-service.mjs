@@ -74,13 +74,26 @@ export function createPiNativeSessionService({
 
     // Plan + launch + evidence. The raw plan is never returned; only its
     // redacted projection and the sanitized process evidence cross this boundary.
-    async launchProof({ addonId, manifest, providerProfileId, selectedModel, projection, sessionId, prompt } = {}) {
+    // An optional AbortSignal reaches the launcher's deterministic kill path
+    // (SIGTERM → SIGKILL) so a cancelled turn terminates the real Pi process.
+    async launchProof({ addonId, manifest, providerProfileId, selectedModel, projection, sessionId, prompt, signal } = {}) {
       const privatePlan = await adapter.plan({ addonId, manifest, providerProfileId, selectedModel, projection, sessionId });
-      const evidence = await launch.launch(privatePlan, { prompt });
+      const evidence = await launch.launch(privatePlan, { prompt, signal });
       return {
         projection: redactLaunchPlan(privatePlan, { homeDir }),
         evidence,
       };
+    },
+
+    // Executable readiness: the allowlisted piCommand() must resolve before any
+    // session is granted. Fails closed when no reviewed executable is present.
+    async probe() {
+      try {
+        const executable = await resolveExecutable({ platform: process.platform });
+        return { available: Boolean(executable?.command) };
+      } catch {
+        return { available: false };
+      }
     },
 
     redact(privatePlan, options = {}) {

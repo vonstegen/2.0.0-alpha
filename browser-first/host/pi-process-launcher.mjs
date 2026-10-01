@@ -91,7 +91,13 @@ export function createPiProcessLauncher({
   return {
     // plan is the private launch material; prompt is the non-secret proof
     // message. Resolves with sanitized evidence only (never the credential).
-    launch(plan, { prompt } = {}) {
+    // An optional AbortSignal triggers the same deterministic SIGTERM→SIGKILL
+    // path as the timeout; the evidence records aborted: true in that case.
+    launch(plan, { prompt, signal } = {}) {
+      if (signal !== undefined && (signal === null || typeof signal !== "object" ||
+          typeof signal.addEventListener !== "function" || typeof signal.removeEventListener !== "function")) {
+        return Promise.reject(new TypeError("A valid AbortSignal is required."));
+      }
       let command, argv, projectPath, env, forbidden, args;
       try {
         ({ command, argv, projectPath, env } = validatePlan(plan));
@@ -108,6 +114,7 @@ export function createPiProcessLauncher({
         const startedAt = now();
         let settled = false;
         let timedOut = false;
+        let aborted = false;
         let stdout = Buffer.alloc(0);
         let stderr = Buffer.alloc(0);
         let stdoutTruncated = false;
@@ -121,10 +128,12 @@ export function createPiProcessLauncher({
           settled = true;
           clearTimeout(killTimer);
           clearTimeout(forceTimer);
+          signal?.removeEventListener("abort", onAbort);
           resolve({
             exitCode: extra.exitCode ?? null,
             signal: extra.signal ?? null,
             timedOut,
+            aborted,
             spawnError: extra.spawnError ?? null,
             durationMs: now() - startedAt,
             stdout: redactPiText(stdout.toString("utf8"), forbidden),
@@ -132,6 +141,30 @@ export function createPiProcessLauncher({
             stdoutTruncated,
             stderrTruncated,
           });
+        };
+
+        const kill = () => {
+          if (settled) return;
+          try {
+            child?.kill("SIGTERM");
+          } catch {
+            /* already exited */
+          }
+          forceTimer = setTimeout(() => {
+            if (settled) return;
+            try {
+              child?.kill("SIGKILL");
+            } catch {
+              /* already exited */
+            }
+          }, killGraceMs);
+          forceTimer.unref?.();
+        };
+
+        const onAbort = () => {
+          if (settled) return;
+          aborted = true;
+          kill();
         };
 
         const append = (buffer, chunk, limit) => {
@@ -181,23 +214,15 @@ export function createPiProcessLauncher({
           });
         }
 
+        // A pre-aborted signal takes the deterministic kill path immediately,
+        // matching the timeout discipline (SIGTERM, then SIGKILL).
+        if (signal?.aborted) onAbort();
+        else signal?.addEventListener("abort", onAbort, { once: true });
+
         killTimer = setTimeout(() => {
           if (settled) return;
           timedOut = true;
-          try {
-            child.kill("SIGTERM");
-          } catch {
-            /* already exited */
-          }
-          forceTimer = setTimeout(() => {
-            if (settled) return;
-            try {
-              child.kill("SIGKILL");
-            } catch {
-              /* already exited */
-            }
-          }, killGraceMs);
-          forceTimer.unref?.();
+          kill();
         }, timeoutMs);
         killTimer.unref?.();
       });
