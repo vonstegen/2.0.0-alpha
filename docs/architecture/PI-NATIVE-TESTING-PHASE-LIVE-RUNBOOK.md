@@ -29,11 +29,19 @@ flow reaches it with no reload or Bridge-Target override needed.
    loopback probe finds the testing bridge on `127.0.0.1:47773`.
    (If you ever set a custom **Settings → Bridge Target** override in the
    extension, clear it or point it at `http://127.0.0.1:47773`.)
-2. **Settings → Providers → OpenRouter** (the `ros-openrouter-test-api`
+2. **Reload the extension** after any bridge restart:
+   `chrome://extensions` → Reload on the ResonantOS side panel. The bridge
+   rewrites the extension's generated bridge config (`src/bridge-config.generated.js`)
+   at boot; a stale copy (e.g. one left by an earlier bridge on a different
+   port) makes Settings → Providers report the bridge as unreachable. Both
+   extension folders (`pi-phase2` and `2.0.0-alpha`) share one extension ID
+   and the same token set, so loading either works once its generated config
+   is current.
+3. **Settings → Providers → OpenRouter** (the `ros-openrouter-test-api`
    account) → enter the OpenRouter test API key → **Save**. The value lives
    only in the bridge's session memory — never in argv, auth.json, a file, or
    a log.
-3. Tell the agent; it re-checks the registry flag (never the key) and runs
+4. Tell the agent; it re-checks the registry flag (never the key) and runs
    the proof. A successful turn is a real OpenRouter response from
    `anthropic/claude-sonnet-4.5`; if a stale canary is still in place the
    provider returns 401 and the turn fails closed.
