@@ -182,12 +182,19 @@ const getBridgeRequest = () => currentBridgeRequest;
 // Reads the host harness registry projection and renders one entry per
 // installed + enabled + authorized tool-panel surface. No add-on id is
 // hard-coded. Revocation/disable/removal simply drops the entry on refresh.
+// First-class tools with a left-rail home (currently Pi, under the Tools
+// section) are shown there instead of the generic rail.
+const LEFT_RAIL_ADDON_IDS = new Set(["addon.pi-harness"]);
 async function refreshToolRail() {
   const rail = document.querySelector("#tool-rail-list");
   if (!rail) return;
   const empty = document.querySelector("#tool-rail-empty");
   const finish = (entries) => {
-    renderToolRail(rail, entries, {
+    const piRailButton = document.querySelector('[data-addon-id="addon.pi-harness"]');
+    if (piRailButton) {
+      piRailButton.hidden = !entries.some((entry) => entry.addonId === "addon.pi-harness");
+    }
+    renderToolRail(rail, entries.filter((entry) => !LEFT_RAIL_ADDON_IDS.has(entry.addonId)), {
       document,
       onSelect: (entry) => {
         activeToolAddonId = entry.addonId;
@@ -195,7 +202,7 @@ async function refreshToolRail() {
         renderAll();
       },
     });
-    if (empty) empty.hidden = entries.length > 0;
+    if (empty) empty.hidden = entries.some((entry) => !LEFT_RAIL_ADDON_IDS.has(entry.addonId));
   };
   try {
     const response = await currentBridgeRequest("/addons/registry", { method: "GET" });
@@ -1264,6 +1271,9 @@ workspaceButtons.forEach((button) => {
   button.addEventListener("click", () => {
     if (button.dataset.workspace === "settings") {
       initialSettingsSection = button.dataset.settingsSection || "overview";
+    }
+    if (button.dataset.workspace === "tool-workspace") {
+      activeToolAddonId = button.dataset.addonId ?? "";
     }
     setActiveWorkspace(button.dataset.workspace, { persist: true });
     updateWorkspaceDeepLink(activeWorkspace, { settingsSection: initialSettingsSection });
