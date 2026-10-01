@@ -40,6 +40,13 @@ const BRIDGE_ROUTE_CAPABILITIES = Object.freeze({
   "POST /providers/model-preferences": "provider-routing-write",
   "POST /augmentor/chat": "provider-model-invoke",
   "POST /augmentor/inline": "provider-model-invoke",
+  "POST /pi-native/proof": "provider-model-invoke",
+  "POST /pi-native/tui-session": "provider-model-invoke",
+  "GET /pi-native/tui-session/events": "provider-model-invoke",
+  "POST /pi-native/tui-session/input": "provider-model-invoke",
+  "POST /pi-native/tui-session/resize": "provider-model-invoke",
+  "POST /pi-native/tui-session/cancel": "provider-model-invoke",
+  "POST /pi-native/tui-session/dispose": "provider-model-invoke",
   "POST /augmentor/control-plan": "agent-control-plan",
   "POST /augmentor/next-action": "agent-control-plan",
   "POST /web/news": "agent-control-plan",
@@ -347,6 +354,8 @@ const OPENCODE_HTTP_CODES = Object.freeze({
   504: "OPENCODE_TIMEOUT"
 });
 const OPENCODE_EVENTS_PATH = "/opencode/session/events";
+const PI_TUI_EVENTS_PATH = "/pi-native/tui-session/events";
+const SSE_ROUTE_PATHS = new Set([OPENCODE_EVENTS_PATH, PI_TUI_EVENTS_PATH]);
 
 function openCodeErrorCode(payload, status) {
   const code = typeof payload?.code === "string" ? payload.code : "";
@@ -398,7 +407,7 @@ export function createBridgeClient(config = globalThis.__RESONANTOS_BRIDGE_CONFI
   return async function bridgeRequest(route, options = {}) {
     const wantsSse = options.responseType === "sse";
     if (wantsSse) {
-      if (!isRelativeBridgeRoute(route) || routePathname(route) !== OPENCODE_EVENTS_PATH) {
+      if (!isRelativeBridgeRoute(route) || !SSE_ROUTE_PATHS.has(routePathname(route))) {
         throw openCodeBridgeResponseError({ code: "OPENCODE_ROUTE_UNKNOWN", error: OPENCODE_PUBLIC_ERROR }, 404);
       }
     }

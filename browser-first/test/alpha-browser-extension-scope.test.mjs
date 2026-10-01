@@ -43,8 +43,9 @@ test("2.0.0 alpha release scope is Chrome extension and bridge only", async () =
     "@tauri-apps/api",
     "@tauri-apps/plugin-dialog",
     "@tauri-apps/cli",
-    "@xterm/xterm",
-    "@xterm/addon-fit",
+    // @xterm/xterm + @xterm/addon-fit are deliberately back in scope: the Pi
+    // testing phase renders the REAL Pi TUI through a vendored xterm.js
+    // (MV3 script-src 'self'), copied into src/vendor/xterm/ from these deps.
   ]) {
     assert.equal(dependencies[removedDependency], undefined, `${removedDependency} must not ship in alpha`);
   }

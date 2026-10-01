@@ -944,6 +944,7 @@ function renderMessages() {
       installation: installation ?? { addonId: activeToolAddonId },
       slots: toolRailProjection?.slots ?? {},
       onAssignPrimary: assignPrimaryAgent,
+      bridgeRequest: currentBridgeRequest,
       document,
     });
     return;

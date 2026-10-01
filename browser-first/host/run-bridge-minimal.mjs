@@ -59,6 +59,7 @@ import {
 } from "./hermes-runtime.mjs";
 import { createHarnessHostService } from "./harness-host-service.mjs";
 import { createPiNativeSessionService } from "./pi-native-session-service.mjs";
+import { createPiNativeTuiHostService } from "./pi-native-tui-host-service.mjs";
 import { createHarnessResourceProjection } from "./harness-resource-projection.mjs";
 import { buildSkillCatalogFromManifests, createHarnessSkillsProjection } from "./harness-skills-projection.mjs";
 import { createProviderHostService } from "./provider-host-service.mjs";
@@ -259,7 +260,11 @@ const piDenied = () => Object.assign(new Error("permission-denied"), { code: "pe
 
 // Clean launch authorization: registry state + approved binding only. Slot
 // ownership is irrelevant here — installing, enabling, granting agent-runtime,
-// and approving the binding is what authorizes a native Pi launch.
+// and approving the binding is what authorizes a native Pi launch. The binding
+// NAME is the generic-harness credentialBinding identity (unique per name, per
+// createHarnessCredentials); for the pi-native session chain the authority is
+// the operator-approved provider profile + addon identity, so several named
+// bindings may approve different provider profiles for the same addon.
 const piNativeAuthorize = ({ addonId, providerProfileId }) => {
   const projection = harnessService.registry.snapshot();
   const installation = projection.installations[addonId];
@@ -272,7 +277,6 @@ const piNativeAuthorize = ({ addonId, providerProfileId }) => {
     candidate.addonId === addonId &&
     candidate.adapterId === "pi-native-v1" &&
     typeof installation.agentRuntime?.credentialBinding === "string" &&
-    candidate.name === installation.agentRuntime.credentialBinding &&
     candidate.authScheme === "session-environment" &&
     candidate.source && typeof candidate.source.providerProfileId === "string" &&
     candidate.source.providerProfileId === providerProfileId);
@@ -657,6 +661,19 @@ const piNativeProofRoute = {
   },
 };
 
+// Pi-native interactive TUI session (2D). Same clean chain as the proof route
+// (authorize -> issued projection -> reviewed planner -> bounded launcher) but
+// the REAL Pi TUI runs inside a pseudo-TTY. Route + SSE subscription
+// implementation live in pi-native-tui-host-service.mjs so the
+// bridge-route-capability audit constructs this array like every other
+// route-owning host service. The credential stays env-only; the raw plan
+// never crosses this boundary.
+const { piNativeTuiRoutes } = createPiNativeTuiHostService({
+  piNativeSessionService,
+  issuePiProjection,
+  manifest: piHarnessManifest,
+});
+
 const bridgeRoutes = [
   ...browserDiagnosticsRoutes,
   ...providerBridgeRoutes,
@@ -667,6 +684,7 @@ const bridgeRoutes = [
   ...extensionPrefsRoutes,
   ...harnessRoutes,
   piNativeProofRoute,
+  ...piNativeTuiRoutes,
 ];
 
 const bridgeToken = args.get("bridge-token") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? createBridgeToken();

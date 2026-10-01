@@ -171,6 +171,42 @@ test("host-injected baseEnv reaches the private plan env (agent-dir isolation)",
   assert.ok(!JSON.stringify(plan.argv).includes(CREDENTIAL));
 });
 
+test("startSession flows the private plan to the interactive launcher with an isolated session-dir", async () => {
+  const captured = [];
+  const fakeHandle = { write() {}, resize() {}, cancel() {} };
+  const { service: svc } = service({
+    baseEnv: { PI_CODING_AGENT_DIR: "/tmp/pi-agent-isolated" },
+    launcher: {
+      launchInteractive(plan, options) {
+        captured.push({ plan, options });
+        return fakeHandle;
+      },
+    },
+  });
+  const result = await svc.startSession({
+    ...proofInput(),
+    cols: 90,
+    rows: 28,
+    initialPrompt: "start me",
+    onData: () => {},
+    onExit: () => {},
+  });
+  assert.equal(result.handle, fakeHandle);
+  assert.equal(captured.length, 1);
+  const { plan, options } = captured[0];
+  assert.ok(plan.argv.includes("--session-dir"));
+  const dirIndex = plan.argv.indexOf("--session-dir");
+  assert.equal(plan.argv[dirIndex + 1], "/tmp/pi-agent-isolated/sessions");
+  assert.ok(!JSON.stringify(plan.argv).includes(CREDENTIAL));
+  assert.equal(plan.env.OPENROUTER_API_KEY, CREDENTIAL);
+  assert.equal(options.cols, 90);
+  assert.equal(options.rows, 28);
+  assert.equal(options.initialPrompt, "start me");
+  // Only the redacted projection crosses the boundary; env key names only.
+  assert.ok(!JSON.stringify(result.projection).includes(CREDENTIAL));
+  assert.ok(JSON.stringify(result.projection).includes("OPENROUTER_API_KEY"));
+});
+
 test("credential resolver miss fails closed without leaking the secret", async () => {
   const providerHost = {
     allProviderProfiles: async () => PROFILES,

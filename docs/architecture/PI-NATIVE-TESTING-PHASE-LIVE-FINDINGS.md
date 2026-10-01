@@ -35,6 +35,76 @@ Staged and executed against the testing bridge on `127.0.0.1:47773`
    the extension Settings surface reaches this bridge when its Bridge Target
    is the loopback bridge.
 
+## Interactive TUI session — proven live (2026-10-01)
+
+The extension Pi panel (Add-on Surfaces → pi-harness → "Pi session") drives
+the REAL Pi TUI through a host-owned pseudo-TTY (node-pty, direct exec, no
+shell). Live proof against the testing bridge:
+
+- `POST /pi-native/tui-session` → 200 with a real sessionId; pi v0.74.2
+  spawned (verified by pid and by its session record in the isolated
+  `--session-dir`).
+- SSE stream delivered 21 raw ANSI `pi.tui.data` frames (full TUI renders,
+  ~950–1020 bytes each) through the bridge's standard SSE writer.
+- `cancel` → SIGTERM → exit frame
+  `{exitCode: 0, signal: 15, aborted: true, spawnError: null}` delivered,
+  followed by the terminal `event: harness.close` frame and a clean EOF.
+- `dispose` removes the session; a later events request is refused (403).
+- Credential stayed env-only (`OPENROUTER_API_KEY`), never in argv,
+  projections, or logs.
+
+## Bugs found and fixed during the TUI smoke
+
+1. **`startSession` called the wrong launch function.** It invoked
+   `launcher.launchInteractive` (the injected parameter) instead of the
+   resolved `launch` const — every session failed with an opaque 503. Fixed
+   in `pi-native-session-service.mjs`.
+2. **`createRequire` under ESM.** Loading node-pty via bare
+   `require("node:module")` inside an ESM module threw `require is not
+   defined`. Fixed with a top-level `import { createRequire } from
+   "node:module"` and `createRequire(import.meta.url)` in
+   `pi-process-launcher.mjs`.
+3. **SSE streams never ended on normal completion.** The TUI subscription's
+   `close()` no-oped once `complete()` had run, but the bridge SSE writer
+   (`writeBridgeEventStream`) only ends a response through
+   `subscription.close() → transport.terminate()`; a normally completed
+   session left the client hanging with the response open. Fixed: `close()`
+   always terminates — the terminal `harness.close` frame is transport
+   bookkeeping (the platform's own harness reference subscription behaves the
+   same way); the `pi.tui.exit` data frame carries the real outcome. The
+   extension consumer now surfaces the `harness.close` error payload only
+   when no exit frame was seen.
+4. **Restart hygiene.** A bridge process that had been restarted mid-edit
+   served dead TUI sessions (pi exiting instantly, no frames); a clean
+   restart after the edits behaved correctly. Always restart the bridge
+   after touching its sources — do not trust a pre-edit process.
+
+## MiniMax as a second approved binding (2026-10-01)
+
+User request: MiniMax through the pi add-on. Two platform constraints made
+this a code change, not just operator config:
+
+- `createHarnessCredentials` requires binding NAMES to be unique (fail-closed
+  at bridge startup).
+- The original pi-native authorize gate required
+  `binding.name === installation.agentRuntime.credentialBinding` — one name,
+  one profile, so a second provider was structurally impossible.
+
+Resolution: the gate now authorizes on (addonId, adapterId, authScheme,
+operator-approved providerProfileId); the binding name stays the
+generic-harness credentialBinding identity (still unique per
+`createHarnessCredentials`). Two bindings — `pi.native` (OpenRouter) and
+`pi.native.minimax` (`shared-minimax`) — now approve different provider
+profiles for the same addon. Proven with a shaped canary: create 200, real pi
+TUI streamed, typed input reached MiniMax's API, and MiniMax answered its own
+`401 authentication_error` (header attached, key rejected) — the full chain
+works with the credential in `MINIMAX_API_KEY` env only.
+
+Note: provider credentials are SESSION-ONLY in the bridge's memory. Every
+bridge restart wipes them, so both the OpenRouter and MiniMax keys must be
+re-saved through Settings after each restart, and running sessions capture
+the credential at start.
+
 ## Critical finding — auth.json precedence and its countermeasure
 
 Pi 0.74.2's `AuthStorage.getApiKey()` prefers the DURABLE `~/.pi/agent/auth.json`

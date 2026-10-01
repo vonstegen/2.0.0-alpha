@@ -79,7 +79,7 @@ function booleanLabel(value) {
 
 // Renders the harness/tool workspace + options panel for one add-on. Host text
 // only; no secret material is ever projected or rendered.
-export function renderAddOnToolWorkspace(container, { installation, slots = {}, onAssignPrimary = () => {}, document: doc = document } = {}) {
+export function renderAddOnToolWorkspace(container, { installation, slots = {}, onAssignPrimary = () => {}, bridgeRequest, document: doc = document } = {}) {
   if (!container || !doc) return;
   container.replaceChildren();
   const section = doc.createElement("section");
@@ -144,5 +144,236 @@ export function renderAddOnToolWorkspace(container, { installation, slots = {}, 
     section.append(assign);
   }
 
+  if (runtime?.adapterId === "pi-native-v1" && typeof bridgeRequest === "function") {
+    section.append(renderPiTuiSession(doc, { installation, bridgeRequest }));
+  }
+
   container.append(section);
+}
+
+// Interactive Pi TUI session (2D). Spawns the REAL Pi terminal UI inside a
+// host-owned pseudo-TTY and renders its raw output in a vendored xterm.js
+// terminal. Keystrokes stream back to the PTY over the input route; the
+// credential never appears here (env-only on the host side).
+function renderPiTuiSession(doc, { installation, bridgeRequest }) {
+  const box = doc.createElement("div");
+  box.className = "pi-tui";
+
+  const row = doc.createElement("div");
+  row.className = "pi-tui-controls";
+  const label = doc.createElement("span");
+  label.className = "pi-tui-title";
+  label.textContent = "Pi session";
+  const status = doc.createElement("span");
+  status.className = "pi-tui-status";
+  status.dataset.tone = "neutral";
+  status.textContent = "idle";
+  row.append(label, status);
+  box.append(row);
+
+  const profiles = Array.isArray(installation?.compatibleProviderProfiles) ? installation.compatibleProviderProfiles : [];
+  const models = Array.isArray(installation?.compatibleModels) ? installation.compatibleModels : [];
+  const pick = doc.createElement("div");
+  pick.className = "pi-tui-pickers";
+  const profileSelect = doc.createElement("select");
+  profileSelect.className = "pi-tui-select";
+  for (const profile of profiles) {
+    const option = doc.createElement("option");
+    option.value = profile.id ?? "";
+    option.textContent = profile.label ?? profile.id;
+    profileSelect.append(option);
+  }
+  const modelSelect = doc.createElement("select");
+  modelSelect.className = "pi-tui-select";
+  const refreshModels = () => {
+    modelSelect.replaceChildren();
+    for (const entry of models.filter((candidate) => candidate?.providerId === profileSelect.value)) {
+      const option = doc.createElement("option");
+      option.value = entry.model ?? "";
+      option.textContent = entry.model ?? entry.label ?? "";
+      modelSelect.append(option);
+    }
+  };
+  profileSelect.addEventListener("change", refreshModels);
+  const startButton = doc.createElement("button");
+  startButton.type = "button";
+  startButton.className = "pi-tui-start";
+  startButton.textContent = "Start session";
+  const cancelButton = doc.createElement("button");
+  cancelButton.type = "button";
+  cancelButton.className = "pi-tui-cancel";
+  cancelButton.textContent = "Cancel";
+  cancelButton.disabled = true;
+  pick.append(profileSelect, modelSelect, startButton, cancelButton);
+  box.append(pick);
+
+  const terminalHost = doc.createElement("div");
+  terminalHost.className = "pi-tui-terminal";
+  terminalHost.hidden = true;
+  box.append(terminalHost);
+
+  const setStatus = (text, tone = "neutral") => {
+    status.textContent = text;
+    status.dataset.tone = tone;
+  };
+
+  let term = null;
+  let fit = null;
+  let sessionId = null;
+  let streamDone = false;
+  let running = false;
+  let resizeObserver = null;
+
+  const stopStream = () => { streamDone = true; };
+  const endSession = (tone = "neutral") => {
+    running = false;
+    streamDone = true;
+    startButton.disabled = false;
+    cancelButton.disabled = true;
+    setStatus(status.textContent || "ended", tone);
+    term?.write?.("\r\n[session ended]\r\n");
+  };
+
+  const consumeStream = async (response) => {
+    const reader = response.body?.getReader?.();
+    if (!reader) { endSession("error"); return; }
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      while (!streamDone) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let boundary;
+        while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+          const raw = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          for (const line of raw.split("\n")) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const frame = JSON.parse(line.slice(6));
+              if (frame?.sessionId && frame.sessionId !== sessionId) continue;
+              if (frame?.type === "pi.tui.data") {
+                term?.write?.(frame.data ?? "");
+              } else if (frame?.type === "pi.tui.exit") {
+                const evidence = frame.evidence ?? {};
+                setStatus(`exited (${evidence.exitCode ?? "?"})`, "neutral");
+                endSession("neutral");
+                return;
+              } else if (typeof frame?.error === "string" && typeof frame?.code === "string") {
+                // Terminal harness.close frame (transport bookkeeping): only
+                // surfaced when the session ended without a pi.tui.exit frame.
+                setStatus(frame.error, "error");
+                endSession("error");
+                return;
+              }
+            } catch {
+              /* malformed frame: skip */
+            }
+          }
+        }
+      }
+      if (!streamDone) { setStatus("stream ended", "warning"); endSession("warning"); }
+    } catch {
+      if (!streamDone) { setStatus("stream lost", "error"); endSession("error"); }
+    }
+  };
+
+  startButton.addEventListener("click", async () => {
+    if (running) return;
+    if (profileSelect.value && !modelSelect.value) refreshModels();
+    if (!profileSelect.value || !modelSelect.value) {
+      setStatus("select a profile and model", "warning");
+      return;
+    }
+    const TerminalCtor = globalThis.Terminal?.Terminal ?? globalThis.Terminal;
+    const FitAddonCtor = globalThis.FitAddon?.FitAddon;
+    if (typeof TerminalCtor !== "function" || typeof FitAddonCtor !== "function") {
+      setStatus("terminal runtime unavailable", "error");
+      return;
+    }
+    setStatus("starting…", "neutral");
+    startButton.disabled = true;
+    try {
+      const created = await bridgeRequest("/pi-native/tui-session", {
+        method: "POST",
+        body: {
+          providerProfileId: profileSelect.value,
+          selectedModel: modelSelect.value,
+          cols: 100,
+          rows: 30,
+        },
+      });
+      sessionId = created?.sessionId;
+      if (!sessionId) throw new Error("No session id returned.");
+    } catch (error) {
+      setStatus(`start failed: ${String(error?.message ?? error)}`, "error");
+      startButton.disabled = false;
+      return;
+    }
+    running = true;
+    streamDone = false;
+    cancelButton.disabled = false;
+    setStatus("running", "success");
+
+    term = new TerminalCtor({
+      convertEol: false,
+      cursorBlink: true,
+      fontFamily: "ui-monospace, Menlo, monospace",
+      fontSize: 12,
+      scrollback: 4000,
+    });
+    fit = new FitAddonCtor();
+    term.loadAddon(fit);
+    term.open(terminalHost);
+    terminalHost.hidden = false;
+    try { fit.fit(); } catch { /* sized later */ }
+
+    resizeObserver = new ResizeObserver(() => {
+      try {
+        fit?.fit?.();
+        const cols = term?.cols;
+        const rows = term?.rows;
+        if (Number.isInteger(cols) && Number.isInteger(rows)) {
+          void bridgeRequest("/pi-native/tui-session/resize", { method: "POST", body: { sessionId, cols, rows } }).catch(() => {});
+        }
+      } catch { /* not fatal */ }
+    });
+    resizeObserver.observe(terminalHost);
+
+    term.onData((input) => {
+      void bridgeRequest("/pi-native/tui-session/input", { method: "POST", body: { sessionId, input } }).catch(() => {});
+    });
+
+    const response = await bridgeRequest(`/pi-native/tui-session/events?sessionId=${encodeURIComponent(sessionId)}`, {
+      responseType: "sse",
+    }).catch(() => null);
+    if (response && !streamDone) {
+      void consumeStream(response);
+    } else if (!streamDone) {
+      setStatus("stream unavailable", "error");
+      endSession("error");
+    }
+  });
+
+  cancelButton.addEventListener("click", () => {
+    if (!sessionId) return;
+    setStatus("cancelling…", "warning");
+    void bridgeRequest("/pi-native/tui-session/cancel", { method: "POST", body: { sessionId } }).catch(() => {});
+  });
+
+  // Surface teardown: never leaves a host PTY behind.
+  const originalDispose = () => {
+    if (sessionId && running) {
+      void bridgeRequest("/pi-native/tui-session/dispose", { method: "POST", body: { sessionId } }).catch(() => {});
+    }
+    try { resizeObserver?.disconnect(); } catch { /* noop */ }
+    try { term?.dispose?.(); } catch { /* noop */ }
+  };
+  box.dataset.piTuiDispose = "true";
+  if (typeof window !== "undefined" && !box._disposeHooked) {
+    box._disposeHooked = true;
+    window.addEventListener("beforeunload", originalDispose, { once: true });
+  }
+  return box;
 }

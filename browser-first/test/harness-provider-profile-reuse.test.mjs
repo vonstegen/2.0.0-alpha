@@ -121,7 +121,6 @@ async function piNativeHostFixture(provider, profileId) {
     const approved = [binding].find((candidate) =>
       candidate.addonId === addonId && candidate.adapterId === "pi-native-v1" &&
       typeof installation.agentRuntime?.credentialBinding === "string" &&
-      candidate.name === installation.agentRuntime.credentialBinding &&
       candidate.authScheme === "session-environment" &&
       candidate.source && candidate.source.providerProfileId === providerProfileId);
     if (!approved) throw piDenied();

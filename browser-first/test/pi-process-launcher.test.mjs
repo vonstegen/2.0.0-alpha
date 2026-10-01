@@ -233,3 +233,97 @@ test("redactPiText strips forbidden values longest-first", () => {
   assert.equal(redactPiText("nothing here", []), "nothing here");
   assert.equal(redactPiText(null), "");
 });
+
+class FakeTerm {
+  constructor({ command, args, options }) {
+    this.spawn = { command, args, options };
+    this.dataHandler = null;
+    this.exitHandler = null;
+    this.killed = [];
+    this.resized = [];
+    this.writes = [];
+    this.pid = 4242;
+  }
+  onData(handler) { this.dataHandler = handler; }
+  onExit(handler) { this.exitHandler = handler; }
+  write(text) { this.writes.push(text); }
+  resize(cols, rows) { this.resized.push([cols, rows]); }
+  kill(signal) { this.killed.push(signal); }
+  emitData(text) { this.dataHandler?.(text); }
+  emitExit(code, signal) { this.exitHandler?.({ exitCode: code, signal }); }
+}
+
+function tuiLauncher({ ptyImpl, ...overrides } = {}) {
+  return launcher({ killGraceMs: 20, ptyImpl, ...overrides });
+}
+
+test("launchInteractive spawns plan.argv (no --print/--no-session) with initialPrompt appended and TERM set", () => {
+  let term;
+  const run = tuiLauncher({
+    ptyImpl: { spawn: (command, args, options) => (term = new FakeTerm({ command, args, options })) },
+  });
+  const handle = run.launchInteractive(PLAN, { cols: 100, rows: 30, initialPrompt: "hello", onData: () => {} });
+  assert.equal(term.spawn.command, "/usr/local/bin/pi");
+  assert.deepEqual(term.spawn.args, [...PLAN.argv, "hello"]);
+  assert.ok(!term.spawn.args.includes("--print") && !term.spawn.args.includes("--no-session"));
+  assert.ok(!term.spawn.args.includes("--api-key"));
+  assert.equal(term.spawn.options.cols, 100);
+  assert.equal(term.spawn.options.rows, 30);
+  assert.equal(term.spawn.options.cwd, PLAN.projectPath);
+  assert.equal(term.spawn.options.env.TERM, "xterm-256color");
+  assert.equal(term.spawn.options.env.OPENROUTER_API_KEY, CREDENTIAL);
+  assert.equal(handle.pid, 4242);
+});
+
+test("launchInteractive forwards data (redacted), input, resize, and exit", () => {
+  let term;
+  const run = tuiLauncher({
+    ptyImpl: { spawn: (command, args, options) => (term = new FakeTerm({ command, args, options })) },
+  });
+  const seen = [];
+  let exitEvidence = null;
+  const handle = run.launchInteractive(PLAN, {
+    initialPrompt: "",
+    onData: (chunk) => seen.push(chunk),
+    onExit: (evidence) => { exitEvidence = evidence; },
+  });
+  term.emitData(`prompt > echo ${CREDENTIAL}\r\n`);
+  term.emitData("ok");
+  assert.ok(seen.every((chunk) => !chunk.includes(CREDENTIAL)));
+  assert.ok(seen.join("").includes("[redacted]"));
+  handle.write("ls\r");
+  assert.deepEqual(term.writes, ["ls\r"]);
+  handle.resize(120, 40);
+  assert.deepEqual(term.resized, [[120, 40]]);
+  term.emitExit(0, null);
+  assert.equal(exitEvidence?.exitCode, 0);
+  assert.equal(exitEvidence?.aborted, false);
+});
+
+test("launchInteractive cancel takes SIGTERM then SIGKILL and reports aborted", async () => {
+  let term;
+  const run = tuiLauncher({
+    ptyImpl: { spawn: (command, args, options) => (term = new FakeTerm({ command, args, options })) },
+  });
+  let exitEvidence = null;
+  const handle = run.launchInteractive(PLAN, { onExit: (evidence) => { exitEvidence = evidence; } });
+  handle.cancel();
+  assert.deepEqual(term.killed, ["SIGTERM"]);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.deepEqual(term.killed, ["SIGTERM", "SIGKILL"]);
+  term.emitExit(null, "SIGKILL");
+  assert.equal(exitEvidence?.aborted, true);
+  assert.ok(!handle.write("x"));
+});
+
+test("launchInteractive rejects --api-key argv and invalid geometry", () => {
+  const run = tuiLauncher({ ptyImpl: { spawn: () => ({ onData() {}, onExit() {}, kill() {}, write() {}, resize() {} }) } });
+  assert.throws(
+    () => run.launchInteractive({ ...PLAN, argv: ["--api-key", "x"] }, {}),
+    (error) => error?.code === "invalid-plan",
+  );
+  assert.throws(
+    () => run.launchInteractive(PLAN, { cols: 1, rows: 30 }),
+    (error) => error?.code === "invalid-plan",
+  );
+});

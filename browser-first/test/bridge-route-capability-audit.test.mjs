@@ -160,6 +160,12 @@ async function withBridgeRoutes(callback) {
     // merely named in a list.
     const { createHarnessHostService } = await import('../host/harness-host-service.mjs');
     const harness = await createHarnessHostService({ userRoot: root, providerHost: provider, env: {} });
+    const { createPiNativeTuiHostService } = await import('../host/pi-native-tui-host-service.mjs');
+    const piTui = createPiNativeTuiHostService({
+      piNativeSessionService: { startSession: async () => ({ projection: {}, handle: {} }) },
+      issuePiProjection: async () => ({ projection: { ok: true } }),
+      manifest: { id: "addon.pi-harness" },
+    });
     const routeArrays = {
       harnessRoutes: harness.harnessRoutes,
       browserDiagnosticsRoutes: diagnostics.browserDiagnosticsRoutes,
@@ -169,6 +175,7 @@ async function withBridgeRoutes(callback) {
       addonDelegationRoutes: addon.addonDelegationRoutes,
       opencodeSessionRoutes: opencodeSession.opencodeSessionRoutes,
       extensionPrefsRoutes: prefs.extensionPrefsRoutes,
+      piNativeTuiRoutes: piTui.piNativeTuiRoutes,
     };
     const routes = Object.values(routeArrays).flat();
 

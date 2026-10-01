@@ -17,6 +17,9 @@
 // No manifest command, caller argv, or arbitrary executable is ever accepted:
 // the command comes only from plan.executable.command.
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+
+const requireNodePty = createRequire(import.meta.url);
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_STDOUT_BYTES = 64 * 1024;
@@ -78,6 +81,7 @@ export function createPiProcessLauncher({
   maxStderrBytes = DEFAULT_MAX_STDERR_BYTES,
   killGraceMs = KILL_GRACE_MS,
   now = () => Date.now(),
+  ptyImpl,
 } = {}) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1)
     throw new TypeError("Bounded launch timeout required.");
@@ -228,5 +232,118 @@ export function createPiProcessLauncher({
       });
     },
     redact: redactPiText,
+
+    // Interactive TUI mode (2D). Spawns the SAME reviewed executable inside a
+    // pseudo-TTY so Pi renders its authentic terminal UI. Hard invariants:
+    //   * argv = [...plan.argv, ...(initialPrompt ? [initialPrompt] : [])] —
+    //     no --print, no --no-session (session continuity is the point), and
+    //     --api-key is still rejected by validatePlan.
+    //   * env is the plan's private session environment plus TERM; no blanket
+    //     process.env inheritance. Shell is never involved (direct exec).
+    //   * every chunk streamed to onData first passes redactPiText with the
+    //     credential forbiddens (defense-in-depth; the credential is env-only
+    //     and Pi never echoes it).
+    //   * cancel/kill takes the same deterministic SIGTERM→SIGKILL path.
+    // ptyImpl is an injection seam for tests; the host runtime default is
+    // node-pty, loaded lazily so one-shot launches never need the native dep.
+    launchInteractive(plan, { cols = 80, rows = 24, initialPrompt, onData, onExit, signal } = {}) {
+      let command, argv, projectPath, env, forbidden;
+      ({ command, argv, projectPath, env } = validatePlan(plan));
+      forbidden = forbiddenFor(plan);
+      if (!Number.isSafeInteger(cols) || cols < 2) throw fail("invalid-plan");
+      if (!Number.isSafeInteger(rows) || rows < 2) throw fail("invalid-plan");
+      const message = String(initialPrompt ?? "").trim();
+      if (Buffer.byteLength(message) > MAX_PROMPT_BYTES) throw fail("invalid-plan");
+      const args = [...argv, ...(message ? [message] : [])];
+
+      const loadPty = () => {
+        if (ptyImpl) return ptyImpl;
+        return requireNodePty("node-pty");
+      };
+      const pty = loadPty();
+      const termEnv = { ...env, TERM: "xterm-256color" };
+
+      const term = pty.spawn(command, args, {
+        name: "xterm-256color",
+        cols,
+        rows,
+        cwd: projectPath,
+        env: termEnv,
+      });
+      const startedAt = now();
+      let settled = false;
+      let aborted = false;
+      let forceTimer;
+
+      const kill = () => {
+        if (settled) return;
+        try {
+          term.kill("SIGTERM");
+        } catch {
+          /* already exited */
+        }
+        forceTimer = setTimeout(() => {
+          try {
+            term.kill("SIGKILL");
+          } catch {
+            /* already exited */
+          }
+        }, killGraceMs);
+        forceTimer.unref?.();
+      };
+      const onAbort = () => {
+        if (settled) return;
+        aborted = true;
+        kill();
+      };
+
+      const finish = (extra = {}) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(forceTimer);
+        signal?.removeEventListener("abort", onAbort);
+        onExit?.({
+          exitCode: extra.exitCode ?? null,
+          signal: extra.signal ?? null,
+          aborted,
+          spawnError: extra.spawnError ?? null,
+          durationMs: now() - startedAt,
+        });
+      };
+
+      term.onData((chunk) => {
+        if (settled) return;
+        onData?.(redactPiText(String(chunk ?? ""), forbidden));
+      });
+      term.onExit(({ exitCode, signal: sig }) => {
+        finish({ exitCode, signal: sig ?? null });
+      });
+
+      if (signal?.aborted) onAbort();
+      else signal?.addEventListener("abort", onAbort, { once: true });
+
+      return Object.freeze({
+        pid: typeof term.pid === "number" ? term.pid : null,
+        write(input) {
+          if (settled) return false;
+          const text = String(input ?? "");
+          if (!text) return false;
+          if (Buffer.byteLength(text) > MAX_PROMPT_BYTES) throw fail("invalid-plan");
+          term.write(text);
+          return true;
+        },
+        resize(nextCols, nextRows) {
+          if (settled) return false;
+          if (!Number.isSafeInteger(nextCols) || nextCols < 2) throw fail("invalid-plan");
+          if (!Number.isSafeInteger(nextRows) || nextRows < 2) throw fail("invalid-plan");
+          term.resize(nextCols, nextRows);
+          return true;
+        },
+        cancel() {
+          aborted = true;
+          kill();
+        },
+      });
+    },
   };
 }

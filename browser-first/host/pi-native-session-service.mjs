@@ -96,6 +96,31 @@ export function createPiNativeSessionService({
       }
     },
 
+    // Interactive TUI session (2D). Same clean chain as launchProof — plan,
+    // authorize, credential, projection-consumed cwd — but spawns the real Pi
+    // TUI in a pseudo-TTY via the launcher's interactive mode. The caller owns
+    // the returned handle: write()/resize()/cancel() and the onData/onExit
+    // callbacks. Only the redacted plan projection crosses this boundary.
+    //
+    // Session continuity is host-owned: `--session-dir` points into the
+    // isolated agent dir (baseEnv PI_CODING_AGENT_DIR), never the user's
+    // durable Pi data, so --continue/--resume inside the TUI stay disposable.
+    async startSession({ addonId, manifest, providerProfileId, selectedModel, projection, sessionId, cols, rows, initialPrompt, onData, onExit, signal } = {}) {
+      const privatePlan = await adapter.plan({ addonId, manifest, providerProfileId, selectedModel, projection, sessionId });
+      const isolatedDir = privatePlan.env?.PI_CODING_AGENT_DIR;
+      const argv = typeof isolatedDir === "string" && isolatedDir
+        ? [...privatePlan.argv, "--session-dir", `${isolatedDir}/sessions`]
+        : privatePlan.argv;
+      const handle = launch.launchInteractive(
+        { ...privatePlan, argv },
+        { cols, rows, initialPrompt, onData, onExit, signal },
+      );
+      return {
+        projection: redactLaunchPlan(privatePlan, { homeDir }),
+        handle,
+      };
+    },
+
     redact(privatePlan, options = {}) {
       return redactLaunchPlan(privatePlan, { homeDir, ...options });
     },

@@ -52,6 +52,90 @@
   margin: 0;
 }
 
+/* Interactive Pi TUI session (2D). */
+.pi-tui {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.pi-tui-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pi-tui-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.pi-tui-status[data-tone="success"] { color: #24d18f; }
+.pi-tui-status[data-tone="warning"] { color: #e2b93d; }
+.pi-tui-status[data-tone="error"] { color: #e2574b; }
+.pi-tui-status { color: var(--muted, #8b9690); font-size: 0.78rem; }
+
+.pi-tui-pickers {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.pi-tui-select {
+  flex: 1 1 140px;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: inherit;
+  font-size: 0.8rem;
+  padding: 6px 8px;
+}
+
+.pi-tui-start,
+.pi-tui-cancel {
+  border: 0;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 7px 12px;
+}
+
+.pi-tui-start {
+  background: rgba(36, 209, 143, 0.16);
+  color: #24d18f;
+}
+
+.pi-tui-start:disabled,
+.pi-tui-cancel:disabled {
+  opacity: 0.45;
+}
+
+.pi-tui-cancel {
+  background: rgba(226, 87, 75, 0.14);
+  color: #e2574b;
+}
+
+.pi-tui-terminal {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: #0c0f0e;
+  padding: 10px 10px 6px;
+  min-height: 360px;
+  height: 52vh;
+  overflow: hidden;
+}
+
+.pi-tui-terminal .xterm {
+  height: 100%;
+}
+
 /* Harness/tool workspace + options panel. */
 .tool-workspace {
   display: flex;
