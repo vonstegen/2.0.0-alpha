@@ -16,6 +16,7 @@
 // and pass the result, so the chrome.storage override is honored.
 
 import { redactTraceText } from "./trace-redaction.js";
+import { createReachabilityStore, fetchWithRetry } from "./bridge-retry.mjs";
 
 const DEFAULT_BRIDGE_URL = "http://127.0.0.1:47773";
 const STORAGE_OVERRIDE_KEY = "bridgeTargetOverride";
@@ -403,8 +404,22 @@ export function createBridgeClient(config = globalThis.__RESONANTOS_BRIDGE_CONFI
   const bridgeToken = config.bridgeToken ?? "";
   const bridgeCapabilityTokens = config.bridgeCapabilityTokens ?? {};
   const fetchImpl = config.fetchImpl ?? fetch;
+  // Bounded retry on transient network failures (ECONNREFUSED bursts, bridge
+  // restarts). 4 attempts with 250ms linear backoff (~750ms ceiling). Aborts
+  // are never retried. Reachability events fire so the UI can render a
+  // banner instead of blanking panels during a transient window.
+  const reachability = createReachabilityStore();
 
-  return async function bridgeRequest(route, options = {}) {
+  async function fetchWithDefaults(route, init) {
+    return fetchWithRetry(fetchImpl, `${bridgeUrl}${route}`, init, {
+      route,
+      onUnreachable: (event) => reachability.onUnreachable(event),
+      onRecovered: (event) => reachability.onRecovered(event),
+      onPersistentFailure: (event) => reachability.onPersistentFailure(event),
+    });
+  }
+
+  const bridgeRequest = async function bridgeRequest(route, options = {}) {
     const wantsSse = options.responseType === "sse";
     if (wantsSse) {
       if (!isRelativeBridgeRoute(route) || !SSE_ROUTE_PATHS.has(routePathname(route))) {
@@ -423,7 +438,7 @@ export function createBridgeClient(config = globalThis.__RESONANTOS_BRIDGE_CONFI
     }
     let response;
     try {
-      response = await fetchImpl(`${bridgeUrl}${route}`, {
+      response = await fetchWithDefaults(route, {
         method,
         headers,
         body: wantsSse ? undefined : (options.body ? JSON.stringify(options.body) : undefined),
@@ -451,6 +466,10 @@ export function createBridgeClient(config = globalThis.__RESONANTOS_BRIDGE_CONFI
     }
     return payload;
   };
+
+  bridgeRequest.subscribeReachability = (listener) => reachability.subscribe(listener);
+  bridgeRequest.getReachabilityState = () => reachability.getState();
+  return bridgeRequest;
 }
 
 // Raw byte/HTML fetch. The bridge's addon proxy endpoints (e.g.

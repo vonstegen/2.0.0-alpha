@@ -242,6 +242,80 @@ PI_CODING_AGENT_DIR: isolate the CLI's home).
   authorize `addon.pi-harness` sessions (regression check passed; battery
   green).
 
+## Bridge retry hardening — transient ECONNREFUSED no longer blanks the panels (2026-10-01)
+
+The bridge process listens on 127.0.0.1:47773 (Node HTTP). The extension's
+service worker occasionally hits ECONNREFUSED bursts (kernel backlog
+saturation, App Nap throttling on the host, transient bridge restarts). Each
+failure surfaced as `TypeError: fetch failed` to the extension, which had no
+retry/backoff — boot fetches blanked the rail (`#tool-rail-list` rendered
+empty) and the user had to manually reload Chrome. Same root cause produced
+the "no add-ons again" reports even though the durable registry was intact.
+
+### Defenses
+
+- **`bridge-retry.mjs`** — `fetchWithRetry(fetch, url, init, options)` wraps
+  every bridge fetch with bounded retry on transient network errors. Aborts
+  and HTTP error responses (4xx/5xx) are NEVER retried — the bridge answered;
+  the caller decides what to do. Defaults: 4 attempts (initial + 3 retries),
+  250ms linear backoff (0, 250, 500, 750ms — total ceiling ~1.5s). Classifies
+  errors via `isTransientNetworkError` (checks `.code` / `.cause.code`
+  against `ECONNREFUSED | ECONNRESET | ETIMEDOUT | EAI_AGAIN | ENOTFOUND |
+  EPIPE | EHOSTUNREACH | ENETUNREACH`, plus common message patterns like
+  "fetch failed" / "NetworkError").
+- **Reachability store** — `createReachabilityStore()` emits three states
+  (`online | unreachable | persistent`) with subscription callbacks. The
+  bridge client emits transitions:
+    - `unreachable` — every transient failure during retry (UI shows
+      "retrying…" while the retry budget is in flight)
+    - `recovered` — a fetch succeeded after one or more transient failures
+    - `persistent` — retries exhausted; UI shows "Bridge unavailable.
+      Check Settings → Bridge Target and the bridge process."
+- **`createBridgeClient`** — the request function returned now exposes
+  `subscribeReachability(listener)` and `getReachabilityState()` so any UI
+  module can render banners / panels without re-implementing retry.
+- **Banner UI** — `bridge-reachability-banner.js` renders a sticky top banner
+  keyed on `#resonantos-bridge-reachability-banner` (added to
+  `main-workspace.html`). Mounted inside `rebindBridge` after each bridge
+  client swap. Hidden when state is online, visible with a yellow tint when
+  unreachable, red when persistent. CSS lives in `main-workspace.css`.
+- **Backwards-compatible** — the returned `bridgeRequest` is still a
+  function (existing callers unchanged); reachability hooks are attached as
+  properties on the function.
+
+### Verification
+
+- **Unit tests** (29 total):
+  - `bridge-retry.test.mjs` (14 tests): error classification, backoff
+    schedule, retry/recover/persistent sequencing, abort cancels retry,
+    sleep honors abort signal, reachability state transitions and
+    subscribe/unsubscribe.
+  - `bridge-reachability.test.mjs` (8 tests): end-to-end through
+    `createBridgeClient` — success on first try, recovery after transient
+    burst, persistent after max attempts, recovery from persistent, no retry
+    on non-transient errors, abort halts retry, unsubscribe, HTTP errors
+    don't change state.
+  - `bridge-reachability-banner.test.mjs` (7 tests): no-op when
+    document/element missing, hides when online, reveals on burst,
+    persistent after exhaustion, transient → online recovery, dispose
+    clears state.
+- **Battery**: green.
+
+### Open follow-ups
+
+- **Root-cause forensics deferred** — the ECONNREFUSED burst pattern looks
+  like kernel backlog saturation when Chrome opens parallel keepalive
+  connections during a burst. `sample` shows the bridge's main thread
+  parked in `kevent` (idle, healthy). Need either `dtrace`/ltrace on the
+  listener or to bound the extension's keep-alive concurrency. The retry
+  layer makes the UX robust regardless.
+- **Backoff tuning** — 4 attempts × 250ms linear is conservative. If the
+  burst pattern turns out to last longer, raise `DEFAULT_MAX_ATTEMPTS` or
+  add jitter.
+- **Banner copy** — "Bridge unreachable — retrying…" is generic; could
+  surface the most recent failure reason (already passed in `event.reason`)
+  for diagnostics. Keep terse for now.
+
 ## Critical finding — auth.json precedence and its countermeasure
 
 Pi 0.74.2's `AuthStorage.getApiKey()` prefers the DURABLE `~/.pi/agent/auth.json`

@@ -9,3 +9,42 @@
 @import url("./styles/main-workspace/tool-rail.css");
 @import url("./styles/main-workspace/settings.css");
 @import url("./styles/main-workspace/responsive.css");
+
+/* Bridge reachability banner — transient ECONNREFUSED bursts and persistent
+   bridge outages. The banner is hidden by default and revealed by the
+   bridge-reachability-banner helper when state is unreachable or persistent. */
+.resonantos-bridge-reachability-banner {
+  position: sticky;
+  top: 0;
+  z-index: 9999;
+  padding: 8px 16px;
+  font-size: 13px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.resonantos-bridge-reachability-banner[hidden] {
+  display: none;
+}
+
+.resonantos-bridge-reachability-banner--unreachable {
+  background: rgba(255, 196, 0, 0.18);
+  color: rgba(255, 224, 130, 0.95);
+  border-bottom-color: rgba(255, 196, 0, 0.35);
+}
+
+.resonantos-bridge-reachability-banner--persistent {
+  background: rgba(220, 53, 69, 0.18);
+  color: rgba(255, 180, 180, 0.95);
+  border-bottom-color: rgba(220, 53, 69, 0.35);
+}
+
+.resonantos-bridge-reachability-banner--online {
+  background: rgba(40, 167, 69, 0.18);
+  color: rgba(160, 230, 170, 0.95);
+  border-bottom-color: rgba(40, 167, 69, 0.35);
+}

@@ -2,6 +2,7 @@ import { createBrowserPageActions } from "./lib/browser-page-actions.js";
 import { normalizeBrowserUrl } from "./lib/browser-command-parser.js";
 import { isControllableTabUrl } from "./lib/control-target-classification.js";
 import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, initCapabilityTokens, isUnauthorizedBridgeError, resolveBridgeConfig } from "./lib/bridge-client.js";
+import { createReachabilityBanner } from "./lib/bridge-reachability-banner.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 import { createChatSessionStore } from "./lib/chat-session-store.js";
 import { shouldSyncChatChange } from "./lib/chat-sync.js";
@@ -115,6 +116,21 @@ let bridgeRequest = null;
 let rawFetch = null;
 let prefsSync = null;
 let rebindInFlight = null;
+// Reachability banner: re-mounted against the latest bridge client every
+// time rebindBridge swaps in a fresh one. Late subscribers see the current
+// state synchronously on mount (banner module reads getReachabilityState).
+let reachabilityBanner = null;
+function mountReachabilityBanner() {
+  try {
+    if (reachabilityBanner) {
+      reachabilityBanner.dispose();
+      reachabilityBanner = null;
+    }
+    if (bridgeRequest && typeof bridgeRequest.subscribeReachability === "function") {
+      reachabilityBanner = createReachabilityBanner({ bridgeRequest });
+    }
+  } catch { /* banner is purely visual */ }
+}
 
 function rebindBridge({ forceResolve = false, refreshGenerated = false } = {}) {
   if (rebindInFlight && !forceResolve) return rebindInFlight;
@@ -123,6 +139,7 @@ function rebindBridge({ forceResolve = false, refreshGenerated = false } = {}) {
     .then((cfg) => {
       bridgeRequest = createBridgeClient(cfg);
       rawFetch = createRawBridgeFetch(cfg);
+      mountReachabilityBanner();
       if (!prefsSync) {
         prefsSync = createPrefsSync({ getBridgeRequest: () => bridgeRequest });
         prefsSync.install();
