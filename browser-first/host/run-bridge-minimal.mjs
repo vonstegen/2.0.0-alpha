@@ -294,6 +294,15 @@ const piNativeSessionService = createPiNativeSessionService({
       grantedCapabilities: piGrantedCapabilities(addonId),
     }),
   envAllowlist: ["PATH", "HOME"],
+  baseEnv: {
+    // Isolate pi from the user's durable agent dir (auth.json, extensions,
+    // settings, sessions): the session-environment credential is then the ONLY
+    // key source, and the user's federated extension bootstraps never run
+    // inside a harness turn. The isolated dir is host-owned and disposable;
+    // pi may create an empty auth.json there, but the session credential is
+    // never written to it.
+    PI_CODING_AGENT_DIR: path.join(userRoot(), "pi-coding-agent-isolated"),
+  },
   homeDir: os.homedir(),
 });
 

@@ -161,6 +161,16 @@ test("authorize gate fences new launch material after revocation", async () => {
   await assert.rejects(svc.launchProof(proofInput({ prompt: "proof" })), { code: "permission-denied" });
 });
 
+test("host-injected baseEnv reaches the private plan env (agent-dir isolation)", async () => {
+  const { service: svc } = service({
+    baseEnv: { PI_CODING_AGENT_DIR: "/tmp/pi-agent-isolated" },
+  });
+  const plan = await svc.createLaunchPlan(proofInput());
+  assert.equal(plan.env.PI_CODING_AGENT_DIR, "/tmp/pi-agent-isolated", "the isolated agent dir is part of the session env");
+  assert.equal(plan.env.OPENROUTER_API_KEY, CREDENTIAL);
+  assert.ok(!JSON.stringify(plan.argv).includes(CREDENTIAL));
+});
+
 test("credential resolver miss fails closed without leaking the secret", async () => {
   const providerHost = {
     allProviderProfiles: async () => PROFILES,
