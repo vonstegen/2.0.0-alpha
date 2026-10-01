@@ -298,6 +298,21 @@ export async function createHarnessHostService({ userRoot, store = createHarness
         entry.compatibleModels = discovery.models;
       }
     }
+    // Operator-approved provider profiles per add-on, mirroring the session
+    // authorize gate's semantics (addonId + adapterId + authScheme match, no
+    // binding-name coupling). Panels filter their pickers to this set so a
+    // dedicated harness (e.g. Grok Build → its xAI profile) never offers a
+    // profile the gate would deny. Empty array = no operator-approved profile.
+    for (const [addonId, entry] of Object.entries(projection.installations)) {
+      const runtime = entry.agentRuntime;
+      if (!runtime || runtime.credentialSource !== 'provider-profile') continue;
+      entry.approvedProviderProfileIds = approvedBindings
+        .filter(candidate => candidate.addonId === addonId &&
+          candidate.adapterId === runtime.adapterId &&
+          candidate.authScheme === runtime.authScheme &&
+          candidate.source && typeof candidate.source.providerProfileId === 'string' && candidate.source.providerProfileId)
+        .map(candidate => candidate.source.providerProfileId);
+    }
     return { ...projection, candidates: structuredClone(candidates) };
   };
   function route(method, path, capability, required, optional, handler, streaming = false) {

@@ -105,6 +105,45 @@ bridge restart wipes them, so both the OpenRouter and MiniMax keys must be
 re-saved through Settings after each restart, and running sessions capture
 the credential at start.
 
+## Grok Build as a second first-class harness add-on (2026-10-01)
+
+Operator decision: Grok-Build (previously a quick SDK demo, content lost in
+the worktree prune) is promoted to a first-class harness add-on through the
+same dynamic architecture as Pi — `examples/addons/grok-build.json`,
+`classification: harness/coding-agent`, adapter `pi-native-v1`, binding
+`grok-build.native` → `shared-xai` (xAI, OpenAI-compatible, `api.x.ai/v1`).
+
+- **Dynamic rail discovery proven for a second add-on**: install + grant via
+  the bridge routes → the registry projection renders BOTH `Pi` and
+  `Grok Build` tool-panel entries. Zero rail code, zero hard-coded add-on ids
+  (ADR-040 end to end).
+- **Bug found + fixed — single-manifest TUI route.** `createPiNativeTuiHostService`
+  was constructed with one fixed manifest; every `/pi-native/tui-session`
+  create was a pi-harness session regardless of profile, so the grok-build
+  binding could never authorize (403). The route now requires `addonId` and
+  resolves the manifest dynamically via a new host-only
+  `registry.manifest(addonId)` accessor (durable-registry source of truth —
+  route-installed manifests resolve identically after restarts). Unknown ids
+  fail closed (`permission-denied`). The extension panel sends `addonId`
+  explicitly; tests cover per-addon resolution and the fail-closed paths.
+- **Dedicated panel pickers.** The projection now exposes
+  `approvedProviderProfileIds` per add-on (operator bindings, same semantics
+  as the authorize gate: addonId + adapterId + authScheme, no binding-name
+  coupling). Pi panel → its two approved profiles (OpenRouter, MiniMax);
+  Grok Build panel → `shared-xai` only. `sanitizedRuntime` gained
+  `authScheme` to make the match possible.
+- **Session label derives from the installation** (`chatAuthorLabel` →
+  "Grok Build session"), no longer hard-coded "Pi session".
+- **Chain proof (canary)**: direct pi probe with `--provider xai --model
+  grok-4` → xAI answered `400 Incorrect API key provided` (header attached,
+  canary parsed). Bridge create for `addon.grok-build` → 200, real pi spawn;
+  session record shows provider `xai`, model resolved `grok-4.3`, exchange
+  completed. Real inference awaits the operator's xAI key in the
+  `xAI (shared)` account (canary currently saved, session-only).
+- Grant validation note: `setGrants` matches capability + scope +
+  revocationBehavior — grant calls must carry the full request shape, not
+  bare `{capability, granted}`.
+
 ## Critical finding — auth.json precedence and its countermeasure
 
 Pi 0.74.2's `AuthStorage.getApiKey()` prefers the DURABLE `~/.pi/agent/auth.json`

@@ -163,7 +163,7 @@ function renderPiTuiSession(doc, { installation, bridgeRequest }) {
   row.className = "pi-tui-controls";
   const label = doc.createElement("span");
   label.className = "pi-tui-title";
-  label.textContent = "Pi session";
+  label.textContent = `${installation?.agentRuntime?.chatAuthorLabel ?? installation?.name ?? "Harness"} session`;
   const status = doc.createElement("span");
   status.className = "pi-tui-status";
   status.dataset.tone = "neutral";
@@ -171,8 +171,13 @@ function renderPiTuiSession(doc, { installation, bridgeRequest }) {
   row.append(label, status);
   box.append(row);
 
-  const profiles = Array.isArray(installation?.compatibleProviderProfiles) ? installation.compatibleProviderProfiles : [];
+  const allProfiles = Array.isArray(installation?.compatibleProviderProfiles) ? installation.compatibleProviderProfiles : [];
   const models = Array.isArray(installation?.compatibleModels) ? installation.compatibleModels : [];
+  // The host projects the operator-approved profile ids for this add-on (the
+  // same semantics as the session authorize gate). When present, the picker is
+  // limited to profiles a session can actually authorize against.
+  const approvedIds = Array.isArray(installation?.approvedProviderProfileIds) ? installation.approvedProviderProfileIds : [];
+  const profiles = approvedIds.length > 0 ? allProfiles.filter((profile) => approvedIds.includes(profile?.id)) : allProfiles;
   const pick = doc.createElement("div");
   pick.className = "pi-tui-pickers";
   const profileSelect = doc.createElement("select");
@@ -298,6 +303,7 @@ function renderPiTuiSession(doc, { installation, bridgeRequest }) {
       const created = await bridgeRequest("/pi-native/tui-session", {
         method: "POST",
         body: {
+          addonId: installation.addonId,
           providerProfileId: profileSelect.value,
           selectedModel: modelSelect.value,
           cols: 100,

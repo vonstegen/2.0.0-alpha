@@ -671,7 +671,7 @@ const piNativeProofRoute = {
 const { piNativeTuiRoutes } = createPiNativeTuiHostService({
   piNativeSessionService,
   issuePiProjection,
-  manifest: piHarnessManifest,
+  resolveManifest: (addonId) => harnessService.registry.manifest(addonId),
 });
 
 const bridgeRoutes = [

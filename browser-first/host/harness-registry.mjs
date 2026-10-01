@@ -108,6 +108,7 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
     if (!runtime) return null;
     return {
       adapterId: runtime.adapterId ?? '',
+      authScheme: typeof runtime.authScheme === 'string' ? runtime.authScheme : '',
       credentialSource: runtime.credentialSource ?? null,
       credentialBinding: typeof runtime.credentialBinding === 'string' && runtime.credentialBinding ? runtime.credentialBinding : null,
       chatAuthorLabel: typeof runtime.chatAuthorLabel === 'string' ? runtime.chatAuthorLabel : '',
@@ -294,6 +295,15 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
         delete next.installations[addonId];
         return [];
       });
+    },
+    // Host-only full-manifest resolution for installed add-ons. The snapshot
+    // projection deliberately exposes sanitized subsets; session/planning code
+    // needs the reviewed manifest itself (skills/resources projection). The
+    // durable registry is the source of truth, so route-installed manifests
+    // resolve identically after restarts.
+    manifest(addonId) {
+      const entry = state.installations[addonId];
+      return entry ? structuredClone(entry.manifest) : null;
     },
   };
 }

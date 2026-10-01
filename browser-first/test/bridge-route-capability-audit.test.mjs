@@ -164,7 +164,7 @@ async function withBridgeRoutes(callback) {
     const piTui = createPiNativeTuiHostService({
       piNativeSessionService: { startSession: async () => ({ projection: {}, handle: {} }) },
       issuePiProjection: async () => ({ projection: { ok: true } }),
-      manifest: { id: "addon.pi-harness" },
+      resolveManifest: (addonId) => (addonId === "addon.pi-harness" ? { id: "addon.pi-harness" } : null),
     });
     const routeArrays = {
       harnessRoutes: harness.harnessRoutes,

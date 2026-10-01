@@ -82,9 +82,12 @@ export function createPiTuiStreamSubscription({ maxQueueBytes = 512 * 1024 } = {
 export function createPiNativeTuiHostService({
   piNativeSessionService,
   issuePiProjection,
-  manifest,
+  resolveManifest,
   createSubscription = createPiTuiStreamSubscription,
 } = {}) {
+  if (typeof resolveManifest !== "function") {
+    throw new Error("createPiNativeTuiHostService requires a resolveManifest(addonId) function.");
+  }
   const piTuiSessions = new Map();
   const piNativeTuiSessionRoute = {
     method: "POST",
@@ -93,9 +96,17 @@ export function createPiNativeTuiHostService({
     loopbackHostOnly: true,
     errorFamily: "harness",
     async handler(payload = {}) {
+      const addonId = String(payload.addonId ?? "").trim();
       const providerProfileId = String(payload.providerProfileId ?? "").trim();
-      if (!providerProfileId) {
+      if (!addonId || !providerProfileId) {
         throw Object.assign(new Error("invalid-event"), { code: "invalid-event" });
+      }
+      // Dynamic per-addon resolution (ADR-040): no add-on id is pinned by this
+      // route. An unknown/uninstalled id resolves to null and fails closed with
+      // the same public surface as the authorize gate.
+      const manifest = resolveManifest(addonId);
+      if (!manifest) {
+        throw Object.assign(new Error("Runtime permission denied."), { code: "permission-denied" });
       }
       const selectedModel = typeof payload.selectedModel === "string" ? payload.selectedModel.trim() : "";
       const initialPrompt = typeof payload.prompt === "string" ? payload.prompt.trim() : "";

@@ -81,12 +81,12 @@ test("tui routes: create wires the session, actions forward, dispose revokes", a
       },
     },
     issuePiProjection: async () => ({ projection: { ok: true } }),
-    manifest: { id: "addon.pi-harness" },
+    resolveManifest: (addonId) => (addonId === "addon.pi-harness" ? { id: "addon.pi-harness" } : null),
   });
   const byPath = new Map(piNativeTuiRoutes.map((route) => [`${route.method} ${route.path}`, route]));
 
   const create = byPath.get("POST /pi-native/tui-session");
-  const created = await create.handler({ providerProfileId: "openai-compatible-ros-openrouter-test-api", selectedModel: "anthropic/claude-sonnet-4.5", cols: 100, rows: 30 });
+  const created = await create.handler({ addonId: "addon.pi-harness", providerProfileId: "openai-compatible-ros-openrouter-test-api", selectedModel: "anthropic/claude-sonnet-4.5", cols: 100, rows: 30 });
   assert.equal(created.ok, true);
   assert.equal(typeof created.sessionId, "string");
   assert.equal(starts.length, 1);
@@ -121,13 +121,52 @@ test("tui routes: invalid resize payload and missing profile fail closed", async
       startSession: async () => ({ projection: {}, handle: { write: () => {}, resize: () => {}, cancel: () => {} } }),
     },
     issuePiProjection: async () => ({ projection: { ok: true } }),
-    manifest: { id: "addon.pi-harness" },
+    resolveManifest: (addonId) => (addonId === "addon.pi-harness" ? { id: "addon.pi-harness" } : null),
   });
   const byPath = new Map(piNativeTuiRoutes.map((route) => [`${route.method} ${route.path}`, route]));
   await assert.rejects(() => byPath.get("POST /pi-native/tui-session").handler({}), { code: "invalid-event" });
-  const created = await byPath.get("POST /pi-native/tui-session").handler({ providerProfileId: "p" });
+  // addonId is required (dynamic per-addon routing, ADR-040) — no pinned default.
+  await assert.rejects(
+    () => byPath.get("POST /pi-native/tui-session").handler({ providerProfileId: "p" }),
+    { code: "invalid-event" },
+  );
+  // Unknown/uninstalled add-on ids resolve to null and fail closed like the gate.
+  await assert.rejects(
+    () => byPath.get("POST /pi-native/tui-session").handler({ addonId: "addon.unknown", providerProfileId: "p" }),
+    { code: "permission-denied" },
+  );
+  const created = await byPath.get("POST /pi-native/tui-session").handler({ addonId: "addon.pi-harness", providerProfileId: "p" });
   assert.throws(
     () => byPath.get("POST /pi-native/tui-session/resize").handler({ sessionId: created.sessionId, cols: 1.5, rows: 10 }),
     { code: "invalid-event" },
+  );
+});
+
+test("tui routes: create resolves the manifest for the REQUESTED add-on", async () => {
+  const manifests = {
+    "addon.pi-harness": { id: "addon.pi-harness", name: "Pi Harness" },
+    "addon.grok-build": { id: "addon.grok-build", name: "Grok Build" },
+  };
+  const starts = [];
+  const { piNativeTuiRoutes } = createPiNativeTuiHostService({
+    piNativeSessionService: {
+      startSession: async (input) => {
+        starts.push(input);
+        return { projection: {}, handle: { write: () => {}, resize: () => {}, cancel: () => {} } };
+      },
+    },
+    issuePiProjection: async ({ addonId }) => ({ projection: { addonId } }),
+    resolveManifest: (addonId) => manifests[addonId] ?? null,
+  });
+  const byPath = new Map(piNativeTuiRoutes.map((route) => [`${route.method} ${route.path}`, route]));
+  const create = byPath.get("POST /pi-native/tui-session");
+  await create.handler({ addonId: "addon.grok-build", providerProfileId: "shared-xai", selectedModel: "grok-4" });
+  await create.handler({ addonId: "addon.pi-harness", providerProfileId: "shared-minimax", selectedModel: "MiniMax-M3" });
+  assert.deepEqual(
+    starts.map((start) => [start.addonId, start.manifest, start.providerProfileId]),
+    [
+      ["addon.grok-build", manifests["addon.grok-build"], "shared-xai"],
+      ["addon.pi-harness", manifests["addon.pi-harness"], "shared-minimax"],
+    ],
   );
 });
