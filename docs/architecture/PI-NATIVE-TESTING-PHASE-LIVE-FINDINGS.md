@@ -144,6 +144,104 @@ same dynamic architecture as Pi — `examples/addons/grok-build.json`,
   revocationBehavior — grant calls must carry the full request shape, not
   bare `{capability, granted}`.
 
+## Grok-native adapter — official Grok CLI as a first-class harness (2026-10-01)
+
+Operator correction: for `addon.grok-build` we don't want "pi with a Grok
+model" — the user envisioned a dedicated Grok Build CLI harness analogous to
+the pi chain. The official Grok CLI is installed at `~/.grok/bin/grok`
+(install: `curl -fsSL https://x.ai/cli/install.sh | bash`), version 1.0.34,
+"stable" channel. It is a full agentic coding CLI (TUI default, sessions,
+permission rules, model flags) and accepts `XAI_API_KEY` env as the API-key
+auth path. The `~/.grok/auth.json` OIDC login is xAI's consumer OAuth — the
+harness does not ride that credential (countermeasure is the same shape as
+PI_CODING_AGENT_DIR: isolate the CLI's home).
+
+### Architecture (adapter-generic, two native chains)
+
+- **New adapter `grok-native-v1`** wraps the official grok CLI under the
+  SAME session-environment delivery chain as `pi-native-v1`:
+  - `grok-runtime.mjs` — `grokCommand()` executable allowlist (realpath inside
+    `~/.grok/bin` or `GROK_BIN_DIR`); mirrors pi-runtime.mjs canonical-path
+    discipline.
+  - `grok-native-provider-map.mjs` — host-owned mapping ROS identity → env var;
+    only `xai → XAI_API_KEY` (grok is single-provider).
+  - `grok-native-credential-adapter.mjs` — planner modeled on pi's: authorize
+    gate (calls `authorize({ adapterId: "grok-native-v1" })`), protocol gate
+    (`openai-compatible`), provider-profile resolution, secret in session env,
+    argv builder (`--cwd <projectPath> --model <model>`), env keys
+    (`GROK_HOME=<userRoot>/grok-home-isolated` + `XAI_API_KEY`); never `--api-key`.
+  - `grok-native-session-service.mjs` — composes the planner with the binary-
+    agnostic interactive launcher (`pi-process-launcher.launchInteractive`),
+    exposes `probe` + `startSession` + `redact`. Session continuity is
+    implicit: grok stores session records under `$GROK_HOME/sessions`, no
+    `--session-dir` flag is appended.
+
+- **Adapter-generic TUI host service** (`pi-native-tui-host-service.mjs`):
+  same route shape (`/pi-native/tui-session*`) for both chains; the factory
+  now accepts EITHER the legacy `piNativeSessionService + issuePiProjection`
+  OR a dispatcher (`resolveSessionService({addonId}) → service`,
+  `resolveProjection({addonId, sessionId, manifest}) → projection`). The
+  bridge wires the dispatcher: `addonId === "addon.grok-build"` returns
+  `grokNativeSessionService`, else `piNativeSessionService`. The public
+  route surface is unchanged (extension contract intact).
+
+- **Authorization generalized**: `piNativeAuthorize` →
+  `nativeAuthorize({ addonId, adapterId, providerProfileId })`. Both
+  `piNativeAuthorize` and `grokNativeAuthorize` are thin shims. Planners
+  hardcode their adapterId when calling `authorize`.
+
+- **Registry**: `grok-native-v1` added to `reviewedAdapterIds` in
+  `harness-host-service.mjs` (without the entry, install of `addon.grok-build`
+  fails closed at `bindingAllowed`). `addon.grok-build.json` adapterId swap
+  (pi-native-v1 → grok-native-v1) + binding adapterId match in operator
+  launch script. `providerProfile: true` explicit on bindings for symmetry.
+
+- **Catalog**: xAI preset `models` expanded to current grok CLI ids
+  (`grok-4.7`, `grok-4.7-build-fast`, `grok-4.6`, `grok-4`, `grok-3`); the
+  existing durable account `shared-xai` carried only the legacy ids — its
+  frozen model list is in `~/ResonantOS_User/ProviderFabric/provider-accounts.json`
+  and was patched in place. New saves pick up the preset automatically.
+
+### Open follow-ups
+
+- **GROK_HOME binding (`grok-build.native`)**: the `authScheme`/`source`
+  shape is identical to the pi bindings — the bind/source-name is
+  `"grok-build.native"`. The host-owned credentials service
+  (`createHarnessCredentials`) uses the binding NAME as the credentialBinding
+  identity; the name must match the manifest's `agentRuntime.credentialBinding`.
+  Today they do (manifest + script) — but a name-rename in one place breaks
+  the gate silently. Add a launch-script invariant test.
+- **Diagnostic noise during dev**: the planner's gate failures throw
+  `permission-denied` with no public detail; the existing `publicHarnessError`
+  surface is intentional, but added console.error breadcrumbs helped trace
+  the real bug (`reviewedAdapterIds` missing `grok-native-v1`) and the
+  catalog frozen-models surprise. Consider a `--diagnostic` host flag that
+  exposes the breadcrumbs in the HTTP response (still fail-closed).
+- **Headless chat surface for grok** (`-p --output-format streaming-json`
+  gives ACP NDJSON; the user can build a non-TUI chat adapter reusing the
+  same grok planner). The TUI is today's surface; headless lands when the
+  bridge gets the generic chat route.
+- **OIDC login expiry note**: the user's interactive `~/.grok` token reports
+  "not authenticated" (`grok models` fails) — refresh via `grok login` for
+  interactive use. The harness does not need this; it uses the API key.
+
+### Chain evidence (canary, no real keys)
+
+- Direct probe: `PI_CODING_AGENT_DIR=<isolated> XAI_API_KEY=<canary>
+  grok -p "say hi" --output-format json` returned the expected "not
+  authenticated" (proves `XAI_API_KEY` is recognized, awaits a real key).
+- Direct probe (isolated dir): `XAI_API_KEY=<canary> grok models` →
+  "You are using XAI_API_KEY." (proves header attachment path is wired).
+- Bridge create: `POST /pi-native/tui-session` with `addonId:
+  addon.grok-build, providerProfileId: shared-xai` → 200 with redacted
+  projection (executable = `~/.grok/bin/grok`, argv = `[--cwd, <proj>,
+  --model, grok-4.7]`, envKeys include `GROK_HOME` and `XAI_API_KEY`).
+- Authorize gate passes: `nativeAuthorize({adapterId: "grok-native-v1",
+  providerProfileId: "shared-xai"})` matches the `grok-build.native`
+  binding. The same gate with `adapterId: "pi-native-v1"` continues to
+  authorize `addon.pi-harness` sessions (regression check passed; battery
+  green).
+
 ## Critical finding — auth.json precedence and its countermeasure
 
 Pi 0.74.2's `AuthStorage.getApiKey()` prefers the DURABLE `~/.pi/agent/auth.json`

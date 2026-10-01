@@ -142,7 +142,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     },
     write: (document) => { syncManifests(document); return store.write(document); },
   };
-  const registry = await createHarnessRegistry({ store: trackedStore, reviewedAdapterIds: ['dsh-typert-v1', 'provider-fabric-v1', 'openai-compatible-v1', 'pi-native-v1'],
+  const registry = await createHarnessRegistry({ store: trackedStore, reviewedAdapterIds: ['dsh-typert-v1', 'provider-fabric-v1', 'openai-compatible-v1', 'pi-native-v1', 'grok-native-v1'],
     bindings: approvedBindings.map(({ name, addonId, adapterId, authScheme, endpoint, source }) => ({
       name, addonId, adapterId, authScheme, endpoint,
       providerProfile: Boolean(source && typeof source.providerProfileId === 'string' && source.providerProfileId),

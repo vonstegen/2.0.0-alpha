@@ -335,7 +335,7 @@ export function createProviderBridgeService({
       };
     }
     const openAiCompatiblePresets = {
-      xai: { apiBaseUrl: "https://api.x.ai/v1", models: ["grok-4", "grok-3"] },
+      xai: { apiBaseUrl: "https://api.x.ai/v1", models: ["grok-4.7", "grok-4.7-build-fast", "grok-4.6", "grok-4", "grok-3"] },
       deepseek: { apiBaseUrl: "https://api.deepseek.com/v1", models: ["deepseek-chat", "deepseek-reasoner"] },
       mistral: { apiBaseUrl: "https://api.mistral.ai/v1", models: ["mistral-large-latest", "mistral-small-latest", "open-mixtral"] },
       qwen: { apiBaseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", models: ["qwen-max", "qwen-plus", "qwen-turbo"] },

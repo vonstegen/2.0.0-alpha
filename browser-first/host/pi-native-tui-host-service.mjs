@@ -80,16 +80,28 @@ export function createPiTuiStreamSubscription({ maxQueueBytes = 512 * 1024 } = {
 }
 
 export function createPiNativeTuiHostService({
+  // Adapter-generic resolvers. The factory accepts EITHER the legacy single-
+  // service shape (piNativeSessionService + issuePiProjection) for backward
+  // compatibility OR the dispatcher shape (resolveSessionService +
+  // resolveProjection). When both are provided, the dispatcher wins.
   piNativeSessionService,
   issuePiProjection,
   resolveManifest,
+  resolveSessionService,
+  resolveProjection,
   createSubscription = createPiTuiStreamSubscription,
 } = {}) {
   if (typeof resolveManifest !== "function") {
     throw new Error("createPiNativeTuiHostService requires a resolveManifest(addonId) function.");
   }
-  const piTuiSessions = new Map();
-  const piNativeTuiSessionRoute = {
+  const sessionServiceFor = typeof resolveSessionService === "function"
+    ? resolveSessionService
+    : () => piNativeSessionService;
+  const projectionFor = typeof resolveProjection === "function"
+    ? resolveProjection
+    : ({ addonId, sessionId, manifest }) => issuePiProjection({ addonId, sessionId, manifest });
+  const nativeTuiSessions = new Map();
+  const nativeTuiSessionRoute = {
     method: "POST",
     path: "/pi-native/tui-session",
     requiredCapability: "provider-model-invoke",
@@ -108,14 +120,18 @@ export function createPiNativeTuiHostService({
       if (!manifest) {
         throw Object.assign(new Error("Runtime permission denied."), { code: "permission-denied" });
       }
+      const sessionService = sessionServiceFor({ addonId, manifest });
+      if (!sessionService || typeof sessionService.startSession !== "function") {
+        throw Object.assign(new Error("Runtime permission denied."), { code: "permission-denied" });
+      }
       const selectedModel = typeof payload.selectedModel === "string" ? payload.selectedModel.trim() : "";
       const initialPrompt = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
       const cols = Number.isSafeInteger(payload.cols) && payload.cols >= 2 ? payload.cols : 80;
       const rows = Number.isSafeInteger(payload.rows) && payload.rows >= 2 ? payload.rows : 24;
       const sessionId = randomUUID();
-      const issued = await issuePiProjection({ addonId: manifest.id, sessionId, manifest });
+      const issued = await projectionFor({ addonId: manifest.id, sessionId, manifest });
       const subscription = createSubscription();
-      const { projection, handle } = await piNativeSessionService.startSession({
+      const { projection, handle } = await sessionService.startSession({
         addonId: manifest.id,
         manifest,
         providerProfileId,
@@ -132,11 +148,11 @@ export function createPiNativeTuiHostService({
         },
       });
       subscription.overflowHandler = () => handle.cancel();
-      piTuiSessions.set(sessionId, { handle, subscription });
+      nativeTuiSessions.set(sessionId, { handle, subscription });
       return { ok: true, sessionId, projection };
     },
   };
-  const piNativeTuiEventRoute = {
+  const nativeTuiEventRoute = {
     method: "GET",
     path: "/pi-native/tui-session/events",
     requiredCapability: "provider-model-invoke",
@@ -146,13 +162,13 @@ export function createPiNativeTuiHostService({
     terminalEventFamily: "harness",
     async handler(_payload, request) {
       const sessionId = new URL(request?.url ?? "/", "http://127.0.0.1").searchParams.get("sessionId") ?? "";
-      const session = piTuiSessions.get(sessionId);
+      const session = nativeTuiSessions.get(sessionId);
       if (!session) throw piDenied();
       if (request?.selfTest === true) return { stream: true };
       return session.subscription;
     },
   };
-  const piTuiSessionAction = (action) => ({
+  const nativeTuiSessionAction = (action) => ({
     method: "POST",
     path: `/pi-native/tui-session/${action}`,
     requiredCapability: "provider-model-invoke",
@@ -160,7 +176,7 @@ export function createPiNativeTuiHostService({
     errorFamily: "harness",
     handler(payload = {}) {
       const sessionId = String(payload.sessionId ?? "").trim();
-      const session = piTuiSessions.get(sessionId);
+      const session = nativeTuiSessions.get(sessionId);
       if (!session) throw piDenied();
       if (action === "input") {
         const input = String(payload.input ?? "");
@@ -173,18 +189,18 @@ export function createPiNativeTuiHostService({
       } else if (action === "cancel") {
         session.handle.cancel();
       } else if (action === "dispose") {
-        piTuiSessions.delete(sessionId);
+        nativeTuiSessions.delete(sessionId);
       }
       return { ok: true };
     },
   });
   const piNativeTuiRoutes = [
-    piNativeTuiSessionRoute,
-    piNativeTuiEventRoute,
-    piTuiSessionAction("input"),
-    piTuiSessionAction("resize"),
-    piTuiSessionAction("cancel"),
-    piTuiSessionAction("dispose"),
+    nativeTuiSessionRoute,
+    nativeTuiEventRoute,
+    nativeTuiSessionAction("input"),
+    nativeTuiSessionAction("resize"),
+    nativeTuiSessionAction("cancel"),
+    nativeTuiSessionAction("dispose"),
   ];
   return { piNativeTuiRoutes };
 }

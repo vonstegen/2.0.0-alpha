@@ -60,6 +60,7 @@ import {
 import { createHarnessHostService } from "./harness-host-service.mjs";
 import { createPiNativeSessionService } from "./pi-native-session-service.mjs";
 import { createPiNativeTuiHostService } from "./pi-native-tui-host-service.mjs";
+import { createGrokNativeSessionService } from "./grok-native-session-service.mjs";
 import { createHarnessResourceProjection } from "./harness-resource-projection.mjs";
 import { buildSkillCatalogFromManifests, createHarnessSkillsProjection } from "./harness-skills-projection.mjs";
 import { createProviderHostService } from "./provider-host-service.mjs";
@@ -260,12 +261,15 @@ const piDenied = () => Object.assign(new Error("permission-denied"), { code: "pe
 
 // Clean launch authorization: registry state + approved binding only. Slot
 // ownership is irrelevant here — installing, enabling, granting agent-runtime,
-// and approving the binding is what authorizes a native Pi launch. The binding
-// NAME is the generic-harness credentialBinding identity (unique per name, per
-// createHarnessCredentials); for the pi-native session chain the authority is
+// and approving the binding is what authorizes a native harness launch. The
+// binding NAME is the generic-harness credentialBinding identity (unique per
+// name, per createHarnessCredentials); for the session chain the authority is
 // the operator-approved provider profile + addon identity, so several named
 // bindings may approve different provider profiles for the same addon.
-const piNativeAuthorize = ({ addonId, providerProfileId }) => {
+//
+// Parameterized on adapterId so the same gate serves both the reviewed native
+// Pi chain (pi-native-v1) and the official Grok CLI chain (grok-native-v1).
+const nativeAuthorize = ({ addonId, adapterId, providerProfileId }) => {
   const projection = harnessService.registry.snapshot();
   const installation = projection.installations[addonId];
   if (!installation?.installed || !installation.enabled) throw piDenied();
@@ -275,13 +279,17 @@ const piNativeAuthorize = ({ addonId, providerProfileId }) => {
   if (!agentGranted) throw piDenied();
   const binding = approvedBindings.find((candidate) =>
     candidate.addonId === addonId &&
-    candidate.adapterId === "pi-native-v1" &&
+    candidate.adapterId === adapterId &&
     typeof installation.agentRuntime?.credentialBinding === "string" &&
     candidate.authScheme === "session-environment" &&
     candidate.source && typeof candidate.source.providerProfileId === "string" &&
     candidate.source.providerProfileId === providerProfileId);
   if (!binding) throw piDenied();
 };
+const piNativeAuthorize = ({ addonId, providerProfileId }) =>
+  nativeAuthorize({ addonId, adapterId: "pi-native-v1", providerProfileId });
+const grokNativeAuthorize = ({ addonId, providerProfileId }) =>
+  nativeAuthorize({ addonId, adapterId: "grok-native-v1", providerProfileId });
 
 const piGrantedCapabilities = (addonId) =>
   harnessService.registry.snapshot().installations[addonId]?.grantedCapabilities ?? [];
@@ -364,6 +372,30 @@ const piNativeHost = Object.freeze({
   issueProjection: issuePiProjection,
   stageSkills: stagePiSkills,
   cleanupSkills: cleanupPiSkills,
+});
+
+// The official Grok CLI chain (grok-native-v1). Composes the same host
+// authorities behind the reviewed grokCommand() allowlist and the
+// session-environment delivery chain; only the executable, argv builder, and
+// isolation env var differ. GROK_HOME isolates the harness from the user's
+// durable ~/.grok (auth.json, config, leader socket, sessions) so the session
+// credential is the only key source.
+const grokNativeSessionService = createGrokNativeSessionService({
+  providerHost: providerHostService,
+  resolveProviderProfileCredential,
+  authorize: grokNativeAuthorize,
+  consumeProjection: (projection, { addonId, sessionId }) =>
+    piResourceProjection.consume(projection, {
+      addonId,
+      sessionId,
+      authorizedProject: piAuthorizedProject,
+      grantedCapabilities: piGrantedCapabilities(addonId),
+    }),
+  envAllowlist: ["PATH", "HOME"],
+  baseEnv: {
+    GROK_HOME: path.join(userRoot(), "grok-home-isolated"),
+  },
+  homeDir: os.homedir(),
 });
 
 harnessService = await createHarnessHostService({
@@ -661,17 +693,24 @@ const piNativeProofRoute = {
   },
 };
 
-// Pi-native interactive TUI session (2D). Same clean chain as the proof route
-// (authorize -> issued projection -> reviewed planner -> bounded launcher) but
-// the REAL Pi TUI runs inside a pseudo-TTY. Route + SSE subscription
-// implementation live in pi-native-tui-host-service.mjs so the
-// bridge-route-capability audit constructs this array like every other
-// route-owning host service. The credential stays env-only; the raw plan
-// never crosses this boundary.
+// Adapter-generic interactive TUI session (2D). Same clean chain as the proof
+// route (authorize -> issued projection -> reviewed planner -> bounded
+// launcher) but the REAL harness TUI runs inside a pseudo-TTY. A per-addon
+// resolver dispatches to the right session service (pi-native-v1 for the pi
+// chain, grok-native-v1 for the Grok CLI chain) without pinning a single
+// add-on id (ADR-040). Route + SSE subscription implementation live in
+// pi-native-tui-host-service.mjs so the bridge-route-capability audit
+// constructs this array like every other route-owning host service. The
+// credential stays env-only; the raw plan never crosses this boundary.
 const { piNativeTuiRoutes } = createPiNativeTuiHostService({
   piNativeSessionService,
   issuePiProjection,
   resolveManifest: (addonId) => harnessService.registry.manifest(addonId),
+  resolveSessionService: ({ addonId }) => {
+    if (addonId === "addon.grok-build") return grokNativeSessionService;
+    return piNativeSessionService;
+  },
+  resolveProjection: ({ addonId, sessionId, manifest }) => issuePiProjection({ addonId, sessionId, manifest }),
 });
 
 const bridgeRoutes = [

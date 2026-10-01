@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "author": "ResonantOS",
   "sdkVersion": "0.1.0",
-  "description": "Grok-dedicated provider-profile harness. Executes coding-agent turns through the reviewed native Pi runtime pinned to xAI Grok models. Host installation, explicit consent and slot ownership are required; the host resolves the approved provider-profile credential and delivers it ONLY through a session-environment into the launcher (never argv, manifest, or durable state). This manifest grants no authority and carries no secret.",
+  "description": "Grok-dedicated provider-profile harness. Executes coding-agent turns through the official Grok CLI (\"Grok Build\") wrapped by the reviewed grok-native-v1 session-environment chain, pinned to xAI Grok models. Host installation, explicit consent and slot ownership are required; the host resolves the approved provider-profile credential and delivers it ONLY through a session-environment (XAI_API_KEY) into the launcher (never argv, manifest, or durable state). The harness runs in an isolated GROK_HOME so the user's durable ~/.grok (auth.json, config, leader socket) is invisible to harness turns. This manifest grants no authority and carries no secret.",
   "runtimeType": "local-service",
   "surfaces": [
     {
@@ -108,7 +108,7 @@
       "chat-interface"
     ],
     "adapterVersion": 1,
-    "adapterId": "pi-native-v1",
+    "adapterId": "grok-native-v1",
     "authScheme": "session-environment",
     "supportedOperations": [
       "createSession",
