@@ -1,4 +1,4 @@
-# OMP Build — iTerm2 SDK Add-on Connection for ResonantOS (v3)
+# OMP Build — iTerm2 SDK Add-on Connection for ResonantOS (v4)
 
 **Handoff from AVIS → OMP. Read this whole document before touching anything.**
 
@@ -45,10 +45,21 @@ passes against the real boundary, not a mock.
 - **Registry** — host-owned `createHarnessRegistry`
   (`browser-first/host/harness-registry.mjs`); `setGrants` enforces `consent`.
 - **Adapter daemon** — `addon.resonant-terminal-iterm2`, a `local-service` add-on
-  speaking JSON-RPC over stdio (`service.protocol: "stdio-json-rpc"`). Operator-started.
-- **Fixed-root** — a process is launched only from the canonical root path in the
-  manifest's **`service.entrypoint`** field; no ambient `PATH` resolution of a
-  bare command name.
+  speaking JSON-RPC over stdio (`service.protocol: "stdio-json-rpc"`,
+  `service.entrypoint: "node adapter.mjs"` — a command the operator runs in the
+  add-on's own directory, e.g. `cd examples/sdk-demo/terminal-host/iterm2 && node
+  adapter.mjs`). The scaffold currently has no `package.json` — `npm` does not
+  drive it; the operator runs the entrypoint command directly. The Phase 1.5
+  bridge route owner connects to the stdio peer the operator produces.
+- **Fixed-root** — for `service.protocol: "stdio-json-rpc"`, the add-on is a
+  process the **operator** starts; `service.entrypoint` is the command string the
+  operator types (e.g. `"node adapter.mjs"` in the add-on's own directory, or a
+  project absolute path). The host bridge has no `spawn` path
+  (`workspace-addon-discovery.mjs:9`); there is no ambient `PATH` resolution of a
+  bare command name. For `service.protocol: "http-json"`, `service.entrypoint`
+  must be a loopback URL (`http://127.0.0.1:<port>`); see
+  `parseLoopbackOrigin` at `workspace-addon-discovery.mjs:50`. **No-spawn is the
+  rule**; fixed-root means the entrypoint string itself, not the host launching.
 - **Scoped env allowlist** — the only env vars an add-on/harness receives are the
   explicitly allowlisted ones (`env-clear` model, ADR-039); no `process.env`
   inheritance.
@@ -61,6 +72,7 @@ any build work:
 ```bash
 cd /Users/andrewjochl/Developer/Projects/resonant-os/2.0.0-alpha
 set -euo pipefail
+git rev-parse --is-inside-work-tree >/dev/null || { echo "NOT A GIT REPO"; exit 1; }
 git rev-parse --short HEAD                 # capture actual SHA; do not assume
 git status --porcelain                     # capture working-tree state
 for f in \
@@ -84,6 +96,12 @@ for f in \
   test -f "$f" || { echo "MISSING: $f"; exit 1; }
 done
 echo "verify-ok"
+
+# Confirm add-on protocols (echo is http-json; iterm2 is stdio-json-rpc; both are runtimeType:local-service):
+test "$(jq -r .runtimeType examples/sdk-demo/echo/addon.json)" = "local-service" || { echo "echo: not local-service"; exit 1; }
+test "$(jq -r .service.protocol examples/sdk-demo/echo/addon.json)" = "http-json" || { echo "echo: unexpected protocol"; exit 1; }
+test "$(jq -r .runtimeType examples/sdk-demo/terminal-host/iterm2/addon.json)" = "local-service" || { echo "iterm2: not local-service"; exit 1; }
+test "$(jq -r .service.protocol examples/sdk-demo/terminal-host/iterm2/addon.json)" = "stdio-json-rpc" || { echo "iterm2: unexpected protocol"; exit 1; }
 ```
 
 **Re-locate the key symbols (line numbers drift; use these, not prose):**
@@ -126,27 +144,66 @@ Enable Python API_; `iterm2env` is bundled).
    `AddOnManifest`, `validateAddOnManifest`, `createHarnessRegistry`, and the
    capability-token paths (re-locate via §2).
 2. **No manifest-controlled command execution.** The adapter is operator-started
-   (a `local-service`, see `examples/sdk-demo/echo/addon.json` — itself a
-   `local-service` with `service.protocol: "http-json"`); the bridge never
-   spawns it. Spawn is **fixed-root** (Glossary) and gated.
+   (a `local-service`, see `examples/sdk-demo/echo/addon.json` — `runtimeType:
+   "local-service"` with `service.protocol: "http-json"`; the iTerm2 add-on is
+   also `runtimeType: "local-service"` with `service.protocol: "stdio-json-rpc"`).
+   The bridge never spawns it (cf. `workspace-addon-discovery.mjs:9`: _"No
+   `spawn`. Add-ons declare `service.entrypoint`; the operator starts."_). Spawn
+   is **fixed-root** (Glossary) and gated.
+
+   **Operator-start procedure** (no host-managed spawn ever):
+
+   ```bash
+   cd 2.0.0-alpha/examples/sdk-demo/terminal-host/iterm2
+   node adapter.mjs           # exact command from service.entrypoint
+   ```
+
+   The operator leaves this process running; the Phase 1.5 bridge route owner
+   connects to its stdio as a peer. CI cannot automate this — Phase 1.5's gate
+   includes a **manual smoke step**: confirm the adapter accepts a `terminal.event`
+   notification from the bridge.
 3. **No `process.env` inheritance.** Provider credentials cross only as a scoped
    env allowlist, session-only.
 4. **No secrets in argv/env/HTML/URL.** The bootstrap grant is exchanged over the
-   bootstrap RPC — never embedded in `argv` or `env`. Shape: `SessionBootstrapGrant`
-   (`src/core/terminal-host-contract.ts`); **audience = the `sessionId` field**
-   (bound to one `ros-session-<id>`), short-lived, single-use.
+   bootstrap RPC — never embedded in `argv` or `env`. Shape:
+   `SessionBootstrapGrant` (`src/core/terminal-host-contract.ts:209`):
+
+   ```ts
+   export interface SessionBootstrapGrant {
+     sessionId: string;   // audience: bound to one ros-session-<id>
+     token: string;
+     purpose: "attach" | "adopt";
+     issuedAt: string;
+     expiresAt: string;
+   }
+   ```
+
+   The grant is **audience-bound to the `sessionId` field** (one
+   `ros-session-<id>`), short-lived (`expiresAt`), single-use (`purpose`), and
+   reason-scoped (`attach` vs `adopt`).
 5. **No self-grant.** `terminal-host` is authored `granted: false`; the host
-   grants it via `setGrants(addonId, grants, { consent: true, expectedRevision })`.
-   Consent is the operator action routed through `POST /addons/grants`
-   (`browser-first/host/harness-host-service.mjs`, the `route('POST', '/addons/grants', …)`
-   handler) — not a manifest field and not self-service.
+   grants it via `setGrants(addonId, grants, { consent: true, expectedRevision })`
+   (`browser-first/host/harness-registry.mjs:201`). Consent is the **operator
+   action**: an HTTP `POST /addons/grants` to the bridge
+   (`browser-first/host/harness-host-service.mjs:275`, route signature
+   `['addonId', 'grants', 'consent', 'expectedRevision']`). Existing call sites
+   that demonstrate this operator action are `scripts/harness-swap-demo.mjs:122`
+   and `scripts/pi-swap-demo.mjs:64` (`jsonFetch(${bridgeUrl}/addons/grants, …)`).
+   There is no built-in CLI; the operator UI is HTTP — not a manifest field and
+   not self-service.
 6. **The terminal is replaceable — two axes.** (a) the harness must not learn the
    host's identity, and (b) the adapter must not learn the harness's identity.
    Both are asserted in §4 Phase 2.
 7. **Screen-scraping is not the primary protocol.** Structured
-   `HarnessRuntimeEvent` + terminal `TerminalTelemetryEvent` only. Screen-stream
-   is **debug-only**: gated behind `DEBUG_TERMINAL_STREAMING=1` and the
-   `screen-stream` adapter capability, never recorded as provenance.
+   `HarnessRuntimeEvent` + terminal `TerminalTelemetryEvent` only. The
+   `screen-stream` adapter capability (`TerminalHostAdapterCapability`,
+   `terminal-host-contract.ts:37` — one of `launch`/`adopt`/`attach`/`detach`/
+   `terminate`/`list-sessions`/`cwd`/`environment`/`profile`/`command`/
+   `send-input`/`get-text`/`lifecycle-events`/`screen-stream`/`multiplexer`)
+   is gated by the add-on manifest's `requestedCapabilities` and never recorded
+   as provenance. Use the `ProvenanceFidelity` enum
+   (`terminal-host-contract.ts:122`: `structured`/`telemetry`/`observation`)
+   instead.
 8. **Security acceptance must exercise the real iTerm2 + bridge boundary**, not
    mocks.
 9. **No regression** of Hermes/OpenCode/browser-first, demo suite, or core suite.
@@ -157,25 +214,29 @@ Enable Python API_; `iterm2env` is bundled).
 
 **Step 1 — register as a `local-service` add-on.** The scaffold
 `examples/sdk-demo/terminal-host/iterm2/addon.json` validates. Registration shape:
-`examples/sdk-demo/echo/addon.json` (canonical `local-service`). Prove discovery
+`examples/sdk-demo/echo/addon.json` (canonical `local-service`; same
+`runtimeType: "local-service"`, different `service.protocol`). Prove discovery
 
-- host-owned grant: operator action → `POST /addons/grants` (`consent: true`) →
-  `setGrants`. The grant must be host-owned (never `granted: true` in the manifest).
+- host-owned grant: **operator action via HTTP** — `POST /addons/grants` to the
+  bridge with `{ addonId, grants, consent: true, expectedRevision }`
+  (`browser-first/host/harness-host-service.mjs:275`). Use `scripts/harness-swap-demo.mjs:122`
+  or `scripts/pi-swap-demo.mjs:64` as references (no production CLI exists). The
+  grant must be host-owned (never `granted: true` in the manifest).
 
 **Step 2 — implement the nine operations.** Each row is the acceptance; exercise
 against real iTerm2 (input → observable success → error):
 
-| Operation          | Input                                                                  | Observable success                                                                      | Error case                                                                       |
-| ------------------ | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `createSession`    | `{ project: {root,cwd}, providerProfileId: string, bootstrapCommand }` | New iTerm2 window/tab running bootstrap; `RosTerminalSession` `state:"created"`         | iTerm2 down → `terminal-unavailable`                                             |
-| `adoptSession`     | `{ hostSessionId }`                                                    | Existing session identified; `state:"adopted"`                                          | not found → `session-not-found`                                                  |
-| `attachSession`    | `{ sessionId }`                                                        | `state:"attached"`, `attachedAt` set, `ROS_SESSION_ID` exported + `user.rosSession` set | already attached → `attach-conflict`                                             |
-| `detachSession`    | `{ sessionId, reason }`                                                | `state:"detached"`, `detachedReason` set, status cleared                                | not found → `session-not-found`                                                  |
-| `terminateSession` | `{ sessionId }`                                                        | session closed; `state:"terminated"`; `terminal.session.terminated` emitted             | not found → `session-not-found`                                                  |
-| `listSessions`     | `—`                                                                    | sessions enumerated with cwd + process identity                                         | iTerm2 down → `terminal-unavailable`                                             |
-| `getSessionState`  | `{ sessionId }`                                                        | `{ state, cwd, processIdentity, capabilities }`                                         | not found → `session-not-found`                                                  |
-| `sendInput`        | `{ sessionId, text }`                                                  | text written to session                                                                 | not found → `session-not-found`                                                  |
-| `launchBootstrap`  | `{ sessionId, bootstrapCommand }`                                      | bootstrap runs; `SessionBootstrapGrant` exchanged over RPC (not argv/env)               | grant invalid → `permission-denied`; bootstrap cannot start → `bootstrap-failed` |
+| Operation          | Input                                                                  | Observable success                                                                                              | Error case                                                                                |
+| ------------------ | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `createSession`    | `{ project: {root,cwd}, providerProfileId: string, bootstrapCommand }` | New iTerm2 window/tab running bootstrap; returns `RosTerminalSession` with `state:"created"` (consumer-observable) | iTerm2 down → `terminal-unavailable`                                                      |
+| `adoptSession`     | `{ hostSessionId }`                                                    | Existing session identified; `state:"adopted"`                                                                 | not found → `session-not-found`                                                           |
+| `attachSession`    | `{ sessionId }`                                                        | `state:"attached"`, `attachedAt` set, `ROS_SESSION_ID` exported + `user.rosSession` set                        | already attached → `attach-conflict`                                                      |
+| `detachSession`    | `{ sessionId, reason }`                                                | `state:"detached"`, `detachedReason` set, status cleared                                                     | not found → `session-not-found`                                                           |
+| `terminateSession` | `{ sessionId }`                                                        | session closed; `state:"terminated"`; `terminal.session.terminated` emitted (via Phase 1.5 receiver)           | not found → `session-not-found`                                                           |
+| `listSessions`     | `—`                                                                    | sessions enumerated with cwd + process identity                                                              | iTerm2 down → `terminal-unavailable`                                                      |
+| `getSessionState`  | `{ sessionId }`                                                        | `{ state, cwd, processIdentity, capabilities }`                                                              | not found → `session-not-found`                                                           |
+| `sendInput`        | `{ sessionId, text }`                                                  | text written to session                                                                                      | not found → `session-not-found`; text contains `SessionBootstrapGrant`-shaped token → `permission-denied` (no token may ride the wire) |
+| `launchBootstrap`  | `{ sessionId, bootstrapCommand }`                                      | consumer receives the resolved environment via the bootstrap RPC return value + `terminal.session.started` event (NOT via argv/env) | grant invalid → `permission-denied`; bootstrap cannot start → `bootstrap-failed`         |
 
 **CP-TH4 gate:** adapter discovered generically; `terminal-host` granted via
 consent (never self-granted); all nine rows pass against real iTerm2; spawn is
@@ -184,22 +245,86 @@ fixed-root; **demo suite + core suite + `npm run test:browser-first` all pass**
 
 `STOP AND REPORT` (template in §6).
 
+### Phase 1.5 — TH-4.5: Telemetry plumbing foundations · gate CP-TH45
+
+Phase 2 depends on **two pieces of plumbing** that do not exist yet. They are
+created here so Phase 2 only proves behavior, not new infrastructure.
+
+**Step A — declare the driver selector env var.** Add `RESONANT_TERMINAL_DRIVER`
+as a first-class driver selector. Currently nothing in source reads it
+(`grep -rn RESONANT_TERMINAL_DRIVER --include="*.ts" --include="*.mjs"` returns
+no hits). Introduce it in `examples/sdk-demo/vitest.config.ts` (or the config
+file vitest reads) as the single switch consumed by Phase 2's lifecycle driver
+and the replaceability test. Allowed values: `in-memory` (default), `iterm2`.
+
+**Step B — create the bridge route owner.** New file
+`browser-first/host/terminal-host-service.mjs`. It must:
+
+- follow the same composition pattern as `browser-first/host/harness-host-service.mjs`
+  (read imports: `createHarnessRegistry`, `createHarnessRegistryStore`, etc. —
+  only the components it consumes).
+- subscribe to a **stdio loopback** for the `terminal-host` add-on (the add-on
+  exposes `service.protocol: "stdio-json-rpc"` and `service.entrypoint: "node
+  adapter.mjs"`; the bridge connects as the stdio peer when the operator starts
+  the add-on).
+- receive JSON-RPC **requests** from the add-on. **Method name is part of this
+  contract** — choose one and stick to it: propose `"terminal.event"` (a
+  notification, no response required). Each request body is a
+  `RosTerminalEventEnvelope` (`terminal-host-contract.ts:166`).
+- republish to the **broker event bus** (same bus the harness registers with via
+  `POST /agent/events`). Locate the bus API in
+  `browser-first/host/harness-host-service.mjs` (search for the event-bus
+  publisher used by the harness boundary).
+
+**CP-TH45 gate:** `RESONANT_TERMINAL_DRIVER` is declared in vitest config; the
+new file `browser-first/host/terminal-host-service.mjs` exists and imports the
+same composition primitives as `harness-host-service.mjs`; manual smoke test
+(see Step B's "smoke" sub-task below) passes.
+
+`STOP AND REPORT` (template in §6).
+
 ### Phase 2 — TH-5: ROS ↔ iTerm2 connection proof (no Pi) · gate CP-TH5
+
+**Prerequisites from Phase 1.5:**
+- `RESONANT_TERMINAL_DRIVER` env var is the driver selector.
+- `browser-first/host/terminal-host-service.mjs` exists and consumes the
+  add-on's stdio JSON-RPC `terminal.event` notifications, republishing to the
+  broker event bus.
 
 **Lifecycle driver.** Implement `examples/sdk-demo/tests/terminal-host-live.test.ts`
 that drives `create → attach → run → detach → terminate` + adopt (`ros attach`)
-against real iTerm2. It is skipped unless `RESONANT_TERMINAL_DRIVER=iterm2` is set
-(so CI without iTerm2 stays green).
+against real iTerm2. Test structure:
 
-**Telemetry transport + receiver.** The adapter emits JSON-RPC **notifications**
-(method `terminal.event`) over its stdio channel, each carrying a
-`RosTerminalEventEnvelope`. The **receiver is the bridge**: a new route owner
-`browser-first/host/terminal-host-service.mjs` consumes those notifications and
-republishes to the broker event bus (the same bus DAR/harness subscribe to).
-Event names (from `TerminalTelemetryEvent`): `terminal.session.started`,
-`terminal.command.started`, `terminal.command.ended` (exit status),
-`terminal.cwd.changed`, `terminal.session.terminated`. Verify each reaches the
-event bus.
+```ts
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { createDriver } from "../terminal-host/driver"; // declared in Phase 1.5
+
+const DRIVER = process.env.RESONANT_TERMINAL_DRIVER ?? "in-memory";
+const liveIt = DRIVER === "iterm2" ? it : it.skip; // CI without iTerm2 stays green
+
+describe("terminal host lifecycle (real iTerm2)", () => {
+  let driver: string;
+  beforeAll(async () => { driver = await createDriver(DRIVER); });
+  afterAll(async () => { await driver.shutdown?.(); });
+
+  liveIt("createSession yields state:created", async () => { /* … */ });
+  liveIt("attachSession yields state:attached", async () => { /* … */ });
+  liveIt("sendInput writes through to the session", async () => { /* … */ });
+  liveIt("detachSession yields state:detached", async () => { /* … */ });
+  liveIt("terminateSession yields state:terminated", async () => { /* … */ });
+  liveIt("adoptSession accepts an existing iTerm2 session", async () => { /* … */ });
+});
+```
+
+**Telemetry transport + receiver.** The adapter emits JSON-RPC notifications
+(`terminal.event`) over its stdio channel, each carrying a
+`RosTerminalEventEnvelope` (`terminal-host-contract.ts:166`). The receiver is
+the bridge route owner created in **Phase 1.5 Step B**. Event names (from
+`TerminalTelemetryEvent`, `terminal-host-contract.ts:135-139`):
+`terminal.session.started`, `terminal.command.started`, `terminal.command.ended`
+(exit status), `terminal.cwd.changed`, `terminal.session.terminated`. Verify
+each reaches the broker event bus (the same bus consumed by
+`GET /agent/events` at `harness-host-service.mjs:310`).
 
 **Replaceability proof — both axes (required).** Parameterize
 `terminal-host-contract.test.ts` over a driver factory, selected by
@@ -229,13 +354,25 @@ iTerm2 `user.rosSession`. `ROS_SESSION_ID` is a string id whose **presence
 truth on conflict: **`user.rosSession` wins** (live state).
 
 **No-Pi proof (automated).** In `terminal-host-live.test.ts`, after the lifecycle,
-assert no harness process is running: `pgrep -f 'pi|omp|codex|claude'` returns
-nothing (or an equivalent in-process guard). This is an automated assertion, not
-a manual step.
+assert no harness process is running **excluding the test runner and its
+parent**:
 
-**CP-TH5 gate:** lifecycle passes against real iTerm2; telemetry reaches the event
-bus (via `terminal-host-service.mjs`); both replaceability axes pass; status
-indicator reflects attached/detached; no harness process spawned.
+```ts
+import { execSync } from "node:child_process";
+const exclude = [process.pid, process.ppid].join(",");
+const out = execSync(
+  `pgrep -f 'pi|omp|codex|claude' | grep -vwE '${exclude}' || true`
+).toString().trim();
+expect(out, "no harness process may be spawned").toBe("");
+```
+
+This is an automated assertion, not a manual step. It excludes the test runner
+itself and its parent so the assertion is meaningful when run from inside OMP.
+
+**CP-TH5 gate:** lifecycle passes against real iTerm2; telemetry reaches the
+event bus (via `terminal-host-service.mjs` from Phase 1.5); both replaceability
+axes pass; status indicator reflects attached/detached; no-Pi guard excludes
+the test runner and still finds no harness process.
 
 `STOP AND REPORT` (template in §6).
 
