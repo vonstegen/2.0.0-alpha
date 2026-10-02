@@ -52,6 +52,7 @@ import {
   hermesPythonRuntimeDiagnostics,
 } from "./hermes-runtime.mjs";
 import { createHarnessHostService } from "./harness-host-service.mjs";
+import { installTerminalHostBridge, uninstallTerminalHostBridge } from "./terminal-host-bridge-wiring.mjs";
 import { createProviderHostService } from "./provider-host-service.mjs";
 import {
   memorySourceMoveHistoryPath as sourceMoveHistoryPath,
@@ -184,6 +185,15 @@ const harnessService = await createHarnessHostService({
   bindings: JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]"),
   env: process.env,
 });
+
+// Phase 1.5 Step B wiring: invoke the terminal-host bridge service so the
+// broker bus is real when the bridge serves /agent/events. The service is
+// opt-in via RESONANT_TERMINAL_HOST_BRIDGE=1 (default off in production;
+// on in dev + tests) so existing CI / production bridge runs are unchanged.
+// RESONANT_TERMINAL_DRIVER (in-memory | iterm2) selects the driver; the
+// in-memory driver composes the bus without spawning.
+const terminalHostBridge = await installTerminalHostBridge({ env: process.env });
+const terminalHostService = terminalHostBridge.service;
 
 const addonDelegationService = createAddonDelegationService({
   browserFirstRoot,
@@ -527,6 +537,7 @@ const shutdown = async () => {
   try { unsubscribeOpenCodeExecution(); } catch { /* noop */ }
   await openCodeBoundary.dispose().catch(() => undefined);
   await harnessService.close();
+  await uninstallTerminalHostBridge({ service: terminalHostService });
   await new Promise((resolve) => bridgeInfo.server.close(resolve));
 };
 
