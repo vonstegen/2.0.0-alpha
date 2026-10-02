@@ -113,7 +113,6 @@ export function envelopeToHarnessEvent(envelope, provenance) {
   const { type, ...rest } = event;
   return {
     ...provenance,
-    sequence: provenance.sequence,
     type: /** @type {any} */ (type),
     data: rest,
   };
@@ -151,12 +150,18 @@ export function createTerminalHostService(options = {}) {
   const env = options.env ?? process.env;
   const addonId = options.addonId ?? (() => TERMINAL_HOST_ADDON_ID);
   const bootEpoch = options.bootEpoch ?? (() => env.RESONANTOS_HARNESS_BOOTEPOCH ?? `boot-${randomUUID().slice(0, 8)}`);
-  const spawnFn = options.spawn ?? ((cmd, envArg) => spawn(cmd, { env: envArg, stdio: ["pipe", "pipe", "pipe"] }));
   const cwd = options.cwd ?? "examples/sdk-demo/terminal-host/iterm2";
-  const entrypoint = options.entrypoint ?? "node";
-  const script = options.script ?? "adapter.mjs";
-
+  const spawnFn = options.spawn ?? ((cmd, args, envArg) => spawn(cmd, args, { cwd, env: envArg, stdio: ["pipe", "pipe", "pipe"] }));
   const driveId = env.RESONANT_TERMINAL_DRIVER ?? "in-memory";
+  // Driver-specific spawn plan. The iTerm2 driver is a Python script
+  // (iterm2's control API is Python; the bridge is the stdio JSON-RPC
+  // peer). The in-memory driver composes without spawning.
+  const spawnPlan = (driveId === "iterm2")
+    ? { command: "python3", args: ["adapter.py"] }
+    : { command: "node", args: ["adapter.mjs"] };
+  const entrypoint = options.entrypoint ?? spawnPlan.command;
+  const script = options.script ?? spawnPlan.args[0];
+
   if (driveId !== "in-memory" && driveId !== "iterm2") {
     throw new Error(
       `RESONANT_TERMINAL_DRIVER must be 'in-memory' or 'iterm2'. Got: ${JSON.stringify(driveId)}`,
@@ -182,6 +187,7 @@ export function createTerminalHostService(options = {}) {
       turnId: turnId ?? "terminal",
       bootEpoch: bootEpoch(),
       generation: 0,
+      sequence,
     };
   }
 
@@ -269,7 +275,7 @@ export function createTerminalHostService(options = {}) {
       isCurrent: () => alive,
       maxReaders: 8,
     });
-    child = spawnFn(entrypoint, { ...env, RESONANT_TERMINAL_DRIVER: driveId });
+    child = spawnFn(entrypoint, [script], { ...env, RESONANT_TERMINAL_DRIVER: driveId });
     child.on("exit", (code, signal) => {
       alive = false;
       console.error(JSON.stringify({ event: "terminal_host.adapter_exit", code, signal }));

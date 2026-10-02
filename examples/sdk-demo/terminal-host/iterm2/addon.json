@@ -64,7 +64,7 @@
   "installHooks": {},
   "service": {
     "protocol": "stdio-json-rpc",
-    "entrypoint": "node adapter.mjs"
+    "entrypoint": "python3 adapter.py"
   },
   "embeddedWorkspace": {
     "surfaceId": "iterm2-terminal-host",
