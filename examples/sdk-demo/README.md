@@ -19,6 +19,7 @@ launcher.
 | Resonant Echo | `addon.resonant-echo` | Deterministic echo; proves the host-mediated round-trip |
 | Resonant Counter | `addon.resonant-counter` | *(P4)* Second independent add-on; proves the mechanism is generic |
 | SDK Guide | `addon.sdk-guide` | Interactive 9-step tutorial that teaches the SDK while using it |
+| Resonant Pi | `addon.resonant-pi` | Self-contained local-service demo; proves the SDK round-trip with a deterministic, local reply |
 
 ## Layout
 
@@ -31,6 +32,7 @@ examples/sdk-demo/
     index.html      # sandboxed add-on UI (P5)
   counter/          # (P4)
   sdk-guide/        # (P7)
+  pi/               # Resonant Pi — local-service demo
   tests/            # deterministic validation + round-trip tests
 ```
 
@@ -81,9 +83,9 @@ no hand-edited generated config, no pre-seeded tokens.
 - `npm ci` completed at the repo root.
 - A Chromium-family browser (Chrome, Edge, Brave, Arc).
 
-### 1. Build + start the three upstream add-on services
+### 1. Build + start the four upstream add-on services
 
-Open three terminals; each starts one operator-owned loopback HTTP service
+Open four terminals; each starts one operator-owned loopback HTTP service
 on its declared port. The bridge never spawns them.
 
 ```bash
@@ -101,6 +103,11 @@ node examples/sdk-demo/counter/server.mjs \
 node examples/sdk-demo/sdk-guide/server.mjs \
   --sdk-guide-bearer-token=demo-guide-bearer \
   --sdk-guide-admin-token=demo-guide-admin
+
+# Terminal 4 — Resonant Pi on :47324
+node examples/sdk-demo/pi/server.mjs \
+  --pi-bearer-token=demo-pi-bearer \
+  --pi-admin-token=demo-pi-admin
 ```
 
 Smoke-check each upstream:
@@ -109,9 +116,10 @@ Smoke-check each upstream:
 curl -fsS http://127.0.0.1:47321/health
 curl -fsS http://127.0.0.1:47322/health
 curl -fsS http://127.0.0.1:47323/health
+curl -fsS http://127.0.0.1:47324/health
 ```
 
-### 2. Start the bridge (terminal 4)
+### 2. Start the bridge (terminal 5)
 
 The bridge's full token flag set is the `BRIDGE_CAPABILITY_TOKEN_SPECS`
 table in `browser-first/host/bridge-capability-tokens.mjs`. Each flag
@@ -150,7 +158,9 @@ node browser-first/host/run-bridge-minimal.mjs \
   --counter-bearer-token=demo-counter-bearer \
   --counter-admin-token=demo-counter-admin \
   --sdk-guide-bearer-token=demo-guide-bearer \
-  --sdk-guide-admin-token=demo-guide-admin
+  --sdk-guide-admin-token=demo-guide-admin \
+  --pi-bearer-token=demo-pi-bearer \
+  --pi-admin-token=demo-pi-admin
 ```
 
 The bridge prints a banner like:
@@ -176,7 +186,7 @@ Leave it running.
 
 Inside the side panel:
 
-1. **Add-ons tab** — the three demo add-ons (Echo, Counter, SDK Guide)
+1. **Add-ons tab** — the four demo add-ons (Echo, Counter, SDK Guide, Resonant Pi)
    appear with **Missing** / **Available** status and grant buttons. Each
    add-on's status reflects the loopback upstream you started in step 1
    (green = reachable).
@@ -201,7 +211,7 @@ Inside the side panel:
 ### 5. Tear down
 
 ```bash
-# In each of terminals 1–3, Ctrl-C. In terminal 4, Ctrl-C. Unload the
+# In each of terminals 1–4, Ctrl-C. In terminal 5, Ctrl-C. Unload the
 # extension from chrome://extensions.
 ```
 

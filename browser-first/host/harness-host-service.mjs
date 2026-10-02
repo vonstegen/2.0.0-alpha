@@ -150,7 +150,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     fingerprint: signer.fingerprint, algorithm: signer.algorithm, mode: fixtureSigningKey ? 'fixture' : 'live' }));
   issue({ kind: 'boot', projection: registry.snapshot() });
   const candidates = env.RESONANTOS_HARNESS_DEMO === '1'
-    ? await Promise.all(['deepseek-harness', 'provider-chat-demo'].map(async name => JSON.parse(await readFile(new URL(`./harness-examples/${name}.json`, import.meta.url), 'utf8')))) : [];
+    ? await Promise.all(['deepseek-harness', 'provider-chat-demo', 'pi'].map(async name => JSON.parse(await readFile(new URL(`./harness-examples/${name}.json`, import.meta.url), 'utf8')))) : [];
   async function bounded(operation) {
     let timer;
     try { return await Promise.race([Promise.resolve().then(operation), new Promise(resolve => { timer = setTimeout(resolve, cleanupTimeoutMs); })]); }

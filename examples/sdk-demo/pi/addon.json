@@ -1,0 +1,74 @@
+{
+  "id": "addon.resonant-pi",
+  "name": "Resonant Pi",
+  "version": "0.1.0",
+  "author": "ResonantOS",
+  "category": "tool",
+  "sdkVersion": "0.1.0",
+  "description": "Self-contained Resonant Pi local-service add-on that demonstrates the @resonantos/addon-sdk lifecycle: the host mediates a bearer-gated round-trip to this add-on's own loopback upstream (200 on grant, 401 on wrong token, 403 on host revocation). It is a deterministic local demo and is distinct from the addon.pi harness-provider (pi.dev coding agent).",
+  "runtimeType": "local-service",
+  "surfaces": [
+    {
+      "id": "resonant-pi-workspace",
+      "type": "panel",
+      "label": "Resonant Pi",
+      "description": "Talk to Resonant Pi through the host boundary. Responses are deterministic and local; the addon.pi harness-provider mounts the real pi.dev coding agent."
+    }
+  ],
+  "requestedCapabilities": [
+    {
+      "capability": "network",
+      "granted": false,
+      "scope": "self",
+      "revocationBehavior": "hard-stop"
+    }
+  ],
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
+  },
+  "runtimeIsolation": {
+    "boundary": "host-mediated-service",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": true
+  },
+  "grantPresets": [
+    {
+      "id": "resonant-pi-local",
+      "label": "Local Resonant Pi",
+      "description": "Grant the local Resonant Pi service access to its own loopback endpoint.",
+      "grants": [
+        {
+          "capability": "network",
+          "granted": true,
+          "scope": "self",
+          "revocationBehavior": "hard-stop"
+        }
+      ]
+    }
+  ],
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "http-json",
+    "endpoint": "http://127.0.0.1:47324/health"
+  },
+  "installHooks": {},
+  "service": {
+    "protocol": "http-json",
+    "entrypoint": "http://127.0.0.1:47324"
+  },
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS", "linux", "windows"]
+  }
+}

@@ -220,11 +220,13 @@ const addonDelegationService = createAddonDelegationService({
     "addon.resonant-echo": args.get("echo-bearer-token") ?? process.env.RESONANTOS_DEMO_ECHO_BEARER ?? "",
     "addon.resonant-counter": args.get("counter-bearer-token") ?? process.env.RESONANTOS_DEMO_COUNTER_BEARER ?? "",
     "addon.sdk-guide": args.get("sdk-guide-bearer-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_BEARER ?? "",
+    "addon.resonant-pi": args.get("pi-bearer-token") ?? process.env.RESONANTOS_DEMO_PI_BEARER ?? "",
   },
   workspaceAddonAdminTokens: {
     "addon.resonant-echo": args.get("echo-admin-token") ?? process.env.RESONANTOS_DEMO_ECHO_ADMIN ?? "",
     "addon.resonant-counter": args.get("counter-admin-token") ?? process.env.RESONANTOS_DEMO_COUNTER_ADMIN ?? "",
     "addon.sdk-guide": args.get("sdk-guide-admin-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_ADMIN ?? "",
+    "addon.resonant-pi": args.get("pi-admin-token") ?? process.env.RESONANTOS_DEMO_PI_ADMIN ?? "",
   },
 });
 

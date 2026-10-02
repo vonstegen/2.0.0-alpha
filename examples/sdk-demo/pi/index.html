@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Resonant Pi</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; padding: 24px 32px; }
+    main { max-width: 40rem; display: grid; gap: 12px; }
+    h1 { margin: 0; font-size: 1.25rem; }
+    .tagline { margin: 0; font-size: 0.85rem; opacity: 0.7; }
+    #status { font-size: 0.85rem; opacity: 0.75; }
+    #status.connected { color: #1b5e48; opacity: 1; }
+    #status.missing { color: #8a5a00; opacity: 1; }
+    #log { display: grid; gap: 8px; padding: 12px; border: 1px solid #8884; border-radius: 6px; min-height: 8em; max-height: 20em; overflow-y: auto; }
+    .bubble { max-width: 80%; padding: 8px 12px; border-radius: 10px; white-space: pre-wrap; }
+    .bubble.user { justify-self: end; background: #1b5e48; color: #fff; }
+    .bubble.pi { justify-self: start; background: #8882; }
+    .bubble.error { justify-self: start; background: #7c1d1d; color: #fff; }
+    .row { display: flex; gap: 8px; }
+    input { flex: 1; padding: 8px 10px; border: 1px solid #8884; border-radius: 6px; font: inherit; }
+    button { padding: 8px 16px; border: 0; border-radius: 6px; background: #1b5e48; color: #fff; font: inherit; cursor: pointer; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Resonant Pi</h1>
+    <p class="tagline">A ResonantOS SDK demo add-on. Responses are deterministic and local.</p>
+    <p id="status">connecting…</p>
+    <div id="log"></div>
+    <div class="row">
+      <input id="message" type="text" placeholder="Say hello to Pi" autocomplete="off">
+      <button id="send" type="button" disabled>SEND</button>
+    </div>
+  </main>
+  <script>
+    // This page runs in a sandboxed cross-origin iframe whose origin equals
+    // this add-on's own upstream origin. The parent (ResonantOS extension)
+    // delivers capability tokens out-of-band via postMessage; nothing here
+    // needs the bridge token and no token is embedded in this HTML.
+    //
+    // Phase 3 (P6): the bootstrap envelope carries a host-owned bearer for
+    // every host-granted capability. We attach that bearer to the mutating
+    // /api/pi/ask request. Without it, the upstream returns 401; after host
+    // revocation it returns 403.
+    let piToken = null;
+
+    function addBubble(kind, text) {
+      const bubble = document.createElement("div");
+      bubble.className = "bubble " + kind;
+      bubble.textContent = text;
+      document.getElementById("log").appendChild(bubble);
+      bubble.scrollIntoView({ block: "end" });
+    }
+
+    window.addEventListener("message", (event) => {
+      if (event.source !== window.parent) return;
+      if (!event.data || event.data.type !== "resonantos-addon-bootstrap") return;
+      piToken = event.data.capabilityTokens?.network?.token ?? null;
+      const ok = piToken && typeof piToken === "string";
+      const status = document.getElementById("status");
+      if (ok) {
+        status.textContent = "connected (Pi token received)";
+        status.classList.add("connected");
+      } else {
+        status.textContent = "connected — no Pi token; the mutating route will be unauthorized";
+        status.classList.add("missing");
+      }
+      document.getElementById("send").disabled = !ok;
+    });
+
+    document.getElementById("send").addEventListener("click", async () => {
+      const message = document.getElementById("message").value;
+      if (!message) return;
+      document.getElementById("message").value = "";
+      addBubble("user", message);
+      const headers = { "content-type": "application/json" };
+      if (piToken) headers.authorization = `Bearer ${piToken}`;
+      // Same-origin fetch to this add-on's own upstream — no CORS, no bridge.
+      const res = await fetch("/api/pi/ask", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ message }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        addBubble("pi", data.reply ?? "(no reply)");
+      } else {
+        addBubble("error", data.error ? `[${data.error}] ${data.message ?? ""}` : `HTTP ${res.status}`);
+      }
+    });
+
+    // Signal that the bootstrap listener is installed so the parent can
+    // deliver the envelope (and re-deliver if it races the load event).
+    // targetOrigin "*" carries no secret — it is only a readiness ping.
+    window.parent.postMessage({ type: "resonantos-addon-ready" }, "*");
+  </script>
+</body>
+</html>
