@@ -25,6 +25,23 @@ export const providerProfiles = [
     models: ["gpt-5.5", "gpt-5.4-mini"],
     role: "High-reasoning fallback and archive-quality provider",
   },
+  {
+    // Official Grok Build (x.ai) provider. The Grok CLI is the consumer of
+    // the XAI_API_KEY delivered via this profile's session-environment
+    // chain (grok-native-v1). xAI's REST API is OpenAI-compatible at
+    // https://api.x.ai/v1 so the openai-compatible providerType is the
+    // right template for any model the CLI itself does not own. Add a new
+    // account under this profile in ResonantOS Settings, paste the xAI key,
+    // and the Grok Build TUI panel can drive `~/.grok/bin/grok` end-to-end.
+    id: "shared-xai",
+    label: "xAI (Grok)",
+    providerType: "openai-compatible",
+    templateId: "xai",
+    authType: "api-key",
+    apiBaseUrl: "https://api.x.ai/v1",
+    models: ["grok-4-fast-reasoning", "grok-4-fast-non-reasoning", "grok-4", "grok-3"],
+    role: "Grok Build (xAI) provider — consumed by grok-native-v1 session chain",
+  },
 ];
 
 export const modelCatalog = [
