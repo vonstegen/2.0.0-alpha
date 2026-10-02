@@ -197,7 +197,7 @@ Enable Python API_; `iterm2env` is bundled).
 7. **Screen-scraping is not the primary protocol.** Structured
    `HarnessRuntimeEvent` + terminal `TerminalTelemetryEvent` only. The
    `screen-stream` adapter capability (`TerminalHostAdapterCapability`,
-   `terminal-host-contract.ts:37` — one of `launch`/`adopt`/`attach`/`detach`/
+   `terminal-host-contract.ts:38` — one of `launch`/`adopt`/`attach`/`detach`/
    `terminate`/`list-sessions`/`cwd`/`environment`/`profile`/`command`/
    `send-input`/`get-text`/`lifecycle-events`/`screen-stream`/`multiplexer`)
    is gated by the add-on manifest's `requestedCapabilities` and never recorded
@@ -271,10 +271,12 @@ and the replaceability test. Allowed values: `in-memory` (default), `iterm2`.
   contract** — choose one and stick to it: propose `"terminal.event"` (a
   notification, no response required). Each request body is a
   `RosTerminalEventEnvelope` (`terminal-host-contract.ts:166`).
-- republish to the **broker event bus** (same bus the harness registers with via
-  `POST /agent/events`). Locate the bus API in
-  `browser-first/host/harness-host-service.mjs` (search for the event-bus
-  publisher used by the harness boundary).
+- republish to the **broker event bus** (same bus the harness subscribes to
+  via `GET /agent/events` at `harness-host-service.mjs:310`). The bus is
+  implemented in `browser-first/host/harness-boundary.mjs`: `publish` at
+  `:68`/`:160`/`:164`/`:176`, `subscribe` at `:138` (`events(ref)` returns
+  `registered(ref).bus.subscribe()`). Use the same `publish` API the harness
+  boundary uses for `harness.*` events.
 
 **CP-TH45 gate:** `RESONANT_TERMINAL_DRIVER` is declared in vitest config; the
 new file `browser-first/host/terminal-host-service.mjs` exists and imports the
