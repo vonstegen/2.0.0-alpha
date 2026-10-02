@@ -1,4 +1,4 @@
-# OMP Build — iTerm2 SDK Add-on Connection for ResonantOS (v5)
+# OMP Build — iTerm2 SDK Add-on Connection for ResonantOS (v6)
 
 **Handoff from AVIS → OMP. Read this whole document before touching anything.**
 
@@ -252,7 +252,7 @@ are created here so Phase 2 only proves behavior, not new infrastructure.
 
 **Step 0 — extend the broker bus to accept terminal events.** The bus event
 validator (`validateHarnessEvent` at
-`browser-first/host/harness-adapter-contract.mjs:37`) currently accepts only
+`browser-first/host/harness-adapter-contract.mjs:46`) currently accepts only
 the harness runtime event types (`delta`/`final`/`status`/`cancelled`/`error`).
 `RosTerminalEventEnvelope` (`terminal-host-contract.ts:166`) defines five
 distinct terminal telemetry event types (`terminal.session.started`,
@@ -277,7 +277,7 @@ Concretely, extend two places:
    The `data` payloads are the body of the matching `TerminalTelemetryEvent`
    (drop the `type` field — the bus type is the discriminated key).
 
-2. **`browser-first/host/harness-adapter-contract.mjs:37`** —
+2. **`browser-first/host/harness-adapter-contract.mjs:46`** —
    `validateHarnessEvent(event)`'s switch on `event.type`. Add the five
    `case` arms above, each verifying `data` shape with the `exactKeys` +
    typeof pattern the existing arms use (e.g.
@@ -335,6 +335,37 @@ same composition primitives as `harness-host-service.mjs`; **`HarnessEvent`
 union and `validateHarnessEvent` accept the five `terminal.*` event types**
 (Step 0); the new `validateHarnessEvent` acceptance test passes; manual smoke
 test (see Step B's "smoke" sub-task below) passes.
+
+**As-built (commits `e352b6e2`, `dff301e5`, `f8312da6`):**
+
+- **Step 0** — `HarnessEvent` union in `src/core/contracts.ts:565` now has 10
+  variants (the original 5 harness-runtime + 5 terminal-telemetry).
+  `validateHarnessEvent` (`harness-adapter-contract.mjs:46`) accepts all 10,
+  with two new helpers (`subsetKeys` for optional fields,
+  `isoTimestamp` for the `at` field). Regression fence in
+  `harness-manifest.test.mjs:75-109` covers 8 happy + 10 sad assertions.
+
+- **Step A** — `examples/sdk-demo/terminal-host/driver.ts` exports
+  `resolveTerminalDriver(env?)` (default `in-memory`, throws
+  `TerminalDriverError` for unknown values) and
+  `createDriver(id, factory)`. `vitest.config.ts:22` surfaces the env var
+  via `test.env.RESONANT_TERMINAL_DRIVER`. 4 unit tests in
+  `terminal-host-driver.test.ts`.
+
+- **Step B** — `browser-first/host/terminal-host-service.mjs` exports
+  `createTerminalHostService({ env, spawn, ... })` with `start`, `stop`,
+  `launchBootstrap`, `status`. Pure helpers `validateRosTerminalEventEnvelope`
+  and `envelopeToHarnessEvent` are exported for downstream consumers.
+  In-memory mode composes the bus without spawning. iTerm2 mode spawns the
+  operator's adapter and reads newline-delimited JSON-RPC. 6 unit tests
+  + manual smoke (`in-memory-smoke.mjs`) prove the round-trip.
+
+**Known limitations entering Phase 2:** the iTerm2 adapter
+(`examples/sdk-demo/terminal-host/iterm2/adapter.mjs`) is a scaffold — every
+method throws `not implemented`. The in-memory smoke is the deterministic
+substitute until the adapter lands. The bridge service is consumable
+(importable) but is not yet wired into `run-bridge-minimal.mjs`'s
+startup; that wiring is Phase 2's first task.
 
 `STOP AND REPORT` (template in §6).
 
