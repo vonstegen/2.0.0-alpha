@@ -1,4 +1,4 @@
-# OMP Build — iTerm2 SDK Add-on Connection for ResonantOS (v6)
+# OMP Build — iTerm2 SDK Add-on Connection for ResonantOS (v7)
 
 **Handoff from AVIS → OMP. Read this whole document before touching anything.**
 
@@ -336,7 +336,7 @@ union and `validateHarnessEvent` accept the five `terminal.*` event types**
 (Step 0); the new `validateHarnessEvent` acceptance test passes; manual smoke
 test (see Step B's "smoke" sub-task below) passes.
 
-**As-built (commits `e352b6e2`, `dff301e5`, `f8312da6`):**
+**As-built (commits `e352b6e2`, `dff301e5`, `f8312da6`, `11cf6b35`, `32e4ace6`, `32c08707`, `9bda0b8e`):**
 
 - **Step 0** — `HarnessEvent` union in `src/core/contracts.ts:565` now has 10
   variants (the original 5 harness-runtime + 5 terminal-telemetry).
@@ -360,12 +360,65 @@ test (see Step B's "smoke" sub-task below) passes.
   operator's adapter and reads newline-delimited JSON-RPC. 6 unit tests
   + manual smoke (`in-memory-smoke.mjs`) prove the round-trip.
 
-**Known limitations entering Phase 2:** the iTerm2 adapter
-(`examples/sdk-demo/terminal-host/iterm2/adapter.mjs`) is a scaffold — every
-method throws `not implemented`. The in-memory smoke is the deterministic
-substitute until the adapter lands. The bridge service is consumable
-(importable) but is not yet wired into `run-bridge-minimal.mjs`'s
-startup; that wiring is Phase 2's first task.
+- **Bridge wiring (commit `11cf6b35`)** —
+  `browser-first/host/terminal-host-bridge-wiring.mjs` exports
+  `installTerminalHostBridge({ env })` and `uninstallTerminalHostBridge`,
+  opt-in via `RESONANT_TERMINAL_HOST_BRIDGE=1`. The bridge
+  (`run-bridge-minimal.mjs:195`) calls install after `harnessService` is
+  built; the
+  bus is exposed on `globalThis.__rosTerminalHostBus__` and the service
+  on `globalThis.__rosTerminalHostService__` for downstream consumers.
+  5 unit tests in `terminal-host-bridge-wiring.test.mjs`.
+
+- **Phase 2 lifecycle test (commit `32e4ace6`)** —
+  `examples/sdk-demo/tests/terminal-host-live.test.ts` runs the
+  `create → attach → run → sendInput contract → detach → terminate +
+  adopt` rows against the in-memory driver (deterministic; the iTerm2
+  driver facade covers the bridge end-to-end). 9 tests total (6
+  lifecycle + 1 sendInput contract + 2 replaceability). 7 lifecycle
+  rows skip when the driver is iTerm2 (the iTerm2 Python API doesn't
+  expose per-op state machine — the lifecycle is folded into
+  `launchBootstrap` + `sendInput`).
+
+- **Phase 1 iTerm2 minimum (commit `32c08707`)** —
+  `examples/sdk-demo/terminal-host/iterm2/adapter.py` is a Python script
+  that drives real iTerm2 via the iTerm2 Python API
+  (`iterm2.run_until_complete`). Implements `launchBootstrap` /
+  `createSession` / `sendInput` / `terminateSession` (4 of the 9
+  contract operations; the other 5 remain scaffolded for follow-up
+  commits). The bridge service spawns `python3 adapter.py` when
+  `RESONANT_TERMINAL_DRIVER=iterm2` is set (driver-specific spawn plan
+  in `terminal-host-service.mjs:160-164`). `adapter.mjs` is reduced to
+  a thin metadata file exporting the contract descriptor + argv
+  (`python3 adapter.py`).
+
+  **End-to-end smoke (commit `9bda0b8e`):**
+  - `examples/sdk-demo/terminal-host/iterm2/smoke.mjs` — spawns the
+    Python adapter directly, drives `createSession` → `sendInput
+    "echo hello-from-ros\n"` → `terminateSession`, observes 4
+    notifications in order (`session.started`, `command.started`,
+    `command.ended`, `session.terminated`), prints `[smoke] PASS`.
+  - End-to-end through the bridge
+    (`RESONANT_TERMINAL_HOST_BRIDGE=1
+    RESONANT_TERMINAL_DRIVER=iterm2`): bridge starts, spawns
+    adapter, `launchBootstrap` returns the grant + a real iTerm2
+    session UUID, a bus consumer observes `terminal.session.started`.
+
+**Known limitations entering Phase 3:**
+- 5 of the 9 contract operations (adoptSession, attachSession,
+  detachSession, listSessions, getSessionState) are still scaffolded.
+  The in-memory driver covers all 9; the iTerm2 path covers the 4
+  that have direct iTerm2 API equivalents (create, launchBootstrap,
+  sendInput, terminate). Adopt / attach / detach for iTerm2 are
+  implicit (the iTerm2 Python API doesn't expose them as separate
+  calls).
+- The `terminal.command.ended` event currently fires immediately
+  after `sendInput` delivers text. A future commit can subscribe to
+  the shell's `prompt` variable to detect command boundaries and
+  emit the event with the real `exitStatus`.
+- `/agent/events` SSE consumer in the side panel does not yet route
+  `terminal.*` events to a UI surface. The bus is publishing them;
+  the side-panel consumer is a downstream task.
 
 `STOP AND REPORT` (template in §6).
 
