@@ -64,6 +64,14 @@ bootstrap (`ros-session attach <id>`) that asks the broker for the authorized
 runtime environment, so secrets stay out of the terminal command line and
 process arguments.
 
+### Session status indicator
+
+The bootstrap also injects `ROS_SESSION_ID` into the scoped environment so a
+shell prompt can render a `[ROS]` marker when the session is attached. The
+adapter mirrors live attach/detach/terminate state through terminal-native user
+variables (e.g., iTerm2 `user.rosSession`), so the terminal status bar stays
+accurate without a long-lived token in the environment.
+
 ### Bidirectional, but screen-scraping is not primary
 
 Two event families, kept separate:

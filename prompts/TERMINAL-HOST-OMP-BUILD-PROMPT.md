@@ -114,6 +114,11 @@ telemetry (`terminal.session.started`, `terminal.command.ended` with exit
 status, `terminal.cwd.changed`). Prove the TH-3D equivalence: a session adopted
 by the user and a session created by ROS expose the same attached contract.
 
+Add a session status indicator: the bootstrap exports `ROS_SESSION_ID` into the
+scoped env so a shell prompt renders `[ROS]` when attached, and the adapter sets
+an iTerm2 session user-variable (`user.rosSession`) for the status bar, updated
+on attach/detach/terminate.
+
 **CP-TH5 gate:** create/adopt/attach/terminate all work against real iTerm2;
 telemetry flows to ROS; no Pi involved.
 
