@@ -15,7 +15,8 @@ export type Capability =
   | "agent-delegation"
   | "agent-runtime"
   | "notifications"
-  | "device-integration";
+  | "device-integration"
+  | "terminal-host";
 
 export type CapabilityScope = "none" | "self" | "workspace" | "shared" | "system" | "intake-only";
 export type RevocationBehavior = "hard-stop" | "degrade" | "hide-surface";

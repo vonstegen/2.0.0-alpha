@@ -74,6 +74,7 @@ export const ADDON_CAPABILITIES: readonly Capability[] = [
   "agent-runtime",
   "notifications",
   "device-integration",
+  "terminal-host",
 ];
 
 export const ADDON_SERVICE_PROTOCOLS: readonly AddOnServiceProtocol[] = [
