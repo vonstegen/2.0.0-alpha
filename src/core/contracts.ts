@@ -567,6 +567,16 @@ export type HarnessEvent = HarnessProvenance & (
   | { type: "status"; data: { status: "starting" | "running" | "idle" | "unavailable" } }
   | { type: "cancelled"; data: Record<string, never> }
   | { type: "error"; data: HarnessPublicError }
+  // Terminal telemetry (ADR-040 + terminal-host-contract.ts TerminalTelemetryEvent).
+  // Wire-additive: existing delta/final/status/cancelled/error consumers continue
+  // to work; the bus validator (browser-first/host/harness-adapter-contract.mjs)
+  // mirrors these variants. The `type` is the discriminated key; the data payload
+  // is the body of the matching TerminalTelemetryEvent without the `type` field.
+  | { type: "terminal.session.started"; data: { sessionId: string; at: string } }
+  | { type: "terminal.command.started"; data: { sessionId: string; at: string; command?: string } }
+  | { type: "terminal.command.ended"; data: { sessionId: string; at: string; exitStatus?: number } }
+  | { type: "terminal.cwd.changed"; data: { sessionId: string; at: string; cwd: string } }
+  | { type: "terminal.session.terminated"; data: { sessionId: string; at: string; exitStatus?: number } }
 );
 
 // Read-only acknowledgement from the host; client storage is not governance.

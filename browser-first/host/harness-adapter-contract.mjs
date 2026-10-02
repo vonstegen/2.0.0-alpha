@@ -31,6 +31,15 @@ const exactKeys = (value, keys) => record(value) && Object.keys(value).length ==
   keys.every(key => Object.hasOwn(value, key));
 const id = value => typeof value === "string" && /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(value);
 const counter = (value, minimum) => Number.isSafeInteger(value) && value >= minimum;
+const subsetKeys = (value, required, optional = []) => {
+  if (!record(value)) return false;
+  const allowed = new Set([...required, ...optional]);
+  const keys = Object.keys(value);
+  if (!required.every(key => Object.hasOwn(value, key))) return false;
+  return keys.every(key => allowed.has(key));
+};
+const isoTimestamp = value => typeof value === "string" &&
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/.test(value);
 
 // Shape/size validation is not provenance authentication or secret redaction.
 // The owner must assign these identifiers and sanitize text before publication.
@@ -51,6 +60,27 @@ export function validateHarnessEvent(event) {
     case "error":
       return exactKeys(data, ["code", "message"]) && typeof data.code === "string" &&
         Object.hasOwn(publicMessages, data.code) && data.message === publicMessages[data.code];
+    // Terminal telemetry (ADR-040 + terminal-host-contract.ts TerminalTelemetryEvent).
+    // sessionId is the harness-side signed session id (validated as `id` above).
+    // `at` must be an ISO-8601 timestamp; optional fields are validated when present.
+    case "terminal.session.started":
+      return exactKeys(data, ["sessionId", "at"]) && id(data.sessionId) && isoTimestamp(data.at);
+    case "terminal.command.started":
+      return subsetKeys(data, ["sessionId", "at"], ["command"]) &&
+        id(data.sessionId) && isoTimestamp(data.at) &&
+        (data.command === undefined || typeof data.command === "string");
+    case "terminal.command.ended":
+      return subsetKeys(data, ["sessionId", "at"], ["exitStatus"]) &&
+        id(data.sessionId) && isoTimestamp(data.at) &&
+        (data.exitStatus === undefined || counter(data.exitStatus, 0));
+    case "terminal.cwd.changed":
+      return exactKeys(data, ["sessionId", "at", "cwd"]) &&
+        id(data.sessionId) && isoTimestamp(data.at) && typeof data.cwd === "string" &&
+        Buffer.byteLength(data.cwd, "utf8") <= 4096;
+    case "terminal.session.terminated":
+      return subsetKeys(data, ["sessionId", "at"], ["exitStatus"]) &&
+        id(data.sessionId) && isoTimestamp(data.at) &&
+        (data.exitStatus === undefined || counter(data.exitStatus, 0));
     default:
       return false;
   }

@@ -72,6 +72,42 @@ test("event validation requires bounded host provenance and typed payloads", asy
   ]) assert.equal(validateHarnessEvent({ ...event(), type, data }), true);
 });
 
+// Regression fence for Phase 1.5 Step 0: terminal telemetry event types
+// (terminal.session.started, terminal.command.started, terminal.command.ended,
+// terminal.cwd.changed, terminal.session.terminated) must validate against the
+// same HarnessEvent bus shape. The bus does not know about TerminalTelemetryEvent
+// directly — it only knows the bus's HarnessEvent discriminator and data payload.
+// See prompts/OMP-BUILD-iTerm2-SDK-Addon-Connection.md v5 Phase 1.5 Step 0.
+test("event validation accepts the five terminal telemetry variants", async () => {
+  const { validateHarnessEvent } = await import("../host/harness-adapter-contract.mjs");
+  const base = { addonId: "addon.resonant-terminal-iterm2", sessionId: "session-1", turnId: "turn-1", bootEpoch: "boot-1", generation: 1 };
+  const at = "2026-10-02T11:30:00.000Z";
+  // Happy paths
+  for (const [type, data] of [
+    ["terminal.session.started", { sessionId: "session-1", at }],
+    ["terminal.command.started", { sessionId: "session-1", at }],
+    ["terminal.command.started", { sessionId: "session-1", at, command: "ls -la" }],
+    ["terminal.command.ended", { sessionId: "session-1", at }],
+    ["terminal.command.ended", { sessionId: "session-1", at, exitStatus: 0 }],
+    ["terminal.cwd.changed", { sessionId: "session-1", at, cwd: "/Users/andrewjochl/Developer/Projects/resonant-os" }],
+    ["terminal.session.terminated", { sessionId: "session-1", at }],
+    ["terminal.session.terminated", { sessionId: "session-1", at, exitStatus: 137 }],
+  ]) assert.equal(validateHarnessEvent({ ...base, sequence: 1, type, data }), true, `${type} ${JSON.stringify(data).slice(0, 60)}`);
+  // Sad paths
+  for (const [type, data, reason] of [
+    ["terminal.session.started", { sessionId: "session-1", at: "yesterday" }, "non-ISO at"],
+    ["terminal.session.started", { sessionId: "../foreign", at: "2026-10-02T11:30:00.000Z" }, "bad sessionId"],
+    ["terminal.cwd.changed", { sessionId: "session-1", at: "2026-10-02T11:30:00.000Z" }, "cwd missing"],
+    ["terminal.cwd.changed", { sessionId: "session-1", at: "2026-10-02T11:30:00.000Z", cwd: 42 }, "cwd not string"],
+    ["terminal.cwd.changed", { sessionId: "session-1", at: "2026-10-02T11:30:00.000Z", cwd: "/", extra: "private-canary" }, "extra key"],
+    ["terminal.command.ended", { sessionId: "session-1", at: "2026-10-02T11:30:00.000Z", exitStatus: -1 }, "negative exit"],
+    ["terminal.command.ended", { sessionId: "session-1", at: "2026-10-02T11:30:00.000Z", exitStatus: 1.5 }, "non-integer exit"],
+    ["terminal.command.started", { sessionId: "session-1", at: "2026-10-02T11:30:00.000Z", command: 42 }, "command not string"],
+    ["terminal.session.terminated", { sessionId: "session-1", at: "2026-10-02T11:30:00.000Z", exitStatus: "zero" }, "exitStatus not number"],
+    ["terminal.session.started", { sessionId: "session-1" }, "at missing"],
+  ]) assert.equal(validateHarnessEvent({ ...base, sequence: 1, type, data }), false, `${type} should reject: ${reason}`);
+});
+
 test("public errors expose only fixed safe messages", async () => {
   const { publicHarnessError } = await import("../host/harness-adapter-contract.mjs");
   assert.deepEqual(publicHarnessError({ code: "unsupported-operation", message: "private-canary" }), { code: "unsupported-operation", message: "Operation unavailable." });
