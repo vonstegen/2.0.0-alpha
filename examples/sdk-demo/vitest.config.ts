@@ -12,5 +12,14 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    // Phase 1.5 Step A: surface the terminal-host driver selector to vitest
+    // tests via `import.meta.env.RESONANT_TERMINAL_DRIVER`. Default
+    // "in-memory" so CI without iTerm2 stays green. Phase 2 lifecycle tests
+    // skip themselves when this is "in-memory"; the live runtime (browser-
+    // first/host/terminal-host-service.mjs) reads `process.env` directly
+    // (see examples/sdk-demo/terminal-host/driver.ts).
+    env: {
+      RESONANT_TERMINAL_DRIVER: process.env.RESONANT_TERMINAL_DRIVER ?? "in-memory",
+    },
   },
 });
