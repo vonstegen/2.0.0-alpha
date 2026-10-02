@@ -1,4 +1,4 @@
-# OMP Build — iTerm2 SDK Add-on Connection for ResonantOS (v4)
+# OMP Build — iTerm2 SDK Add-on Connection for ResonantOS (v5)
 
 **Handoff from AVIS → OMP. Read this whole document before touching anything.**
 
@@ -247,8 +247,57 @@ fixed-root; **demo suite + core suite + `npm run test:browser-first` all pass**
 
 ### Phase 1.5 — TH-4.5: Telemetry plumbing foundations · gate CP-TH45
 
-Phase 2 depends on **two pieces of plumbing** that do not exist yet. They are
-created here so Phase 2 only proves behavior, not new infrastructure.
+Phase 2 depends on **three pieces of plumbing** that do not exist yet. They
+are created here so Phase 2 only proves behavior, not new infrastructure.
+
+**Step 0 — extend the broker bus to accept terminal events.** The bus event
+validator (`validateHarnessEvent` at
+`browser-first/host/harness-adapter-contract.mjs:37`) currently accepts only
+the harness runtime event types (`delta`/`final`/`status`/`cancelled`/`error`).
+`RosTerminalEventEnvelope` (`terminal-host-contract.ts:166`) defines five
+distinct terminal telemetry event types (`terminal.session.started`,
+`terminal.command.started`, `terminal.command.ended`, `terminal.cwd.changed`,
+`terminal.session.terminated` — see `terminal-host-contract.ts:135-139`).
+Without extending the validator, **Step B cannot publish terminal events to
+the bus** (every `ctx.bus.publish({ type: 'terminal.session.started', … })`
+throws `invalid-event` at `harness-event-bus.mjs:36`). This is a v5 prerequisite
+discovered while attempting to wire Step B; v4 omitted it.
+
+Concretely, extend two places:
+
+1. **`src/core/contracts.ts`** — the `HarnessEvent` union (currently 5 variants
+   at `:565`). Add a new variant:
+   ```ts
+   | { type: "terminal.session.started"; data: { sessionId: string; at: string } }
+   | { type: "terminal.command.started"; data: { sessionId: string; at: string; command?: string } }
+   | { type: "terminal.command.ended"; data: { sessionId: string; at: string; exitStatus?: number } }
+   | { type: "terminal.cwd.changed"; data: { sessionId: string; at: string; cwd: string } }
+   | { type: "terminal.session.terminated"; data: { sessionId: string; at: string; exitStatus?: number } }
+   ```
+   The `data` payloads are the body of the matching `TerminalTelemetryEvent`
+   (drop the `type` field — the bus type is the discriminated key).
+
+2. **`browser-first/host/harness-adapter-contract.mjs:37`** —
+   `validateHarnessEvent(event)`'s switch on `event.type`. Add the five
+   `case` arms above, each verifying `data` shape with the `exactKeys` +
+   typeof pattern the existing arms use (e.g.
+   `case "terminal.cwd.changed": return exactKeys(data, ["sessionId","at","cwd"]) && typeof data.cwd === "string"`).
+   No new error codes — terminal telemetry is not an error, so existing
+   `HARNESS_PUBLIC_ERROR_MESSAGES` keys are untouched.
+
+The bus itself (`harness-event-bus.mjs:36`) does not need changes — it just
+forwards to `validateHarnessEvent`. The SSE writer
+(`writeBridgeEventStream` at `bridge-server.mjs:361`, payload at `:408`) just
+serializes the event JSON; new event types are **wire-additive** and existing
+consumers ignore unknown `type` values. No extension-side change required
+either — the side panel's `/agent/events` consumer
+(`bridge-client.js:102`) treats the SSE stream as opaque.
+
+**Acceptance.** Add a test alongside `browser-first/test/harness-manifest.test.mjs`
+or extend it: for each new variant, assert `validateHarnessEvent(...) === true`
+with a valid provenance stub, and `=== false` when `data` is malformed (e.g.
+`terminal.cwd.changed` with `cwd` missing). This test is the regression fence
+that prevents the validator from drifting back to the v4 five-type-only state.
 
 **Step A — declare the driver selector env var.** Add `RESONANT_TERMINAL_DRIVER`
 as a first-class driver selector. Currently nothing in source reads it
@@ -276,18 +325,24 @@ and the replaceability test. Allowed values: `in-memory` (default), `iterm2`.
   implemented in `browser-first/host/harness-boundary.mjs`: `publish` at
   `:68`/`:160`/`:164`/`:176`, `subscribe` at `:138` (`events(ref)` returns
   `registered(ref).bus.subscribe()`). Use the same `publish` API the harness
-  boundary uses for `harness.*` events.
+  boundary uses for `harness.*` events. The bus `publish` validates with
+  `validateHarnessEvent` (`harness-event-bus.mjs:36`); Step 0 above extends
+  that validator so `terminal.*` payloads pass.
 
 **CP-TH45 gate:** `RESONANT_TERMINAL_DRIVER` is declared in vitest config; the
 new file `browser-first/host/terminal-host-service.mjs` exists and imports the
-same composition primitives as `harness-host-service.mjs`; manual smoke test
-(see Step B's "smoke" sub-task below) passes.
+same composition primitives as `harness-host-service.mjs`; **`HarnessEvent`
+union and `validateHarnessEvent` accept the five `terminal.*` event types**
+(Step 0); the new `validateHarnessEvent` acceptance test passes; manual smoke
+test (see Step B's "smoke" sub-task below) passes.
 
 `STOP AND REPORT` (template in §6).
 
 ### Phase 2 — TH-5: ROS ↔ iTerm2 connection proof (no Pi) · gate CP-TH5
 
 **Prerequisites from Phase 1.5:**
+- `HarnessEvent` union + `validateHarnessEvent` accept the five `terminal.*`
+  event types (Step 0) — without this, the bus rejects terminal telemetry.
 - `RESONANT_TERMINAL_DRIVER` env var is the driver selector.
 - `browser-first/host/terminal-host-service.mjs` exists and consumes the
   add-on's stdio JSON-RPC `terminal.event` notifications, republishing to the
