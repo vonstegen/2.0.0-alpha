@@ -319,7 +319,16 @@ function renderHarnessTuiSession(doc, { installation, bridgeRequest, adapterId }
       sessionId = created?.sessionId;
       if (!sessionId) throw new Error("No session id returned.");
     } catch (error) {
-      setStatus(`start failed: ${String(error?.message ?? error)}`, "error");
+      // Surface the most actionable error reason. "Runtime unavailable" from
+      // the credential planner means the selected provider profile has no saved
+      // API key — every bridge restart wipes the session-only secret store,
+      // so the user must re-save in Settings → Provider Accounts.
+      const message = String(error?.message ?? error);
+      const trimmed = message.replace(/^start failed:\s*/i, "").trim();
+      const hint = /runtime-unavailable|Runtime unavailable/i.test(trimmed)
+        ? " — save the credential in Settings → Provider Accounts (session-only: keys are wiped on every bridge restart)"
+        : "";
+      setStatus(`start failed: ${trimmed}${hint}`, "error");
       startButton.disabled = false;
       return;
     }
