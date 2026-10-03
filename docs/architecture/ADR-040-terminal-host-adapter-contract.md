@@ -219,4 +219,5 @@ Concrete types live in
 - `chatgpt-chat-sessions/20261002-chatgpt-chat-session.md`
 - [ADR-039](ADR-039-harness-addon-category-swappable-default-agent.md)
 - [Reconciliation note](TERMINAL-HOST-RECONCILIATION.md)
+- [Operation split note](TERMINAL-HOST-OPERATION-SPLIT.md)
 - [Alpha Runtime Boundary](ALPHA_RUNTIME_BOUNDARY.md)

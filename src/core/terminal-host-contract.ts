@@ -38,19 +38,34 @@ export type TerminalHostAdapterCapability =
   | "screen-stream"
   | "multiplexer";
 
-// The operations ROS may invoke on a terminal host adapter. Each adapter maps
-// these onto its native mechanism (Python API, AppleScript, CLI, remote
-// control protocol).
-export type TerminalHostOperation =
-  | "createSession"
-  | "adoptSession"
-  | "attachSession"
-  | "detachSession"
-  | "terminateSession"
-  | "listSessions"
-  | "getSessionState"
-  | "sendInput"
-  | "launchBootstrap";
+// The operations a terminal adapter implements — terminal-API primitives only.
+// Each adapter maps these onto its native mechanism (Python API, AppleScript,
+// CLI, remote control protocol). Session bookkeeping verbs (adopt/attach/
+// detach/list/state) live on `RosSessionOperation`, NOT here, because ROS owns
+// them and they never require a terminal-API call. See
+// docs/architecture/TERMINAL-HOST-OPERATION-SPLIT.md.
+export const TERMINAL_HOST_OPERATIONS = [
+  "createSession",
+  "launchBootstrap",
+  "sendInput",
+  "terminateSession",
+] as const;
+
+export type TerminalHostOperation = (typeof TERMINAL_HOST_OPERATIONS)[number];
+
+// The operations ROS performs on its own `RosTerminalSession` model. These are
+// terminal-agnostic session-bookkeeping verbs, implemented by a ROS session
+// manager (not yet built), never by a terminal adapter. A terminal contributes
+// to them only indirectly, via its feedback channel (event-stream telemetry).
+export const ROS_SESSION_OPERATIONS = [
+  "adoptSession",
+  "attachSession",
+  "detachSession",
+  "listSessions",
+  "getSessionState",
+] as const;
+
+export type RosSessionOperation = (typeof ROS_SESSION_OPERATIONS)[number];
 
 // How a session came to exist. `create` (ROS launched the terminal), `adopt`
 // (user already had a terminal and ran `ros attach`), `detached` (an ordinary

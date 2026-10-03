@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { TerminalTelemetryEvent } from "../../../src/core/terminal-host-contract";
 import {
+  ROS_SESSION_OPERATIONS,
+  TERMINAL_HOST_OPERATIONS,
+} from "../../../src/core/terminal-host-contract";
+import {
   assertValidSessionTransition,
   createInMemoryTerminalHost,
   deriveProvenanceFidelity,
@@ -107,5 +111,27 @@ describe("in-memory terminal host", () => {
       provenanceFidelity: "telemetry",
     });
     expect(() => host.run(session.id)).toThrow(/Invalid terminal session transition/);
+  });
+});
+
+describe("terminal host operation split (TERMINAL-HOST-OPERATION-SPLIT.md)", () => {
+  const adapterOps: readonly string[] = TERMINAL_HOST_OPERATIONS;
+  const rosOps: readonly string[] = ROS_SESSION_OPERATIONS;
+
+  it("partitions the nine verbs into adapter vs ROS session operations", () => {
+    expect(adapterOps).toHaveLength(4);
+    expect(rosOps).toHaveLength(5);
+    expect(new Set([...adapterOps, ...rosOps]).size).toBe(9);
+    for (const op of rosOps) {
+      expect(adapterOps).not.toContain(op);
+    }
+  });
+
+  it("the in-memory adapter declares only adapter primitives, never ROS verbs", () => {
+    const host = createInMemoryTerminalHost();
+    for (const op of host.adapter.supportedOperations) {
+      expect(adapterOps).toContain(op);
+      expect(rosOps).not.toContain(op);
+    }
   });
 });

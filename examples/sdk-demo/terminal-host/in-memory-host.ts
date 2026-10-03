@@ -67,15 +67,10 @@ const IN_MEMORY_ADAPTER: TerminalHostAdapterContract = {
   adapterVersion: 1,
   adapterId: "in-memory",
   transport: "local-ipc",
-  supportedOperations: [
-    "createSession",
-    "adoptSession",
-    "attachSession",
-    "detachSession",
-    "terminateSession",
-    "listSessions",
-    "getSessionState",
-  ],
+  // Adapter primitives only; adopt/attach/detach/list/state are ROS
+  // session-manager verbs (see TERMINAL-HOST-OPERATION-SPLIT.md), exposed as
+  // this host's own methods rather than `supportedOperations`.
+  supportedOperations: ["createSession", "terminateSession"],
   capabilities: [
     "launch",
     "adopt",
@@ -150,7 +145,11 @@ export function createInMemoryTerminalHost() {
     terminate(id: string): RosTerminalSession {
       const session = transition(id, "terminated");
       session.terminatedAt = now();
-      emit({ type: "terminal.session.terminated", sessionId: session.id, at: session.terminatedAt });
+      emit({
+        type: "terminal.session.terminated",
+        sessionId: session.id,
+        at: session.terminatedAt,
+      });
       return session;
     },
     get(id: string): RosTerminalSession {
