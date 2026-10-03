@@ -240,4 +240,5 @@ Concrete types live in
 - [ADR-039](ADR-039-harness-addon-category-swappable-default-agent.md)
 - [Reconciliation note](TERMINAL-HOST-RECONCILIATION.md)
 - [Operation split note](TERMINAL-HOST-OPERATION-SPLIT.md)
+- [Ghostty control-surface reconciliation](TERMINAL-HOST-GHOSTTY-RECONCILIATION.md)
 - [Alpha Runtime Boundary](ALPHA_RUNTIME_BOUNDARY.md)
