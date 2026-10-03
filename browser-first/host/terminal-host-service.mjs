@@ -10,12 +10,12 @@
 // (`harness-adapter-contract.mjs:37`) was extended in Step 0
 // (e352b6e2) to accept the five `terminal.*` event types.
 //
-// This file is the **bridge route owner**, not the adapter itself. The
-// adapter is operator-spawned (per ADR-040: no host-spawned long-lived
-// process, no ambient PATH); the bridge connects as the stdio peer when
-// the operator starts the add-on. In the in-memory driver mode
-// (`RESONANT_TERMINAL_DRIVER=in-memory`) the service still composes but
-// does not spawn — there's no stdio surface to attach to.
+// This file is the **bridge route owner**, not the adapter itself. In
+// `iterm2` driver mode the bridge spawns the adapter as an opt-in,
+// fixed-root stdio JSON-RPC peer (gated by `RESONANT_TERMINAL_HOST_BRIDGE=1`
+// in terminal-host-bridge-wiring.mjs). The spawn is NOT ambient-PATH and
+// NOT manifest-controlled: it's a hardcoded `python3 adapter.py` from the
+// adapter's own directory. In `in-memory` mode no process is spawned.
 //
 // Spec: prompts/OMP-BUILD-iTerm2-SDK-Addon-Connection.md v5 §3 #6-#9
 // and Phase 1.5 Step B.
@@ -33,6 +33,12 @@ import { TERMINAL_HOST_CONTRACT_VERSION } from "../../src/core/terminal-host-con
 
 const TERMINAL_HOST_ADDON_ID = "addon.resonant-terminal-iterm2";
 const JSON_RPC_VERSION = "2.0";
+
+// Adapter spawn env allowlist. ADR-039/040 require no `process.env`
+// inheritance into the adapter; only PATH (runtime resolution) and HOME
+// (iTerm2's Python API locates its socket under the user home) cross the
+// boundary. RESONANT_TERMINAL_DRIVER is added explicitly at spawn time.
+const ADAPTER_ENV_ALLOWLIST = ["PATH", "HOME"];
 
 /**
  * @typedef {Object} JsonRpcRequest
@@ -275,7 +281,11 @@ export function createTerminalHostService(options = {}) {
       isCurrent: () => alive,
       maxReaders: 8,
     });
-    child = spawnFn(entrypoint, [script], { ...env, RESONANT_TERMINAL_DRIVER: driveId });
+    const scopedEnv = { RESONANT_TERMINAL_DRIVER: driveId };
+    for (const key of ADAPTER_ENV_ALLOWLIST) {
+      if (env[key] !== undefined) scopedEnv[key] = env[key];
+    }
+    child = spawnFn(entrypoint, [script], scopedEnv);
     child.on("exit", (code, signal) => {
       alive = false;
       console.error(JSON.stringify({ event: "terminal_host.adapter_exit", code, signal }));

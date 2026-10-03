@@ -109,6 +109,43 @@ test("createTerminalHostService composes in-memory driver without spawning", asy
   assert.equal(svc.status().alive, false);
 });
 
+test("createTerminalHostService spawns adapter with allowlist-scoped env (iterm2)", async () => {
+  let capturedEnv = null;
+  // Minimal readable-stream shim: readline + .on("data") both work.
+  const noopStream = { on() {}, setEncoding() {}, pause() {}, resume() {} };
+  const fakeChild = {
+    stdin: null,
+    stdout: noopStream,
+    stderr: noopStream,
+    on() {},
+    kill() {},
+    killed: true,
+  };
+  const svc = createTerminalHostService({
+    env: {
+      RESONANT_TERMINAL_DRIVER: "iterm2",
+      PATH: "/usr/bin:/bin",
+      HOME: "/Users/test",
+      RESONANT_OTHER: "should-not-leak",
+      SECRET_TOKEN: "should-not-leak",
+    },
+    spawn: (_entrypoint, _args, envArg) => {
+      capturedEnv = envArg;
+      return fakeChild;
+    },
+  });
+  const { driveId } = await svc.start();
+  assert.equal(driveId, "iterm2");
+  assert.ok(capturedEnv, "spawn should have been called");
+  // Allowlist enforcement: only PATH, HOME, RESONANT_TERMINAL_DRIVER
+  const keys = Object.keys(capturedEnv).sort();
+  assert.deepEqual(keys, ["HOME", "PATH", "RESONANT_TERMINAL_DRIVER"]);
+  assert.equal(capturedEnv.RESONANT_TERMINAL_DRIVER, "iterm2");
+  assert.equal(capturedEnv.PATH, "/usr/bin:/bin");
+  assert.equal(capturedEnv.HOME, "/Users/test");
+  await svc.stop();
+});
+
 test("createTerminalHostService rejects unknown driver values", () => {
   assert.throws(
     () => createTerminalHostService({ env: { RESONANT_TERMINAL_DRIVER: "ghostty" } }),
