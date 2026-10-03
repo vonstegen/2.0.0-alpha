@@ -12,8 +12,9 @@
 //     createTerminalHostService, start it, expose the bus on
 //     `globalThis.__rosTerminalHostBus__` and the service on
 //     `globalThis.__rosTerminalHostService__`. The driver's
-//     RESONANT_TERMINAL_DRIVER (in-memory | iterm2) selects the
-//     implementation.
+//     RESONANT_TERMINAL_DRIVER (in-memory | iterm2 | ghostty) selects
+//     the implementation; each live driver spawns its adapter from
+//     the adapter's own fixed directory.
 
 import { createTerminalHostService } from "./terminal-host-service.mjs";
 

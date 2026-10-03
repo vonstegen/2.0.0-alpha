@@ -49,13 +49,14 @@ describe("RESONANT_TERMINAL_DRIVER selector", () => {
     expect(resolveTerminalDriver({ RESONANT_TERMINAL_DRIVER: undefined })).toBe("in-memory");
   });
 
-  it("accepts 'in-memory' and 'iterm2'", () => {
+  it("accepts 'in-memory', 'iterm2', and 'ghostty'", () => {
     expect(resolveTerminalDriver({ RESONANT_TERMINAL_DRIVER: "in-memory" })).toBe("in-memory");
     expect(resolveTerminalDriver({ RESONANT_TERMINAL_DRIVER: "iterm2" })).toBe("iterm2");
+    expect(resolveTerminalDriver({ RESONANT_TERMINAL_DRIVER: "ghostty" })).toBe("ghostty");
   });
 
   it("rejects unknown values with TerminalDriverError", () => {
-    expect(() => resolveTerminalDriver({ RESONANT_TERMINAL_DRIVER: "ghostty" })).toThrow(
+    expect(() => resolveTerminalDriver({ RESONANT_TERMINAL_DRIVER: "wezterm" })).toThrow(
       TerminalDriverError,
     );
     expect(() => resolveTerminalDriver({ RESONANT_TERMINAL_DRIVER: "Ghostty" })).toThrow(
@@ -64,7 +65,7 @@ describe("RESONANT_TERMINAL_DRIVER selector", () => {
   });
 
   it("createDriver rejects unknown ids and passes allowed ids to the factory", () => {
-    expect(() => createDriver("ghostty" as TerminalDriverId, fakeDriver)).toThrow(
+    expect(() => createDriver("wezterm" as TerminalDriverId, fakeDriver)).toThrow(
       TerminalDriverError,
     );
     const inMemory = createDriver("in-memory", fakeDriver);
@@ -73,5 +74,8 @@ describe("RESONANT_TERMINAL_DRIVER selector", () => {
     const iterm2 = createDriver("iterm2", fakeDriver);
     expect(iterm2.id).toBe("iterm2");
     expect(iterm2.adapter.adapterId).toBe("iterm2");
+    const ghostty = createDriver("ghostty", fakeDriver);
+    expect(ghostty.id).toBe("ghostty");
+    expect(ghostty.adapter.adapterId).toBe("ghostty");
   });
 });

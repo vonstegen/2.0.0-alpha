@@ -1,24 +1,25 @@
-// ResonantOS terminal-host bridge service (Phase 1.5 Step B).
+// ResonantOS terminal-host bridge service (Phase 1.5 Step B / TH-7c).
 //
 // Composition for the bridge-side owner of a replaceable terminal host
-// adapter. Subscribes to the iTerm2 add-on's stdio JSON-RPC peer
-// (`service.protocol: "stdio-json-rpc"`, `service.entrypoint: "node
-// adapter.mjs"` — see examples/sdk-demo/terminal-host/iterm2/addon.json)
-// and republishes `terminal.event` notifications onto the broker event
-// bus the harness boundary already uses (`browser-first/host/
-// harness-boundary.mjs:68, :138, :160, :164, :176`). The bus validator
-// (`harness-adapter-contract.mjs:37`) was extended in Step 0
-// (e352b6e2) to accept the five `terminal.*` event types.
+// adapter. Subscribes to the active adapter's stdio JSON-RPC peer
+// (`service.protocol: "stdio-json-rpc"`) and republishes `terminal.event`
+// notifications onto the broker event bus the harness boundary already
+// uses (`browser-first/host/harness-boundary.mjs:68, :138, :160, :164,
+// :176`). The bus validator (`harness-adapter-contract.mjs:37`) was
+// extended in Step 0 (e352b6e2) to accept the five `terminal.*` event
+// types.
 //
 // This file is the **bridge route owner**, not the adapter itself. In
-// `iterm2` driver mode the bridge spawns the adapter as an opt-in,
-// fixed-root stdio JSON-RPC peer (gated by `RESONANT_TERMINAL_HOST_BRIDGE=1`
-// in terminal-host-bridge-wiring.mjs). The spawn is NOT ambient-PATH and
-// NOT manifest-controlled: it's a hardcoded `python3 adapter.py` from the
-// adapter's own directory. In `in-memory` mode no process is spawned.
+// `iterm2` and `ghostty` driver modes the bridge spawns the adapter as
+// an opt-in, fixed-root stdio JSON-RPC peer (gated by
+// `RESONANT_TERMINAL_HOST_BRIDGE=1` in terminal-host-bridge-wiring.mjs).
+// The spawn is NOT ambient-PATH and NOT manifest-controlled: the
+// entrypoint and cwd are chosen by `SPAWN_PLANS` keyed on the driver
+// id, each fixed to the adapter's own directory. In `in-memory` mode
+// no process is spawned.
 //
-// Spec: prompts/OMP-BUILD-iTerm2-SDK-Addon-Connection.md v5 §3 #6-#9
-// and Phase 1.5 Step B.
+// Spec: prompts/OMP-BUILD-iTerm2-SDK-Addon-Connection.md v8 §3 (Phases
+// 1/1.5/2/TH-7a) and the TH-7 (Ghostty) phase prompt §3-§5.
 
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -157,10 +158,11 @@ export function envelopeToHarnessEvent(envelope, provenance) {
  * @property {NodeJS.ProcessEnv} [env]
  * @property {() => string} [addonId]
  * @property {() => string} [bootEpoch]
- * @property {(entrypoint: string, env: NodeJS.ProcessEnv) => import("node:child_process").ChildProcess} [spawn]
- * @property {string} [entrypoint] default "node"
- * @property {string} [script]    default "adapter.mjs"
- * @property {string} [cwd]       default examples/sdk-demo/terminal-host/iterm2
+ * @property {(entrypoint: string, args: string[], envArg: NodeJS.ProcessEnv) => import("node:child_process").ChildProcess} [spawn]
+ * @property {string} [entrypoint] default per RESONANT_TERMINAL_DRIVER
+ * @property {string} [script]    default per RESONANT_TERMINAL_DRIVER
+ * @property {string} [cwd]       default per RESONANT_TERMINAL_DRIVER
+ *                                    (iTerm2 -> iterm2/, Ghostty -> ghostty/)
  */
 
 /**
@@ -168,6 +170,9 @@ export function envelopeToHarnessEvent(envelope, provenance) {
  * @property {() => Promise<{ adapterId: string, bus: ReturnType<typeof createHarnessEventBus>, driveId: string }>} start
  * @property {() => Promise<void>} stop
  * @property {(args: { sessionId: string, bootstrapCommand: string, turnId?: string, timeoutMs?: number }) => Promise<import("../../src/core/terminal-host-contract.ts").SessionBootstrapGrant>} launchBootstrap
+ * @property {(args: { sessionId: string, text: string, turnId?: string, timeoutMs?: number }) => Promise<{ sessionId: string, delivered: boolean }>} sendInput
+ * @property {(args: { sessionId: string, turnId?: string, timeoutMs?: number }) => Promise<{ sessionId: string, terminated: boolean }>} terminateSession
+ * @property {(args: { sessionId: string, entryMode?: "create" | "adopt" | "detached", turnId?: string, timeoutMs?: number }) => Promise<{ sessionId: string }>} createSession
  * @property {() => { events: number, lastEventAt: number | null, alive: boolean }} status
  */
 
@@ -184,23 +189,29 @@ export function createTerminalHostService(options = {}) {
   const env = options.env ?? process.env;
   const addonId = options.addonId ?? (() => TERMINAL_HOST_ADDON_ID);
   const bootEpoch = options.bootEpoch ?? (() => env.RESONANTOS_HARNESS_BOOTEPOCH ?? `boot-${randomUUID().slice(0, 8)}`);
-  const cwd = options.cwd ?? "examples/sdk-demo/terminal-host/iterm2";
-  const spawnFn = options.spawn ?? ((cmd, args, envArg) => spawn(cmd, args, { cwd, env: envArg, stdio: ["pipe", "pipe", "pipe"] }));
   const driveId = env.RESONANT_TERMINAL_DRIVER ?? "in-memory";
   // Driver-specific spawn plan. The iTerm2 driver is a Python script
   // (iterm2's control API is Python; the bridge is the stdio JSON-RPC
-  // peer). The in-memory driver composes without spawning.
-  const spawnPlan = (driveId === "iterm2")
-    ? { command: "python3", args: ["adapter.py"] }
-    : { command: "node", args: ["adapter.mjs"] };
-  const entrypoint = options.entrypoint ?? spawnPlan.command;
-  const script = options.script ?? spawnPlan.args[0];
-
-  if (driveId !== "in-memory" && driveId !== "iterm2") {
+  // peer). The Ghostty driver is a Node script (Ghostty's only automation
+  // surface is AppleScript via osascript; see TERMINAL-HOST-GHOSTTY-
+  // RECONCILIATION.md). The in-memory driver composes without spawning.
+  const SPAWN_PLANS = {
+    iterm2: { command: "python3", args: ["adapter.py"] },
+    ghostty: { command: "node", args: ["adapter.mjs"] },
+  };
+  if (driveId !== "in-memory" && !(driveId in SPAWN_PLANS)) {
     throw new Error(
-      `RESONANT_TERMINAL_DRIVER must be 'in-memory' or 'iterm2'. Got: ${JSON.stringify(driveId)}`,
+      `RESONANT_TERMINAL_DRIVER must be 'in-memory', 'iterm2', or 'ghostty'. Got: ${JSON.stringify(driveId)}`,
     );
   }
+  const cwd = options.cwd ?? (
+    driveId === "ghostty" ? "examples/sdk-demo/terminal-host/ghostty"
+    : "examples/sdk-demo/terminal-host/iterm2"
+  );
+  const spawnFn = options.spawn ?? ((cmd, args, envArg) => spawn(cmd, args, { cwd, env: envArg, stdio: ["pipe", "pipe", "pipe"] }));
+  const spawnPlan = SPAWN_PLANS[driveId] ?? { command: "node", args: ["adapter.mjs"] };
+  const entrypoint = options.entrypoint ?? spawnPlan.command;
+  const script = options.script ?? spawnPlan.args[0];
 
   /** @type {import("node:child_process").ChildProcess | null} */
   let child = null;
@@ -361,9 +372,45 @@ export function createTerminalHostService(options = {}) {
     return /** @type {any} */ (result);
   }
 
+  async function sendInput({ sessionId, text, turnId, timeoutMs = 5000 }) {
+    if (driveId === "in-memory") {
+      throw new Error("sendInput unavailable: in-memory driver has no stdio surface");
+    }
+    const result = await request(
+      "sendInput",
+      { sessionId, text },
+      { timeoutMs },
+    );
+    return /** @type {any} */ (result);
+  }
+
+  async function terminateSession({ sessionId, turnId, timeoutMs = 5000 }) {
+    if (driveId === "in-memory") {
+      throw new Error("terminateSession unavailable: in-memory driver has no stdio surface");
+    }
+    const result = await request(
+      "terminateSession",
+      { sessionId },
+      { timeoutMs },
+    );
+    return /** @type {any} */ (result);
+  }
+
+  async function createSessionRpc({ sessionId, entryMode = "create", turnId, timeoutMs = 5000 }) {
+    if (driveId === "in-memory") {
+      throw new Error("createSession unavailable: in-memory driver has no stdio surface");
+    }
+    const result = await request(
+      "createSession",
+      { sessionId, entryMode },
+      { timeoutMs },
+    );
+    return /** @type {any} */ (result);
+  }
+
   function status() {
     return { events: eventsPublished, lastEventAt, alive: !!child && alive };
   }
 
-  return { start, stop, launchBootstrap, status };
+  return { start, stop, launchBootstrap, sendInput, terminateSession, createSession: createSessionRpc, status };
 }

@@ -1,4 +1,4 @@
-// ResonantOS terminal-host driver selector (Phase 1.5 Step A).
+// ResonantOS terminal-host driver selector (Phase 1.5 Step A / TH-7b).
 //
 // `RESONANT_TERMINAL_DRIVER` chooses which terminal host implementation
 // Phase 2's lifecycle test and the replaceability proof drive. The selector
@@ -7,8 +7,9 @@
 //   - examples/sdk-demo/tests/terminal-host-replaceability.test.ts (Phase 2)
 //   - browser-first/host/terminal-host-service.mjs (Phase 1.5 Step B)
 //
-// Allowed values: 'in-memory' (default), 'iterm2'. Unknown values throw at
-// import time so a misconfigured CI run fails before any test code runs.
+// Allowed values: 'in-memory' (default), 'iterm2', 'ghostty'. Unknown
+// values throw at import time so a misconfigured CI run fails before
+// any test code runs.
 
 import type {
   ProvenanceFidelity,
@@ -19,11 +20,12 @@ import type {
   TerminalTelemetryEvent,
 } from "../../../src/core/terminal-host-contract";
 
-export type TerminalDriverId = "in-memory" | "iterm2";
+export type TerminalDriverId = "in-memory" | "iterm2" | "ghostty";
 
 const ALLOWED_DRIVERS: Record<TerminalDriverId, true> = {
   "in-memory": true,
   iterm2: true,
+  ghostty: true,
 };
 
 const DEFAULT_DRIVER: TerminalDriverId = "in-memory";
@@ -41,15 +43,15 @@ function isAllowed(value: string): value is TerminalDriverId {
 
 /**
  * Resolve the active driver id from `process.env.RESONANT_TERMINAL_DRIVER`.
- * Default: "in-memory" (CI without iTerm2 stays green). Unknown values
- * throw a `TerminalDriverError` so the failure is loud and early.
+ * Default: "in-memory" (CI without iTerm2/Ghostty stays green). Unknown
+ * values throw a `TerminalDriverError` so the failure is loud and early.
  */
 export function resolveTerminalDriver(env: NodeJS.ProcessEnv = process.env): TerminalDriverId {
   const raw = env.RESONANT_TERMINAL_DRIVER;
   if (raw === undefined || raw === "") return DEFAULT_DRIVER;
   if (isAllowed(raw)) return raw;
   throw new TerminalDriverError(
-    `RESONANT_TERMINAL_DRIVER must be one of: in-memory, iterm2. Got: ${JSON.stringify(raw)}`,
+    `RESONANT_TERMINAL_DRIVER must be one of: in-memory, iterm2, ghostty. Got: ${JSON.stringify(raw)}`,
   );
 }
 

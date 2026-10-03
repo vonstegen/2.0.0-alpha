@@ -1,0 +1,9 @@
+# Ghostty adapter (TH-7c deliverable).
+# This directory will be populated by the Phase 5 (TH-7c) commit:
+#   - addon.json (mirroring iterm2/addon.json shape)
+#   - adapter.mjs (Node stdio JSON-RPC peer; spawns osascript for the 4 ops)
+#   - smoke.mjs (manual smoke for the Ghostty end-to-end)
+#
+# The .gitkeep ensures the directory persists in the tree so the
+# bridge service's `cwd: "examples/sdk-demo/terminal-host/ghostty"`
+# (Phase 4 / TH-7b) does not ENOENT before Phase 5 lands.

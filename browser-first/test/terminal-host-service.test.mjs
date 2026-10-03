@@ -149,9 +149,31 @@ test("createTerminalHostService spawns adapter with allowlist-scoped env (iterm2
 
 test("createTerminalHostService rejects unknown driver values", () => {
   assert.throws(
-    () => createTerminalHostService({ env: { RESONANT_TERMINAL_DRIVER: "ghostty" } }),
+    () => createTerminalHostService({ env: { RESONANT_TERMINAL_DRIVER: "wezterm" } }),
     /RESONANT_TERMINAL_DRIVER/,
   );
+});
+
+test("createTerminalHostService accepts ghostty driver and uses Node + ghostty/ cwd", async () => {
+  let captured = null;
+  const fakeChild = { stdin: null, stdout: { on() {}, setEncoding() {}, pause() {}, resume() {} }, stderr: { on() {}, setEncoding() {}, pause() {}, resume() {} }, on() {}, kill() {}, killed: true };
+  const svc = createTerminalHostService({
+    env: { RESONANT_TERMINAL_DRIVER: "ghostty" },
+    spawn: (entrypoint, args, envArg) => {
+      captured = { entrypoint, args, envArg };
+      return fakeChild;
+    },
+  });
+  const { driveId } = await svc.start();
+  assert.equal(driveId, "ghostty");
+  assert.ok(captured, "spawn should have been called");
+  assert.equal(captured.entrypoint, "node");
+  assert.deepEqual(captured.args, ["adapter.mjs"]);
+  // Env allowlist must be honored on the ghostty path too
+  const envKeys = Object.keys(captured.envArg).sort();
+  assert.deepEqual(envKeys, ["RESONANT_TERMINAL_DRIVER"]);
+  assert.equal(captured.envArg.RESONANT_TERMINAL_DRIVER, "ghostty");
+  await svc.stop();
 });
 
 test("launchBootstrap refuses in-memory mode (no stdio surface)", async () => {

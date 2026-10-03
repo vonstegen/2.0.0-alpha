@@ -88,7 +88,7 @@ test("installTerminalHostBridge rejects unknown driver values", async () => {
   const globalObj = freshGlobal();
   await assert.rejects(
     () => installTerminalHostBridge({
-      env: { RESONANT_TERMINAL_HOST_BRIDGE: "1", RESONANT_TERMINAL_DRIVER: "ghostty" },
+      env: { RESONANT_TERMINAL_HOST_BRIDGE: "1", RESONANT_TERMINAL_DRIVER: "wezterm" },
       globalThis: globalObj,
     }),
     /RESONANT_TERMINAL_DRIVER/,
