@@ -11,10 +11,12 @@ export const iterm2AdapterContract = {
   adapterVersion: 1,
   adapterId: "iterm2",
   transport: "local-ipc",
-  // Operations the Python runtime (adapter.py) implements in this commit.
-  // The full list per ADR-040 (adopt/attach/detach/list/getState) is
-  // scaffolded for follow-up commits; the bridge service rejects calls
-  // to operations not in this list with `unsupported-operation`.
+  // The 4 ops the Python runtime (adapter.py) implements. After the
+  // F2 operation split, this set is COMPLETE for a terminal adapter
+  // (see TERMINAL-HOST-OPERATION-SPLIT.md): adopt / attach / detach
+  // / listSessions / getSessionState are ROS session operations on
+  // RosTerminalSession, never adapter ops. The bridge service rejects
+  // calls to operations not in this list with `unsupported-operation`.
   supportedOperations: [
     "createSession",
     "launchBootstrap",

@@ -12,8 +12,11 @@ required by Phase 1 + Phase 2 of
   - sendInput        (writes text to an existing session)
   - terminateSession (closes a tab; emits terminal.session.terminated)
 
-The other 5 operations listed in `iterm2AdapterContract.supportedOperations`
-remain scaffolded for a follow-up commit.
+The 4-op set above is COMPLETE for a terminal adapter. Per the F2
+operation split (TERMINAL-HOST-OPERATION-SPLIT.md), `adoptSession` /
+`attachSession` / `detachSession` / `listSessions` / `getSessionState`
+are ROS session operations on `RosTerminalSession` and are never
+implemented by a terminal adapter.
 
 Wire contract: one JSON-RPC message per line on stdin; one JSON-RPC
 message per line on stdout. Notifications use `method: "terminal.event"`

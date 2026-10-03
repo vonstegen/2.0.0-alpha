@@ -9,6 +9,7 @@ import test from "node:test";
 import {
   createTerminalHostService,
   envelopeToHarnessEvent,
+  mintSessionBootstrapGrant,
   validateRosTerminalEventEnvelope,
 } from "../host/terminal-host-service.mjs";
 import { TERMINAL_HOST_CONTRACT_VERSION } from "../../src/core/terminal-host-contract.ts";
@@ -161,4 +162,20 @@ test("launchBootstrap refuses in-memory mode (no stdio surface)", async () => {
     /in-memory driver has no stdio surface/,
   );
   await svc.stop();
+});
+
+test("mintSessionBootstrapGrant mints a broker-grade token, not a placeholder (F4)", () => {
+  const grant = mintSessionBootstrapGrant({
+    sessionId: "s1",
+    purpose: "attach",
+    now: () => new Date("2026-10-02T12:00:00.000Z"),
+  });
+  assert.equal(grant.sessionId, "s1");
+  assert.equal(grant.purpose, "attach");
+  assert.equal(grant.issuedAt, "2026-10-02T12:00:00.000Z");
+  assert.equal(grant.expiresAt, "2026-10-02T12:01:00.000Z");
+  // 32 random bytes -> 43-char base64url (same format as createBridgeToken());
+  // never the old tok-<uuid> placeholder.
+  assert.match(grant.token, /^[A-Za-z0-9_-]{43}$/);
+  assert.ok(!grant.token.startsWith("tok-"), "token must not be a tok-<uuid> placeholder");
 });

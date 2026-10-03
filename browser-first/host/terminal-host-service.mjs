@@ -21,7 +21,7 @@
 // and Phase 1.5 Step B.
 
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createInterface } from "node:readline";
 import { performance } from "node:perf_hooks";
@@ -39,6 +39,34 @@ const JSON_RPC_VERSION = "2.0";
 // (iTerm2's Python API locates its socket under the user home) cross the
 // boundary. RESONANT_TERMINAL_DRIVER is added explicitly at spawn time.
 const ADAPTER_ENV_ALLOWLIST = ["PATH", "HOME"];
+
+const SESSION_BOOTSTRAP_GRANT_TTL_MS = 60_000;
+
+/**
+ * Mint a SessionBootstrapGrant. The token is broker-grade: 32 random bytes
+ * base64url-encoded, matching createBridgeToken() in bridge-server.mjs — not
+ * the old tok-<uuid> placeholder. The grant is audience-bound to one session
+ * and single-use (claim then discard); the ros-session attach consumer
+ * validates + claims it against the broker, and the token rides the RPC
+ * return value only, never argv/env. See ADR-040 "Authorization model" and
+ * SessionBootstrapGrant in terminal-host-contract.ts.
+ */
+export function mintSessionBootstrapGrant({
+  sessionId,
+  purpose,
+  now = () => new Date(),
+  mintToken = () => randomBytes(32).toString("base64url"),
+  ttlMs = SESSION_BOOTSTRAP_GRANT_TTL_MS,
+} = {}) {
+  const issuedAt = now();
+  return {
+    sessionId,
+    token: mintToken(),
+    purpose,
+    issuedAt: issuedAt.toISOString(),
+    expiresAt: new Date(issuedAt.getTime() + ttlMs).toISOString(),
+  };
+}
 
 /**
  * @typedef {Object} JsonRpcRequest
@@ -324,13 +352,7 @@ export function createTerminalHostService(options = {}) {
     // RPC return value + `terminal.session.started` event. We return the
     // grant here; the bus event is published by the adapter's notification
     // and observed via bus.subscribe().
-    const grant = {
-      sessionId,
-      token: `tok-${randomUUID()}`,
-      purpose: /** @type {"attach"} */ ("attach"),
-      issuedAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
-    };
+    const grant = mintSessionBootstrapGrant({ sessionId, purpose: "attach" });
     const result = await request(
       "launchBootstrap",
       { sessionId, bootstrapCommand, grant },

@@ -1,4 +1,4 @@
-# OMP Build — iTerm2 SDK Add-on Connection for ResonantOS (v7)
+# OMP Build - iTerm2 SDK Add-on Connection for ResonantOS (v8)
 
 **Handoff from AVIS → OMP. Read this whole document before touching anything.**
 
@@ -404,14 +404,14 @@ test (see Step B's "smoke" sub-task below) passes.
     adapter, `launchBootstrap` returns the grant + a real iTerm2
     session UUID, a bus consumer observes `terminal.session.started`.
 
-**Known limitations entering Phase 3:**
-- 5 of the 9 contract operations (adoptSession, attachSession,
-  detachSession, listSessions, getSessionState) are still scaffolded.
-  The in-memory driver covers all 9; the iTerm2 path covers the 4
-  that have direct iTerm2 API equivalents (create, launchBootstrap,
-  sendInput, terminate). Adopt / attach / detach for iTerm2 are
-  implicit (the iTerm2 Python API doesn't expose them as separate
-  calls).
+**Known limitations entering Phase 3 (TH-7 / Ghostty):**
+- The 5 ROS session operations (`adoptSession`, `attachSession`,
+  `detachSession`, `listSessions`, `getSessionState`) are defined
+  and tested on the in-memory session-manager fixture, but the ROS
+  session manager itself is not yet built. The 4 terminal-host
+  adapter ops are complete on the iTerm2 path. (Per the F2 operation
+  split, the 5 ROS ops are never adapter responsibility — see
+  `TERMINAL-HOST-OPERATION-SPLIT.md`.)
 - The `terminal.command.ended` event currently fires immediately
   after `sendInput` delivers text. A future commit can subscribe to
   the shell's `prompt` variable to detect command boundaries and
