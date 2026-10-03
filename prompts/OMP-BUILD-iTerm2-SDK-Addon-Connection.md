@@ -517,6 +517,76 @@ the test runner and still finds no harness process.
 
 `STOP AND REPORT` (template in §6).
 
+---
+
+## Phase 3 (TH-7) — Ghostty adapter + replaceability · gates CP-TH7a / TH7b / TH7c / TH7
+
+This iTerm2 prompt is one source of truth for TH-7; the other is
+`prompts/TERMINAL-HOST-GHOSTTY-PHASE-PROMPT.md`. The TH-7 milestone
+proves the terminal host is **adapter-replaceable**: the same
+4-op `TerminalHostAdapterContract` (per the F2 op-split in
+`TERMINAL-HOST-OPERATION-SPLIT.md`) is satisfied by both iTerm2 and
+Ghostty. Pi does not need to be attached for TH-7 — that is TH-6.
+
+**As-built (commits `da43b97b`, `c86dedfd`, `1085a548`):**
+- **Phase 3 / TH-7a** — `docs/architecture/TERMINAL-HOST-GHOSTTY-
+  RECONCILIATION.md` records Ghostty 1.3.1's actual automation
+  surface (the `Ghostty.sdef` AppleScript dictionary, since the
+  CLI's only `+action`s are read-only and `+new-window` is
+  unsupported on macOS). Two limitations identified: `new tab`
+  returns `errAEEventNotHandled` (-1708) in every variation;
+  `input text` to a per-tab terminal is similarly broken. The fix
+  is upstream (`ghostty-org/ghostty#11713`) but not in 1.3.1.
+  Verdict: all 4 adapter ops can be satisfied in 1.3.1 with
+  documented degradations.
+- **Phase 4 / TH-7b** — The replaceability test now parameterizes
+  over `[in-memory, iterm2, ghostty]` and exercises all 4 adapter
+  ops end-to-end (createSession → launchBootstrap → sendInput →
+  terminateSession) with identical observable contract. The bridge
+  service's `SPAWN_PLANS` dispatches on driver id (iTerm2 →
+  `python3 adapter.py` from `iterm2/`; Ghostty → `node adapter.mjs`
+  from `ghostty/`). Per F1, the env allowlist is
+  `PATH`+`HOME`+`RESONANT_TERMINAL_DRIVER` and applies to both
+  drivers. The `RESONANT_TERMINAL_HOST_BRIDGE=1` gate is unchanged.
+- **Phase 5 / TH-7c** — `examples/sdk-demo/terminal-host/ghostty/`
+  ships: `addon.json` (validates against `validateAddOnManifest`),
+  `adapter.mjs` (Node stdio JSON-RPC peer; 4 ops over AppleScript
+  via osascript; 250ms poller for lifecycle events), `smoke.mjs`
+  (manual end-to-end against real Ghostty).
+- **Phase 6 / TH-7d** — Both iTerm2 and Ghostty drivers pass the
+  parameterized 4-op replaceability test through the real bridge.
+  See "Verification" below.
+
+**Known limitations entering TH-6 (Pi + Ghostty):**
+- Ghostty `sendInput` to a running interactive session degrades in
+  1.3.1 (same as iTerm2: `terminal.command.ended` fires immediately
+  after `sendInput`). The fix is upstream; track the PR.
+- Ghostty `new tab` AppleScript is broken — sessions open as
+  **windows**, not tabs. The harness contract is identical.
+- `feedbackChannel: "polling"` and `provenanceFidelity: "observation"`
+  for Ghostty until the upstream AppleScript events land.
+
+**Verification (TH-7d gate):**
+- core vitest: **721/721** (no regression)
+- demo vitest (in-memory): **103/103** (no regression)
+- browser-first terminal-host files: **21/21** (no regression)
+- in-memory smoke: PASS (3 events)
+- iTerm2 manual smoke: PASS (4 notifications)
+- Ghostty manual smoke: PASS (10 notifications, real Ghostty
+  windows opened and closed)
+- Replaceability test in
+  `RESONANT_TERMINAL_HOST_BRIDGE=1 RESONANT_TERMINAL_DRIVER=iterm2`:
+  3/3 driver rows pass (in-memory deterministic, iTerm2 real
+  bridge, Ghostty real bridge — all 4 adapter ops end-to-end)
+- Replaceability test in
+  `RESONANT_TERMINAL_HOST_BRIDGE=1 RESONANT_TERMINAL_DRIVER=ghostty`:
+  3/3 driver rows pass (same coverage from the other side)
+
+`STOP AND REPORT` (TH-7d gate complete). The end-to-end "Pi +
+Ghostty passes with zero harness change" gate is **TH-6** and is
+out of scope for this milestone; this prompt's TH-7 scope is
+adapter-level replaceability, which is satisfied.
+
 ## 5. Commands (verified present in `package.json`)
 
 ```bash
