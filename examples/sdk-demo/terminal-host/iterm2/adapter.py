@@ -25,9 +25,10 @@ with a `RosTerminalEventEnvelope` body (terminal-host-contract.ts:166).
 ADR-040 compliance:
   - never shells out with ambient PATH: iTerm2 is controlled through
     the daemon, not via osascript / spawn.
-  - never holds credentials: the SessionBootstrapGrant is consumed
-    inside this process and not persisted.
-  - sendInput rejects any text that looks like a grant-shaped token.
+  - never holds credentials on disk: the SessionBootstrapGrant lives only in
+    memory (the `grant_tokens` set) and is never persisted.
+  - sendInput rejects any text containing a grant token the adapter has seen
+    (exact substring match, not a format heuristic).
 """
 
 from __future__ import annotations
@@ -35,13 +36,11 @@ from __future__ import annotations
 import asyncio
 import datetime as _dt
 import json
-import re
 import sys
 import traceback
 from typing import Any
 
 import iterm2  # type: ignore[import-not-found]
-
 
 TERMINAL_HOST_CONTRACT_VERSION = 1
 JSON_RPC_VERSION = "2.0"
@@ -54,15 +53,13 @@ SUPPORTED_METHODS = {
     "terminateSession",
 }
 
-# SessionBootstrapGrant-shaped tokens must never ride the wire (per v6 #6
-# sendInput). The check is a defensive belt-and-braces: the bridge also
-# enforces this in the in-memory path, but the iTerm2 path is the live
-# one and warrants its own check.
-_GRANT_SHAPED = re.compile(r"SessionBootstrapGrant\b")
-
 
 def _now_iso() -> str:
-    return _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    return (
+        _dt.datetime.now(_dt.timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
 
 
 def _frame(message: dict[str, Any]) -> str:
@@ -74,20 +71,33 @@ def _validate_session_id(session_id: str) -> None:
         raise ValueError("sessionId must be a non-empty string")
 
 
-def _validate_bootstrap_command(command: str) -> None:
+def _reject_known_tokens(text: str, grant_tokens: set[str], field: str) -> None:
+    """Raise if `text` contains a grant token the adapter has seen.
+
+    A SessionBootstrapGrant token is a 32-byte base64url string, so it cannot
+    be distinguished from arbitrary text by format alone. The check is exact
+    containment against the tokens the adapter was actually handed — not the
+    old `SessionBootstrapGrant\b` format heuristic, which matched a label that
+    never appears in a real token.
+    """
+    for token in grant_tokens:
+        if token and token in text:
+            raise PermissionError(
+                f"{field} contains a SessionBootstrapGrant token; "
+                "tokens must never ride the wire"
+            )
+
+
+def _validate_bootstrap_command(command: str, grant_tokens: set[str]) -> None:
     if not isinstance(command, str) or not command:
         raise ValueError("bootstrapCommand must be a non-empty string")
-    if _GRANT_SHAPED.search(command):
-        raise PermissionError("bootstrapCommand contains a SessionBootstrapGrant-shaped token; "
-                             "tokens must never ride the command line")
+    _reject_known_tokens(command, grant_tokens, "bootstrapCommand")
 
 
-def _validate_send_text(text: str) -> None:
+def _validate_send_text(text: str, grant_tokens: set[str]) -> None:
     if not isinstance(text, str) or not text:
         raise ValueError("text must be a non-empty string")
-    if _GRANT_SHAPED.search(text):
-        raise PermissionError("text contains a SessionBootstrapGrant-shaped token; "
-                             "tokens must never ride the wire")
+    _reject_known_tokens(text, grant_tokens, "text")
 
 
 class _Adapter:
@@ -98,13 +108,22 @@ class _Adapter:
         # session_id -> iterm2.Session (or None if the iTerm2 tab was
         # closed by the operator and the adapter hasn't observed it).
         self.sessions: dict[str, iterm2.Session] = {}
+        # Grant tokens this adapter has been handed (SessionBootstrapGrant),
+        # in memory only (never persisted). Used to reject a token that would
+        # otherwise ride the wire via sendInput/bootstrapCommand. A future
+        # commit clears each token once its bootstrap consumer claims it.
+        self.grant_tokens: set[str] = set()
 
     async def _emit(self, envelope: dict[str, Any]) -> None:
-        sys.stdout.write(_frame({
-            "jsonrpc": JSON_RPC_VERSION,
-            "method": "terminal.event",
-            "params": envelope,
-        }))
+        sys.stdout.write(
+            _frame(
+                {
+                    "jsonrpc": JSON_RPC_VERSION,
+                    "method": "terminal.event",
+                    "params": envelope,
+                }
+            )
+        )
         sys.stdout.flush()
 
     def _envelope(
@@ -135,12 +154,20 @@ class _Adapter:
         # exposed to the bridge so the bridge can correlate with the
         # RosTerminalSession.
         self.sessions[session_id] = tab.current_session
-        await self._emit(self._envelope(session_id, {
-            "type": "terminal.session.started",
+        await self._emit(
+            self._envelope(
+                session_id,
+                {
+                    "type": "terminal.session.started",
+                    "sessionId": session_id,
+                    "at": _now_iso(),
+                },
+            )
+        )
+        return {
             "sessionId": session_id,
-            "at": _now_iso(),
-        }))
-        return {"sessionId": session_id, "iTerm2SessionId": tab.current_session.session_id}
+            "iTerm2SessionId": tab.current_session.session_id,
+        }
 
     async def launch_bootstrap(self, params: dict[str, Any]) -> dict[str, Any]:
         session_id = params.get("sessionId") or f"iterm2-{_now_iso()}"
@@ -148,7 +175,12 @@ class _Adapter:
         grant = params.get("grant")
         if not isinstance(grant, dict):
             raise ValueError("grant must be an object (SessionBootstrapGrant)")
-        _validate_bootstrap_command(bootstrap_command or "")
+        grant_token = grant.get("token")
+        if grant_token is not None:
+            if not isinstance(grant_token, str) or not grant_token:
+                raise ValueError("grant.token must be a non-empty string")
+            self.grant_tokens.add(grant_token)
+        _validate_bootstrap_command(bootstrap_command or "", self.grant_tokens)
         _validate_session_id(session_id)
 
         if self.connection is None:
@@ -167,18 +199,27 @@ class _Adapter:
         if bootstrap_command:
             await session.async_send_text(bootstrap_command + "\n")
 
-        await self._emit(self._envelope(session_id, {
-            "type": "terminal.session.started",
+        await self._emit(
+            self._envelope(
+                session_id,
+                {
+                    "type": "terminal.session.started",
+                    "sessionId": session_id,
+                    "at": _now_iso(),
+                },
+            )
+        )
+        return {
             "sessionId": session_id,
-            "at": _now_iso(),
-        }))
-        return {"sessionId": session_id, "grant": grant, "iTerm2SessionId": session.session_id}
+            "grant": grant,
+            "iTerm2SessionId": session.session_id,
+        }
 
     async def send_input(self, params: dict[str, Any]) -> dict[str, Any]:
         session_id = params.get("sessionId")
         text = params.get("text")
         _validate_session_id(session_id or "")
-        _validate_send_text(text or "")
+        _validate_send_text(text or "", self.grant_tokens)
         if self.connection is None:
             raise RuntimeError("iTerm2 connection not established")
         session = self.sessions.get(session_id)
@@ -186,23 +227,33 @@ class _Adapter:
             raise LookupError(f"unknown session: {session_id}")
 
         command_started = _now_iso()
-        await self._emit(self._envelope(session_id, {
-            "type": "terminal.command.started",
-            "sessionId": session_id,
-            "at": command_started,
-            "command": text,
-        }))
+        await self._emit(
+            self._envelope(
+                session_id,
+                {
+                    "type": "terminal.command.started",
+                    "sessionId": session_id,
+                    "at": command_started,
+                    "command": text,
+                },
+            )
+        )
         await session.async_send_text(text)
         # We do not currently have a reliable way to observe the exit
         # status of a shell command from the iTerm2 Python API; emit
         # command.ended immediately (exitStatus undefined) as a marker
         # that the input was delivered. A future commit can subscribe
         # to the shell's `prompt` variable to detect command boundaries.
-        await self._emit(self._envelope(session_id, {
-            "type": "terminal.command.ended",
-            "sessionId": session_id,
-            "at": _now_iso(),
-        }))
+        await self._emit(
+            self._envelope(
+                session_id,
+                {
+                    "type": "terminal.command.ended",
+                    "sessionId": session_id,
+                    "at": _now_iso(),
+                },
+            )
+        )
         return {"sessionId": session_id, "delivered": True, "at": command_started}
 
     async def terminate_session(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -212,11 +263,16 @@ class _Adapter:
         if session is None:
             raise LookupError(f"unknown session: {session_id}")
         await session.async_close()
-        await self._emit(self._envelope(session_id, {
-            "type": "terminal.session.terminated",
-            "sessionId": session_id,
-            "at": _now_iso(),
-        }))
+        await self._emit(
+            self._envelope(
+                session_id,
+                {
+                    "type": "terminal.session.terminated",
+                    "sessionId": session_id,
+                    "at": _now_iso(),
+                },
+            )
+        )
         return {"sessionId": session_id, "terminated": True}
 
 
@@ -242,59 +298,101 @@ async def _reader(adapter: _Adapter) -> None:
         msg_id = msg.get("id")
         params = msg.get("params") or {}
         if not isinstance(method, str) or method not in SUPPORTED_METHODS:
-            sys.stdout.write(_frame({
-                "jsonrpc": JSON_RPC_VERSION,
-                "id": msg_id,
-                "error": {"code": -32601, "message": f"method not found: {method}"},
-            }))
+            sys.stdout.write(
+                _frame(
+                    {
+                        "jsonrpc": JSON_RPC_VERSION,
+                        "id": msg_id,
+                        "error": {
+                            "code": -32601,
+                            "message": f"method not found: {method}",
+                        },
+                    }
+                )
+            )
             sys.stdout.flush()
             continue
-        handler = getattr(adapter, {
-            "createSession": "create_session",
-            "launchBootstrap": "launch_bootstrap",
-            "sendInput": "send_input",
-            "terminateSession": "terminate_session",
-        }[method])
+        handler = getattr(
+            adapter,
+            {
+                "createSession": "create_session",
+                "launchBootstrap": "launch_bootstrap",
+                "sendInput": "send_input",
+                "terminateSession": "terminate_session",
+            }[method],
+        )
         try:
             result = await handler(params)
         except PermissionError as error:
-            sys.stdout.write(_frame({
-                "jsonrpc": JSON_RPC_VERSION,
-                "id": msg_id,
-                "error": {"code": -32002, "message": f"permission-denied: {error}"},
-            }))
+            sys.stdout.write(
+                _frame(
+                    {
+                        "jsonrpc": JSON_RPC_VERSION,
+                        "id": msg_id,
+                        "error": {
+                            "code": -32002,
+                            "message": f"permission-denied: {error}",
+                        },
+                    }
+                )
+            )
             sys.stdout.flush()
             continue
         except LookupError as error:
-            sys.stdout.write(_frame({
-                "jsonrpc": JSON_RPC_VERSION,
-                "id": msg_id,
-                "error": {"code": -32003, "message": f"session-not-found: {error}"},
-            }))
+            sys.stdout.write(
+                _frame(
+                    {
+                        "jsonrpc": JSON_RPC_VERSION,
+                        "id": msg_id,
+                        "error": {
+                            "code": -32003,
+                            "message": f"session-not-found: {error}",
+                        },
+                    }
+                )
+            )
             sys.stdout.flush()
             continue
         except ValueError as error:
-            sys.stdout.write(_frame({
-                "jsonrpc": JSON_RPC_VERSION,
-                "id": msg_id,
-                "error": {"code": -32602, "message": f"invalid params: {error}"},
-            }))
+            sys.stdout.write(
+                _frame(
+                    {
+                        "jsonrpc": JSON_RPC_VERSION,
+                        "id": msg_id,
+                        "error": {
+                            "code": -32602,
+                            "message": f"invalid params: {error}",
+                        },
+                    }
+                )
+            )
             sys.stdout.flush()
             continue
         except Exception as error:  # noqa: BLE001
-            sys.stdout.write(_frame({
-                "jsonrpc": JSON_RPC_VERSION,
-                "id": msg_id,
-                "error": {"code": -32001, "message": f"internal: {error}",
-                          "data": {"trace": traceback.format_exc(limit=3)}},
-            }))
+            sys.stdout.write(
+                _frame(
+                    {
+                        "jsonrpc": JSON_RPC_VERSION,
+                        "id": msg_id,
+                        "error": {
+                            "code": -32001,
+                            "message": f"internal: {error}",
+                            "data": {"trace": traceback.format_exc(limit=3)},
+                        },
+                    }
+                )
+            )
             sys.stdout.flush()
             continue
-        sys.stdout.write(_frame({
-            "jsonrpc": JSON_RPC_VERSION,
-            "id": msg_id,
-            "result": result,
-        }))
+        sys.stdout.write(
+            _frame(
+                {
+                    "jsonrpc": JSON_RPC_VERSION,
+                    "id": msg_id,
+                    "result": result,
+                }
+            )
+        )
         sys.stdout.flush()
 
 
@@ -312,11 +410,16 @@ async def _main(connection: iterm2.Connection) -> int:
                 await session.async_close()
             except Exception:  # noqa: BLE001
                 pass
-            await adapter._emit(adapter._envelope(session_id, {
-                "type": "terminal.session.terminated",
-                "sessionId": session_id,
-                "at": _now_iso(),
-            }))
+            await adapter._emit(
+                adapter._envelope(
+                    session_id,
+                    {
+                        "type": "terminal.session.terminated",
+                        "sessionId": session_id,
+                        "at": _now_iso(),
+                    },
+                )
+            )
     return 0
 
 
