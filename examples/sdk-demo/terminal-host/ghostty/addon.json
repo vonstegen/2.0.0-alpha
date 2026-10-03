@@ -1,0 +1,80 @@
+{
+  "id": "addon.resonant-terminal-ghostty",
+  "name": "Resonant Ghostty Terminal Host",
+  "version": "0.1.0",
+  "author": "ResonantOS",
+  "category": "integration",
+  "sdkVersion": "0.1.0",
+  "description": "Ghostty reference terminal host adapter. Registers Ghostty as a replaceable terminal host so harness add-ons (Pi/OMP/Codex) run in a managed Ghostty session under ROS session/resource/authority control. Transport: apple-script (the only automation surface Ghostty exposes on macOS in 1.3.1).",
+  "runtimeType": "local-service",
+  "surfaces": [
+    {
+      "id": "ghostty-terminal-host",
+      "type": "panel",
+      "label": "Ghostty Terminal Host",
+      "description": "Manage Ghostty terminal sessions from ResonantOS."
+    }
+  ],
+  "requestedCapabilities": [
+    {
+      "capability": "terminal-host",
+      "granted": false,
+      "scope": "system",
+      "revocationBehavior": "degrade"
+    }
+  ],
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
+  },
+  "runtimeIsolation": {
+    "boundary": "host-mediated-service",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": true
+  },
+  "grantPresets": [
+    {
+      "id": "ghostty-terminal-host",
+      "label": "Ghostty terminal host",
+      "description": "Grant the adapter the terminal-host capability so it can manage Ghostty sessions.",
+      "grants": [
+        {
+          "capability": "terminal-host",
+          "granted": true,
+          "scope": "system",
+          "revocationBehavior": "degrade"
+        }
+      ]
+    }
+  ],
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "stdio-json-rpc"
+  },
+  "installHooks": {},
+  "service": {
+    "protocol": "stdio-json-rpc",
+    "entrypoint": "node adapter.mjs"
+  },
+  "embeddedWorkspace": {
+    "surfaceId": "ghostty-terminal-host",
+    "mode": "terminal",
+    "autoStart": false,
+    "settingsVisibility": "visible",
+    "requiredCapabilities": ["terminal-host"]
+  },
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS"]
+  }
+}
