@@ -57,6 +57,26 @@ cannot tell who launched the terminal (the TH-3D equivalence requirement).
 ROS does **not** auto-attach every terminal: adoption is explicit for both
 security and usability.
 
+### Adapter operations vs. ROS session operations
+
+The terminal's operation surface is four primitives; session bookkeeping is
+ROS-owned. They are deliberately separate (see
+[TERMINAL-HOST-OPERATION-SPLIT.md](TERMINAL-HOST-OPERATION-SPLIT.md)):
+
+- **Adapter operations** — `TerminalHostOperation` (`createSession`,
+  `launchBootstrap`, `sendInput`, `terminateSession`): the terminal-API
+  primitives every host implements. `supportedOperations` may only list these.
+- **ROS session operations** — `RosSessionOperation` (`adoptSession`,
+  `attachSession`, `detachSession`, `listSessions`, `getSessionState`):
+  transitions on ROS's own `RosTerminalSession` model, implemented by a ROS
+  session manager. A terminal never implements them; it contributes only
+  indirectly via its feedback channel.
+
+Adoption needs discovery: ROS finds an operator-created session through the
+terminal's `list-sessions` capability and event-stream feedback, not through an
+`adopt` adapter operation. A host that cannot enumerate its own sessions (e.g.
+Apple Terminal) simply omits `list-sessions` and adoption degrades for it.
+
 ### No secrets in launch commands
 
 ROS never constructs a command string containing credentials. It launches a
