@@ -526,7 +526,6 @@ export interface AddOnAgentRuntimeAdapterContract {
   endpoint?: string;
   authScheme: "none" | "dsh-action-token" | "bearer" | "session-environment";
   credentialBinding?: string;
-  credentialSource?: HarnessCredentialSource;
   supportedOperations: HarnessOperation[];
   contextRoleFidelity: "text-only" | "structured-messages";
   toolCallbacks: false;
@@ -611,6 +610,11 @@ interface AddOnLegacyAgentRuntimeContract {
   modelSelection?: AddOnModelSelectionContract;
   outputFiltering: AddOnOutputFilteringMode;
   requiredCapabilities: Capability[];
+  // L1 follow-up: lives here (not on AddOnAgentRuntimeAdapterContract) so
+  // both legacy and adapter-bearing runtimes declare the credential source
+  // at the same path the credential adapter reads:
+  // manifest?.agentRuntime?.credentialSource === "provider-profile".
+  credentialSource?: HarnessCredentialSource;
 }
 
 // All adapter fields are present together, or absent for legacy runtimes.
