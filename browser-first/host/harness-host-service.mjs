@@ -12,6 +12,7 @@ import { createDshTypertAdapter } from './agent-adapters/dsh-typert.mjs';
 import { createProviderFabricAdapter } from './agent-adapters/provider-fabric.mjs';
 import { publicHarnessError } from './harness-adapter-contract.mjs';
 import { bridgeCorsHeaders, HarnessTransportError, validateLoopbackHost } from './bridge-server.mjs';
+import { attachSessionEnv } from './terminal-host-service.mjs';
 
 // JSON data only: recursively sort object keys, preserve array order, no whitespace.
 export function canonicalReceipt(value) {
@@ -275,6 +276,33 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     route('POST', '/addons/grants', control, ['addonId', 'grants', 'consent', 'expectedRevision'], [], async p => {
       if (!id(p.addonId) || !Array.isArray(p.grants) || typeof p.consent !== 'boolean' || !revision(p.expectedRevision)) throw fail('invalid-event');
       await registry.setGrants(p.addonId, p.grants, p); return snapshot();
+    }),
+    route('POST', '/terminal-host/session/attach', control, ['sessionId', 'token', 'providerProfileId'], ['harness', 'project', 'resolveCredential'], async p => {
+      if (!id(p.sessionId) || typeof p.token !== 'string' || p.token.length === 0 || typeof p.providerProfileId !== 'string' || p.providerProfileId.length === 0) throw fail('invalid-event');
+      // resolveCredential is an optional injection point for the route:
+      //   * default: null resolver -> route returns ok:false, reason:'missing-credential'
+      //     (PI-S3b will install a host-owned resolver that maps through
+      //      resolvePiNativeProvider + resolveProviderProfileCredential)
+      //   * tests inject a stub that returns { name, value } deterministically
+      let resolveCredential;
+      if (typeof p.resolveCredential === 'function') {
+        const stub = p.resolveCredential;
+        resolveCredential = (profileId) => {
+          const result = stub(profileId);
+          return (result && typeof result === 'object' && 'name' in result && 'value' in result) ? result : null;
+        };
+      }
+      const result = attachSessionEnv({
+        sessionId: p.sessionId,
+        token: p.token,
+        harness: p.harness,
+        project: p.project,
+        providerProfileId: p.providerProfileId,
+        ...(resolveCredential ? { resolveCredential } : {}),
+      });
+      if (!result.ok) return { ok: false, reason: result.reason };
+      const { _meta, ...envOnly } = result.env;
+      return { ok: true, env: envOnly, meta: _meta ? JSON.parse(_meta) : null };
     }),
     route('POST', '/addons/enabled', control, ['addonId', 'enabled', 'expectedRevision'], [], async p => {
       if (!id(p.addonId) || typeof p.enabled !== 'boolean' || !revision(p.expectedRevision)) throw fail('invalid-event');

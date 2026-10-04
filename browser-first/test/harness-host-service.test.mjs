@@ -630,3 +630,121 @@ test('compatibility chat retains its response shape while issuing a signed recei
   const { signature, ...body } = receipt;
   assert.equal(verify(null, Buffer.from(canonicalReceipt(body)), createPublicKey(f.host.signer.publicKey), Buffer.from(signature, 'base64')), true);
 });
+
+// ---------------------------------------------------------------------------
+// CP-S3a: POST /terminal-host/session/attach
+//
+// The route consumes a SessionBootstrapGrant (single-use, audience-bound) and
+// composes a projected session environment. It must:
+//   * require addon-runtime-control capability and loopback-only host
+//   * require { sessionId, token, providerProfileId } and accept optional
+//     { harness, project }
+//   * return { ok: true, env, meta } on a valid grant; the secret value
+//     lives only inside env under the credential env-var name
+//   * map each GRANT_PUBLIC_REJECTION_REASONS to the matching public reason
+//   * never leak the token or credential value in any response field
+// ---------------------------------------------------------------------------
+
+test('POST /terminal-host/session/attach enforces transport + capability like other addon-runtime-control routes', async t => {
+  const f = await fixture(t);
+  const route = f.host.harnessRoutes.find(r => r.path === '/terminal-host/session/attach');
+  assert.equal(route.loopbackHostOnly, true);
+  assert.equal(route.requiredCapability, 'addon-runtime-control');
+  const unauthorized = await f.call('/terminal-host/session/attach', { sessionId: 's1', token: 't', providerProfileId: 'openai' }, { headers: {} });
+  assert.equal(unauthorized.status, 401);
+  assert.equal(unauthorized.payload.code, 'permission-denied');
+});
+
+test('POST /terminal-host/session/attach rejects malformed payloads (invalid-event)', async t => {
+  const f = await fixture(t);
+  const malformed = await f.call('/terminal-host/session/attach', { sessionId: 's1', token: 't', providerProfileId: 'openai', extra: 'leak' });
+  assert.equal(malformed.status, 400);
+  assert.equal(malformed.payload.code, 'invalid-event');
+});
+
+test('POST /terminal-host/session/attach composes env on a valid grant and never carries the secret in the meta', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+  const f = await fixture(t);
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-r1', purpose: 'attach' }));
+  const result = await f.call('/terminal-host/session/attach', {
+    sessionId: 's-r1',
+    token: grant.token,
+    providerProfileId: 'openai',
+    resolveCredential: () => ({ name: 'OPENAI_API_KEY', value: 'sk-r1-secret' }),
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  // Secret lives only inside env under the credential env-var name.
+  assert.equal(result.payload.env.OPENAI_API_KEY, 'sk-r1-secret');
+  // Token must not appear anywhere in the payload (only the env is the secret path).
+  const serialized = JSON.stringify(result.payload);
+  assert.equal(serialized.includes(grant.token), false);
+  // The secret value must not leak into meta. env may carry it (that's the contract).
+  const metaSerialized = JSON.stringify(result.payload.meta);
+  assert.equal(metaSerialized.includes('sk-r1-secret'), false);
+  assert.equal(metaSerialized.includes(grant.token), false);
+  assert.ok(result.payload.meta);
+});
+
+test('POST /terminal-host/session/attach maps each public rejection reason', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+  const f = await fixture(t);
+  const injectCred = () => ({ name: 'OPENAI_API_KEY', value: 'sk-r2-secret' });
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-r2', purpose: 'attach' }));
+  // Burn the grant so the next call returns already-consumed.
+  const burned = await f.call('/terminal-host/session/attach', { sessionId: 's-r2', token: grant.token, providerProfileId: 'openai', resolveCredential: injectCred });
+  assert.equal(burned.status, 200);
+  assert.equal(burned.payload.ok, true);
+
+  const replay = await f.call('/terminal-host/session/attach', { sessionId: 's-r2', token: grant.token, providerProfileId: 'openai', resolveCredential: injectCred });
+  assert.equal(replay.status, 200);
+  assert.equal(replay.payload.ok, false);
+  assert.equal(replay.payload.reason, 'already-consumed');
+
+  const unknownSession = await f.call('/terminal-host/session/attach', { sessionId: 'never-tracked', token: 'anything', providerProfileId: 'openai', resolveCredential: injectCred });
+  assert.equal(unknownSession.status, 200);
+  assert.equal(unknownSession.payload.ok, false);
+  assert.equal(unknownSession.payload.reason, 'unknown-session');
+
+  // Fresh session for the wrong-token assertion.
+  const fresh = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-r3', purpose: 'attach' }));
+  const wrong = await f.call('/terminal-host/session/attach', { sessionId: 's-r3', token: 'different-token', providerProfileId: 'openai', resolveCredential: injectCred });
+  assert.equal(wrong.status, 200);
+  assert.equal(wrong.payload.ok, false);
+  assert.equal(wrong.payload.reason, 'wrong-session');
+
+  // wrong-token doesn't claim the grant; a fresh claim succeeds. Then replay -> already-consumed.
+  const ok = await f.call('/terminal-host/session/attach', { sessionId: 's-r3', token: fresh.token, providerProfileId: 'openai', resolveCredential: injectCred });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.payload.ok, true);
+  const consumed = await f.call('/terminal-host/session/attach', { sessionId: 's-r3', token: fresh.token, providerProfileId: 'openai', resolveCredential: injectCred });
+  assert.equal(consumed.status, 200);
+  assert.equal(consumed.payload.ok, false);
+  assert.equal(consumed.payload.reason, 'already-consumed');
+});
+
+test('POST /terminal-host/session/attach takes optional harness/project and passes them into meta', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+  const f = await fixture(t);
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-meta', purpose: 'attach' }));
+  const result = await f.call('/terminal-host/session/attach', {
+    sessionId: 's-meta',
+    token: grant.token,
+    providerProfileId: 'openai',
+    harness: 'addon.resonant-terminal-iterm2',
+    project: { root: '/srv/repo', cwd: '/srv/repo/app' },
+    resolveCredential: () => ({ name: 'OPENAI_API_KEY', value: 'sk-meta-secret' }),
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.meta.sessionId, 's-meta');
+  assert.equal(result.payload.meta.harness, 'addon.resonant-terminal-iterm2');
+  assert.equal(result.payload.meta.project.root, '/srv/repo');
+  assert.equal(result.payload.meta.providerProfileId, 'openai');
+});
