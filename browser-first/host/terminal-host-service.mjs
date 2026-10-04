@@ -31,6 +31,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createHarnessEventBus } from "./harness-event-bus.mjs";
 import { validateHarnessEvent } from "./harness-adapter-contract.mjs";
 import { TERMINAL_HOST_CONTRACT_VERSION } from "../../src/core/terminal-host-contract.ts";
+import { buildSessionEnvironment } from "./harness-session-environment.mjs";
 
 const TERMINAL_HOST_ADDON_ID = "addon.resonant-terminal-iterm2";
 const JSON_RPC_VERSION = "2.0";
@@ -67,6 +68,153 @@ export function mintSessionBootstrapGrant({
     issuedAt: issuedAt.toISOString(),
     expiresAt: new Date(issuedAt.getTime() + ttlMs).toISOString(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Session-bootstrap grant broker (CP-S2B).
+//
+// `mintSessionBootstrapGrant` above is a pure factory. The bridge records
+// each minted grant in a module-scope Map so `consumeGrant` can validate the
+// audience-bound, single-use claim and `attachSessionEnv` can return the
+// authorized runtime environment for `ros-session attach <id>`.
+//
+// Hard rules:
+//  - Single-use: consume marks `consumed = true`; replay is rejected.
+//  - Audience-bound: token must equal the recorded token for `sessionId`.
+//  - Expiration: claim past `expiresAt` is rejected.
+//  - No secret in argv or logs: env values are returned by `attachSessionEnv`
+//    to the consumer; the broker never logs `token` or env values.
+//
+// The tracking Map is module-scope so the bridge factory, the bootstrap
+// caller, and the broker functions all share one source of truth. Tests
+// can call `__resetSessionBootstrapGrantBroker()` to clear it between runs.
+// ---------------------------------------------------------------------------
+
+/**
+ * @typedef {Object} TrackedGrantRecord
+ * @property {string} sessionId
+ * @property {string} token
+ * @property {"attach" | "adopt"} purpose
+ * @property {string} issuedAt
+ * @property {string} expiresAt
+ * @property {boolean} consumed
+ */
+
+/** @type {Map<string, TrackedGrantRecord>} */
+const GRANT_RECORDS = new Map();
+
+/** @type {Readonly<Record<string, string>>} */
+export const GRANT_PUBLIC_REJECTION_REASONS = Object.freeze({
+  "unknown-session": "Unknown session.",
+  "wrong-session": "Token does not match this session.",
+  "expired": "Grant expired.",
+  "already-consumed": "Grant already consumed.",
+});
+
+export function __resetSessionBootstrapGrantBroker() {
+  GRANT_RECORDS.clear();
+}
+
+/**
+ * @param {ReturnType<typeof mintSessionBootstrapGrant>} grant
+ * @returns {ReturnType<typeof mintSessionBootstrapGrant>}
+ */
+export function trackSessionBootstrapGrant(grant) {
+  const record = {
+    sessionId: grant.sessionId,
+    token: grant.token,
+    purpose: grant.purpose,
+    issuedAt: grant.issuedAt,
+    expiresAt: grant.expiresAt,
+    consumed: false,
+  };
+  GRANT_RECORDS.set(grant.sessionId, record);
+  return grant;
+}
+
+/**
+ * @returns {ReadonlyArray<TrackedGrantRecord>}
+ */
+export function listOutstandingGrants() {
+  return [...GRANT_RECORDS.values()];
+}
+
+/**
+ * @param {{ sessionId: string, token: string, now?: () => Date }} args
+ * @returns {{ ok: true, grant: TrackedGrantRecord } | { ok: false, reason: keyof typeof GRANT_PUBLIC_REJECTION_REASONS }}
+ */
+export function consumeGrant({ sessionId, token, now = () => new Date() }) {
+  const record = GRANT_RECORDS.get(sessionId);
+  if (!record) return { ok: false, reason: "unknown-session" };
+  if (record.consumed) return { ok: false, reason: "already-consumed" };
+  if (record.token !== token) return { ok: false, reason: "wrong-session" };
+  if (now().getTime() > new Date(record.expiresAt).getTime()) {
+    return { ok: false, reason: "expired" };
+  }
+  record.consumed = true;
+  return { ok: true, grant: record };
+}
+
+/**
+ * @typedef {Object} AttachSessionEnvRequest
+ * @property {string} sessionId
+ * @property {string} token
+ * @property {() => Date} [now]             Wall clock for expiration check; defaults to new Date().
+ * @property {string} [harness]            addon id (informational; never a secret)
+ * @property {{ root: string, cwd: string }} [project]
+ * @property {string} [providerProfileId]  for credential resolution; null/empty fails closed
+ * @property {Record<string,string>} [baseEnv]
+ * @property {string[]} [envAllowlist]
+ * @property {() => Record<string,string>} [parentEnv]
+ * @property {(profileId: string) => { name: string, value: string } | null} [resolveCredential]
+ *           Injectable; default returns null (no credential delivered)
+ * @property {(args: { baseEnv: Record<string,string>, envAllowlist: string[], parentEnv: Record<string,string>, credentialName: string, credentialValue: string }) => Record<string,string>} [buildSessionEnv]
+ *           Injectable; defaults to buildSessionEnvironment
+ */
+
+/**
+ * @param {AttachSessionEnvRequest} args
+ * @returns {{ ok: true, env: Record<string,string> } | { ok: false, reason: keyof typeof GRANT_PUBLIC_REJECTION_REASONS | "missing-credential" }}
+ */
+export function attachSessionEnv({
+  sessionId,
+  token,
+  now = () => new Date(),
+  harness,
+  project,
+  providerProfileId,
+  baseEnv = {},
+  envAllowlist = [],
+  parentEnv,
+  resolveCredential = () => null,
+  buildSessionEnv,
+}) {
+  const claim = consumeGrant({ sessionId, token, now });
+  if (!claim.ok) return { ok: false, reason: claim.reason };
+
+  const parentEnvRecord = typeof parentEnv === "function" ? parentEnv() : (parentEnv ?? {});
+  const builder = buildSessionEnv ?? buildSessionEnvironment;
+
+  const credential = providerProfileId ? resolveCredential(providerProfileId) : null;
+  // No provider profile, or credential resolution refused -> we still return
+  // the env, but without any credential entry. The caller can detect
+  // missing-credential via the absence of the credential name in env names.
+  if (providerProfileId && !credential) {
+    // Fail closed: a profile was named but no credential was resolvable.
+    // Caller must NOT silently proceed; we surface the failure rather than
+    // returning an env that pretends to be authorized.
+    return { ok: false, reason: "missing-credential" };
+  }
+  const env = builder({
+    baseEnv,
+    envAllowlist,
+    parentEnv: parentEnvRecord,
+    credentialName: credential?.name ?? "",
+    credentialValue: credential?.value ?? "",
+  });
+  // Harness + project roots are returned as opaque metadata for the
+  // attaching shell; the env object itself is the only credential path.
+  return { ok: true, env: { ...env, _meta: JSON.stringify({ sessionId, harness: harness ?? null, project: project ?? null, providerProfileId: providerProfileId ?? null }) } };
 }
 
 /**
@@ -363,7 +511,7 @@ export function createTerminalHostService(options = {}) {
     // RPC return value + `terminal.session.started` event. We return the
     // grant here; the bus event is published by the adapter's notification
     // and observed via bus.subscribe().
-    const grant = mintSessionBootstrapGrant({ sessionId, purpose: "attach" });
+    const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId, purpose: "attach" }));
     const result = await request(
       "launchBootstrap",
       { sessionId, bootstrapCommand, grant },
