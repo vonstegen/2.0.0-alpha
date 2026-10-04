@@ -1,0 +1,175 @@
+{
+  "id": "addon.pi-harness",
+  "name": "Pi Harness",
+  "version": "0.1.0",
+  "author": "ResonantOS",
+  "sdkVersion": "0.1.0",
+  "description": "Provider-profile harness example. Host installation, explicit consent and slot ownership are required; the host resolves the approved provider-profile credential and delivers it ONLY through a session-environment into the reviewed native Pi launcher (never argv, manifest, or durable Pi state). This manifest grants no authority and carries no secret.",
+  "runtimeType": "local-service",
+  "surfaces": [
+    {
+      "id": "pi-tool-panel",
+      "type": "tool-panel",
+      "label": "Pi",
+      "icon": "pi",
+      "description": "Open the Pi harness workspace and options.",
+      "requiredCapabilities": [
+        "agent-runtime"
+      ]
+    },
+    {
+      "id": "pi-workspace",
+      "type": "workspace",
+      "label": "Pi Workspace",
+      "description": "Pi harness workspace: status, provider profile, model selection, and primary-agent controls.",
+      "requiredCapabilities": [
+        "agent-runtime"
+      ],
+      "shellNavigation": {
+        "sectionId": "pi",
+        "dockIcon": "pi",
+        "eyebrow": "code",
+        "order": 1200,
+        "requiredCapabilities": [
+          "agent-runtime"
+        ]
+      }
+    }
+  ],
+  "requestedCapabilities": [
+    {
+      "capability": "agent-runtime",
+      "granted": false,
+      "scope": "system",
+      "revocationBehavior": "hard-stop"
+    },
+    {
+      "capability": "network",
+      "granted": false,
+      "scope": "system",
+      "revocationBehavior": "hard-stop"
+    },
+    {
+      "capability": "chat-interface",
+      "granted": false,
+      "scope": "system",
+      "revocationBehavior": "hard-stop"
+    },
+    {
+      "capability": "filesystem",
+      "granted": false,
+      "scope": "system",
+      "revocationBehavior": "hard-stop"
+    }
+  ],
+  "systemSlots": [
+    {
+      "id": "primary-agent",
+      "role": "alternative-provider",
+      "replaceable": true
+    },
+    {
+      "id": "chat-interface",
+      "role": "alternative-provider",
+      "replaceable": true
+    }
+  ],
+  "tools": [
+    {
+      "name": "harness.invoke",
+      "description": "Submit one turn through the selected host-owned runtime.",
+      "requiredCapabilities": [
+        "agent-runtime",
+        "network",
+        "chat-interface"
+      ],
+      "inputSchema": {
+        "type": "object"
+      },
+      "outputSchema": {
+        "type": "object"
+      },
+      "audit": {
+        "artifactTypes": []
+      }
+    }
+  ],
+  "agentRuntime": {
+    "invocationTool": "harness.invoke",
+    "chatAuthorLabel": "Pi",
+    "displayNameSource": "manifest",
+    "supportsStreaming": false,
+    "supportsCancellation": true,
+    "supportsModelSelection": true,
+    "outputFiltering": "assistant-reply-only",
+    "requiredCapabilities": [
+      "agent-runtime",
+      "network",
+      "chat-interface"
+    ],
+    "adapterVersion": 1,
+    "adapterId": "pi-native-v1",
+    "authScheme": "session-environment",
+    "supportedOperations": [
+      "createSession",
+      "invoke",
+      "cancel",
+      "history",
+      "status",
+      "selectModel"
+    ],
+    "contextRoleFidelity": "structured-messages",
+    "toolCallbacks": false,
+    "credentialBinding": "pi.native",
+    "modelSelection": {
+      "source": "runtime-audit",
+      "currentModelField": "currentModel",
+      "selectable": true,
+      "requiredCapabilities": [
+        "agent-runtime"
+      ]
+    },
+    "credentialSource": "provider-profile"
+  },
+  "harnessProviderConnection": {
+    "consumesProviderProfiles": true,
+    "providerProtocols": ["openai-compatible", "minimax-compatible", "ollama"],
+    "credentialDelivery": ["session-environment"],
+    "modelSelection": true
+  },
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": false
+  },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "health": {
+    "strategy": "host-command-ready"
+  },
+  "installHooks": {},
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": [
+      "macOS",
+      "linux",
+      "windows"
+    ]
+  },
+  "classification": {
+    "category": "harness",
+    "subtype": "coding-agent"
+  },
+  "harnessResources": {
+    "requests": {
+      "project": ["read", "context"],
+      "files": ["read", "write"],
+      "skills": ["list", "read"],
+      "memory": ["search", "read"],
+      "tools": ["list", "invoke"]
+    }
+  }
+}
