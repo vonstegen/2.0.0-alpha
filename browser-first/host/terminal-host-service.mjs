@@ -32,6 +32,7 @@ import { createHarnessEventBus } from "./harness-event-bus.mjs";
 import { validateHarnessEvent } from "./harness-adapter-contract.mjs";
 import { TERMINAL_HOST_CONTRACT_VERSION } from "../../src/core/terminal-host-contract.ts";
 import { buildSessionEnvironment } from "./harness-session-environment.mjs";
+import { resolvePiNativeProvider } from "./pi-native-provider-map.mjs";
 
 const TERMINAL_HOST_ADDON_ID = "addon.resonant-terminal-iterm2";
 const JSON_RPC_VERSION = "2.0";
@@ -215,6 +216,48 @@ export function attachSessionEnv({
   // Harness + project roots are returned as opaque metadata for the
   // attaching shell; the env object itself is the only credential path.
   return { ok: true, env: { ...env, _meta: JSON.stringify({ sessionId, harness: harness ?? null, project: project ?? null, providerProfileId: providerProfileId ?? null }) } };
+}
+
+/**
+ * Build a `resolveCredential(profileId)` suitable for passing into
+ * `attachSessionEnv`. The host installs this so the terminal-host route
+ * / browser-first callers never have to know the ROS profile-to-Pi map;
+ * the seam lives here, in one place.
+ *
+ * Composition (PI-S3b, thin wrapper):
+ *   1. `getProfile(profileId)` resolves the ROS ProviderProfile (host owns
+ *      the profile store; never reaches the route handler).
+ *   2. `resolvePiNativeProvider(profile)` maps the ROS identity to the
+ *      Pi-native { piProvider, envVar }. An unknown ROS identity fails
+ *      closed (returns null) — `shared-*` profiles have no non-persistent
+ *      env-var key and never reach a real credential.
+ *   3. `resolveSecret(profile)` returns the host-stored secret value, or
+ *      null. The secret never traverses the route body; it is returned
+ *      only inside the env under the env-var name.
+ *
+ * Returns null on any miss (fail closed). The route handler maps
+ * `null` -> `{ ok: false, reason: 'missing-credential' }`.
+ *
+ * @param {object} options
+ * @param {(profileId: string) => (object | null | undefined)} options.getProfile
+ *        Host-owned profile lookup. Return the profile object or null/undefined.
+ * @param {(profile: object) => (string | null | undefined)} options.resolveSecret
+ *        Host-owned secret resolver. Return the secret value or null/undefined.
+ * @returns {(profileId: string) => { name: string, value: string } | null}
+ */
+export function createTerminalHostCredentialResolver({ getProfile, resolveSecret } = {}) {
+  if (typeof getProfile !== "function") throw new TypeError("createTerminalHostCredentialResolver: getProfile must be a function");
+  if (typeof resolveSecret !== "function") throw new TypeError("createTerminalHostCredentialResolver: resolveSecret must be a function");
+  return function resolveCredential(profileId) {
+    if (typeof profileId !== "string" || !profileId) return null;
+    const profile = getProfile(profileId);
+    if (!profile || typeof profile !== "object") return null;
+    const mapping = resolvePiNativeProvider(profile);
+    if (!mapping || typeof mapping.envVar !== "string") return null;
+    const value = resolveSecret(profile);
+    if (typeof value !== "string" || !value) return null;
+    return { name: mapping.envVar, value };
+  };
 }
 
 /**

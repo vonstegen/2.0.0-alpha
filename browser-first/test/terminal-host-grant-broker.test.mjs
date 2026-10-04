@@ -260,3 +260,175 @@ describe("attachSessionEnv", () => {
     ]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// CP-S3b: createTerminalHostCredentialResolver
+//
+// Composes the ROS profile -> Pi-native env-var mapping and the host's
+// secret resolver into a single (profileId) => { name, value } | null.
+// ---------------------------------------------------------------------------
+
+import { createTerminalHostCredentialResolver } from "../host/terminal-host-service.mjs";
+
+describe("createTerminalHostCredentialResolver", () => {
+  const OPENAI_PROFILE = { templateId: "openai", providerType: "openai" };
+  const OPENROUTER_PROFILE = { templateId: "openrouter", providerType: "openrouter" };
+  const ANTHROPIC_PROFILE = { templateId: "anthropic", providerType: "anthropic" }; // oauth precedence; out of scope
+  const GOOGLE_PROFILE = { templateId: "google", providerType: "google" }; // out of scope
+  const SHARED_MINIMAX_PROFILE = { providerType: "shared-minimax" }; // no non-persistent env-var key
+  const SHARED_OPENAI_PROFILE = { providerType: "shared-openai" };
+  const LEGACY_OPENAI_PROFILE = { providerType: "openai" }; // no templateId
+
+  const PROFILES = {
+    openai: OPENAI_PROFILE,
+    openrouter: OPENROUTER_PROFILE,
+    anthropic: ANTHROPIC_PROFILE,
+    google: GOOGLE_PROFILE,
+    "shared-minimax": SHARED_MINIMAX_PROFILE,
+    "shared-openai": SHARED_OPENAI_PROFILE,
+    "legacy-openai": LEGACY_OPENAI_PROFILE,
+  };
+
+  it("rejects non-function injections at construction time", () => {
+    assert.throws(() => createTerminalHostCredentialResolver({}), /getProfile must be a function/);
+    assert.throws(() => createTerminalHostCredentialResolver({ getProfile: () => null }), /resolveSecret must be a function/);
+  });
+
+  it("resolves a templated openai profile to OPENAI_API_KEY with the secret value", () => {
+    const resolveCred = createTerminalHostCredentialResolver({
+      getProfile: (id) => PROFILES[id],
+      resolveSecret: () => "sk-live-secret",
+    });
+    const cred = resolveCred("openai");
+    assert.deepEqual(cred, { name: "OPENAI_API_KEY", value: "sk-live-secret" });
+  });
+
+  it("resolves a templated openrouter profile to OPENROUTER_API_KEY", () => {
+    const resolveCred = createTerminalHostCredentialResolver({
+      getProfile: (id) => PROFILES[id],
+      resolveSecret: () => "sk-or-v1-secret",
+    });
+    assert.deepEqual(resolveCred("openrouter"), { name: "OPENROUTER_API_KEY", value: "sk-or-v1-secret" });
+  });
+
+  it("uses providerType as the legacy identity fallback for built-in profiles without a templateId", () => {
+    const resolveCred = createTerminalHostCredentialResolver({
+      getProfile: (id) => PROFILES[id],
+      resolveSecret: () => "sk-legacy-secret",
+    });
+    assert.deepEqual(resolveCred("legacy-openai"), { name: "OPENAI_API_KEY", value: "sk-legacy-secret" });
+  });
+
+  it("returns null for an unknown profile id (host has no entry)", () => {
+    const resolveCred = createTerminalHostCredentialResolver({
+      getProfile: (id) => PROFILES[id],
+      resolveSecret: () => "should-not-leak",
+    });
+    assert.equal(resolveCred("does-not-exist"), null);
+  });
+
+  it("returns null for anthropic (OAuth precedence — out of scope; never fabricates an env-var)", () => {
+    const resolveCred = createTerminalHostCredentialResolver({
+      getProfile: (id) => PROFILES[id],
+      resolveSecret: () => "anthropic-secret-token",
+    });
+    assert.equal(resolveCred("anthropic"), null, "anthropic must fail closed");
+  });
+
+  it("returns null for google (no non-persistent env-var key)", () => {
+    const resolveCred = createTerminalHostCredentialResolver({
+      getProfile: (id) => PROFILES[id],
+      resolveSecret: () => "google-secret",
+    });
+    assert.equal(resolveCred("google"), null);
+  });
+
+  it("returns null for shared-* profiles (no non-persistent env-var key)", () => {
+    const resolveCred = createTerminalHostCredentialResolver({
+      getProfile: (id) => PROFILES[id],
+      resolveSecret: () => "shared-secret",
+    });
+    assert.equal(resolveCred("shared-minimax"), null, "shared-minimax must fail closed");
+    assert.equal(resolveCred("shared-openai"), null, "shared-openai must fail closed");
+  });
+
+  it("returns null when resolveSecret refuses to disclose (host-side revocation)", () => {
+    const resolveCred = createTerminalHostCredentialResolver({
+      getProfile: (id) => PROFILES[id],
+      resolveSecret: () => null,
+    });
+    assert.equal(resolveCred("openai"), null);
+  });
+
+  it("returns null when resolveSecret returns a non-string value (fail closed)", () => {
+    const resolveCred = createTerminalHostCredentialResolver({
+      getProfile: (id) => PROFILES[id],
+      resolveSecret: () => 12345,
+    });
+    assert.equal(resolveCred("openai"), null);
+  });
+
+  it("returns null when resolveSecret returns an empty string (fail closed)", () => {
+    const resolveCred = createTerminalHostCredentialResolver({
+      getProfile: (id) => PROFILES[id],
+      resolveSecret: () => "",
+    });
+    assert.equal(resolveCred("openai"), null);
+  });
+
+  it("composes with attachSessionEnv: the secret value appears only under the credential env-var name", () => {
+    const resolveCred = createTerminalHostCredentialResolver({
+      getProfile: (id) => PROFILES[id],
+      resolveSecret: () => "sk-attach-secret",
+    });
+    __resetSessionBootstrapGrantBroker();
+    const g = mintSessionBootstrapGrant({ sessionId: "cred-attach", purpose: "attach", now: FIXED_NOW });
+    trackSessionBootstrapGrant(g);
+    const result = attachSessionEnv({
+      sessionId: "cred-attach",
+      token: g.token,
+      now: FIXED_NOW,
+      providerProfileId: "openai",
+      resolveCredential: resolveCred,
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.env.OPENAI_API_KEY, "sk-attach-secret");
+    // meta must not carry the secret value or the token.
+    const meta = JSON.parse(result.env._meta);
+    assert.equal(meta.providerProfileId, "openai");
+    assert.equal(meta.sessionId, "cred-attach");
+    assert.equal(JSON.stringify(meta).includes("sk-attach-secret"), false);
+    assert.equal(JSON.stringify(meta).includes(g.token), false);
+  });
+
+  it("composes with attachSessionEnv: a fail-closed profile (anthropic) yields missing-credential", () => {
+    const resolveCred = createTerminalHostCredentialResolver({
+      getProfile: (id) => PROFILES[id],
+      resolveSecret: () => "anthropic-secret",
+    });
+    __resetSessionBootstrapGrantBroker();
+    const g = mintSessionBootstrapGrant({ sessionId: "cred-anthropic", purpose: "attach", now: FIXED_NOW });
+    trackSessionBootstrapGrant(g);
+    const result = attachSessionEnv({
+      sessionId: "cred-anthropic",
+      token: g.token,
+      now: FIXED_NOW,
+      providerProfileId: "anthropic",
+      resolveCredential: resolveCred,
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.reason, "missing-credential");
+  });
+
+  it("returns null for an empty/non-string profileId input", () => {
+    const resolveCred = createTerminalHostCredentialResolver({
+      getProfile: (id) => PROFILES[id],
+      resolveSecret: () => "should-not-leak",
+    });
+    assert.equal(resolveCred(""), null);
+    assert.equal(resolveCred(undefined), null);
+    assert.equal(resolveCred(null), null);
+    assert.equal(resolveCred(123), null);
+  });
+});
