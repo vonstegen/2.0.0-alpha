@@ -6,6 +6,8 @@ import type {
   AddOnLocalServiceDefinition,
   AddOnManifest,
   AddOnAgentRuntimeContract,
+  AddOnHarnessProviderConnectionContract,
+  AddOnHarnessResourceRequestContract,
   AddOnAuditContract,
   AddOnConnectorDefinition,
   AddOnEmbeddedWorkspaceContract,
@@ -19,6 +21,15 @@ import type {
   AddOnToolDefinition,
   AddOnWorkflowBoundary,
   Capability,
+  HarnessCredentialDelivery,
+  ProviderProtocolFamily,
+  HarnessResourceFamily,
+  HarnessResourceOperation,
+  HarnessProjectIdentity,
+  HarnessProjectionFamily,
+  HarnessProjectionOperation,
+  HarnessSessionProjection,
+  HarnessSessionProjectionView,
 } from "../../../src/core/contracts";
 
 export const ADDON_SDK_VERSION = "0.1.0";
@@ -87,5 +98,32 @@ export const ADDON_SERVICE_PROTOCOLS: readonly AddOnServiceProtocol[] = [
 export const HARNESS_OPERATIONS = [
   "createSession", "invoke", "cancel", "history", "status", "modelCatalog", "selectModel",
 ] as const satisfies readonly import("../../../src/core/contracts").HarnessOperation[];
+
+// Descriptive credential delivery mechanisms a harness can declare for the
+// generic Harness Provider Connection (host owns the actual delivery).
+export const HARNESS_CREDENTIAL_DELIVERY_MECHANISMS = ["runtime-adapter", "session-environment", "self-auth", "none"] as const satisfies readonly HarnessCredentialDelivery[];
+export type HarnessCredentialDeliveryMechanism = (typeof HARNESS_CREDENTIAL_DELIVERY_MECHANISMS)[number];
+
+// Canonical protocol/API-compatibility vocabulary a harness can declare
+// (descriptive; never grants access to a profile). Mirrors the core
+// `ProviderProtocolFamily` union so the SDK never re-declares values that can
+// drift. Provider identity/type is a separate vocabulary (ProviderType).
+export const HARNESS_PROVIDER_PROTOCOLS = ["openai-compatible", "minimax-compatible", "ollama"] as const satisfies readonly ProviderProtocolFamily[];
+
+// Generic Harness Resource Request (Phase 2A). A request names allowlisted
+// operations only; it never carries a path, credential, command, tool
+// executable, provider, or model, and it never grants authority. Provider/model
+// stays under the separate Harness Provider Connection contract.
+export const HARNESS_RESOURCE_FAMILIES = ["project", "files", "skills", "memory", "tools"] as const satisfies readonly HarnessResourceFamily[];
+
+// Per-family operation allowlists. Each family maps to a finite, closed
+// vocabulary; validation rejects any operation outside its family's list.
+export const HARNESS_RESOURCE_OPERATIONS: Readonly<Record<HarnessResourceFamily, readonly HarnessResourceOperation[]>> = Object.freeze({
+  project: ["read", "context"],
+  files: ["read", "write"],
+  skills: ["list", "read"],
+  memory: ["search", "read"],
+  tools: ["list", "invoke"],
+});
 
 export { HARNESS_PUBLIC_ERROR_MESSAGES } from "../../../src/core/contracts.ts";

@@ -524,8 +524,9 @@ export interface AddOnAgentRuntimeAdapterContract {
   adapterVersion: 1;
   adapterId: string;
   endpoint?: string;
-  authScheme: "none" | "dsh-action-token" | "bearer";
+  authScheme: "none" | "dsh-action-token" | "bearer" | "session-environment";
   credentialBinding?: string;
+  credentialSource?: HarnessCredentialSource;
   supportedOperations: HarnessOperation[];
   contextRoleFidelity: "text-only" | "structured-messages";
   toolCallbacks: false;
@@ -686,7 +687,9 @@ export interface AddOnManifest {
   audit?: AddOnAuditContract;
   embeddedWorkspace?: AddOnEmbeddedWorkspaceContract;
   agentRuntime?: AddOnAgentRuntimeContract;
+  harnessProviderConnection?: AddOnHarnessProviderConnectionContract;
   memoryAccess?: AddOnMemoryAccessContract;
+  harnessResources?: AddOnHarnessResourceRequestContract;
   smokeTests?: AddOnDeterministicSmokeTest[];
   compatibility: {
     shellVersion: string;
@@ -2970,3 +2973,218 @@ export interface ResonantShellState {
   uiPreferences: UiPreferences;
   distributionModel: "curated-plus-sideload";
 }
+
+// =============================================================================
+// Pi-native seam (ADR-041–044) -- carried from feature/pi-testing-phase.
+// Reconcile note: every addition below is additive. TH-side exports
+// ("terminal-host" capability, HarnessEvent terminal.* variants, AddOnCategory
+// union, AddOnSurface shape) are preserved unchanged above.
+// =============================================================================
+
+// ----- pi-native seam begin (carried from feature/pi-testing-phase) -----
+
+/**
+ * Canonical protocol/API-compatibility vocabulary, separate from
+ * {@link ProviderType}.
+ *
+ * ProviderType is legacy/mixed: it bundles vendor identity (`openai`,
+ * `anthropic`, `google`, `minimax`), wire protocol (`openai-compatible`),
+ * deployment locality (`local`), and an unspecified escape hatch (`custom`).
+ * This type names only the protocol/API family a host execution adapter can
+ * actually serve, so a harness or native TUI can declare "I speak this
+ * protocol" without naming a vendor.
+ */
+export type ProviderProtocolFamily = "openai-compatible" | "minimax-compatible" | "ollama";
+
+// Classification describes WHAT an add-on is (identity/type) and never grants
+// authority. It is orthogonal to runtimeType (HOW), surfaces (WHERE),
+// requestedCapabilities (WHAT AUTHORITY), systemSlots (WHAT ROLE), and
+// agentRuntime.credentialSource (WHAT INFERENCE/AUTH). The category id is
+// validated against the extensible SDK category registry
+// (packages/addon-sdk/src/category-registry.ts); subtype is an open string so
+// no global exhaustive subtype enum is required.
+//
+// Reconcile note: TH retains the legacy AddOnCategory union (call sites use
+// it for exhaustive narrowing); the interface below is an additive parallel
+// classification record used by the pi-native provider-connection surface.
+export interface AddOnClassification {
+  category: string;
+  subtype?: string;
+}
+
+// How a harness runtime obtains its provider authentication. The host owns
+// resolution in every mode: provider-profile material is resolved from the
+// shared host provider store, self means the harness owns its own login/auth
+// store (host injects nothing), and none is local/keyless.
+export type HarnessCredentialSource = "provider-profile" | "self" | "none";
+
+// Descriptive credential delivery mechanisms a harness can consume through the
+// generic Harness Provider Connection. Declaring a mechanism grants nothing:
+// the host owns resolution and picks the safest supported mechanism.
+export type HarnessCredentialDelivery = "runtime-adapter" | "session-environment" | "self-auth" | "none";
+
+// Descriptive provider-connection compatibility declaration (the generic Harness
+// Provider Connection contract). States what a harness can consume and how, but
+// grants no provider access, credential material, or authority: the host owns
+// profile resolution, credential delivery, and grant/revocation.
+export interface AddOnHarnessProviderConnectionContract {
+  /** Whether the harness can consume ROS Provider Profiles via host mediation. */
+  consumesProviderProfiles: boolean;
+  /** Compatible protocol/API families from the canonical protocol vocabulary
+   *  ({@link ProviderProtocolFamily}); descriptive, never grants access.
+   *  Provider identity/type is a separate concept from protocol compatibility. */
+  providerProtocols: ProviderProtocolFamily[];
+  /** Supported credential delivery mechanisms, in host preference order. */
+  credentialDelivery: HarnessCredentialDelivery[];
+  /** Whether the harness supports host-mediated model selection. */
+  modelSelection: boolean;
+}
+
+// ============================================================================
+// Generic Harness Resource Request (Phase 2A)
+// ----------------------------------------------------------------------------
+// A harness declares the ROS resources it may consume during a session.
+//
+// RESOURCE REQUEST != CAPABILITY GRANT != SESSION PROJECTION:
+//   - request    = declarative possible need (this contract); never authority.
+//   - grant      = host/user authority, via existing CapabilityGrant records
+//                  (registry grantedCapabilities).
+//   - projection = session-specific material/access; Phase 2B+ (not 2A).
+//
+// A request names allowlisted operations only: no paths, credentials, command
+// strings, tool executable names, provider, or model. Provider/model authority
+// remains under the separate Harness Provider Connection contract
+// (AddOnHarnessProviderConnectionContract) and is NOT duplicated here.
+
+/** Initial Phase 2 resource families a harness may declare it consumes. */
+export type HarnessResourceFamily = "project" | "files" | "skills" | "memory" | "tools";
+
+export type HarnessProjectOperation = "read" | "context";
+export type HarnessFilesOperation = "read" | "write";
+export type HarnessSkillsOperation = "list" | "read";
+export type HarnessMemoryOperation = "search" | "read";
+export type HarnessToolsOperation = "list" | "invoke";
+
+export type HarnessResourceOperation =
+  | HarnessProjectOperation
+  | HarnessFilesOperation
+  | HarnessSkillsOperation
+  | HarnessMemoryOperation
+  | HarnessToolsOperation;
+
+/**
+ * Declarative resource-request block on a harness manifest. Names operations
+ * only; it never carries a path, credential, command, tool executable,
+ * provider, or model, and it never grants capability or authority.
+ */
+export interface AddOnHarnessResourceRequestContract {
+  requests: {
+    project?: HarnessProjectOperation[];
+    files?: HarnessFilesOperation[];
+    skills?: HarnessSkillsOperation[];
+    memory?: HarnessMemoryOperation[];
+    tools?: HarnessToolsOperation[];
+  };
+}
+
+/**
+ * Host authority view for one requested resource operation. Reuses the
+ * existing CapabilityGrant record as the single source of authority rather than
+ * introducing a competing grant system. `granted` is derived from the backing
+ * grant and is false when the resource has no backing authority (fail closed).
+ */
+export interface HarnessResourceGrant {
+  family: HarnessResourceFamily;
+  operation: HarnessResourceOperation;
+  granted: boolean;
+  grant: CapabilityGrant | null;
+}
+
+/**
+ * Session projection seam (Phase 2B+). Phase 2A types the distinction only; it
+ * never carries projected material, secrets, or filesystem paths. `granted:
+ * false` means fail closed (no material is projected).
+ */
+export interface HarnessResourceProjection {
+  family: HarnessResourceFamily;
+  operations: readonly HarnessResourceOperation[];
+  granted: boolean;
+}
+
+// ============================================================================
+// Generic Harness Resource Projection (Phase 2B) -- host-owned session seam
+// ----------------------------------------------------------------------------
+// The filesystem CapabilityGrant is coarse: it answers WHAT KIND of authority
+// (filesystem) but never WHERE, WHICH OPERATIONS, or FOR THIS SESSION. A
+// session projection binds that grant to a single authoritative host project
+// root and the requested∩granted project/files operation subset.
+//
+//   RESOURCE REQUEST != CAPABILITY GRANT != SESSION PROJECTION
+//
+// A projection is derived ONLY from request + existing grant + authoritative
+// host project root. The manifest and caller can never supply or widen the
+// root, and a projection carries no credential, provider, model, executable,
+// or command. Internal absolute paths stay host-side; the public view exposes
+// only identity, operation names, and projection state (no path disclosure).
+
+/** Authoritative host project identity carried by a projection. */
+export interface HarnessProjectIdentity {
+  id: string;
+  label: string;
+}
+
+/** The only resource families projected in Phase 2B (project + files). */
+export type HarnessProjectionFamily = "project" | "files";
+
+/** One granted operation in a projection: family + operation, never a path. */
+export interface HarnessProjectionOperation {
+  family: HarnessProjectionFamily;
+  operation: HarnessProjectOperation | HarnessFilesOperation;
+}
+
+/**
+ * Host-owned INTERNAL session projection. `root` and `cwd` are absolute,
+ * symlink-canonicalized, host-derived paths and MUST NOT cross a public
+ * boundary. Carries only the granted project/files operation subset and the
+ * backing filesystem grant snapshot; never a credential, provider, model,
+ * executable, or command. Session-scoped: the identity fields bind it to one
+ * add-on, one session, and one authoritative project.
+ */
+export interface HarnessSessionProjection {
+  addonId: string;
+  sessionId: string;
+  project: HarnessProjectIdentity;
+  /** Authorized absolute project root (realpath-canonicalized). */
+  root: string;
+  /** Authorized absolute working directory (=== root for Phase 2B). */
+  cwd: string;
+  /** Granted operation subset: requested ∩ granted, project and files only. */
+  operations: readonly HarnessProjectionOperation[];
+  /**
+   * HOST-INTERNAL issuance authority basis: the normalized request that
+   * produced `operations`. consume() re-evaluates it against CURRENT grants and
+   * fails closed (`projection-stale`) when the recomputed set differs. It never
+   * crosses the public view and carries no path, grant, or secret material.
+   */
+  request: AddOnHarnessResourceRequestContract;
+  /** Backing filesystem grant snapshot the projection was derived from. */
+  grant: CapabilityGrant;
+  issuedAt: string;
+}
+
+/**
+ * Safe public/audit view of a projection. Exposes identity, operation names,
+ * and projection state only; never a filesystem path, credential, provider,
+ * model, executable, or command. Internal `root`/`cwd` remain private.
+ */
+export interface HarnessSessionProjectionView {
+  addonId: string;
+  sessionId: string;
+  projectId: string;
+  projectLabel: string;
+  /** Allowlisted operation names, e.g. "project.read", "files.write". */
+  operations: readonly string[];
+  state: "projected" | "denied";
+}
+
+// ----- pi-native seam end -----
