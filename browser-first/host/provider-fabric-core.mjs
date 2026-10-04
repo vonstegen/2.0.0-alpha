@@ -395,3 +395,27 @@ export function providerRouteForWorkload({
     requestedModel: explicitModel || "__auto__",
   };
 }
+
+// =============================================================================
+// Pi-native seam (L3 carry): host-owned, additive provider-protocol derivation.
+// Reconcile note: the two exports below are added verbatim from
+// feature/pi-testing-phase:browser-first/host/provider-fabric-core.mjs. They
+// are pure helpers that never grant authority -- they only map a ROS provider
+// type identity to the canonical protocol vocabulary (ProviderProtocolFamily)
+// the credential adapter reads.
+// =============================================================================
+
+export const PROVIDER_PROTOCOL_BY_TYPE = Object.freeze({
+  openai: "openai-compatible",
+  "openai-compatible": "openai-compatible",
+  minimax: "minimax-compatible",
+  local: "ollama",
+});
+
+export function deriveProviderProtocol(profile) {
+  if (!profile || typeof profile !== "object") return null;
+  const providerType = typeof profile.providerType === "string"
+    ? profile.providerType.trim().toLowerCase()
+    : "";
+  return PROVIDER_PROTOCOL_BY_TYPE[providerType] ?? null;
+}
