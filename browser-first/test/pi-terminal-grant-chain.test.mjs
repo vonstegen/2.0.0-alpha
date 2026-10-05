@@ -1,23 +1,23 @@
-// CP-S5F3: real-chain integration test for the pi-terminal-v1 grant flow.
+// CP-XH2 / CP-S5F3: real-chain integration test for the pi-v1
+// grant flow, now driven by the generic external-CLI launcher.
 //
-// Combines the REAL createPiTerminalAdapter with the REAL
-// createTerminalHostService and stubs ONLY the external terminal JSON-RPC
-// peer (the stdio child). Nothing in the grant path is stubbed:
+// Combines the REAL createExternalCliTerminalAdapter (with the
+// reviewed pi-v1 policy) with the REAL createTerminalHostService
+// and stubs ONLY the external terminal JSON-RPC peer (the stdio
+// child). Nothing in the grant path is stubbed:
 //
-//   adapter.invoke()
+//   createExternalCliTerminalAdapter({ policyId: "pi-v1" }).invoke()
 //     -> buildProjectedSessionEnv (real)
+//     -> policy.resolveExecutable -> piCommand() (real allowlist)
 //     -> launchBootstrap WITHOUT bootstrapCommand (real service)
 //        -> mint + track SessionBootstrapGrant (real broker)
 //        -> write 0600 token file (real fs)
-//        -> compose ros-session attach + `; <validated-pi> <prompt>`
+//        -> compose ros-session attach + `; <pi-v1 suffix>`
 //        -> launchBootstrap RPC to the (stubbed) terminal peer
 //     -> consumeGrant (real broker) succeeds once; replay rejected
 //
-// This proves the exact gap the CP-S5b unit suite missed on c1e705c8:
-// back then the adapter supplied a complete bootstrapCommand, so the
-// service skipped mint/track/write and the composed command referenced
-// a token file that did not exist (CLI would fail token-file-unreadable,
-// and the broker had no tracked grant). This test fails on that commit.
+// This proves the same gap the CP-S5b unit suite missed on
+// c1e705c8, now through the generic launcher.
 
 import assert from "node:assert/strict";
 import { describe, it, beforeEach, afterEach } from "node:test";
@@ -27,7 +27,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import nodeEvents from "node:events";
 
-import { createPiTerminalAdapter } from "../host/agent-adapters/pi-terminal.mjs";
+import { createExternalCliTerminalAdapter } from "../host/agent-adapters/external-cli-terminal.mjs";
 import {
   consumeGrant,
   createTerminalHostService,
@@ -105,14 +105,15 @@ describe("pi-terminal-v1 -> terminal-host-service real grant chain (CP-S5F3)", (
     });
     const start = await service.start();
 
-    const adapter = createPiTerminalAdapter({
+    const adapter = createExternalCliTerminalAdapter({
       sessionId: "s-f3-1",
+      policyId: "pi-v1",
       terminalHostService: service,
       terminalHostStart: start,
       promptFilePath: () => promptFilePath,
       providerProfileId: "openai",
       harness: "addon.resonant-terminal-iterm2",
-      piHomeDir: fakeHome,
+      homeDirOverride: fakeHome,
       // Legacy pre-S5F2 options: ignored by the current adapter (grant
       // composition is host-owned), but supplying them lets this same test
       // run against the c1e705c8 adapter and fail on the untracked grant /

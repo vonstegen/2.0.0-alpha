@@ -11,7 +11,7 @@ import { createHarnessTransport } from './harness-transport.mjs';
 import { createOpenAICompatibleAdapter } from './agent-adapters/openai-compatible.mjs';
 import { createDshTypertAdapter } from './agent-adapters/dsh-typert.mjs';
 import { createProviderFabricAdapter } from './agent-adapters/provider-fabric.mjs';
-import { createPiTerminalAdapter } from './agent-adapters/pi-terminal.mjs';
+import { createExternalCliTerminalAdapter } from './agent-adapters/external-cli-terminal.mjs';
 import { publicHarnessError } from './harness-adapter-contract.mjs';
 import { bridgeCorsHeaders, HarnessTransportError, validateLoopbackHost } from './bridge-server.mjs';
 import { attachSessionEnv, buildProjectedSessionEnv, consumeGrant } from './terminal-host-service.mjs';
@@ -135,7 +135,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     },
     write: document => store.write(document),
   };
-  const registry = await createHarnessRegistry({ store: trackedStore, reviewedAdapterIds: ['dsh-typert-v1', 'provider-fabric-v1', 'openai-compatible-v1', 'pi-terminal-v1'],
+  const registry = await createHarnessRegistry({ store: trackedStore, reviewedAdapterIds: ['dsh-typert-v1', 'provider-fabric-v1', 'openai-compatible-v1', 'pi-terminal-v1', 'external-cli-terminal-v1'],
     bindings: approvedBindings.map(({ name, addonId, adapterId, authScheme, endpoint }) => ({ name, addonId, adapterId, authScheme, endpoint })) });
   // Only the explicit fixture composition injects a public test key. Production
   // keys are generated anew, remain in this closure, and are never persisted.
@@ -181,21 +181,27 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     } else if (authorization.runtime.adapterId === 'openai-compatible-v1') {
       try { adapter = await openaiAdapterFactory({ credentials, addonId: authorization.addonId, runtime: authorization.runtime }); }
       catch (error) { await bounded(() => adapter?.dispose()); throw error; }
-    } else if (authorization.runtime.adapterId === 'pi-terminal-v1') {
-      // Step 5, 5B: pi runs in the adopted external terminal. The
-      // adapter id is reviewed; the host must have installed the
-      // terminal-host service (terminalHost.service + terminalHost.start).
+    } else if (authorization.runtime.adapterId === 'pi-terminal-v1' || authorization.runtime.adapterId === 'external-cli-terminal-v1') {
+      // XH2: pi-terminal-v1 routes through the generic external-CLI
+      // launcher with the reviewed pi-v1 policy. The adapter id is
+      // reviewed; the host must have installed the terminal-host
+      // service (terminalHost.service + terminalHost.start).
       if (!terminalHost?.service || !terminalHost?.start?.bus) {
         throw fail('runtime-unavailable');
       }
-      // providerProfileId is derived at invoke() time from input.model
-      // (format: "provider/model" or just "model"). The manifest
-      // declares it descriptively in harnessProviderConnection; the
-      // concrete value is the chat-ui selection for the turn.
+      // The reviewed policy id comes from the manifest's
+      // agentRuntime.policyId (XH1) or, for the legacy pi-terminal-v1
+      // adapter id, defaults to "pi-v1". Manifests that lack a
+      // policyId fail closed.
+      const policyId = authorization.runtime.policyId ?? (authorization.runtime.adapterId === 'pi-terminal-v1' ? 'pi-v1' : null);
+      if (typeof policyId !== 'string' || policyId.length === 0) {
+        throw fail('invalid-manifest');
+      }
       const sessionId = `${authorization.addonId}-${randomUUID().slice(0, 8)}`;
       try {
-        adapter = createPiTerminalAdapter({
+        adapter = createExternalCliTerminalAdapter({
           sessionId,
+          policyId,
           terminalHostService: terminalHost.service,
           terminalHostStart: terminalHost.start,
           promptFilePath: promptFilePath ?? defaultPromptFilePath,
@@ -203,7 +209,8 @@ export async function createHarnessHostService({ userRoot, store = createHarness
           ...(hostTerminal ? { hostTerminal } : {}),
         });
       } catch (error) {
-        // Adapter construction itself failed (e.g. pi binary missing).
+        // Adapter construction itself failed (e.g. policy not
+        // reviewed, or compatible surface missing).
         throw fail('runtime-unavailable');
       }
     } else throw fail('permission-denied');

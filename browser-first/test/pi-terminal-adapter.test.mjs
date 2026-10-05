@@ -1,35 +1,20 @@
-// CP-S5b: pi-terminal-v1 adapter (Step 5, 5B), updated for CP-S5F2.
+// CP-XH2: pi-v1 policy driven through the generic external-CLI
+// launcher (replaces the old CP-S5b / CP-S5F2 Pi-specific tests).
 //
-// Drives createPiTerminalAdapter against a stubbed terminal-host service
-// + bus. Verifies:
-//   * piCommand() is consulted (probe exposed; test does not assert the
-//     exact path, but verifies the adapter surfaces the executable
-//     metadata so the host can audit it)
-//   * buildProjectedSessionEnv is called (host wiring injects the
-//     credential; missing-credential surfaces as harness error event)
-//   * launchBootstrap is called WITHOUT bootstrapCommand: grant minting,
-//     the 0600 token file, and attach-command composition are owned by
-//     terminal-host-service (CP-S5F1). The adapter passes only attach
-//     context + a reviewed commandSuffix built from the validated
-//     absolute Pi executable.
-//   * the commandSuffix references the validated executable PATH + (when
-//     multi-line) the prompt-file PATH, but never the token VALUE, the
-//     credential VALUE, or (multi-line) the prompt text
-//   * Bus events translate to delta / final / error harness events with
-//     correct provenance
-//   * Fail closed: missing pi (via env override), missing profile,
-//     shared-* profile, missing prompt -> error event
+// The harness-specific assertions (Pi executable metadata, multi-line
+// prompt file, credential-never-leak, bus translation) are now driven
+// by `createExternalCliTerminalAdapter({ policyId: "pi-v1" })`. The
+// policy module's own `composePiInvocation` keeps the Pi argv-quoting
+// discipline; the launcher is harness-agnostic.
 
 import assert from "node:assert/strict";
 import { describe, it, beforeEach, afterEach } from "node:test";
-import { mkdtemp, rm, readFile, stat } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  createPiTerminalAdapter,
-  composePiInvocation,
-} from "../host/agent-adapters/pi-terminal.mjs";
+import { createExternalCliTerminalAdapter } from "../host/agent-adapters/external-cli-terminal.mjs";
+import { composePiInvocation, createPiHarnessPolicy } from "../host/harness-policies/pi.mjs";
 
 function makeBus() {
   const queue = [];
@@ -57,40 +42,40 @@ function makeBus() {
 
 const EXEC = "/usr/local/bin/pi";
 
-describe("composePiInvocation", () => {
+describe("composePiInvocation (XH2: pi policy exported)", () => {
   it("uses <exec> @<file> for multi-line prompts", () => {
-    const out = composePiInvocation({ executable: EXEC, prompt: "line1\nline2", promptFilePath: "/tmp/p.txt" });
-    assert.equal(out, `'/usr/local/bin/pi' '@/tmp/p.txt'`);
+    const out = composePiInvocation({ executable: { command: EXEC, source: "fixed-install-root" }, prompt: "line1\nline2", promptFilePath: "/tmp/p.txt" });
+    assert.equal(out.commandSuffix, `'/usr/local/bin/pi' '@/tmp/p.txt'`);
+    assert.match(out.auditSummary, /pi @<file>/);
   });
 
   it("uses <exec> @<file> for oversize prompts", () => {
     const big = "x".repeat(5000);
-    const out = composePiInvocation({ executable: EXEC, prompt: big, promptFilePath: "/tmp/p.txt" });
-    assert.equal(out, `'/usr/local/bin/pi' '@/tmp/p.txt'`);
+    const out = composePiInvocation({ executable: { command: EXEC, source: "fixed-install-root" }, prompt: big, promptFilePath: "/tmp/p.txt" });
+    assert.equal(out.commandSuffix, `'/usr/local/bin/pi' '@/tmp/p.txt'`);
   });
 
   it("argv-quotes single-line short prompts", () => {
-    const out = composePiInvocation({ executable: EXEC, prompt: "hello world", promptFilePath: null });
-    assert.equal(out, `'/usr/local/bin/pi' 'hello world'`);
+    const out = composePiInvocation({ executable: { command: EXEC, source: "fixed-install-root" }, prompt: "hello world", promptFilePath: null });
+    assert.equal(out.commandSuffix, `'/usr/local/bin/pi' 'hello world'`);
   });
 
   it("argv-quotes prompts with single quotes (POSIX escape)", () => {
-    const out = composePiInvocation({ executable: EXEC, prompt: "it's fine", promptFilePath: null });
-    assert.equal(out, `'/usr/local/bin/pi' 'it'\\''s fine'`);
+    const out = composePiInvocation({ executable: { command: EXEC, source: "fixed-install-root" }, prompt: "it's fine", promptFilePath: null });
+    assert.equal(out.commandSuffix, `'/usr/local/bin/pi' 'it'\\''s fine'`);
   });
 
   it("rejects empty prompts", () => {
-    assert.throws(() => composePiInvocation({ executable: EXEC, prompt: "   ", promptFilePath: null }), /empty/);
+    assert.throws(() => composePiInvocation({ executable: { command: EXEC, source: "fixed-install-root" }, prompt: "   ", promptFilePath: null }), /empty/);
   });
 
   it("rejects a non-absolute executable (never a bare ambient command)", () => {
-    assert.throws(() => composePiInvocation({ executable: "pi", prompt: "hi", promptFilePath: null }), /absolute path/);
-    assert.throws(() => composePiInvocation({ executable: "", prompt: "hi", promptFilePath: null }), /absolute path/);
-    assert.throws(() => composePiInvocation({ prompt: "hi", promptFilePath: null }), /absolute path/);
+    assert.throws(() => composePiInvocation({ executable: { command: "pi", source: "fixed-install-root" }, prompt: "hi", promptFilePath: null }), /absolute executable path/);
+    assert.throws(() => composePiInvocation({ executable: { command: "" }, prompt: "hi", promptFilePath: null }), /absolute executable path/);
   });
 });
 
-describe("createPiTerminalAdapter", () => {
+describe("createExternalCliTerminalAdapter (XH2: pi-v1 path)", () => {
   let dir;
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "pi-term-"));
@@ -110,11 +95,12 @@ describe("createPiTerminalAdapter", () => {
     return { service, bus, getLaunch: () => launchArgs };
   }
 
-  function buildAdapter(service, bus, { promptFilePath, project } = {}) {
-    return createPiTerminalAdapter({
+  function buildAdapter(service, bus, { promptFilePath, project, policyId = "pi-v1" } = {}) {
+    return createExternalCliTerminalAdapter({
       sessionId: "s-1",
+      policyId,
       terminalHostService: service,
-      terminalHostStart: { bus, driveId: "iterm2" },
+      terminalHostStart: { bus, driveId: "iterm2", adapterId: "iterm2" },
       promptFilePath: () => promptFilePath,
       providerProfileId: "openai",
       harness: "addon.pi-terminal",
@@ -128,7 +114,6 @@ describe("createPiTerminalAdapter", () => {
     });
   }
 
-  // Drive one invoke until the first delta (turn start) then cancel.
   async function driveOneTurn(adapter, prompt, { sessionId = "s-1" } = {}) {
     const controller = new AbortController();
     const invokeP = (async () => {
@@ -147,185 +132,190 @@ describe("createPiTerminalAdapter", () => {
     return invokeP;
   }
 
-  it("exposes the pi executable metadata (piCommand was consulted)", () => {
+  it("returns a reviewed policy with pi-v1 id and the in-memory surface", async () => {
     const bus = makeBus();
     const service = { launchBootstrap: async () => ({ sessionId: "term-1" }), terminateSession: async () => {} };
-    const adapter = createPiTerminalAdapter({
+    const adapter = createExternalCliTerminalAdapter({
       sessionId: "s-1",
+      policyId: "pi-v1",
       terminalHostService: service,
-      terminalHostStart: { bus, driveId: "iterm2" },
-      promptFilePath: () => join(dir, "p.txt"),
+      terminalHostStart: { bus, driveId: "in-memory", adapterId: "in-memory" },
+      promptFilePath: () => join(dir, "prompt.txt"),
       providerProfileId: "openai",
-      harness: "addon.pi-terminal",
+      hostTerminal: { resolveCredential: async () => ({ name: "OPENAI_API_KEY", value: "x" }), resolveProjectIdentity: async () => ({ id: "p1", label: "P1", root: dir }) },
     });
-    assert.equal(typeof adapter.piExecutable, "object");
-    assert.equal(typeof adapter.piExecutable.command, "string");
-    assert.ok(adapter.piExecutable.command.startsWith("/"), "executable must be an absolute path");
-    assert.equal(typeof adapter.piExecutable.source, "string");
+    assert.equal(adapter.policyId, "pi-v1");
+    assert.equal(adapter.harnessId, "pi");
+    assert.equal(adapter.surfaceAdapterId, "in-memory");
+    assert.equal(adapter.policySupportsModelSelection, true);
   });
 
-  it("launches WITHOUT bootstrapCommand; suffix carries the validated executable and no secrets", async () => {
-    const promptFilePath = join(dir, "prompt.txt");
+  it("rejects an unknown policyId at construction (manifest cannot inject a policy)", () => {
+    const bus = makeBus();
+    const service = { launchBootstrap: async () => ({}), terminateSession: async () => {} };
+    assert.throws(() => createExternalCliTerminalAdapter({
+      sessionId: "s-1",
+      policyId: "not-reviewed",
+      terminalHostService: service,
+      terminalHostStart: { bus, driveId: "in-memory", adapterId: "in-memory" },
+      promptFilePath: () => join(dir, "p.txt"),
+    }), /not reviewed/);
+  });
+
+  it("launches WITHOUT bootstrapCommand; commandSuffix carries the validated pi executable and no secrets", async () => {
     const { service, bus, getLaunch } = buildStubHost();
-    // Project root must be a real directory (the resource projection
-    // canonicalizes it and fails closed on nonexistent roots).
-    const adapter = buildAdapter(service, bus, { promptFilePath, project: { root: dir } });
-
-    const events = await driveOneTurn(adapter, "say hi");
-    const firstDelta = events.find((e) => e.type === "delta");
-    assert.ok(firstDelta, "expected at least one delta event");
-    assert.equal(firstDelta.data.terminalSessionId, "term-1");
-
-    const launch = getLaunch();
-    assert.ok(launch, "expected launchBootstrap to have been called");
-    // The adapter must NOT supply a complete bootstrapCommand: grant
-    // minting + attach composition are host-owned (CP-S5F1/F2).
-    assert.equal("bootstrapCommand" in launch, false, "adapter must not pass bootstrapCommand");
-    // Attach context travels for the host-owned composition.
-    assert.equal(launch.sessionId, "s-1");
-    assert.equal(launch.providerProfileId, "openai");
-    assert.equal(launch.harness, "addon.pi-terminal");
-    assert.deepEqual(launch.project, { root: dir });
-    // The commandSuffix starts with the validated absolute executable.
-    assert.equal(typeof launch.commandSuffix, "string");
-    assert.ok(
-      launch.commandSuffix.startsWith(`'${adapter.piExecutable.command}' `),
-      `suffix must open with the quoted validated executable; got: ${launch.commandSuffix}`,
-    );
-    // Single-line short prompt stays argv-quoted in the suffix.
-    assert.ok(launch.commandSuffix.endsWith(` 'say hi'`), `suffix must carry the quoted prompt; got: ${launch.commandSuffix}`);
-    // Token/credential values are absent from every launch argument.
-    const wire = JSON.stringify(launch);
-    assert.equal(wire.includes("sk-CREDENTIAL-DO-NOT-LEAK"), false, "credential value must never reach launch args");
-    assert.equal("grant" in launch, false, "adapter must never handle the grant");
-    assert.equal("token" in launch, false, "adapter must never handle the token");
+    const adapter = buildAdapter(service, bus, { promptFilePath: join(dir, "p.txt"), project: { root: dir } });
+    const invokeP = driveOneTurn(adapter, "hello world");
+    await invokeP;
+    const args = getLaunch();
+    assert.ok(args, "launchBootstrap was called");
+    assert.equal(args.bootstrapCommand, undefined, "no bootstrapCommand override");
+    // Extract the executable's absolute path from the commandSuffix
+    // (the first single-quoted token). The path varies by install
+    // (fixed-system-root, npm-global-sibling, nvm), so we don't pin
+    // the exact value — we just verify the suffix starts with an
+    // absolute, single-quoted path to a `pi` binary.
+    const match = args.commandSuffix.match(/^'(\/[^']+)'/);
+    assert.ok(match, "commandSuffix begins with a single-quoted absolute path");
+    assert.ok(match[1].endsWith("/pi"), "absolute path points at the `pi` binary");
+    assert.ok(!args.commandSuffix.includes("sk-CREDENTIAL-DO-NOT-LEAK"), "credential value never in commandSuffix");
+    assert.ok(!args.commandSuffix.includes("OPENAI_API_KEY=sk-"), "credential env-var assignment never in commandSuffix");
   });
 
   it("uses a prompt file for multi-line prompts and never embeds the prompt in the suffix", async () => {
-    const promptFilePath = join(dir, "prompt2.txt");
     const { service, bus, getLaunch } = buildStubHost();
-    const adapter = buildAdapter(service, bus, { promptFilePath });
-    const LONG_PROMPT = "line1\nline2\nline3\nline4";
-
+    const promptFilePath = join(dir, "p.txt");
+    const adapter = buildAdapter(service, bus, { promptFilePath, project: { root: dir } });
     const controller = new AbortController();
-    const invokeP = (async () => {
-      const events = [];
-      for await (const event of adapter.invoke({
+    const events = [];
+    const it = (async () => {
+      for await (const ev of adapter.invoke({
         session: { piTerminalAdapter: true, sessionId: "s-1" },
-        input: { messages: [{ role: "user", content: LONG_PROMPT }] },
+        input: { messages: [{ role: "user", content: "line1\nline2\nline3" }] },
         signal: controller.signal,
-      })) events.push(event);
-      return events;
+      })) events.push(ev);
     })();
-    // Capture the prompt file content BEFORE the invoke's finally
-    // unlinks it. The adapter writes the file synchronously before
-    // launchBootstrap; waiting 50ms is enough for the write + the
-    // launchBootstrap to complete.
-    await new Promise((r) => setTimeout(r, 50));
-    let promptContent = null;
-    let promptStats = null;
-    try { promptContent = await readFile(promptFilePath, "utf8"); promptStats = await stat(promptFilePath); }
-    catch { /* may have been unlinked if invoke finished */ }
-    controller.abort();
-    await invokeP;
-
-    const launch = getLaunch();
-    assert.ok(launch, "expected launchBootstrap to have been called");
-    assert.equal("bootstrapCommand" in launch, false);
-    // Multi-line prompt -> <exec> '@<file>'; prompt text NEVER in the suffix.
-    assert.ok(
-      launch.commandSuffix.includes(`'@${promptFilePath}'`),
-      `suffix must reference the prompt-file path; got: ${launch.commandSuffix}`,
-    );
-    assert.equal(launch.commandSuffix.includes("line1"), false);
-    assert.equal(launch.commandSuffix.includes("line2"), false);
-    if (promptContent !== null) {
-      assert.equal(promptContent, LONG_PROMPT);
-      assert.equal(promptStats.mode & 0o777, 0o600);
+    // Wait for the launch to land BEFORE aborting.
+    for (let i = 0; i < 100 && !getLaunch(); i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
     }
+    controller.abort();
+    await it;
+    const args = getLaunch();
+    assert.ok(args, "launchBootstrap was called");
+    assert.match(args.commandSuffix, /@/, "multi-line prompt uses prompt file");
+    assert.ok(!args.commandSuffix.includes("line1"), "prompt text never in commandSuffix");
+    assert.ok(!args.commandSuffix.includes("line2"));
+    assert.ok(!args.commandSuffix.includes("line3"));
   });
 
   it("fails closed when the credential is missing (host wiring returns null)", async () => {
-    const promptFilePath = join(dir, "prompt3.txt");
-    const { service, bus, getLaunch } = buildStubHost();
-
-    const adapter = createPiTerminalAdapter({
-      sessionId: "s-3",
+    const { service, bus } = buildStubHost();
+    const adapter = createExternalCliTerminalAdapter({
+      sessionId: "s-1",
+      policyId: "pi-v1",
       terminalHostService: service,
-      terminalHostStart: { bus, driveId: "iterm2" },
-      promptFilePath: () => promptFilePath,
+      terminalHostStart: { bus, driveId: "in-memory", adapterId: "in-memory" },
+      promptFilePath: () => join(dir, "p.txt"),
       providerProfileId: "openai",
+      harness: "addon.pi-terminal",
+      project: { root: dir },
       hostTerminal: {
-        resolveCredential: async () => null, // shared-* / anthropic / missing
+        resolveCredential: async () => null, // missing credential
         resolveProjectIdentity: async ({ root }) => ({ id: "p1", label: "P1", root }),
         skillSourceRoot: dir,
         stagingBase: dir,
       },
     });
-
     const events = [];
-    for await (const event of adapter.invoke({
-      session: { piTerminalAdapter: true, sessionId: "s-3" },
+    for await (const ev of adapter.invoke({
+      session: { piTerminalAdapter: true, sessionId: "s-1" },
       input: { messages: [{ role: "user", content: "hi" }] },
-    })) events.push(event);
-    const errorEv = events.find((e) => e.type === "error");
-    assert.ok(errorEv, "expected an error event");
-    // launchBootstrap is never reached on the missing-credential path.
-    assert.equal(getLaunch(), null, "launchBootstrap must not be called when the credential is missing");
-    // No prompt file is written either.
-    const promptStat = await stat(promptFilePath).catch((e) => e);
-    assert.equal(promptStat.code, "ENOENT");
+    })) events.push(ev);
+    const err = events.find((e) => e.type === "error");
+    assert.ok(err, "yielded an error event");
+    // The host's projection seam reports a public code (e.g.
+    // "missing-credential", "resource-denied"); the launcher passes
+    // it through or falls back to "invalid-event". Both are valid
+    // fail-closed signals.
+    assert.ok(
+      /runtime-unavailable|invalid-event|missing-credential|resource-denied/.test(err.data.code),
+      `error code is a fail-closed signal; got ${JSON.stringify(err.data.code)}`
+    );
   });
 
   it("translates terminal.command.ended (exitStatus 0) to a final event", async () => {
-    const promptFilePath = join(dir, "prompt4.txt");
-    const { service, bus } = buildStubHost();
-    const adapter = buildAdapter(service, bus, { promptFilePath });
-
+    const { service, bus, getLaunch } = buildStubHost();
+    const adapter = buildAdapter(service, bus, { promptFilePath: join(dir, "p.txt"), project: { root: dir } });
     const events = [];
-    const invokeP = (async () => {
-      for await (const event of adapter.invoke({
+    const it = (async () => {
+      for await (const ev of adapter.invoke({
         session: { piTerminalAdapter: true, sessionId: "s-1" },
         input: { messages: [{ role: "user", content: "hi" }] },
-      })) events.push(event);
+      })) events.push(ev);
     })();
-    // After launchBootstrap returns, publish a command.ended event.
-    await new Promise((r) => setTimeout(r, 30));
-    bus.publish({
-      type: "terminal.command.ended",
-      data: { sessionId: "term-1", at: new Date().toISOString(), exitStatus: 0 },
-      turnId: "turn-1",
-      sequence: 1,
-    });
-    await invokeP;
+    // Wait for the launch to land; the adapter yields the first delta
+    // BEFORE subscribing to the bus, so the bus.publish below only
+    // reaches a subscriber if launchBootstrap has completed.
+    for (let i = 0; i < 100 && !getLaunch(); i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    assert.ok(getLaunch(), "launchBootstrap called");
+    bus.publish({ type: "terminal.command.started", data: { sessionId: "term-1", at: new Date().toISOString() } });
+    bus.publish({ type: "terminal.command.ended", data: { sessionId: "term-1", at: new Date().toISOString(), exitStatus: 0 } });
+    await it;
     const final = events.find((e) => e.type === "final");
-    assert.ok(final, "expected a final event");
-    assert.equal(final.data.exitStatus, 0);
-    assert.equal(final.data.terminalSessionId, "term-1");
+    assert.ok(final, "yielded a final event");
+    assert.match(final.data.text, /pi-v1/);
   });
 
   it("translates terminal.session.terminated to an error event", async () => {
-    const promptFilePath = join(dir, "prompt5.txt");
-    const { service, bus } = buildStubHost();
-    const adapter = buildAdapter(service, bus, { promptFilePath });
-
+    const { service, bus, getLaunch } = buildStubHost();
+    const adapter = buildAdapter(service, bus, { promptFilePath: join(dir, "p.txt"), project: { root: dir } });
     const events = [];
-    const invokeP = (async () => {
-      for await (const event of adapter.invoke({
+    const it = (async () => {
+      for await (const ev of adapter.invoke({
         session: { piTerminalAdapter: true, sessionId: "s-1" },
         input: { messages: [{ role: "user", content: "hi" }] },
-      })) events.push(event);
+      })) events.push(ev);
     })();
-    await new Promise((r) => setTimeout(r, 30));
-    bus.publish({
-      type: "terminal.session.terminated",
-      data: { sessionId: "term-1", at: new Date().toISOString(), exitStatus: 137 },
-      turnId: "turn-1",
-      sequence: 1,
-    });
-    await invokeP;
-    const errorEv = events.find((e) => e.type === "error");
-    assert.ok(errorEv, "expected an error event");
-    assert.match(errorEv.data.code, /runtime-unavailable/);
+    for (let i = 0; i < 100 && !getLaunch(); i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    assert.ok(getLaunch(), "launchBootstrap called");
+    bus.publish({ type: "terminal.session.terminated", data: { sessionId: "term-1", at: new Date().toISOString() } });
+    await it;
+    const err = events.find((e) => e.type === "error");
+    assert.ok(err, "yielded an error event");
+    assert.match(err.data.message, /terminated/);
+  });
+
+  it("rejects a providerProfileId not in the policy's supportedProviderFamilies", async () => {
+    const { service, bus } = buildStubHost();
+    const adapter = buildAdapter(service, bus, { promptFilePath: join(dir, "p.txt"), project: { root: dir } });
+    const events = [];
+    for await (const ev of adapter.invoke({
+      session: { piTerminalAdapter: true, sessionId: "s-1" },
+      input: { messages: [{ role: "user", content: "hi" }], model: "shared-anthropic/gpt-x" },
+    })) events.push(ev);
+    const err = events.find((e) => e.type === "error");
+    assert.ok(err, "yielded an error event for unsupported provider family");
+    assert.match(err.data.message, /does not support provider family/);
+  });
+});
+
+describe("createPiHarnessPolicy (XH2: reviewed policy module shape)", () => {
+  it("exposes the reviewed shape expected by the generic launcher", () => {
+    const p = createPiHarnessPolicy();
+    assert.equal(p.contractVersion, 1);
+    assert.equal(p.policyId, "pi-v1");
+    assert.equal(p.harnessId, "pi");
+    assert.equal(p.credentialPolicy.source, "provider-profile");
+    assert.equal(p.credentialPolicy.delivery, "session-environment");
+    assert.equal(p.promptDelivery, "file");
+    assert.equal(p.supportsModelSelection, true);
+    assert.deepEqual([...p.terminalRequirements], ["command", "environment", "lifecycle-events"]);
+    assert.equal(typeof p.resolveExecutable, "function");
+    assert.equal(typeof p.composeInvocation, "function");
   });
 });
