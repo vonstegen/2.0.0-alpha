@@ -748,3 +748,168 @@ test('POST /terminal-host/session/attach takes optional harness/project and pass
   assert.equal(result.payload.meta.project.root, '/srv/repo');
   assert.equal(result.payload.meta.providerProfileId, 'openai');
 });
+
+// ---------------------------------------------------------------------------
+// CP-S4a: buildProjectedSessionEnv + projected path on
+//         POST /terminal-host/session/attach
+//
+// The route composes a FULL projected env (project root + skills dir +
+// credential) when authorizedProject + request are supplied; otherwise it
+// falls back to the step-3 contract (credential only). Grant consumption is
+// uniform across both paths.
+// ---------------------------------------------------------------------------
+
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import {
+  PROJECTED_SESSION_ENV_NAMES,
+} from '../host/terminal-host-service.mjs';
+
+test('buildProjectedSessionEnv: full projected env includes project-root + skills-dir + credential', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+  const dir = await mkdtemp(join(tmpdir(), 'ros-s4a-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const projectRoot = join(dir, 'proj');
+  await mkdir(projectRoot);
+  const skillsSource = join(dir, 'skills');
+  await mkdir(skillsSource);
+  const skill = join(skillsSource, 'hello');
+  await mkdir(skill);
+  await writeFile(join(skill, 'SKILL.md'), '# hello');
+
+  const stagingBase = join(dir, 'staging');
+  const f = await fixture(t);
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-4a-1', purpose: 'attach' }));
+  const result = await f.call('/terminal-host/session/attach', {
+    sessionId: 's-4a-1',
+    token: grant.token,
+    providerProfileId: 'openai',
+    harness: 'addon.resonant-terminal-iterm2',
+    resolveCredential: () => ({ name: 'OPENAI_API_KEY', value: 'sk-4a-secret' }),
+    authorizedProject: { id: 'p1', label: 'P1', root: projectRoot },
+    request: { requests: {
+      project: ['read'],
+      skills: ['list', 'read'],
+    } },
+    grantedCapabilities: [
+      { capability: 'filesystem', granted: true },
+      { capability: 'agent-runtime', granted: true },
+    ],
+    skillCatalog: [{ id: 'hello', name: 'hello', label: 'Hello', description: 'Hi', version: '1.0.0', source: skill, requiredCapabilities: ['agent-runtime'] }],
+    skillSourceRoot: skillsSource,
+    stagingBase,
+    // Inject deterministic realpath/statPath so the projection resolves
+    // under our temp dir without relying on the host filesystem layout.
+    resourceHooks: {
+      realpath: async (p) => p,
+      statPath: async () => ({ isDirectory: () => true }),
+      homeDir: dir,
+    },
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.env.OPENAI_API_KEY, 'sk-4a-secret');
+  // ROS_PROJECT_ROOT must be set and pass the env-name pattern.
+  assert.equal(typeof result.payload.env.ROS_PROJECT_ROOT, 'string');
+  assert.match(PROJECTED_SESSION_ENV_NAMES.projectRoot, /^[A-Z_][A-Z0-9_]*$/);
+  // Skills staging root must be set under stagingBase/skills/<digest>.
+  assert.equal(typeof result.payload.env.ROS_SKILLS_DIR, 'string');
+  assert.ok(result.payload.env.ROS_SKILLS_DIR.startsWith(stagingBase));
+  assert.ok(result.payload.env.ROS_SKILLS_DIR.includes('/skills/'));
+  // meta carries sessionId + projectId + providerProfileId; never the token
+  // or the secret value (the secret legitimately lives under
+  // env.OPENAI_API_KEY).
+  const metaSerialized = JSON.stringify(result.payload.meta);
+  assert.equal(metaSerialized.includes(grant.token), false);
+  assert.equal(metaSerialized.includes('sk-4a-secret'), false);
+  assert.equal(result.payload.meta.sessionId, 's-4a-1');
+  assert.equal(result.payload.meta.projectId, 'p1');
+  assert.equal(result.payload.meta.providerProfileId, 'openai');
+});
+
+test('buildProjectedSessionEnv: without projection inputs, the route composes only baseEnv + credential (step-3 contract)', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+  const f = await fixture(t);
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-4a-2', purpose: 'attach' }));
+  const result = await f.call('/terminal-host/session/attach', {
+    sessionId: 's-4a-2',
+    token: grant.token,
+    providerProfileId: 'openai',
+    resolveCredential: () => ({ name: 'OPENAI_API_KEY', value: 'sk-step3' }),
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.env.OPENAI_API_KEY, 'sk-step3');
+  assert.equal(result.payload.env.ROS_PROJECT_ROOT, undefined);
+  assert.equal(result.payload.env.ROS_SKILLS_DIR, undefined);
+});
+
+test('buildProjectedSessionEnv: projection-denied (project-not-granted) returns ok:false without leaking env', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+  const dir = await mkdtemp(join(tmpdir(), 'ros-s4a-deny-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const projectRoot = join(dir, 'proj');
+  await mkdir(projectRoot);
+
+  const f = await fixture(t);
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-4a-deny', purpose: 'attach' }));
+  const result = await f.call('/terminal-host/session/attach', {
+    sessionId: 's-4a-deny',
+    token: grant.token,
+    providerProfileId: 'openai',
+    resolveCredential: () => ({ name: 'OPENAI_API_KEY', value: 'sk-deny' }),
+    authorizedProject: { id: 'p-deny', label: 'PD', root: projectRoot },
+    request: { requests: { project: ['read'] } },
+    grantedCapabilities: [], // nothing granted
+    resourceHooks: {
+      realpath: async (p) => p,
+      statPath: async () => ({ isDirectory: () => true }),
+      homeDir: dir,
+    },
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, false);
+  assert.equal(result.payload.reason, 'projection-denied');
+  // Secret + token must not appear in the rejection payload.
+  const serialized = JSON.stringify(result.payload);
+  assert.equal(serialized.includes('sk-deny'), false);
+  assert.equal(serialized.includes(grant.token), false);
+});
+
+test('buildProjectedSessionEnv: missing-credential (providerProfileId named but resolveCredential returns null) returns ok:false', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+  const dir = await mkdtemp(join(tmpdir(), 'ros-s4a-mc-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const projectRoot = join(dir, 'proj');
+  await mkdir(projectRoot);
+
+  const f = await fixture(t);
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-4a-mc', purpose: 'attach' }));
+  const result = await f.call('/terminal-host/session/attach', {
+    sessionId: 's-4a-mc',
+    token: grant.token,
+    providerProfileId: 'openai',
+    // no resolveCredential injection
+    authorizedProject: { id: 'p-mc', label: 'PM', root: projectRoot },
+    request: { requests: { project: ['read'] } },
+    grantedCapabilities: [{ capability: 'filesystem', granted: true }],
+    resourceHooks: {
+      realpath: async (p) => p,
+      statPath: async () => ({ isDirectory: () => true }),
+      homeDir: dir,
+    },
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, false);
+  assert.equal(result.payload.reason, 'missing-credential');
+});

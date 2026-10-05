@@ -33,6 +33,8 @@ import { validateHarnessEvent } from "./harness-adapter-contract.mjs";
 import { TERMINAL_HOST_CONTRACT_VERSION } from "../../src/core/terminal-host-contract.ts";
 import { buildSessionEnvironment } from "./harness-session-environment.mjs";
 import { resolvePiNativeProvider } from "./pi-native-provider-map.mjs";
+import { createHarnessResourceProjection } from "./harness-resource-projection.mjs";
+import { createHarnessSkillsProjection } from "./harness-skills-projection.mjs";
 
 const TERMINAL_HOST_ADDON_ID = "addon.resonant-terminal-iterm2";
 const JSON_RPC_VERSION = "2.0";
@@ -257,6 +259,208 @@ export function createTerminalHostCredentialResolver({ getProfile, resolveSecret
     const value = resolveSecret(profile);
     if (typeof value !== "string" || !value) return null;
     return { name: mapping.envVar, value };
+  };
+}
+
+/**
+ * Canonical host-owned env names for the projected session environment.
+ *
+ *   ROS_PROJECT_ROOT  -- canonical realpath of the host-authorized project root
+ *   ROS_PROJECT_CWD   -- canonical cwd (currently == ROS_PROJECT_ROOT)
+ *   ROS_SKILLS_DIR    -- host-derived skills staging root (opaque digest path)
+ *
+ * These names pass SESSION_ENV_NAME_PATTERN (`/^[A-Z_][A-Z0-9_]*$/`) and are
+ * never derived from a manifest or caller-supplied map. They are the ONLY
+ * path-shaped entries the projected env may add beyond the credential under
+ * the resolver-derived name.
+ */
+export const PROJECTED_SESSION_ENV_NAMES = Object.freeze({
+  projectRoot: "ROS_PROJECT_ROOT",
+  projectCwd: "ROS_PROJECT_CWD",
+  skillsDir: "ROS_SKILLS_DIR",
+});
+
+/**
+ * Build the FULL projected session environment: project root + skills dir +
+ * credential + (optional) baseEnv/envAllowlist parentEnv.
+ *
+ * Composes:
+ *   1. createHarnessResourceProjection -> ROS_PROJECT_ROOT, ROS_PROJECT_CWD
+ *      (canonical realpath; fails closed on invalid-request / not-granted /
+ *      invalid-project-root / etc.)
+ *   2. createHarnessSkillsProjection -> ROS_SKILLS_DIR (host-derived opaque
+ *      digest under stagingBase/skills/). Only materialized when the skills
+ *      request is present + granted; absence is not an error (skills are
+ *      optional for some sessions).
+ *   3. credential -> under the host-owned env-var name from
+ *      resolvePiNativeProvider (already done by resolveCredential factory).
+ *   4. baseEnv + envAllowlist + parentEnv (existing semantics).
+ *
+ * Returns `{ ok: true, env, meta }` or `{ ok: false, reason, code }`. The
+ * `reason` is the public rejection vocabulary; the `code` is the projection
+ * adapter's diagnostic code for the host log. meta is non-secret (no token,
+ * no credential value, no path-derived secret).
+ *
+ * @param {object} args
+ * @param {string} args.sessionId
+ * @param {() => Date} [args.now]
+ * @param {string} [args.harness]
+ * @param {{ id: string, label: string, root: string }} [args.authorizedProject]
+ * @param {{ requests: object }} [args.request]
+ * @param {Array<{ capability: string, granted?: boolean }>} [args.grantedCapabilities]
+ * @param {Array<object>} [args.skillCatalog]
+ * @param {string} [args.skillSourceRoot]
+ * @param {string} [args.stagingBase]
+ * @param {string} [args.providerProfileId]
+ * @param {(profileId: string) => { name: string, value: string } | null} [args.resolveCredential]
+ * @param {Record<string,string>} [args.baseEnv]
+ * @param {string[]} [args.envAllowlist]
+ * @param {() => Record<string,string>} [args.parentEnv]
+ * @param {(args: { baseEnv, envAllowlist, parentEnv, credentialName, credentialValue }) => Record<string,string>} [args.buildSessionEnv]
+ * @param {object} [args.resourceHooks]  - realpath / statPath / homeDir injection for createHarnessResourceProjection
+ * @returns {Promise<{ ok: true, env: Record<string,string>, meta: object }
+ *                  | { ok: false, reason: string, code?: string, meta?: object }>}
+ */
+export async function buildProjectedSessionEnv(args) {
+  const {
+    sessionId,
+    now = () => new Date(),
+    harness,
+    authorizedProject,
+    request,
+    grantedCapabilities = [],
+    skillCatalog,
+    skillSourceRoot,
+    stagingBase,
+    providerProfileId,
+    resolveCredential = () => null,
+    baseEnv = {},
+    envAllowlist = [],
+    parentEnv,
+    buildSessionEnv = buildSessionEnvironment,
+    resourceHooks,
+  } = args ?? {};
+
+  if (typeof sessionId !== "string" || !sessionId) {
+    return { ok: false, reason: "missing-session-id" };
+  }
+
+  const meta = {
+    sessionId,
+    harness: harness ?? null,
+    projectId: authorizedProject?.id ?? null,
+    projectLabel: authorizedProject?.label ?? null,
+    projectRoot: authorizedProject?.root ?? null,
+    providerProfileId: providerProfileId ?? null,
+    issuedAt: now().toISOString(),
+  };
+
+  // 1. Resource projection: yields ROS_PROJECT_ROOT + ROS_PROJECT_CWD.
+  let resourceView = null;
+  let resourceRejection = null;
+  if (authorizedProject && request) {
+    const projection = createHarnessResourceProjection({
+      authorizedProject,
+      ...(resourceHooks ?? {}),
+    });
+    const outcome = await projection.project({ addonId: TERMINAL_HOST_ADDON_ID, sessionId, request, grantedCapabilities });
+    if (!outcome.ok) {
+      resourceRejection = outcome.view?.state === "denied" ? outcome.code ?? "resource-denied" : "resource-denied";
+    } else {
+      resourceView = outcome.view;
+    }
+  }
+
+  // 2. Skills projection: yields ROS_SKILLS_DIR (only if skills request present + granted).
+  let skillsView = null;
+  let skillsRejection = null;
+  let skillsStagingRoot = null;
+  if (authorizedProject && request && Array.isArray(skillCatalog) && skillSourceRoot && stagingBase) {
+    const projection = createHarnessSkillsProjection({
+      authorizedProject: { id: authorizedProject.id, label: authorizedProject.label },
+      skillCatalog,
+      skillSourceRoot,
+      stagingBase,
+    });
+    const outcome = projection.project({ addonId: TERMINAL_HOST_ADDON_ID, sessionId, request, grantedCapabilities });
+    if (outcome.ok) {
+      skillsView = outcome.view;
+      // Derive the SAME opaque owned staging root from THIS projection binding.
+      // We replicate the projection's identity derivation so the env name
+      // matches what consume() would later validate. The path is host-derived
+      // (never caller-supplied).
+      const stagingIdentity = (await import("./harness-skills-projection.mjs")).deriveStagingIdentity(
+        TERMINAL_HOST_ADDON_ID,
+        sessionId,
+        authorizedProject.id,
+      );
+      skillsStagingRoot = `${stagingBase.replace(/\/$/, "")}/skills/${stagingIdentity}`;
+    } else {
+      skillsRejection = outcome.code ?? "skills-denied";
+    }
+  }
+
+  // 3. Credential resolution (fail closed: null when providerProfileId named but credential not resolvable).
+  let credential = null;
+  if (providerProfileId) {
+    credential = resolveCredential(providerProfileId);
+    if (!credential || typeof credential.name !== "string" || !credential.name) {
+      return {
+        ok: false,
+        reason: "missing-credential",
+        code: "missing-credential",
+        meta: { ...meta, resourceRejection, skillsRejection },
+      };
+    }
+  }
+
+  // 4. Compose the env.
+  const parentEnvRecord = typeof parentEnv === "function" ? parentEnv() : (parentEnv ?? {});
+  const baseWithProjections = { ...baseEnv };
+  if (resourceView && resourceView.state === "projected") {
+    // The projection carries the canonical realpath internally; we round-trip
+    // through consume() to recover the root for the env. For alpha we re-resolve
+    // via the projection's public summary: the projection owns the canonical
+    // path; the env carries it under ROS_PROJECT_ROOT.
+    // Note: the projection object holds root internally; we re-derive via
+    // resourceView + authorizedProject.root after consume to keep the env
+    // value identical to what consume would validate.
+    const projection = createHarnessResourceProjection({ authorizedProject, ...(resourceHooks ?? {}) });
+    const projected = await projection.project({ addonId: TERMINAL_HOST_ADDON_ID, sessionId, request, grantedCapabilities });
+    if (projected.ok && projected.projection?.root) {
+      baseWithProjections[PROJECTED_SESSION_ENV_NAMES.projectRoot] = projected.projection.root;
+      baseWithProjections[PROJECTED_SESSION_ENV_NAMES.projectCwd] = projected.projection.cwd ?? projected.projection.root;
+    }
+  }
+  if (skillsStagingRoot) {
+    baseWithProjections[PROJECTED_SESSION_ENV_NAMES.skillsDir] = skillsStagingRoot;
+  }
+
+  const env = buildSessionEnv({
+    baseEnv: baseWithProjections,
+    envAllowlist,
+    parentEnv: parentEnvRecord,
+    credentialName: credential?.name ?? "",
+    credentialValue: credential?.value ?? "",
+  });
+
+  // 5. Reflect projection denials into a degraded-but-honest meta (fail closed
+  // when the projection is required; the env still carries the credential under
+  // the host-owned name, but resource/skills-related denials surface so the
+  // caller can decide whether to attach).
+  if (resourceRejection || skillsRejection) {
+    return {
+      ok: false,
+      reason: "projection-denied",
+      code: resourceRejection ?? skillsRejection,
+      meta: { ...meta, resourceRejection, skillsRejection },
+    };
+  }
+
+  return {
+    ok: true,
+    env: { ...env, _meta: JSON.stringify(meta) },
+    meta,
   };
 }
 

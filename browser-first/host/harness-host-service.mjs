@@ -12,7 +12,7 @@ import { createDshTypertAdapter } from './agent-adapters/dsh-typert.mjs';
 import { createProviderFabricAdapter } from './agent-adapters/provider-fabric.mjs';
 import { publicHarnessError } from './harness-adapter-contract.mjs';
 import { bridgeCorsHeaders, HarnessTransportError, validateLoopbackHost } from './bridge-server.mjs';
-import { attachSessionEnv } from './terminal-host-service.mjs';
+import { attachSessionEnv, buildProjectedSessionEnv, consumeGrant } from './terminal-host-service.mjs';
 
 // JSON data only: recursively sort object keys, preserve array order, no whitespace.
 export function canonicalReceipt(value) {
@@ -277,7 +277,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
       if (!id(p.addonId) || !Array.isArray(p.grants) || typeof p.consent !== 'boolean' || !revision(p.expectedRevision)) throw fail('invalid-event');
       await registry.setGrants(p.addonId, p.grants, p); return snapshot();
     }),
-    route('POST', '/terminal-host/session/attach', control, ['sessionId', 'token', 'providerProfileId'], ['harness', 'project', 'resolveCredential'], async p => {
+    route('POST', '/terminal-host/session/attach', control, ['sessionId', 'token', 'providerProfileId'], ['harness', 'project', 'resolveCredential', 'authorizedProject', 'request', 'grantedCapabilities', 'skillCatalog', 'skillSourceRoot', 'stagingBase', 'resourceHooks'], async p => {
       if (!id(p.sessionId) || typeof p.token !== 'string' || p.token.length === 0 || typeof p.providerProfileId !== 'string' || p.providerProfileId.length === 0) throw fail('invalid-event');
       // resolveCredential is an optional injection point for the route:
       //   * default: null resolver -> route returns ok:false, reason:'missing-credential'
@@ -292,15 +292,40 @@ export async function createHarnessHostService({ userRoot, store = createHarness
           return (result && typeof result === 'object' && 'name' in result && 'value' in result) ? result : null;
         };
       }
-      const result = attachSessionEnv({
-        sessionId: p.sessionId,
-        token: p.token,
-        harness: p.harness,
-        project: p.project,
-        providerProfileId: p.providerProfileId,
-        ...(resolveCredential ? { resolveCredential } : {}),
-      });
-      if (!result.ok) return { ok: false, reason: result.reason };
+      // Projection inputs are optional: when present, the route consumes the
+      // grant explicitly, then delegates to buildProjectedSessionEnv for the
+      // full projected env (project root + skills dir + credential). When
+      // absent, it delegates to attachSessionEnv (step-3 contract) which
+      // owns the grant consumption.
+      const hasProjection = !!(p.authorizedProject && p.request);
+      let result;
+      if (hasProjection) {
+        const claim = consumeGrant({ sessionId: p.sessionId, token: p.token });
+        if (!claim.ok) return { ok: false, reason: claim.reason };
+        result = await buildProjectedSessionEnv({
+          sessionId: p.sessionId,
+          harness: p.harness,
+          authorizedProject: p.authorizedProject,
+          request: p.request,
+          grantedCapabilities: p.grantedCapabilities ?? [],
+          skillCatalog: p.skillCatalog,
+          skillSourceRoot: p.skillSourceRoot,
+          stagingBase: p.stagingBase,
+          providerProfileId: p.providerProfileId,
+          ...(resolveCredential ? { resolveCredential } : {}),
+          ...(p.resourceHooks ? { resourceHooks: p.resourceHooks } : {}),
+        });
+      } else {
+        result = attachSessionEnv({
+          sessionId: p.sessionId,
+          token: p.token,
+          harness: p.harness,
+          project: p.project,
+          providerProfileId: p.providerProfileId,
+          ...(resolveCredential ? { resolveCredential } : {}),
+        });
+      }
+      if (!result.ok) return { ok: false, reason: result.reason, ...(result.code ? { code: result.code } : {}) };
       const { _meta, ...envOnly } = result.env;
       return { ok: true, env: envOnly, meta: _meta ? JSON.parse(_meta) : null };
     }),
