@@ -287,7 +287,10 @@ const subscription = bus.subscribe();
 //     non-empty + the structured error file tells the operator why.
 //     Single-line so the shell-expansion semantics are unambiguous and
 //     no backslash-line-continuations smuggle whitespace into printf args.
-const proofTail = `bash -c 'printf "%s\\n" "OPENAI_API_KEY=$OPENAI_API_KEY" "ROS_PROJECT_ROOT=$ROS_PROJECT_ROOT" "ROS_SKILLS_DIR=$ROS_SKILLS_DIR" > ${PROOF_FILE}'`;
+//     Stderr is captured to /tmp/ros-s5c-stderr.txt so a failure surfaces
+//     the actual in-window error (not just "the command did not finish").
+const STDERR_FILE = "/tmp/ros-s5c-stderr.txt";
+const proofTail = `bash -c 'printf "%s\\n" "OPENAI_API_KEY=$OPENAI_API_KEY" "ROS_PROJECT_ROOT=$ROS_PROJECT_ROOT" "ROS_SKILLS_DIR=$ROS_SKILLS_DIR" > ${PROOF_FILE} 2>${STDERR_FILE}'`;
 
 // 12. Exercise the host-composed production path:
 //     - attachAuth supplies the auth-file payload (baseUrl + tokens)
@@ -433,6 +436,16 @@ if (proof) {
   } else {
     console.error(`[smoke] BLOCKER: proof file ${PROOF_FILE} not written after local stub execution.`);
   }
+  // Read the captured in-window stderr so the operator sees the actual
+  // failure, not just "the command did not finish". Redacted: only the
+  // first 2 KiB is logged; secrets are not expected to ride stderr but
+  // the cap is defensive.
+  try {
+    const stderr = await readFile(STDERR_FILE, "utf8");
+    if (stderr) {
+      console.error(`[smoke] in-window stderr (first 2 KiB):\n${stderr.slice(0, 2048)}`);
+    }
+  } catch { /* no stderr captured */ }
   pass = false;
 }
 
