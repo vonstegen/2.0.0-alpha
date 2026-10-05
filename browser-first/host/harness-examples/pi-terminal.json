@@ -1,0 +1,105 @@
+{
+  "id": "addon.pi-terminal",
+  "name": "Pi (terminal host, external)",
+  "version": "0.1.0",
+  "author": "ResonantOS",
+  "category": "agent",
+  "sdkVersion": "0.1.0",
+  "description": "Opt-in harness. Mounts the pi.dev coding agent (https://pi.dev) as a `cli` runtime that runs in an adopted external terminal (iTerm2 / Ghostty), not as a bridge-spawned PTY. The host validates `pi` via piCommand() (fixed-install-root allowlist only) and delivers the projected session environment + credential under a host-owned env-var name via `ros-session attach` and a 0600 grant token file. The token value never enters argv; the credential value never enters argv or shell history. Host installation, explicit consent, and slot ownership are required; this manifest grants no authority.",
+  "runtimeType": "cli",
+  "surfaces": [],
+  "requestedCapabilities": [
+    {
+      "capability": "agent-runtime",
+      "granted": false,
+      "scope": "system",
+      "revocationBehavior": "hard-stop"
+    },
+    {
+      "capability": "network",
+      "granted": false,
+      "scope": "system",
+      "revocationBehavior": "hard-stop"
+    },
+    {
+      "capability": "chat-interface",
+      "granted": false,
+      "scope": "system",
+      "revocationBehavior": "hard-stop"
+    },
+    {
+      "capability": "filesystem",
+      "granted": false,
+      "scope": "project",
+      "revocationBehavior": "hard-stop"
+    }
+  ],
+  "systemSlots": [
+    {
+      "id": "primary-agent",
+      "role": "alternative-provider",
+      "replaceable": true
+    },
+    {
+      "id": "chat-interface",
+      "role": "alternative-provider",
+      "replaceable": true
+    }
+  ],
+  "tools": [
+    {
+      "name": "harness.invoke",
+      "description": "Submit one turn through the pi runtime running in the adopted external terminal.",
+      "requiredCapabilities": [
+        "agent-runtime",
+        "network",
+        "chat-interface"
+      ],
+      "inputSchema": { "type": "object" },
+      "outputSchema": { "type": "object" },
+      "audit": { "artifactTypes": [] }
+    }
+  ],
+  "agentRuntime": {
+    "invocationTool": "harness.invoke",
+    "chatAuthorLabel": "Pi (terminal host)",
+    "displayNameSource": "manifest",
+    "supportsStreaming": false,
+    "supportsCancellation": true,
+    "supportsModelSelection": true,
+    "outputFiltering": "assistant-reply-only",
+    "requiredCapabilities": [
+      "agent-runtime",
+      "network",
+      "chat-interface"
+    ],
+    "adapterVersion": 1,
+    "adapterId": "pi-terminal-v1",
+    "authScheme": "env",
+    "supportedOperations": [
+      "createSession",
+      "invoke",
+      "cancel",
+      "history",
+      "status",
+      "selectModel"
+    ],
+    "contextRoleFidelity": "structured-messages",
+    "toolCallbacks": false,
+    "credentialBinding": "host.terminal-session-env",
+    "modelSelection": {
+      "source": "host-supplied",
+      "currentModelField": "currentModel",
+      "selectable": true,
+      "requiredCapabilities": ["agent-runtime"]
+    },
+    "providerProfileId": "openai"
+  },
+  "providerRequirements": {
+    "sharedProfiles": [],
+    "supportsPrivateCredentials": true
+  },
+  "health": {
+    "strategy": "host-command-ready"
+  }
+}

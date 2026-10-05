@@ -2,6 +2,8 @@
 import { readFile } from 'node:fs/promises';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, createPublicKey, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
+import { tmpdir as osTmpdir } from 'node:os';
+import path from 'node:path';
 import { createHarnessRegistry } from './harness-registry.mjs';
 import { createHarnessRegistryStore } from './harness-registry-store.mjs';
 import { createHarnessBoundary } from './harness-boundary.mjs';
@@ -10,6 +12,7 @@ import { createHarnessTransport } from './harness-transport.mjs';
 import { createOpenAICompatibleAdapter } from './agent-adapters/openai-compatible.mjs';
 import { createDshTypertAdapter } from './agent-adapters/dsh-typert.mjs';
 import { createProviderFabricAdapter } from './agent-adapters/provider-fabric.mjs';
+import { createPiTerminalAdapter } from './agent-adapters/pi-terminal.mjs';
 import { publicHarnessError } from './harness-adapter-contract.mjs';
 import { bridgeCorsHeaders, HarnessTransportError, validateLoopbackHost } from './bridge-server.mjs';
 import { attachSessionEnv, buildProjectedSessionEnv, consumeGrant } from './terminal-host-service.mjs';
@@ -113,9 +116,14 @@ export function createHarnessStreamSubscription(reader) {
 }
 
 export async function createHarnessHostService({ userRoot, store = createHarnessRegistryStore({ userRoot }),
-  bindings = [], env = process.env, providerHost, hostTerminal, cleanupTimeoutMs = 1000, onReceipt = () => {}, fixtureSigningKey,
-  transportFactory = createHarnessTransport, dshAdapterFactory = createDshTypertAdapter, openaiAdapterFactory = createOpenAICompatibleAdapter } = {}) {
+  bindings = [], env = process.env, providerHost, hostTerminal, terminalHost, cleanupTimeoutMs = 1000, onReceipt = () => {}, fixtureSigningKey,
+  transportFactory = createHarnessTransport, dshAdapterFactory = createDshTypertAdapter, openaiAdapterFactory = createOpenAICompatibleAdapter,
+  tokenFilePath, promptFilePath } = {}) {
   if (!Number.isSafeInteger(cleanupTimeoutMs) || cleanupTimeoutMs < 1 || cleanupTimeoutMs > 30000) throw new TypeError('Bounded cleanup required.');
+  // Step 5, 5B defaults for the pi-terminal-v1 adapter. Tests inject
+  // their own factories to point at temp dirs.
+  const defaultTokenFilePath = tokenFilePath ?? (() => `${osTmpdir()}/ros-session-${randomUUID().slice(0, 8)}.token`);
+  const defaultPromptFilePath = promptFilePath ?? (() => `${osTmpdir()}/pi-prompt-${randomUUID().slice(0, 8)}.txt`);
   const approvedBindings = structuredClone(bindings);
   const credentials = createHarnessCredentials({ bindings: approvedBindings, env });
   const manifests = new Map(), resources = new Set();
@@ -174,6 +182,37 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     } else if (authorization.runtime.adapterId === 'openai-compatible-v1') {
       try { adapter = await openaiAdapterFactory({ credentials, addonId: authorization.addonId, runtime: authorization.runtime }); }
       catch (error) { await bounded(() => adapter?.dispose()); throw error; }
+    } else if (authorization.runtime.adapterId === 'pi-terminal-v1') {
+      // Step 5, 5B: pi runs in the adopted external terminal. The
+      // adapter id is reviewed; the host must have installed the
+      // terminal-host service (terminalHost.service + terminalHost.start).
+      if (!terminalHost?.service || !terminalHost?.start?.bus) {
+        throw fail('runtime-unavailable');
+      }
+      const providerProfileId = authorization.runtime.providerProfileId;
+      if (typeof providerProfileId !== 'string' || !providerProfileId) {
+        throw fail('invalid-event');
+      }
+      const repoRoot = path.resolve(import.meta.dirname, '..', '..');
+      const rosSessionPath = path.join(repoRoot, 'browser-first', 'bin', 'ros-session.mjs');
+      const sessionId = `${authorization.addonId}-${randomUUID().slice(0, 8)}`;
+      try {
+        adapter = createPiTerminalAdapter({
+          sessionId,
+          terminalHostService: terminalHost.service,
+          terminalHostStart: terminalHost.start,
+          rosSessionPath,
+          tokenFilePath: options.tokenFilePath ?? defaultTokenFilePath,
+          promptFilePath: options.promptFilePath ?? defaultPromptFilePath,
+          providerProfileId,
+          harness: authorization.addonId,
+          ...(hostTerminal ? { hostTerminal } : {}),
+        });
+      } catch (error) {
+        // Adapter construction itself failed (e.g. pi binary missing).
+        // Surface as runtime-unavailable so the registry stays in sync.
+        throw fail('runtime-unavailable');
+      }
     } else throw fail('permission-denied');
     let disposed = false;
     const resource = {

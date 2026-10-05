@@ -206,22 +206,25 @@ const hostTerminal = createTerminalHostHostWiring({
   },
 });
 
-// for Phase-3 (P6) workspace add-on grant lifecycle handlers.
-const harnessService = await createHarnessHostService({
-  userRoot: userRoot(), providerHost: providerHostService,
-  hostTerminal,
-  bindings: JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]"),
-  env: process.env,
-});
-
-// Phase 1.5 Step B wiring: invoke the terminal-host bridge service so the
-// broker bus is real when the bridge serves /agent/events. The service is
+// Phase 1.5 Step B wiring: invoke the terminal-host bridge service FIRST
+// so the harness service can see the terminal-host service + bus when it
+// is constructed (Step 5, 5B: pi-terminal-v1 adapter). The service is
 // opt-in via RESONANT_TERMINAL_HOST_BRIDGE=1 (default off in production;
 // on in dev + tests) so existing CI / production bridge runs are unchanged.
 // RESONANT_TERMINAL_DRIVER (in-memory | iterm2) selects the driver; the
 // in-memory driver composes the bus without spawning.
 const terminalHostBridge = await installTerminalHostBridge({ env: process.env });
 const terminalHostService = terminalHostBridge.service;
+const terminalHostStart = await terminalHostService.start();
+
+// for Phase-3 (P6) workspace add-on grant lifecycle handlers.
+const harnessService = await createHarnessHostService({
+  userRoot: userRoot(), providerHost: providerHostService,
+  hostTerminal,
+  terminalHost: { service: terminalHostService, start: terminalHostStart },
+  bindings: JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]"),
+  env: process.env,
+});
 
 const addonDelegationService = createAddonDelegationService({
   browserFirstRoot,
