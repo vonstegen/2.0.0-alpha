@@ -290,34 +290,20 @@ const subscription = bus.subscribe();
 //     Stderr is captured to /tmp/ros-s5c-stderr.txt so a failure surfaces
 //     the actual in-window error (not just "the command did not finish").
 //
-//     Ghostty 1.3.1's `abnormal-command-exit-runtime` threshold (default
-//     250 ms) treats any sub-threshold child exit as a failed launch on
-//     macOS (because the launch wraps through /usr/bin/login). Without the
-//     keep-alive, the user sees a "Ghostty failed to launch the requested
-//     command / Runtime: <ms>" banner even though the proof file was
-//     written correctly. In real Ghostty mode the tail execs $SHELL so
-//     bash stays alive and the window becomes interactive (the natural
-//     hosted-terminal behavior after the probe). In stub mode the smoke
-//     runs the composed command locally and we cannot keep the local exec
-//     alive (it would hang the test); we use the simple one-shot form.
+//     CP-SW2 (window cleanup): the smoke uses the one-shot form (no
+//     `exec $SHELL` keep-alive). The window stays open only because
+//     Ghostty's `wait after command:true` is set (see adapter's
+//     composeGhosttyNewWindowOsa). With no process running inside the
+//     window, terminateSession's `close (focused terminal of tab 1)`
+//     is silent — no "Close Window?" confirm prompt. Earlier iterations
+//     left an interactive shell via `exec $SHELL` which forced a
+//     confirm dialog on every teardown.
 //
-//     CP-S5T-2 (paste-input): the inner `bash -c '...; exec $SHELL'`
-//     execs the interactive shell inside a child process. If the outer
-//     proofTail ALSO execs $SHELL, we end up with TWO shells on the
-//     same stdin (the inner $SHELL replaced the child; the outer
-//     proofTail exec REPLACES the parent). Both shells then race for
-//     the same input — pasting a command can be split or echoed between
-//     them and never execute cleanly. The keep-alive lives entirely
-//     inside the child `bash -c`, so the outer bash exits cleanly
-//     after the child execs and only ONE shell owns the TTY.
+//     The adapter's `wait after command:true` default also means the
+//     production pi-terminal path keeps the window open after pi exits,
+//     so the user can review output before closing manually.
 const STDERR_FILE = "/tmp/ros-s5c-stderr.txt";
-// Bash default-value form is ${VAR:-default} — JS template literals would
-// try to parse the interior as JS, so we build the literal at runtime
-// (no JS interpolation of the ${...}).
-const probeShellForm = "${SHELL:-/bin/bash}";
-const proofTailOneShot = `bash -c 'printf "%s\\n" "OPENAI_API_KEY=$OPENAI_API_KEY" "ROS_PROJECT_ROOT=$ROS_PROJECT_ROOT" "ROS_SKILLS_DIR=$ROS_SKILLS_DIR" > ${PROOF_FILE} 2>${STDERR_FILE}'`;
-const proofTailKeepAlive = `${proofTailOneShot}; exec "${probeShellForm}"`;
-const proofTail = STUB_MODE ? proofTailOneShot : proofTailKeepAlive;
+const proofTail = `bash -c 'printf "%s\\n" "OPENAI_API_KEY=$OPENAI_API_KEY" "ROS_PROJECT_ROOT=$ROS_PROJECT_ROOT" "ROS_SKILLS_DIR=$ROS_SKILLS_DIR" > ${PROOF_FILE} 2>${STDERR_FILE}'`;
 
 // 12. Exercise the host-composed production path:
 //     - attachAuth supplies the auth-file payload (baseUrl + tokens)
