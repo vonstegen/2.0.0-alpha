@@ -189,10 +189,10 @@ export async function createHarnessHostService({ userRoot, store = createHarness
       if (!terminalHost?.service || !terminalHost?.start?.bus) {
         throw fail('runtime-unavailable');
       }
-      const providerProfileId = authorization.runtime.providerProfileId;
-      if (typeof providerProfileId !== 'string' || !providerProfileId) {
-        throw fail('invalid-event');
-      }
+      // providerProfileId is derived at invoke() time from input.model
+      // (format: "provider/model" or just "model"). The manifest
+      // declares it descriptively in harnessProviderConnection; the
+      // concrete value is the chat-ui selection for the turn.
       const repoRoot = path.resolve(import.meta.dirname, '..', '..');
       const rosSessionPath = path.join(repoRoot, 'browser-first', 'bin', 'ros-session.mjs');
       const sessionId = `${authorization.addonId}-${randomUUID().slice(0, 8)}`;
@@ -202,15 +202,13 @@ export async function createHarnessHostService({ userRoot, store = createHarness
           terminalHostService: terminalHost.service,
           terminalHostStart: terminalHost.start,
           rosSessionPath,
-          tokenFilePath: options.tokenFilePath ?? defaultTokenFilePath,
-          promptFilePath: options.promptFilePath ?? defaultPromptFilePath,
-          providerProfileId,
+          tokenFilePath: tokenFilePath ?? defaultTokenFilePath,
+          promptFilePath: promptFilePath ?? defaultPromptFilePath,
           harness: authorization.addonId,
           ...(hostTerminal ? { hostTerminal } : {}),
         });
       } catch (error) {
         // Adapter construction itself failed (e.g. pi binary missing).
-        // Surface as runtime-unavailable so the registry stays in sync.
         throw fail('runtime-unavailable');
       }
     } else throw fail('permission-denied');

@@ -6,7 +6,7 @@
   "category": "agent",
   "sdkVersion": "0.1.0",
   "description": "Opt-in harness. Mounts the pi.dev coding agent (https://pi.dev) as a `cli` runtime that runs in an adopted external terminal (iTerm2 / Ghostty), not as a bridge-spawned PTY. The host validates `pi` via piCommand() (fixed-install-root allowlist only) and delivers the projected session environment + credential under a host-owned env-var name via `ros-session attach` and a 0600 grant token file. The token value never enters argv; the credential value never enters argv or shell history. Host installation, explicit consent, and slot ownership are required; this manifest grants no authority.",
-  "runtimeType": "cli",
+  "runtimeType": "agent-addon",
   "surfaces": [],
   "requestedCapabilities": [
     {
@@ -30,7 +30,7 @@
     {
       "capability": "filesystem",
       "granted": false,
-      "scope": "project",
+      "scope": "workspace",
       "revocationBehavior": "hard-stop"
     }
   ],
@@ -75,7 +75,8 @@
     ],
     "adapterVersion": 1,
     "adapterId": "pi-terminal-v1",
-    "authScheme": "env",
+    "endpoint": "terminal://host",
+    "authScheme": "session-environment",
     "supportedOperations": [
       "createSession",
       "invoke",
@@ -88,18 +89,28 @@
     "toolCallbacks": false,
     "credentialBinding": "host.terminal-session-env",
     "modelSelection": {
-      "source": "host-supplied",
+      "source": "provider-profile",
       "currentModelField": "currentModel",
       "selectable": true,
       "requiredCapabilities": ["agent-runtime"]
-    },
-    "providerProfileId": "openai"
+    }
   },
   "providerRequirements": {
     "sharedProfiles": [],
     "supportsPrivateCredentials": true
   },
+  "archiveIntegration": {
+    "readScopes": [],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
   "health": {
     "strategy": "host-command-ready"
+  },
+  "installHooks": {},
+  "compatibility": {
+    "shellVersion": "0.1.0",
+    "platforms": ["darwin", "linux"]
   }
 }

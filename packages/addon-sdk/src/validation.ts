@@ -153,7 +153,7 @@ const validateRuntimeAdapter = (issues: AddOnValidationIssue[], runtime: Record<
   if (typeof runtime.adapterId !== "string" || !/^[a-z][a-z0-9-]{0,63}$/.test(runtime.adapterId)) {
     reject("adapter-id", "adapterId", "Adapter IDs must be bounded names, never executable paths.");
   }
-  if (!["none", "dsh-action-token", "bearer"].includes(runtime.authScheme as string)) {
+  if (!["none", "dsh-action-token", "bearer", "session-environment"].includes(runtime.authScheme as string)) {
     reject("auth-scheme", "authScheme", "Unsupported authentication scheme.");
   }
   if (runtime.authScheme !== "none" || runtime.credentialBinding !== undefined) {
@@ -163,11 +163,15 @@ const validateRuntimeAdapter = (issues: AddOnValidationIssue[], runtime: Record<
     }
   }
   // This validates a proposal, not DNS, approved ports, or binding authorization.
-  if (runtime.authScheme !== "none" || runtime.endpoint !== undefined) {
+  if ((runtime.authScheme !== "none" && runtime.authScheme !== "session-environment") || runtime.endpoint !== undefined) {
     try {
       if (typeof runtime.endpoint !== "string" || runtime.endpoint.length > 2048 || runtime.endpoint.trim() !== runtime.endpoint) throw new Error();
       const endpoint = new URL(runtime.endpoint);
-      if (!["http:", "https:"].includes(endpoint.protocol) || endpoint.username || endpoint.password ||
+      if (runtime.authScheme === "session-environment") {
+        // For session-environment runtimes, the endpoint is a non-network
+        // marker (e.g. "terminal://host"); accept any opaque scheme.
+        if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash) throw new Error();
+      } else if (!["http:", "https:"].includes(endpoint.protocol) || endpoint.username || endpoint.password ||
           endpoint.search || endpoint.hash || endpoint.pathname !== "/") throw new Error();
     } catch {
       reject("endpoint", "endpoint", "Endpoint must be an HTTP(S) origin without credentials, query, fragment or file path.");

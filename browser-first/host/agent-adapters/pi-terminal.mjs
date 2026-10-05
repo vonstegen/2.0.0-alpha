@@ -147,9 +147,9 @@ export function createPiTerminalAdapter(options = {}) {
   if (typeof options.promptFilePath !== "function") {
     throw new TypeError("createPiTerminalAdapter: promptFilePath must be a function");
   }
-  if (!identifier(options.providerProfileId)) {
-    throw new TypeError("createPiTerminalAdapter: providerProfileId required");
-  }
+  // providerProfileId is optional at construction; it is derived at
+  // invoke() time from input.model (the chat-ui selection). The
+  // caller may still pass it explicitly as a legacy seam.
 
   // Hard rule #2: `pi` is resolved only via piCommand(). Cache the
   // probe so we fail at createSession(), not on every turn.
@@ -172,7 +172,7 @@ export function createPiTerminalAdapter(options = {}) {
       if (signal?.aborted) throw fail("cancelled");
       // No local state: the terminal session is owned by the host. The
       // adapter just issues launches and observes the bus.
-      return { piTerminalAdapter: true, sessionId: options.sessionId };
+      return { piTerminalAdapter: true, sessionId: options.sessionId, _probe: { ok: !!piProbe, source: piProbe?.source, command: piProbe?.command } };
     },
 
     async *invoke({ session, input, signal } = {}) {
@@ -185,15 +185,28 @@ export function createPiTerminalAdapter(options = {}) {
         yield { type: "error", data: publicHarnessError({ code: "invalid-event" }) };
         return;
       }
-      // 2. Pre-resolve the credential via the host wiring (async seam).
+      // 2. Derive providerProfileId from input.model (format: "openai/gpt-4o"
+      //    or just "gpt-4o"). Falls back to a caller-supplied value on
+      //    options (legacy seam) and ultimately to "openai" (host default).
+      const modelStr = typeof input?.model === "string" ? input.model.trim() : "";
+      let providerProfileId = options.providerProfileId ?? null;
+      if (modelStr.includes("/")) {
+        const [prefix] = modelStr.split("/", 1);
+        if (prefix) providerProfileId = prefix;
+      }
+      if (!providerProfileId) {
+        yield { type: "error", data: publicHarnessError({ code: "invalid-event" }) };
+        return;
+      }
+      // 3. Pre-resolve the credential via the host wiring (async seam).
       let resolveCredential = () => null;
       if (options.hostTerminal && typeof options.hostTerminal.resolveCredential === "function") {
-        const pre = await options.hostTerminal.resolveCredential(options.providerProfileId);
+        const pre = await options.hostTerminal.resolveCredential(providerProfileId);
         if (pre && typeof pre === "object" && typeof pre.name === "string" && typeof pre.value === "string") {
           resolveCredential = () => pre;
         }
       }
-      // 3. Build the projected env. The host wiring already gates by
+      // 4. Build the projected env. The host wiring already gates by
       //    resolvePiNativeProvider, so shared-* / anthropic / unknown
       //    profiles fail closed here. We do not fabricate credentials.
       let envResult;
@@ -209,7 +222,7 @@ export function createPiTerminalAdapter(options = {}) {
             : {}),
           ...(options.hostTerminal?.skillSourceRoot ? { skillSourceRoot: options.hostTerminal.skillSourceRoot } : {}),
           ...(options.hostTerminal?.stagingBase ? { stagingBase: options.hostTerminal.stagingBase } : {}),
-          providerProfileId: options.providerProfileId,
+          providerProfileId,
           resolveCredential,
           request: { requests: { project: ["read"], skills: ["list", "read"] } },
           grantedCapabilities: [
@@ -260,7 +273,7 @@ export function createPiTerminalAdapter(options = {}) {
       const bootstrapCommand = composePiTerminalBootstrap({
         sessionId,
         tokenFilePath,
-        providerProfileId: options.providerProfileId,
+        providerProfileId,
         rosSessionPath: options.rosSessionPath,
         ...(options.harness ? { harness: options.harness } : {}),
         ...(options.project ? { project: options.project } : {}),
@@ -274,7 +287,7 @@ export function createPiTerminalAdapter(options = {}) {
         launchResult = await options.terminalHostService.launchBootstrap({
           sessionId,
           bootstrapCommand,
-          providerProfileId: options.providerProfileId,
+          providerProfileId,
           ...(options.harness ? { harness: options.harness } : {}),
           ...(options.project ? { project: options.project } : {}),
         });
