@@ -47,6 +47,11 @@ const commandRouteMap: Record<string, CommandRoute> = {
   harness_history: { method: "POST", path: "/agent/history", capability: "addon-runtime-read" },
   harness_status: { method: "POST", path: "/agent/status", capability: "addon-runtime-read" },
   harness_select_model: { method: "POST", path: "/agent/select-model", capability: "addon-runtime-control" },
+  // CP-XH4d: terminal-host status projection — read-only, non-secret surface
+  // status used by the Terminal dock entry to render a connection badge per
+  // tab. Requires addon-runtime-control to mirror the harness route's
+  // gate. Result is plain JSON; no transformation required.
+  terminal_host_status: { method: "GET", path: "/terminal-host/status", capability: "addon-runtime-control" },
 };
 
 export const WEB_TRANSPORT_CAPABILITIES: readonly string[] = [...new Set(
@@ -157,7 +162,7 @@ const performInvoke = async <T>(
 
   const response = await fetch(`${baseUrl}${route.path}`, {
     method: route.method,
-    ...(command.startsWith("harness_") ? { redirect: "error" as const } : {}),
+    ...(command.startsWith("harness_") || command === "terminal_host_status" ? { redirect: "error" as const } : {}),
     headers,
     body: route.method === "POST" ? JSON.stringify(route.body ? route.body(args) : args) : undefined,
   });

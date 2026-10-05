@@ -314,6 +314,10 @@ const harnessRoutes = [
   ["harness_history", "POST", "/agent/history", "addon-runtime-read"],
   ["harness_status", "POST", "/agent/status", "addon-runtime-read"],
   ["harness_select_model", "POST", "/agent/select-model", "addon-runtime-control"],
+  // CP-XH4d: terminal-host status projection for the tabbed Terminal dock
+  // entry. Read-only, requires addon-runtime-control to mirror the harness
+  // route's gate.
+  ["terminal_host_status", "GET", "/terminal-host/status", "addon-runtime-control"],
 ];
 const session = { addonId: "addon.demo", sessionId: "session-1", bootEpoch: "boot-1", generation: 2 };
 

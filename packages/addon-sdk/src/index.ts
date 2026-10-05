@@ -28,6 +28,6 @@ export {
 } from "./contracts";
 export { createAddOnRegistryEntry, createAddOnRegistrySnapshot } from "./registry";
 export type { AddOnRegistryBuildInput, AddOnRegistryEntryOptions, AddOnRegistrySnapshot } from "./registry";
-export { createAddOnSurfaceDockRoutes } from "./surface-routing";
-export type { AddOnSurfaceDockRoute } from "./surface-routing";
+export { createAddOnSurfaceDockRoutes, groupSurfaceDockRoutesBySection } from "./surface-routing";
+export type { AddOnSurfaceDockRoute, AddOnSurfaceDockSection } from "./surface-routing";
 export { assertValidAddOnManifest, validateAddOnManifest } from "./validation";

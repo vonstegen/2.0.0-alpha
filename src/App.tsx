@@ -162,7 +162,10 @@ import {
   hasSystemSlotManifest,
   systemSlotAvailable,
 } from "./modules/shell/system-slots";
-import { createAddOnSurfaceDockRoutes } from "./sdk/addons";
+import {
+  createAddOnSurfaceDockRoutes,
+  groupSurfaceDockRoutesBySection,
+} from "./sdk/addons";
 import {
   executeCreateProviderProfile,
   executeRefreshProviderDiagnostics,
@@ -183,6 +186,8 @@ import {
   renameStrategistIdentity,
   toggleStrategistChannel,
 } from "./modules/strategist/controller";
+import TerminalDockEntry from "./modules/terminal/TerminalDockEntry";
+import { useTerminalHostStatus } from "./modules/terminal/useTerminalHostStatus";
 
 const ArchiveWorkspace = lazy(() =>
   import("./modules/archive/ArchiveWorkspace").then((module) => ({ default: module.ArchiveWorkspace })),
@@ -590,6 +595,30 @@ export function App() {
     }
     void refreshArchiveQueue();
   }, [loadState, archiveQueueBusy, archiveQueue.length, harnessProjection]);
+
+  // CP-XH4d: live `/terminal-host/status` payload for the tabbed Terminal
+  // dock entry. This hook MUST be called unconditionally before any of the
+  // boot/error early returns below — React enforces the rules of hooks.
+  // The hook is disabled until the shell finishes booting AND a terminal
+  // section is actually visible — registry mocks must not be intercepted
+  // by the terminal-status poll in tests where the section never renders.
+  const readyManifests = (() => {
+    if (loadState.phase !== "ready") return [];
+    return [...loadState.bundled, ...loadState.sideloaded];
+  })();
+  const projectedSections = groupSurfaceDockRoutesBySection(
+    createAddOnSurfaceDockRoutes(
+      readyManifests,
+      loadState.phase === "ready" ? loadState.state.installations : {},
+      harnessProjection,
+    ),
+  );
+  const terminalPollingEnabled =
+    loadState.phase === "ready" && projectedSections.some((s) => s.sectionId === "terminal");
+  const { status: terminalHostStatus } = useTerminalHostStatus({
+    intervalMs: 5000,
+    enabled: terminalPollingEnabled,
+  });
 
   if (loadState.phase === "loading") {
     return (
@@ -1799,11 +1828,21 @@ export function App() {
   const opencodeDockEnabled = Boolean(opencodeManifest && opencodeInstallation?.installed && opencodeInstallation.enabled);
   const paperclipDockEnabled = Boolean(paperclipManifest && paperclipInstallation?.installed && paperclipInstallation.enabled);
   const hermesDockEnabled = Boolean(hermesManifest && hermesInstallation?.installed && hermesInstallation.enabled);
-  const manifestSurfaceDockItems = createAddOnSurfaceDockRoutes(allManifests, state.installations, harnessProjection).map((route) => ({
-    id: route.sectionId as Section,
-    label: route.label,
-    eyebrow: route.eyebrow,
-    icon: route.dockIcon as DockIconId,
+  // CP-XH4d: group add-on surface dock routes by sectionId so multi-surface
+  // sections (e.g. the Terminal section: ghostty + iterm2) render as one
+  // dock entry with one tab per surface. Each section is then collapsed to
+  // a single nav-item, except for the `"terminal"` section which expands
+  // into `TerminalDockEntry` (tab strip + connection badge).
+  const manifestSurfaceSections = projectedSections;
+  const flatManifestSections = manifestSurfaceSections.filter(
+    (section) => section.sectionId !== "terminal",
+  );
+  const terminalSection = manifestSurfaceSections.find((section) => section.sectionId === "terminal") ?? null;
+  const flatManifestNavItems = flatManifestSections.map((section) => ({
+    id: section.sectionId as Section,
+    label: section.label,
+    eyebrow: section.eyebrow,
+    icon: section.dockIcon as DockIconId,
     pinned: true,
   }));
   const addOnNavItems = [
@@ -1822,7 +1861,7 @@ export function App() {
     ...(hermesDockEnabled
       ? [{ id: "hermes" as Section, label: hermesManifest?.name ?? "Hermes", eyebrow: "agent", icon: "hermes" as DockIconId, pinned: true }]
       : []),
-    ...manifestSurfaceDockItems,
+    ...flatManifestNavItems,
   ];
   const visibleNavItems = addOnNavItems.length
     ? [
@@ -1927,6 +1966,16 @@ export function App() {
               <small>{item.eyebrow}</small>
             </button>
           ))}
+          {terminalSection ? (
+            <TerminalDockEntry
+              key={terminalSection.sectionId}
+              section={terminalSection}
+              status={terminalHostStatus}
+              activeSectionId={currentSection}
+              dockIcon={terminalSection.dockIcon}
+              onSelectSection={(sectionId) => setSection(sectionId as Section)}
+            />
+          ) : null}
         </nav>
       </aside>
 

@@ -282,10 +282,56 @@ test("GET /terminal-host/status shape-walker: no secret-shaped value in any stri
   assertNoSecretShapedValue(result.payload, "$.payload");
 });
 
+test("GET /terminal-host/status shape-walker: every string the renderer reads is a public identifier (CP-XH4d)", async (t) => {
+  // CP-XH4d acceptance: the tabbed Terminal dock entry inspects exactly
+  // four string slots — `driveId`, plus each surface's `adapterId` and
+  // `label` — to compute the connection badge. None of these may be a
+  // path, token, credential, or env-key. The general shape-walker covers
+  // every string slot; this test re-asserts the invariant on the precise
+  // fields the renderer reads, so a regression that leaks a secret into
+  // `surfaces[i].label` (the visible badge label) fails this gate even
+  // if it slipped past the broader walker.
+  const f = await fixture(t, {
+    terminalHost: {
+      service: {
+        status: () => ({
+          alive: true,
+          driveId: "iterm2",
+          adapterId: "addon.resonant-terminal-iterm2",
+          sessions: [],
+        }),
+        start: { bus: {} },
+      },
+    },
+  });
+  const ghostty = JSON.parse(
+    await readFile(new URL("../../public/addons/terminal-host-ghostty.json", import.meta.url)),
+  );
+  const iterm2 = JSON.parse(
+    await readFile(new URL("../../public/addons/terminal-host-iterm2.json", import.meta.url)),
+  );
+  await f.install(ghostty);
+  await f.install(iterm2);
+
+  const result = await f.call("/terminal-host/status");
+  assert.equal(result.status, 200);
+  // The renderer reads these fields:
+  const renderedStrings = [
+    result.payload.driveId,
+    ...result.payload.surfaces.flatMap((surface) => [surface.adapterId, surface.label]),
+  ];
+  for (const value of renderedStrings) {
+    assert.equal(typeof value, "string");
+    assert.ok(value.length > 0);
+    assertNoSecretShapedValue(value, "$.renderer");
+  }
+});
+
 test("GET /terminal-host/status shape-walker rejects payloads that leak token/path/credential strings", () => {
   // Negative shape-walker enforcement: if the route were ever to embed
-  // a hostile value, the walker would catch it. This is the regression
-  // guard for CP-XH4c.
+  // a hostile value into any of the renderer-readable slots
+  // (`driveId`, `surfaces[i].adapterId`, `surfaces[i].label`), the walker
+  // would catch it. This is the regression guard for CP-XH4d.
   for (const hostile of [
     "sk-1234567890abcdefghij",
     "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhdHRhY2tlciJ9.signature",
@@ -294,7 +340,16 @@ test("GET /terminal-host/status shape-walker rejects payloads that leak token/pa
     "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789",
   ]) {
     assert.throws(
-      () => assertNoSecretShapedValue({ driveId: hostile, surfaces: [], connected: false, sessions: [] }),
+      () =>
+        assertNoSecretShapedValue(
+          {
+            driveId: hostile,
+            surfaces: [{ adapterId: hostile, label: hostile, compatible: true, connected: false }],
+            connected: false,
+            sessions: [],
+          },
+          "$.payload",
+        ),
       /secret-shaped/,
       `must reject: ${hostile}`,
     );
