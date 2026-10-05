@@ -52,6 +52,9 @@ the current `pi-terminal-v1` behavior green until the cutover in XH2.
   `launchBootstrap({ commandSuffix })` owner path; `buildProjectedSessionEnv`.
 - `browser-first/host/pi-runtime.mjs` — `piCommand()` (fixed-root allowlist).
 - `browser-first/host/pi-native-provider-map.mjs` — `resolvePiNativeProvider`.
+- `examples/sdk-demo/terminal-host/iterm2/adapter.py` and
+  `examples/sdk-demo/terminal-host/ghostty/adapter.mjs` — the two terminal
+  adapters to read for their descriptors + parity checks (see 4a).
 - `src/core/terminal-host-contract.ts` — terminal adapter contract shape.
 - `src/core/contracts.ts` — harness/runtime/registry contracts.
 - `browser-first/test/pi-terminal-adapter.test.mjs`,
@@ -91,7 +94,7 @@ interface TerminalSurfaceDescriptor {
     "createSession",
     "launchBootstrap",
     "sendInput",
-    "terminateSession"
+    "terminateSession",
   ];
   capabilities: readonly TerminalCapability[];
   feedbackChannel: "event-stream" | "polling" | "observation" | "none";
@@ -111,6 +114,32 @@ type TerminalCapability =
 
 Populate descriptors for the existing adapters (iTerm2, Ghostty, in-memory).
 The descriptor carries **no harness-specific behavior**.
+
+### iTerm2 parity (fold into 4a)
+
+While reading the iTerm2 adapter to populate its descriptor, verify it does
+**not** share the two defects fixed on Ghostty — and fix, or file a
+failing-test follow-up, for any gap:
+
+1. **Long-command delivery.** Ghostty's AppleScript `command:"…"` dropped long
+   commands (fixed via a 0600 script file). iTerm2 uses the iTerm2 Python API,
+   which may not have the same limit. Confirm a long composed command
+   (token/auth/project paths + `commandSuffix`) reaches the iTerm2 session
+   intact; if not, apply the same script-file delivery pattern.
+2. **Window/session cleanup on shutdown.** `terminateSession` must actually
+   close the iTerm2 session/window, and the W1 tracked-sessions fix in
+   `createTerminalHostService().stop()` must clean up iTerm2 windows too (the
+   fix is adapter-agnostic, but the adapter's `terminateSession` must perform
+   the real close).
+3. **No-confirm close.** Determine whether iTerm2 prompts before closing a
+   session with a running process, and whether teardown can close silently.
+   Resolve any equivalent of Ghostty's `confirm-close-surface` the same way
+   (keep the one-shot proof window open via the adapter's own mechanism; no
+   running process at close time).
+
+Record the iTerm2 adapter's actual `capabilities` and `feedbackChannel` in its
+descriptor honestly — do not claim `command-events` or `screen-stream` that the
+adapter does not actually provide.
 
 ### 4b. External-CLI harness policy contract
 
@@ -150,8 +179,8 @@ Allow a manifest to request a reviewed policy, never to define one:
     "terminalRequirements": ["command", "environment", "lifecycle-events"],
     "credentialSource": "provider-profile",
     "promptDelivery": "file",
-    "executionGating": "explicit-enable"
-  }
+    "executionGating": "explicit-enable",
+  },
 }
 ```
 
@@ -165,6 +194,9 @@ commands, credential names, and unrestricted env maps. Add rejection tests.
   and an unknown `policyId`.
 - Validator accepts a valid `pi-v1` declaration.
 - iTerm2/Ghostty/in-memory descriptors exist and are accurate.
+- iTerm2 parity verified: long-command delivery intact (or a failing-test
+  follow-up filed), and `stop()`/`terminateSession` close tracked iTerm2
+  sessions with no confirmation prompt.
 
 `STOP AND REPORT` here.
 
