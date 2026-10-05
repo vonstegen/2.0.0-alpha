@@ -430,6 +430,52 @@ export async function createHarnessHostService({ userRoot, store = createHarness
       const { _meta, ...envOnly } = result.env;
       return { ok: true, env: envOnly, meta: _meta ? JSON.parse(_meta) : null };
     }),
+    // CP-XH4c: GET /terminal-host/status
+    //
+    // Loopback-only (loopbackHostOnly is set by route()) and requires
+    // addon-runtime-control. Returns a non-secret projection of every
+    // terminal-host surface registered with the harness: adapterId,
+    // label, compatibility verdict, and `connected` derived from the
+    // live terminal-host-service status. The route NEVER returns a
+    // token, credential, path, env value, or any other host-private
+    // material — see `assertNoSecretShapedValue` in the shape-walker
+    // test for the enforcement invariant.
+    route('GET', '/terminal-host/status', control, [], [], async () => {
+      const projection = snapshot();
+      const serviceStatus = typeof terminalHost?.service?.status === 'function'
+        ? terminalHost.service.status()
+        : { alive: false, driveId: 'in-memory', adapterId: null, sessions: [] };
+      const activeDriveId = serviceStatus.alive ? serviceStatus.driveId : null;
+      const surfaces = [];
+      for (const [addonId, entry] of Object.entries(projection.installations)) {
+        const manifest = manifests.get(addonId);
+        if (!manifest || !manifest.surfaces) continue;
+        const terminalSurface = manifest.surfaces.find((surface) => surface.embeddedWorkspace?.mode === 'terminal'
+          || surface.shellNavigation?.sectionId === 'terminal');
+        if (!terminalSurface) continue;
+        const grantedCapabilitySet = new Set(
+          entry.grantedCapabilities
+            .filter((grant) => grant.granted)
+            .map((grant) => grant.capability),
+        );
+        const compatible = grantedCapabilitySet.has('terminal-host');
+        const connected = Boolean(serviceStatus.alive && compatible
+          && activeDriveId !== null
+          && serviceStatus.adapterId === addonId);
+        surfaces.push({
+          adapterId: addonId,
+          label: terminalSurface.label || manifest.name,
+          compatible,
+          connected,
+        });
+      }
+      return {
+        connected: Boolean(serviceStatus.alive),
+        driveId: serviceStatus.driveId,
+        surfaces,
+        sessions: Array.isArray(serviceStatus.sessions) ? serviceStatus.sessions : [],
+      };
+    }),
     route('POST', '/addons/enabled', control, ['addonId', 'enabled', 'expectedRevision'], [], async p => {
       if (!id(p.addonId) || typeof p.enabled !== 'boolean' || !revision(p.expectedRevision)) throw fail('invalid-event');
       await registry.setEnabled(p.addonId, p.enabled, p); return snapshot();

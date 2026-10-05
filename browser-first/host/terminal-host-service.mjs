@@ -704,6 +704,22 @@ export function envelopeToHarnessEvent(envelope, provenance) {
  */
 
 /**
+ * @typedef {Object} TerminalHostSessionStatus
+ * @property {string} sessionId
+ * @property {"running" | "stopped"} status
+ */
+
+/**
+ * @typedef {Object} TerminalHostStatusSnapshot
+ * @property {boolean} alive
+ * @property {string} driveId
+ * @property {string} adapterId
+ * @property {TerminalHostSessionStatus[]} sessions
+ * @property {number} events
+ * @property {number | null} lastEventAt
+ */
+
+/**
  * @typedef {Object} TerminalHostService
  * @property {() => Promise<{ adapterId: string, bus: ReturnType<typeof createHarnessEventBus>, driveId: string }>} start
  * @property {() => Promise<void>} stop
@@ -711,7 +727,7 @@ export function envelopeToHarnessEvent(envelope, provenance) {
  * @property {(args: { sessionId: string, text: string, turnId?: string, timeoutMs?: number }) => Promise<{ sessionId: string, delivered: boolean }>} sendInput
  * @property {(args: { sessionId: string, turnId?: string, timeoutMs?: number }) => Promise<{ sessionId: string, terminated: boolean }>} terminateSession
  * @property {(args: { sessionId: string, entryMode?: "create" | "adopt" | "detached", turnId?: string, timeoutMs?: number }) => Promise<{ sessionId: string }>} createSession
- * @property {() => { events: number, lastEventAt: number | null, alive: boolean }} status
+ * @property {() => TerminalHostStatusSnapshot} status
  */
 
 /**
@@ -1135,8 +1151,27 @@ export function createTerminalHostService(options = {}) {
     return /** @type {any} */ (result);
   }
 
+  /**
+   * Read-only synchronous snapshot of the service runtime. CP-XH4c:
+   * the shape carries `alive`, `driveId`, `adapterId`, and
+   * `sessions: [{ sessionId, status }]` for the new HTTP route. It
+   * NEVER includes tokens, credentials, paths, or env values.
+   * `events` + `lastEventAt` are preserved for existing callers.
+   */
   function status() {
-    return { events: eventsPublished, lastEventAt, alive: !!child && alive };
+    const isAlive = !!child && alive;
+    const sessionStatuses = [];
+    for (const sessionId of trackedSessions) {
+      sessionStatuses.push({ sessionId, status: isAlive ? "running" : "stopped" });
+    }
+    return {
+      alive: isAlive,
+      driveId,
+      adapterId: addonId(),
+      sessions: sessionStatuses,
+      events: eventsPublished,
+      lastEventAt,
+    };
   }
 
   return { start, stop, launchBootstrap, sendInput, terminateSession, createSession: createSessionRpc, status };
