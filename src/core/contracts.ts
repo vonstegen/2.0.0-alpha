@@ -537,6 +537,7 @@ export const HARNESS_PUBLIC_ERROR_MESSAGES = Object.freeze({
   "unsupported-operation": "Operation unavailable.",
   "invalid-event": "Invalid runtime event.",
   "runtime-unavailable": "Runtime unavailable.",
+  "unsupported-terminal": "Terminal surface unsupported.",
   "permission-denied": "Runtime permission denied.",
   "ownership-conflict": "Runtime ownership changed.",
   "session-not-found": "Runtime session unavailable.",

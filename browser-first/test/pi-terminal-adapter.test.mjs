@@ -287,7 +287,10 @@ describe("createExternalCliTerminalAdapter (XH2: pi-v1 path)", () => {
     await it;
     const err = events.find((e) => e.type === "error");
     assert.ok(err, "yielded an error event");
-    assert.match(err.data.message, /terminated/);
+    // The harness event contract sanitizes error frames to the public
+    // code+message pair; the terminated detail stays on the bus event.
+    assert.equal(err.data.code, "runtime-unavailable");
+    assert.equal(err.data.message, "Runtime unavailable.");
   });
 
   it("rejects a providerProfileId not in the policy's supportedProviderFamilies", async () => {

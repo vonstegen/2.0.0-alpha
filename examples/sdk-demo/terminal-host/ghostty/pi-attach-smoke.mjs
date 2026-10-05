@@ -51,12 +51,43 @@
 //     node --experimental-strip-types \
 //       examples/sdk-demo/terminal-host/ghostty/pi-attach-smoke.mjs
 //
+// CP-L2 launch-Pi proof (both modes, after the env-proof assertions):
+//   the smoke dispatches a REAL turn via POST /agent/turn. The harness
+//   resolves the generic external-cli launcher + reviewed pi-v1 policy
+//   (pi-terminal-v1 -> pi-v1), which stages a 0600 prompt file (the smoke
+//   prompt is multi-line so the file path is always exercised), composes
+//   `'<pi executable>' '@<prompt file>'` as commandSuffix, and delivers it
+//   via launchBootstrap (host-owned grant/token/attach — F1 preserved).
+//   Pi is long-lived: the smoke asserts terminal.session.started +
+//   terminal.command.started and that command.ended does NOT fire within
+//   the observation window — it never waits on ended as a success signal.
+//   In real Ghostty mode the operator must confirm the Pi TUI visually;
+//   afterwards the smoke kills pi by its exact rewritten process title
+//   (`pkill -x pi` — pi rewrites its title at startup, so argv patterns do
+//   not survive) so the turn finalizes (session.terminated -> generator
+//   finally -> prompt file unlinked) and the window closes silently (no
+//   live child at close, the CP-SW2 precondition). A real credential is
+//   NOT required: Pi starts unauthenticated and the TUI stays open.
+//
+// CP-L3 (Tier 3, manual acceptance — real credential):
+//   1. Store a real OpenAI key in a 0600 file outside the repo, e.g.
+//      ~/.config/ros/openai-key (Settings → Providers persists it for ROS
+//      itself; the smoke reads it session-only from this file).
+//   2. Run the smoke with ROS_S5C_OPENAI_KEY_FILE=<path> — the host wiring
+//      resolves that key for profile "openai" instead of the sentinel, and
+//      every no-leak assertion switches to the real value.
+//   3. Operator confirms in the Pi TUI that /models lists models and one
+//      cheap chat turn completes with the delivered credential.
+//   This is a manual gate; record the outcome in the run report.
+//
 // Exit code 0 = green; 1 = red.
 
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
+import { createInterface } from "node:readline";
+import { execFile as execFileCb } from "node:child_process";
 import nodeEvents from "node:events";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -85,7 +116,7 @@ const ROS_SESSION_CLI = join(REPO, "browser-first/bin/ros-session.mjs");
 // Dynamic imports so the smoke fails cleanly when Ghostty is missing.
 const { createHarnessHostService } = await import(join(REPO, "browser-first/host/harness-host-service.mjs"));
 const { createTerminalHostHostWiring } = await import(join(REPO, "browser-first/host/terminal-host-host-wiring.mjs"));
-const { createTerminalHostService } = await import(TERMINAL_HOST_SERVICE_PATH);
+const { createTerminalHostService, listOutstandingGrants } = await import(TERMINAL_HOST_SERVICE_PATH);
 const { installTerminalHostBridge, uninstallTerminalHostBridge } = await import(join(REPO, "browser-first/host/terminal-host-bridge-wiring.mjs"));
 const { createBridgeToken, startBridgeServer } = await import(join(REPO, "browser-first/host/bridge-server.mjs"));
 const { piCommand } = await import(join(REPO, "browser-first/host/pi-runtime.mjs"));
@@ -98,6 +129,16 @@ const assert = {
       pass = false;
     }
   },
+};
+
+// Promisified execFile that never rejects (callers inspect output/exit via
+// other means; used for pgrep/pkill/osascript probes).
+const execFile = (cmd, args) => new Promise((resolve) => execFileCb(cmd, args, (err, stdout) => resolve({ err, stdout: stdout ?? "" })));
+// Live Ghostty window ids (real mode bookkeeping only).
+const ghosttyWindowIds = async () => {
+  const { err, stdout } = await execFile("osascript", ["-e", 'tell application "Ghostty" to get id of every window']);
+  if (err || !stdout.trim()) return [];
+  return stdout.trim().split(/,\s*/);
 };
 
 console.error(`[smoke] CP-S5c pi-attach external-terminal end-to-end (mode=${STUB_MODE ? "stub" : "ghostty"})`);
@@ -121,14 +162,32 @@ const MEM_SENTINEL = `s5c-mem-sentinel-${randomUUID().slice(0, 8)}`;
 await mkdir(`${MEMORY_ROOT}/AI_MEMORY/wiki`, { recursive: true });
 await writeFile(`${MEMORY_ROOT}/AI_MEMORY/wiki/sentinel.md`, `# S5c fixture\n\n${MEM_SENTINEL}\n`, { mode: 0o600 });
 
+// 1c. CP-L2 launch-Pi fixture. The turn prompt is multi-line so the pi-v1
+//     policy ALWAYS stages the 0600 prompt file and composes the '@<file>'
+//     form (never the prompt text on argv). The sentinel lets the smoke
+//     assert the prompt content never reaches the composed command or bus.
+const PI_PROMPT_FILE = `${USER_ROOT}/pi-prompt-l2.txt`;
+const PI_SENTINEL = `s5c-l2-sentinel-${randomUUID().slice(0, 8)}`;
+const PI_PROMPT = [
+  "CP-L2 launch smoke; no repository changes requested.",
+  `Sentinel (must never appear on argv or the bus): ${PI_SENTINEL}.`,
+  "If a working provider credential is present, reply with the single word PONG; otherwise remain at the prompt.",
+].join("\n");
+
 // 2. Real host wiring with an injected profile + secret for OPENAI_API_KEY.
+//    CP-L3: when ROS_S5C_OPENAI_KEY_FILE names a 0600 file, its contents are
+//    resolved as the "openai" secret instead of the sentinel so the operator
+//    can perform the Tier-3 real-model acceptance run. The value is read
+//    session-only and only ever delivered under the host-owned env-var name.
+const REAL_KEY_FILE = process.env.ROS_S5C_OPENAI_KEY_FILE || null;
+const CRED_VALUE = REAL_KEY_FILE ? (await readFile(REAL_KEY_FILE, "utf8")).trim() : FAKE_CRED;
 const hostTerminal = createTerminalHostHostWiring({
   userRoot: USER_ROOT,
   env: process.env,
   getProfile: async (id) => id === "openai"
     ? { id, templateId: "openai", providerType: "openai" }
     : null,
-  resolveSecret: async (profile) => profile?.id === "openai" ? FAKE_CRED : null,
+  resolveSecret: async (profile) => profile?.id === "openai" ? CRED_VALUE : null,
 });
 
 // 3. Resolve pi before constructing the terminal host; abort early if missing.
@@ -216,6 +275,10 @@ const harness = await createHarnessHostService({
   providerHost: fakeProviderHost,
   hostTerminal,
   terminalHost: { service: terminalBridge.service, start: terminalBridge.started },
+  // CP-L2: deterministic prompt-file path so the launch-Pi proof can assert
+  // the 0600 staging + post-turn cleanup of the file the pi-v1 policy
+  // references via '@<file>'.
+  promptFilePath: () => PI_PROMPT_FILE,
   bindings: [{
     name: "host.terminal-session-env",
     addonId: "addon.pi-terminal",
@@ -308,6 +371,13 @@ const subscription = bus.subscribe();
   }
 })();
 
+// 10b. Baseline Ghostty window set (real mode): every window that exists
+//      BEFORE the smoke launches anything belongs to the operator. The
+//      teardown assertion is "current windows ⊆ baseline" — any extra
+//      window is a smoke window that failed to close (e.g. blocked by a
+//      "Close Window?" confirm dialog).
+const BASELINE_WINDOW_IDS = STUB_MODE ? [] : await ghosttyWindowIds();
+
 // 11. The proof tail writes PROOF_FILE using env NAMES only (no literals).
 //     It runs AFTER the eval head; if attach failed, env is unset and the
 //     file still gets written but with empty values — the smoke asserts
@@ -388,7 +458,7 @@ if (STUB_MODE) {
     pass = false;
   } else {
     const cmd = stubCommands[0];
-    assertNoSecretsInCommand(cmd, { bridgeToken, controlToken, FAKE_CRED });
+    assertNoSecretsInCommand(cmd, { bridgeToken, controlToken, FAKE_CRED: CRED_VALUE });
     if (!pass) {
       console.error(`[smoke] composed command preview: ${cmd.slice(0, 200)}...`);
     }
@@ -501,7 +571,7 @@ if (!STUB_MODE && busEvents.length > 0) {
 // 14b. No bus event payload carries the credential value.
 const allEvents = JSON.stringify(busEvents);
 if (busEvents.length > 0) {
-  check("no credential value in bus events", !allEvents.includes(FAKE_CRED));
+  check("no credential value in bus events", !allEvents.includes(CRED_VALUE));
 }
 
 // 14c. The auth + token files were never exposed via the route boundary
@@ -525,7 +595,7 @@ if (proof) {
   // diagnostic surface, not a report destination).
   console.error(`[smoke] proof file contents:\n${proof}`);
   const credLine = proof.split("\n").find((l) => l.startsWith(`${FAKE_CRED_NAME}=`)) ?? "";
-  check(`proof file contains ${FAKE_CRED_NAME}=sk-cp-s5c-sentinel-...`, credLine.includes(FAKE_CRED));
+  check(`proof file contains ${FAKE_CRED_NAME}=<resolved credential>`, credLine.includes(CRED_VALUE));
   check("proof file contains ROS_PROJECT_ROOT=...", /ROS_PROJECT_ROOT=\S+/.test(proof));
   check("proof file contains ROS_SKILLS_DIR=...", /ROS_SKILLS_DIR=\S+/.test(proof));
   // CP-L1: the M2 memory projection delivered ROS_MEMORY_CONTEXT — a
@@ -576,7 +646,184 @@ if (errPayload) {
   try { await rm(ATTACH_ERROR_FILE, { force: true }); } catch { /* */ }
 }
 
-// 15. Cleanup. CP-L1: close only once the in-window command has FULLY
+// ==========================================================================
+// 15. CP-L2 — launch the REAL pi TUI through the production harness chain.
+//
+//     POST /agent/turn -> boundary.invoke -> generic external-cli launcher
+//     (pi-terminal-v1 -> reviewed pi-v1 policy):
+//       resolveExecutable (piCommand allowlist) -> stage 0600 prompt file
+//       -> composeInvocation -> commandSuffix `'<pi>' '@<file>'`
+//       -> terminalHostService.launchBootstrap (host-owned grant/token/attach)
+//       -> new Ghostty window runs: eval "$(ros-session attach …)"; pi @file
+//
+//     Pi is long-lived. The smoke asserts start signals + process liveness
+//     and NEVER treats terminal.command.ended as success (under the Ghostty
+//     adapter's title-diff semantics, .ended fires on ANY title change, not
+//     on process exit — terminal.session.terminated + pgrep are the real
+//     liveness signals).
+// ==========================================================================
+console.error("[smoke] CP-L2: dispatching launch-Pi turn via /agent/turn");
+
+check("piCommand() resolved a validated absolute pi executable", !!piProbe && typeof piProbe.command === "string" && piProbe.command.startsWith("/"));
+
+// Subscribe to the harness session event stream BEFORE dispatch so every
+// turn frame (delta/final/error) is captured for evidence + diagnosis.
+// (Streaming routes take their params via the URL query string.)
+const eventsSub = await harness.harnessRoutes.find((r) => r.path === "/agent/events").handler({}, {
+  url: `/agent/events?addonId=${encodeURIComponent(session.addonId)}&sessionId=${encodeURIComponent(session.sessionId)}&bootEpoch=${encodeURIComponent(session.bootEpoch)}&generation=${session.generation}`,
+});
+const harnessEvents = [];
+(async () => {
+  try { for await (const ev of eventsSub.events) harnessEvents.push(ev); } catch { /* stream closed */ }
+})();
+
+const busEventsBeforeTurn = busEvents.length;
+const turnRes = await harness.harnessRoutes.find((r) => r.path === "/agent/turn").handler({
+  session,
+  input: {
+    model: "openai/cp-l2-smoke",
+    messages: [{ role: "user", content: PI_PROMPT }],
+  },
+});
+check("turn dispatched (turnId returned)", typeof turnRes?.turnId === "string" && turnRes.turnId.length > 0);
+const turnId = turnRes?.turnId;
+
+// 15a. The launch reached the terminal peer. In stub mode the composed
+//      command is captured; in real mode the window + bus events carry it.
+let piSessionId = null;
+if (STUB_MODE) {
+  await delay(750);
+  check("stub captured the launch-Pi command", stubCommands.length === 2);
+  console.error(`[smoke] harness turn frames so far: ${JSON.stringify(harnessEvents.map((e) => ({ type: e?.type, code: e?.data?.code ?? null })))}`);
+  if (stubCommands.length === 2) {
+    const piCmd = stubCommands[1];
+    assertNoSecretsInCommand(piCmd, { bridgeToken, controlToken, FAKE_CRED: CRED_VALUE });
+    assert.match(piCmd, /^eval "\$\(node .*ros-session\.mjs' attach /);
+    check("command carries the validated absolute pi path", piProbe ? piCmd.includes(`'${piProbe.command}'`) : false);
+    check("command carries the '@<prompt file>' form (never inline prompt)", piCmd.includes(`'@${PI_PROMPT_FILE}'`));
+    check("command contains no prompt content (sentinel)", !piCmd.includes(PI_SENTINEL));
+  }
+  // The prompt file was staged 0600 BEFORE the launch RPC.
+  try {
+    const pfStat = await stat(PI_PROMPT_FILE);
+    check("prompt file staged", pfStat.isFile());
+    check("prompt file is 0600", (pfStat.mode & 0o777) === 0o600);
+  } catch {
+    check("prompt file staged", false);
+  }
+} else {
+  // Real Ghostty: a NEW terminal session starts for the pi launch. On the
+  // bus, the top-level sessionId is the broker provenance
+  // ("terminal-host-bus"); the REAL terminal session id rides
+  // data.sessionId (per the terminal.* event contract).
+  let w = 0;
+  while (w < 10_000 && !piSessionId) {
+    const started = busEvents.slice(busEventsBeforeTurn).find((e) => e.type === "terminal.session.started");
+    if (started) piSessionId = started?.data?.sessionId ?? null;
+    else { await delay(250); w += 250; }
+  }
+  check("bus saw terminal.session.started for the pi launch", !!piSessionId);
+  // command.started fires on the first title poll after window creation.
+  w = 0;
+  while (w < 10_000 && !busEvents.some((e) => e.type === "terminal.command.started" && e.data?.sessionId === piSessionId)) {
+    await delay(250); w += 250;
+  }
+  check("bus saw terminal.command.started for the pi launch", busEvents.some((e) => e.type === "terminal.command.started" && e.data?.sessionId === piSessionId));
+  // The window's eval head POSTed the attach: grant consumed, second route hit.
+  w = 0;
+  while (w < 15_000 && seen.filter((s) => s.url === "/terminal-host/session/attach").length < 2) {
+    await delay(250); w += 250;
+  }
+  const piAttachObs = seen.filter((s) => s.url === "/terminal-host/session/attach")[1];
+  check("the attach route was exercised for the pi session", !!piAttachObs);
+  if (piAttachObs) {
+    check("pi attach request payload carries the grant token", piAttachObs.hasGrantToken);
+    check("pi attach request's URL has no bridge/capability token", !piAttachObs.host?.includes(bridgeToken) && !piAttachObs.host?.includes(controlToken));
+  }
+  if (piSessionId) {
+    // The seen-spy records the request BEFORE the route handler runs
+    // consumeGrant; poll (bounded) for the single-use claim to land.
+    let grantConsumed = false;
+    for (let gw = 0; gw < 5_000 && !grantConsumed; gw += 250) {
+      grantConsumed = listOutstandingGrants().find((g) => g.sessionId === piSessionId)?.consumed === true;
+      if (!grantConsumed) await delay(250);
+    }
+    check("the pi session grant was consumed (single-use claim)", grantConsumed);
+  }
+  // Prompt file staged 0600 (before any title change could unwind the turn).
+  try {
+    const pfStat = await stat(PI_PROMPT_FILE);
+    check("prompt file staged", pfStat.isFile());
+    check("prompt file is 0600", (pfStat.mode & 0o777) === 0o600);
+  } catch {
+    check("prompt file staged", false);
+  }
+}
+
+// 15b. No-leak sweep across every bus event (env-proof + pi launch).
+{
+  const allAfter = JSON.stringify(busEvents.slice(busEventsBeforeTurn));
+  if (busEvents.length > busEventsBeforeTurn) {
+    check("pi launch: no credential value in bus events", !allAfter.includes(CRED_VALUE));
+    check("pi launch: no prompt content in bus events", !allAfter.includes(PI_SENTINEL));
+    check("pi launch: no bridge token in bus events", !allAfter.includes(bridgeToken));
+    check("pi launch: no capability token in bus events", !allAfter.includes(controlToken));
+  }
+  // The harness turn stream shows the launch delta and NO error frame while
+  // pi is running. (A terminal error frame is EXPECTED later, at teardown,
+  // when the pi window's session terminates and unwinds the turn.)
+  check("harness stream saw the launch delta with no error frame",
+    harnessEvents.some((e) => e?.type === "delta") && !harnessEvents.some((e) => e?.type === "error"));
+}
+
+// 15c. Liveness + operator observation (real Ghostty only).
+//      Pi rewrites its process title to bare "pi" at startup, so its argv
+//      (with the '@<prompt file>' marker) does NOT survive — pgrep on the
+//      prompt path is useless after launch. The reliable liveness signal
+//      is the window's bootstrap-script bash: its argv always carries the
+//      unique script path and it lives exactly as long as pi (the script's
+//      last command IS pi). The kill targets pi by its exact rewritten
+//      title; the script bash then exits on its own.
+const SAFE_PI_SESSION = piSessionId ? piSessionId.replace(/[^A-Za-z0-9._-]/g, "_") : "";
+const PI_SCRIPT_PATTERN = `ros-ghostty-bootstrap/${SAFE_PI_SESSION}`;
+const piAlive = async () => SAFE_PI_SESSION.length > 0 && !(await execFile("pgrep", ["-f", PI_SCRIPT_PATTERN])).err;
+if (!STUB_MODE) {
+  // Observation window: pi must stay ALIVE (long-lived TUI). We do not wait
+  // for command.ended — under title-diff semantics that fires on any title
+  // change; process liveness + no session.terminated are the real signals.
+  await delay(2_000);
+  check("pi process alive after the observation window (long-lived)", await piAlive());
+  check("no terminal.session.terminated for the pi window while observed", !busEvents.some((e) => e.type === "terminal.session.terminated" && e.data?.sessionId === piSessionId));
+
+  // Manual acceptance: the operator must see the Pi TUI.
+  let operatorPass = true;
+  if (process.stdin.isTTY) {
+    const rl = createInterface({ input: process.stdin, output: process.stderr });
+    const answer = await new Promise((resolve) => rl.question("[smoke] observe Pi TUI in the Ghostty window — PASS? (yes/no) ", resolve));
+    rl.close();
+    operatorPass = /^y(es)?$/i.test(String(answer).trim());
+  } else {
+    console.error("[smoke] WARN: stdin is not a TTY — operator observation of the Pi TUI skipped (CP-L2 manual gate UNVERIFIED)");
+  }
+  check("operator observed the Pi TUI in the Ghostty window (CP-L2)", operatorPass);
+
+  // Graceful teardown prerequisite: pi must exit so the window is
+  // process-free at close (the CP-SW2 silent-close precondition). sendInput
+  // is degraded in Ghostty 1.3.1, so the smoke kills pi by its exact
+  // rewritten process title (argv patterns do not survive pi's startup
+  // title rewrite). The dead surface closes silently and the turn's
+  // finally unlinks the prompt file.
+  await execFile("pkill", ["-x", "pi"]);
+  let killWait = 0;
+  while (killWait < 10_000 && await piAlive()) { await delay(250); killWait += 250; }
+  check("pi exited after pkill (window process-free for silent close)", !(await piAlive()));
+} else {
+  // Stub: nothing executed; cancel the turn so the generator's finally
+  // unlinks the staged prompt file.
+  await harness.harnessRoutes.find((r) => r.path === "/agent/cancel").handler({ session, turnId });
+}
+
+// 16. Cleanup. CP-L1: close only once the in-window command has FULLY
 //     exited (done marker written after `sleep 1`). The proof file alone
 //     does not imply the window is process-free — it is written before the
 //     sleep finishes — and closing into a live child makes Ghostty show a
@@ -593,6 +840,35 @@ if (!STUB_MODE) {
   await uninstallTerminalHostBridge({ service: terminalBridge.service });
 } else {
   await terminalBridge.service.stop();
+}
+
+// 16b. CP-L2 teardown assertions.
+//      - The turn's generator finally unlinks the staged prompt file: in
+//        real mode when the pi window's session terminates, in stub mode
+//        via the explicit /agent/cancel above.
+//      - Real mode: no Ghostty window may linger. A pending "Close Window?"
+//        confirm dialog keeps the window alive, so zero leftovers is the
+//        automated proof that every close was silent.
+let pfWait = 0;
+let pfGone = false;
+while (pfWait < 10_000) {
+  try { await stat(PI_PROMPT_FILE); } catch { pfGone = true; break; }
+  await delay(250); pfWait += 250;
+}
+check("prompt file cleaned up after the turn", pfGone);
+if (!STUB_MODE) {
+  let lingerWait = 0;
+  let lingering = [];
+  while (lingerWait < 6_000) {
+    const ids = await ghosttyWindowIds();
+    lingering = ids.filter((id) => !BASELINE_WINDOW_IDS.includes(id));
+    if (lingering.length === 0) break;
+    await delay(250); lingerWait += 250;
+  }
+  check("no smoke-owned Ghostty window lingers after teardown (all closes silent)", lingering.length === 0);
+  if (lingering.length > 0) {
+    console.error(`[smoke] lingering window ids: ${lingering.join(", ")} — a "Close Window?" confirm dialog is likely pending on one of them`);
+  }
 }
 await harness.close();
 await new Promise((resolve) => bridgeServer.close(resolve));

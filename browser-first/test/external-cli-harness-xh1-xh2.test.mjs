@@ -374,31 +374,14 @@ describe("XH3b — launcher fail-closed on incompatible terminal", () => {
       })) events.push(ev);
       const err = events.find((e) => e.type === "error");
       assert.ok(err, "yielded an error event");
-      // Public, non-secret shape. The error is a public error code
-      // with the missing capability listed; NO path, token,
-      // credential, or env value is included.
+      // The harness event contract sanitizes error frames to the public
+      // code+message pair; the full verdict (missing capabilities, fidelity)
+      // stays host-side on adapter.initialCompatibility (asserted above).
+      // NO path, token, credential, or env value can ride the frame by
+      // construction.
       assert.equal(err.data.code, "unsupported-terminal");
-      assert.match(err.data.message, /no terminal surface satisfies/);
-      assert.deepEqual([...err.data.missingCapabilities].sort(), ["screen-stream"]);
-      assert.equal(err.data.policyId, UNSATISFIABLE_POLICY_ID);
-      // The error data must not contain a path / token / credential /
-      // env value. Walk it.
-      for (const [k, v] of Object.entries(err.data)) {
-        if (typeof v === "string") {
-          assert.ok(
-            /^[a-zA-Z][a-zA-Z0-9-]*$/.test(v) || v === err.data.message,
-            `error data field ${k} looks non-public: ${JSON.stringify(v)}`,
-          );
-        }
-        if (Array.isArray(v)) {
-          for (const item of v) {
-            assert.ok(
-              /^[a-zA-Z][a-zA-Z0-9-]*$/.test(item),
-              `error data array field ${k} has non-public element: ${JSON.stringify(item)}`,
-            );
-          }
-        }
-      }
+      assert.equal(err.data.message, "Terminal surface unsupported.");
+      assert.deepEqual(Object.keys(err.data).sort(), ["code", "message"], "error frame carries only the public code+message");
 
       // Hard rules from §4 XH3b:
       assert.equal(launchCalls, 0, "no launchBootstrap RPC reached the terminal peer");

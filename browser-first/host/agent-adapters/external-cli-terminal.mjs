@@ -127,16 +127,12 @@ export function createExternalCliTerminalAdapter(options = {}) {
         preferred,
       });
       if (!verdict.compatible) {
+        // The harness event contract sanitizes error frames to code+message
+        // only; the full verdict (missing capabilities, fidelity) stays
+        // host-side on this.initialCompatibility.
         yield {
           type: "error",
-          data: {
-            code: "unsupported-terminal",
-            message: `no terminal surface satisfies policy ${policy.policyId} requirements`,
-            policyId: policy.policyId,
-            requestedCapabilities: [...requestedRequirements],
-            missingCapabilities: [...verdict.missingCapabilities],
-            provenanceFidelity: verdict.provenanceFidelity,
-          },
+          data: publicHarnessError({ code: "unsupported-terminal" }),
         };
         return;
       }
@@ -285,15 +281,12 @@ export function createExternalCliTerminalAdapter(options = {}) {
       const turnSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
 
       try {
-        yield {
-          type: "delta",
-          data: {
-            text: "",
-            terminalSessionId,
-            policyId: policy.policyId,
-            surfaceAdapterId: surface.adapterId,
-          },
-        };
+        // The harness event contract sanitizes every frame: delta/final
+        // carry ONLY { text }, error carries the public code+message. The
+        // terminal session id, policy id, surface, exit status, and above
+        // all the command string NEVER ride a harness frame — they remain
+        // observable on the terminal bus and in host-side audit fields.
+        yield { type: "delta", data: { text: "" } };
         let finalEmitted = false;
         while (!finalEmitted) {
           if (turnSignal.aborted) {
@@ -315,10 +308,7 @@ export function createExternalCliTerminalAdapter(options = {}) {
           const ev = next.value;
           if (!record(ev) || typeof ev.type !== "string") continue;
           if (ev.type === "terminal.command.started") {
-            yield {
-              type: "delta",
-              data: { text: "", terminalSessionId, command: ev.data?.command },
-            };
+            yield { type: "delta", data: { text: "" } };
           } else if (ev.type === "terminal.command.ended") {
             const exitStatus = ev.data?.exitStatus;
             if (exitStatus === 0) {
@@ -327,33 +317,18 @@ export function createExternalCliTerminalAdapter(options = {}) {
                 type: "final",
                 data: {
                   text: `[harness ${policy.policyId} invoked in terminal session ${terminalSessionId}]`,
-                  terminalSessionId,
-                  exitStatus,
                 },
               };
             } else {
               finalEmitted = true;
-              yield {
-                type: "error",
-                data: {
-                  code: "runtime-unavailable",
-                  message: `harness exited with status ${exitStatus}`,
-                  terminalSessionId,
-                  exitStatus,
-                },
-              };
+              // Non-zero/unknown exit (incl. title-diff artifacts): the exit
+              // status stays on the terminal bus event; the frame is the
+              // public code only.
+              yield { type: "error", data: publicHarnessError({ code: "runtime-unavailable" }) };
             }
           } else if (ev.type === "terminal.session.terminated") {
             finalEmitted = true;
-            yield {
-              type: "error",
-              data: {
-                code: "runtime-unavailable",
-                message: "terminal session terminated before turn completed",
-                terminalSessionId,
-                exitStatus: ev.data?.exitStatus,
-              },
-            };
+            yield { type: "error", data: publicHarnessError({ code: "runtime-unavailable" }) };
           }
         }
       } finally {
