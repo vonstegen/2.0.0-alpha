@@ -23,7 +23,9 @@ const GLOBAL_SERVICE_KEY = "__rosTerminalHostService__";
 const ENV_FLAG = "RESONANT_TERMINAL_HOST_BRIDGE";
 
 /**
- * @param {{ env?: NodeJS.ProcessEnv, globalThis?: any, serviceFactory?: typeof createTerminalHostService, logger?: (event: object) => void }} [options]
+ * @param {{ env?: NodeJS.ProcessEnv, globalThis?: any, serviceFactory?: typeof createTerminalHostService, serviceOptions?: Record<string, unknown>, logger?: (event: object) => void }} [options]
+ *   serviceOptions: reviewed host wiring forwarded verbatim to the service
+ *   factory (e.g. attachAuth for the CP-S5H3 authenticated attach route).
  * @returns {Promise<{ enabled: boolean, service: ReturnType<typeof createTerminalHostService> | null, started: { adapterId: string, bus: unknown, driveId: string } | null }>}
  */
 export async function installTerminalHostBridge(options = {}) {
@@ -32,7 +34,7 @@ export async function installTerminalHostBridge(options = {}) {
   const factory = options.serviceFactory ?? createTerminalHostService;
   const logger = options.logger ?? ((event) => console.log(JSON.stringify(event)));
   if (env[ENV_FLAG] !== "1") return { enabled: false, service: null, started: null };
-  const service = factory({ env });
+  const service = factory({ env, ...(options.serviceOptions ?? {}) });
   const started = await service.start();
   target[GLOBAL_BUS_KEY] = started.bus;
   target[GLOBAL_SERVICE_KEY] = service;

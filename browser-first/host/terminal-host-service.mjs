@@ -69,18 +69,22 @@ function shellQuote(value) {
  * @param {string} args.rosSessionPath
  * @param {string} [args.harness]
  * @param {{ root: string, cwd: string }} [args.project]
+ * @param {string} [args.authFilePath]   0600 JSON auth file (CP-S5H3); only its path rides argv
+ * @param {string} [args.errorFilePath]  structured failure capture path (CP-S5H3)
  * @returns {string}
  */
-export function composeBootstrapCommand({ sessionId, tokenFilePath, providerProfileId, rosSessionPath, harness, project } = {}) {
+export function composeBootstrapCommand({ sessionId, tokenFilePath, providerProfileId, rosSessionPath, harness, project, authFilePath, errorFilePath } = {}) {
   if (typeof sessionId !== "string" || !sessionId) throw new TypeError("composeBootstrapCommand: sessionId required");
   if (typeof tokenFilePath !== "string" || !tokenFilePath) throw new TypeError("composeBootstrapCommand: tokenFilePath required");
   if (typeof rosSessionPath !== "string" || !rosSessionPath) throw new TypeError("composeBootstrapCommand: rosSessionPath required");
   const projectFlag = project ? ` --project ${shellQuote(JSON.stringify(project))}` : "";
   const harnessFlag = harness ? ` --harness ${shellQuote(harness)}` : "";
+  const authFileFlag = authFilePath ? ` --auth-file ${shellQuote(authFilePath)}` : "";
+  const errorFileFlag = errorFilePath ? ` --error-file ${shellQuote(errorFilePath)}` : "";
   return `eval "$(node ${shellQuote(rosSessionPath)} attach --session-id ${shellQuote(sessionId)}` +
     ` --token-file ${shellQuote(tokenFilePath)}` +
     ` --provider-profile-id ${shellQuote(providerProfileId ?? "")}` +
-    `${harnessFlag}${projectFlag})"`;
+    `${harnessFlag}${projectFlag}${authFileFlag}${errorFileFlag})"`;
 }
 
 // Adapter spawn env allowlist. ADR-039/040 require no `process.env`
@@ -816,6 +820,10 @@ export function createTerminalHostService(options = {}) {
     // validation and shell quoting; the host never sources it from a
     // manifest or caller argv.
     commandSuffix,
+    // Optional reviewed diagnostics path (CP-S5H3): when host composition
+    // runs, the composed CLI writes its structured ros-session.error reason
+    // here on failure. The host never writes this file itself.
+    errorFile,
   } = {}) {
     if (driveId === "in-memory") {
       throw new Error("launchBootstrap unavailable: in-memory driver has no stdio surface");
@@ -839,6 +847,7 @@ export function createTerminalHostService(options = {}) {
     let composedCommand = bootstrapCommand;
     let grant = null;
     let tokenFilePath = null;
+    let authFilePath = null;
 
     if (!composedCommand) {
       // Mint + track the grant so the eventual attachSessionEnv claim is
@@ -852,6 +861,22 @@ export function createTerminalHostService(options = {}) {
       // grant broker).
       tokenFilePath = options.tokenFilePath?.() ?? `${osTmpdir()}/ros-session-${sessionId}-${randomUUID()}.token`;
       await writeFile(tokenFilePath, grant.token, { mode: 0o600 });
+      // CP-S5H3: when the host wires an attach-auth source (bridge base URL
+      // + bridge/capability tokens for the authenticated loopback route),
+      // write them to a sibling 0600 JSON file. Only its path rides argv;
+      // the CLI reads-then-unlinks it with the token-file discipline. The
+      // values never enter the composed command, argv, logs, or bus events.
+      if (typeof options.attachAuth === "function") {
+        const auth = await options.attachAuth();
+        if (auth && typeof auth === "object") {
+          authFilePath = options.authFilePath?.() ?? `${osTmpdir()}/ros-session-${sessionId}-${randomUUID()}.auth.json`;
+          await writeFile(authFilePath, JSON.stringify({
+            ...(typeof auth.baseUrl === "string" && auth.baseUrl ? { baseUrl: auth.baseUrl } : {}),
+            ...(typeof auth.bridgeToken === "string" && auth.bridgeToken ? { bridgeToken: auth.bridgeToken } : {}),
+            ...(typeof auth.controlCapabilityToken === "string" && auth.controlCapabilityToken ? { controlCapabilityToken: auth.controlCapabilityToken } : {}),
+          }), { mode: 0o600 });
+        }
+      }
       composedCommand = composeBootstrapCommand({
         sessionId,
         tokenFilePath,
@@ -859,6 +884,8 @@ export function createTerminalHostService(options = {}) {
         rosSessionPath,
         ...(harness ? { harness } : {}),
         ...(project ? { project } : {}),
+        ...(authFilePath ? { authFilePath } : {}),
+        ...(errorFile ? { errorFilePath: errorFile } : {}),
       });
       if (commandSuffix) {
         composedCommand = `${composedCommand}; ${commandSuffix}`;
@@ -875,13 +902,16 @@ export function createTerminalHostService(options = {}) {
       // file path (never the token value). Only present when the host
       // composed the command.
       if (grant && result !== null && typeof result === "object") {
-        return { ...result, tokenFilePath };
+        return { ...result, tokenFilePath, ...(authFilePath ? { authFilePath } : {}) };
       }
       return /** @type {any} */ (result);
     } catch (error) {
       // Best-effort cleanup if the adapter call fails before the CLI runs.
       if (tokenFilePath) {
         try { await unlink(tokenFilePath); } catch { /* already gone */ }
+      }
+      if (authFilePath) {
+        try { await unlink(authFilePath); } catch { /* already gone */ }
       }
       throw error;
     }
