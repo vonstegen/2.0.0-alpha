@@ -155,3 +155,99 @@ export function terminalSurfaceSatisfies(
   const have = new Set(descriptor.capabilities);
   return requirements.every((req) => have.has(req));
 }
+
+// ---------------------------------------------------------------------------
+// XH3a: harness↔terminal compatibility result + resolver contract.
+//
+// The resolver runs BEFORE the launcher calls
+// `terminalHostService.launchBootstrap(...)`. An incompatible
+// pairing fails closed: no grant is minted, no token file is
+// written, no terminal process is started. The result is
+// structured, public, and non-secret.
+// ---------------------------------------------------------------------------
+
+/**
+ * The provenance fidelity the surface can deliver back to DAR
+ * (the recording layer). Derived from the surface's
+ * `feedbackChannel`:
+ *   - event-stream / polling -> "telemetry"
+ *   - observation             -> "observation"
+ *   - none / no surface        -> "unsupported"
+ *
+ * "structured" (harness-published events) is intentionally NOT a
+ * value here: the surface alone can never guarantee it; a wrapping
+ * policy can upgrade telemetry -> structured, but that is per-
+ * harness work and is not assumed.
+ */
+export type ProvenanceFidelity = "telemetry" | "observation" | "unsupported";
+
+/**
+ * The compatibility verdict for one (requirements, surfaces) pair.
+ * When `compatible: false`, the result is a fail-closed signal
+ * that the launcher MUST short-circuit before any grant/launch
+ * work. The shape carries only public values: capability strings
+ * and a provenance fidelity — never a path, token, credential,
+ * or env name.
+ */
+export interface HarnessTerminalCompatibility {
+  readonly compatible: boolean;
+  /** The chosen descriptor when compatible; undefined otherwise. */
+  readonly surface?: TerminalSurfaceDescriptor;
+  /** Every requirement the chosen candidate is missing. Empty
+   *  when compatible. */
+  readonly missingCapabilities: readonly TerminalCapability[];
+  /** The fidelity the chosen surface can deliver. "unsupported"
+   *  when no surface is eligible at all. */
+  readonly provenanceFidelity: ProvenanceFidelity;
+}
+
+/**
+ * Map a surface's feedback channel to provenance fidelity. Pure.
+ */
+export function deriveProvenanceFidelity(
+  feedbackChannel: TerminalFeedbackChannel
+): ProvenanceFidelity {
+  switch (feedbackChannel) {
+    case "event-stream":
+    case "polling":
+      return "telemetry";
+    case "observation":
+      return "observation";
+    case "none":
+      return "unsupported";
+  }
+}
+
+/**
+ * The order in which the resolver considers descriptors: the
+ * `preferred` adapter ids first, then the remaining registered
+ * ids in declaration order. Stable, deterministic, no side effects.
+ */
+export function orderDescriptorsForResolution(
+  descriptors: readonly TerminalSurfaceDescriptor[],
+  preferred: readonly string[] = []
+): readonly TerminalSurfaceDescriptor[] {
+  const byAdapterId = new Map(descriptors.map((d) => [d.adapterId, d]));
+  const out = [];
+  const seen = new Set();
+  for (const id of preferred) {
+    const d = byAdapterId.get(id);
+    if (d && !seen.has(id)) { out.push(d); seen.add(id); }
+  }
+  for (const d of descriptors) {
+    if (!seen.has(d.adapterId)) { out.push(d); seen.add(d.adapterId); }
+  }
+  return out;
+}
+
+/**
+ * Compute the missing capabilities for a single descriptor against
+ * a requirement set. Pure; capability strings only.
+ */
+export function missingCapabilitiesFor(
+  descriptor: TerminalSurfaceDescriptor,
+  requirements: readonly TerminalCapability[]
+): readonly TerminalCapability[] {
+  const have = new Set(descriptor.capabilities);
+  return requirements.filter((req) => !have.has(req));
+}
