@@ -71,9 +71,13 @@ function shellQuote(value) {
  * @param {{ root: string, cwd: string }} [args.project]
  * @param {string} [args.authFilePath]   0600 JSON auth file (CP-S5H3); only its path rides argv
  * @param {string} [args.errorFilePath]  structured failure capture path (CP-S5H3)
+ * @param {string} [args.memoryMode]     AddOnMemoryAccessContract.archiveReadMode (CP-L1);
+ *        when present, the CLI POSTs memoryAccess so the route runs the M2
+ *        memory projection and the env carries ROS_MEMORY_CONTEXT.
+ * @param {string} [args.memoryRoot]     Living Archive root; path only, never content
  * @returns {string}
  */
-export function composeBootstrapCommand({ sessionId, tokenFilePath, providerProfileId, rosSessionPath, harness, project, authFilePath, errorFilePath } = {}) {
+export function composeBootstrapCommand({ sessionId, tokenFilePath, providerProfileId, rosSessionPath, harness, project, authFilePath, errorFilePath, memoryMode, memoryRoot } = {}) {
   if (typeof sessionId !== "string" || !sessionId) throw new TypeError("composeBootstrapCommand: sessionId required");
   if (typeof tokenFilePath !== "string" || !tokenFilePath) throw new TypeError("composeBootstrapCommand: tokenFilePath required");
   if (typeof rosSessionPath !== "string" || !rosSessionPath) throw new TypeError("composeBootstrapCommand: rosSessionPath required");
@@ -81,10 +85,12 @@ export function composeBootstrapCommand({ sessionId, tokenFilePath, providerProf
   const harnessFlag = harness ? ` --harness ${shellQuote(harness)}` : "";
   const authFileFlag = authFilePath ? ` --auth-file ${shellQuote(authFilePath)}` : "";
   const errorFileFlag = errorFilePath ? ` --error-file ${shellQuote(errorFilePath)}` : "";
+  const memoryModeFlag = memoryMode ? ` --memory-mode ${shellQuote(memoryMode)}` : "";
+  const memoryRootFlag = memoryRoot ? ` --memory-root ${shellQuote(memoryRoot)}` : "";
   return `eval "$(node ${shellQuote(rosSessionPath)} attach --session-id ${shellQuote(sessionId)}` +
     ` --token-file ${shellQuote(tokenFilePath)}` +
     ` --provider-profile-id ${shellQuote(providerProfileId ?? "")}` +
-    `${harnessFlag}${projectFlag}${authFileFlag}${errorFileFlag})"`;
+    `${harnessFlag}${projectFlag}${authFileFlag}${errorFileFlag}${memoryModeFlag}${memoryRootFlag})"`;
 }
 
 // Adapter spawn env allowlist. ADR-039/040 require no `process.env`
@@ -961,6 +967,13 @@ export function createTerminalHostService(options = {}) {
     providerProfileId,
     harness,
     project,
+    // Memory projection context (CP-L1 / M2). When host composition runs and
+    // memoryAccess.archiveReadMode is set, the composed CLI carries
+    // --memory-mode / --memory-root so the attach route runs the memory
+    // projection and the exported env carries ROS_MEMORY_CONTEXT (a path;
+    // memory content never rides argv/env/logs/bus).
+    memoryAccess,
+    memoryRoot,
     // Executable tail (step-5 / S5F1). When supplied (and bootstrapCommand
     // is absent), the host appends `; <commandSuffix>` after its own
     // composed ros-session attach command. The suffix is accepted only
@@ -1034,6 +1047,10 @@ export function createTerminalHostService(options = {}) {
         ...(project ? { project } : {}),
         ...(authFilePath ? { authFilePath } : {}),
         ...(errorFile ? { errorFilePath: errorFile } : {}),
+        ...(memoryAccess && typeof memoryAccess === "object" && typeof memoryAccess.archiveReadMode === "string" && memoryAccess.archiveReadMode
+          ? { memoryMode: memoryAccess.archiveReadMode }
+          : {}),
+        ...(typeof memoryRoot === "string" && memoryRoot ? { memoryRoot } : {}),
       });
       if (commandSuffix) {
         composedCommand = `${composedCommand}; ${commandSuffix}`;

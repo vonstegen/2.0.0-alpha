@@ -21,6 +21,18 @@
 //   then the supplied proof tail writes /tmp/ros-s5c-proof.txt with
 //   observed env names (no literal token/credential values ride argv).
 //
+// CP-L1 memory-projection threading (fields added by this phase):
+//   smoke launchBootstrap({ memoryAccess, memoryRoot })            [this file]
+//     -> terminal-host-service.launchBootstrap({ memoryAccess, memoryRoot })
+//     -> composeBootstrapCommand emits `--memory-mode <mode> --memory-root <path>`
+//     -> ros-session attach CLI flags (bin/ros-session.mjs)
+//     -> POST /terminal-host/session/attach body { memoryAccess, memoryRoot }
+//     -> route delegates to buildProjectedSessionEnv (stagingBase from the
+//        host wiring: <userRoot>/Staging) -> buildHarnessMemoryProjection
+//        writes <stagingBase>/memory-context/<identity>/context.md (0600)
+//     -> exported env carries ROS_MEMORY_CONTEXT=<that path>; memory
+//        CONTENT never rides argv/env/logs/bus/proof output.
+//
 // The smoke is runnable against a real Ghostty.app on macOS, OR in
 // deterministic stub mode (ROS_S5C_STUB_TERMINAL=1) which replaces the
 // real Ghostty adapter with a captured-command stub that the smoke
@@ -42,7 +54,7 @@
 // Exit code 0 = green; 1 = red.
 
 import { existsSync } from "node:fs";
-import { readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import nodeEvents from "node:events";
@@ -53,6 +65,10 @@ const FAKE_CRED = "sk-cp-s5c-sentinel-do-not-leak";
 const FAKE_CRED_NAME = "OPENAI_API_KEY";
 const PROOF_FILE = "/tmp/ros-s5c-proof.txt";
 const ATTACH_ERROR_FILE = "/tmp/ros-s5c-attach-error.json";
+// CP-L1: written by the proof tail AFTER `sleep 1` completes, so teardown
+// can wait for the in-window command to be fully process-free before
+// closing the window (the CP-SW2 silent-close precondition).
+const DONE_FILE = `/tmp/ros-s5c-done-${randomUUID().slice(0, 8)}`;
 const STUB_MODE = process.env.ROS_S5C_STUB_TERMINAL === "1";
 
 if (!STUB_MODE && !existsSync("/Applications/Ghostty.app")) {
@@ -89,10 +105,21 @@ console.error(`[smoke] CP-S5c pi-attach external-terminal end-to-end (mode=${STU
 // Clear stale error/proof files from any prior run.
 try { await rm(ATTACH_ERROR_FILE, { force: true }); } catch { /* */ }
 try { await rm(PROOF_FILE, { force: true }); } catch { /* */ }
+try { await rm(DONE_FILE, { force: true }); } catch { /* */ }
 
 // 1. Per-run isolated userRoot so a prior smoke's manifest is not silently
 //    owned by this run.
 const USER_ROOT = `/tmp/ros-s5c-user-${randomUUID().slice(0, 8)}`;
+
+// 1b. CP-L1: a minimal Living Archive fixture so the M2 memory projection
+//     has a real memoryRoot to approve domains against. The projection
+//     writes a context file that LISTS approved domains; it never inlines
+//     content. The sentinel lets the smoke assert that memory CONTENT
+//     never reaches the proof file (only the ROS_MEMORY_CONTEXT path may).
+const MEMORY_ROOT = `${USER_ROOT}/memory`;
+const MEM_SENTINEL = `s5c-mem-sentinel-${randomUUID().slice(0, 8)}`;
+await mkdir(`${MEMORY_ROOT}/AI_MEMORY/wiki`, { recursive: true });
+await writeFile(`${MEMORY_ROOT}/AI_MEMORY/wiki/sentinel.md`, `# S5c fixture\n\n${MEM_SENTINEL}\n`, { mode: 0o600 });
 
 // 2. Real host wiring with an injected profile + secret for OPENAI_API_KEY.
 const hostTerminal = createTerminalHostHostWiring({
@@ -297,13 +324,26 @@ const subscription = bus.subscribe();
 //     window, terminateSession's `close (focused terminal of tab 1)`
 //     is silent — no "Close Window?" confirm prompt. Earlier iterations
 //     left an interactive shell via `exec $SHELL` which forced a
-//     confirm dialog on every teardown.
+//     confirm dialog on every teardown. Teardown must therefore wait
+//     for the tail's done marker (CP-L1): the proof file landing does
+//     NOT imply the window is process-free.
 //
 //     The adapter's `wait after command:true` default also means the
 //     production pi-terminal path keeps the window open after pi exits,
 //     so the user can review output before closing manually.
+//     CP-L1: the tail also prints ROS_MEMORY_CONTEXT (the 0600 context-file
+//     PATH from the M2 projection — never memory content), and ends with
+//     `sleep 1` so the in-window command runtime exceeds Ghostty's default
+//     `abnormal-command-exit-runtime = 250`ms threshold; the cosmetic
+//     "failed to launch" error page no longer fires on the one-shot proof.
+//     The final `touch DONE_FILE` lets teardown wait until the window is
+//     genuinely process-free before closing: the proof file lands BEFORE
+//     the sleep finishes, so watching the proof file alone races the close
+//     into the still-running sleep and Ghostty shows a "Close Window?"
+//     confirm dialog (observed on 1.3.1 — the aborted close also left the
+//     held surface to be replaced by a live login shell).
 const STDERR_FILE = "/tmp/ros-s5c-stderr.txt";
-const proofTail = `bash -c 'printf "%s\\n" "OPENAI_API_KEY=$OPENAI_API_KEY" "ROS_PROJECT_ROOT=$ROS_PROJECT_ROOT" "ROS_SKILLS_DIR=$ROS_SKILLS_DIR" > ${PROOF_FILE} 2>${STDERR_FILE}'`;
+const proofTail = `bash -c 'printf "%s\\n" "OPENAI_API_KEY=$OPENAI_API_KEY" "ROS_PROJECT_ROOT=$ROS_PROJECT_ROOT" "ROS_SKILLS_DIR=$ROS_SKILLS_DIR" "ROS_MEMORY_CONTEXT=$ROS_MEMORY_CONTEXT" > ${PROOF_FILE} 2>${STDERR_FILE}'; sleep 1; touch ${DONE_FILE}`;
 
 // 12. Exercise the host-composed production path:
 //     - attachAuth supplies the auth-file payload (baseUrl + tokens)
@@ -319,10 +359,22 @@ const envProofResult = await terminalBridge.service.launchBootstrap({
   providerProfileId: "openai",
   harness: manifest.id,
   project: { root: REPO, cwd: REPO },
+  // CP-L1: M2 memory projection. The host composes --memory-mode /
+  // --memory-root into the attach CLI; the CLI POSTs memoryAccess +
+  // memoryRoot; the route's buildProjectedSessionEnv writes the 0600
+  // context file under the host-owned stagingBase and exports
+  // ROS_MEMORY_CONTEXT (path only — content never crosses).
+  memoryAccess: { archiveReadMode: "read-only-context" },
+  memoryRoot: MEMORY_ROOT,
   commandSuffix: proofTail,
   errorFile: ATTACH_ERROR_FILE,
 });
-console.error(`[smoke] env proof launchBootstrap -> ${JSON.stringify(envProofResult)}`);
+// Hard rule #1: the RPC return echoes the minted grant (token value included)
+// — redact it before logging; paths and status are the useful diagnostics.
+const envProofLog = (envProofResult && typeof envProofResult === "object" && "grant" in envProofResult)
+  ? { ...envProofResult, grant: "<redacted>" }
+  : envProofResult;
+console.error(`[smoke] env proof launchBootstrap -> ${JSON.stringify(envProofLog)}`);
 
 // 12b. Stub mode: execute the captured composed command locally so the
 //      full ros-session attach chain (auth-file read, POST, grant consume,
@@ -344,6 +396,8 @@ if (STUB_MODE) {
     assert.match(cmd, /--token-file '\/[^']+\.token'/);
     assert.match(cmd, /--auth-file '\/[^']+\.auth\.json'/);
     assert.match(cmd, /--error-file '\/tmp\/ros-s5c-attach-error\.json'/);
+    assert.match(cmd, /--memory-mode 'read-only-context'/);
+    assert.match(cmd, new RegExp(`--memory-root '${MEMORY_ROOT}'`));
     if (!cmd.endsWith(`; ${proofTail}`)) {
       console.error(`[smoke] FAIL: commandSuffix must follow the attach command`);
       pass = false;
@@ -474,6 +528,22 @@ if (proof) {
   check(`proof file contains ${FAKE_CRED_NAME}=sk-cp-s5c-sentinel-...`, credLine.includes(FAKE_CRED));
   check("proof file contains ROS_PROJECT_ROOT=...", /ROS_PROJECT_ROOT=\S+/.test(proof));
   check("proof file contains ROS_SKILLS_DIR=...", /ROS_SKILLS_DIR=\S+/.test(proof));
+  // CP-L1: the M2 memory projection delivered ROS_MEMORY_CONTEXT — a
+  // non-empty PATH to the host-staged 0600 context file, and nothing else.
+  const memLine = proof.split("\n").find((l) => l.startsWith("ROS_MEMORY_CONTEXT=")) ?? "";
+  const memPath = memLine.slice("ROS_MEMORY_CONTEXT=".length).trim();
+  check("proof file contains ROS_MEMORY_CONTEXT=<non-empty path>", memPath.length > 0);
+  check("ROS_MEMORY_CONTEXT points at the staged memory-context projection", /memory-context\/[0-9a-f]{32}\/context\.md$/.test(memPath));
+  if (memPath) {
+    try {
+      const memStat = await stat(memPath);
+      check("ROS_MEMORY_CONTEXT file exists", memStat.isFile());
+      check("ROS_MEMORY_CONTEXT file is 0600", (memStat.mode & 0o777) === 0o600);
+    } catch {
+      check("ROS_MEMORY_CONTEXT file exists", false);
+    }
+  }
+  check("proof file contains no memory content (sentinel)", !proof.includes(MEM_SENTINEL));
   check("proof file contains no bridge token", !proof.includes(bridgeToken));
   check("proof file contains no capability token", !proof.includes(controlToken));
   try { await rm(PROOF_FILE, { force: true }); } catch { /* */ }
@@ -506,7 +576,19 @@ if (errPayload) {
   try { await rm(ATTACH_ERROR_FILE, { force: true }); } catch { /* */ }
 }
 
-// 15. Cleanup.
+// 15. Cleanup. CP-L1: close only once the in-window command has FULLY
+//     exited (done marker written after `sleep 1`). The proof file alone
+//     does not imply the window is process-free — it is written before the
+//     sleep finishes — and closing into a live child makes Ghostty show a
+//     "Close Window?" confirm dialog instead of the CP-SW2 silent close.
+let doneWaited = 0;
+let doneLanded = false;
+while (doneWaited < 8_000) {
+  try { await stat(DONE_FILE); doneLanded = true; break; } catch { /* not yet */ }
+  await delay(250); doneWaited += 250;
+}
+check("in-window command fully exited before teardown (done marker)", doneLanded);
+try { await rm(DONE_FILE, { force: true }); } catch { /* */ }
 if (!STUB_MODE) {
   await uninstallTerminalHostBridge({ service: terminalBridge.service });
 } else {

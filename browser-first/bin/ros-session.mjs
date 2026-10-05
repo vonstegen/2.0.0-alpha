@@ -19,6 +19,8 @@
 //     --token-file <path> \
 //     --provider-profile-id <openai|openrouter|xai|deepseek|minimax|zai> \
 //     [--harness <addon-id>] [--project <json-string>] \
+//     [--memory-mode <none|read-only-context|retrieval-with-citations>] \
+//     [--memory-root <living-archive-root>] \
 //     [--base-url http://127.0.0.1:<port>] [--auth-file <path>] \
 //     [--error-file <path>]
 //
@@ -145,6 +147,11 @@ export function formatExports(env) {
  * @param {string} args.providerProfileId
  * @param {string} [args.harness]
  * @param {string} [args.project]
+ * @param {string} [args.memoryMode]   AddOnMemoryAccessContract.archiveReadMode
+ *        ("none" | "read-only-context" | "retrieval-with-citations"); when
+ *        present, the POST body carries memoryAccess so the route runs the
+ *        M2 memory projection (ROS_MEMORY_CONTEXT).
+ * @param {string} [args.memoryRoot]   Living Archive root (path only, never content)
  * @param {string} [args.baseUrl]    default: http://127.0.0.1:<from-env or 47773>
  * @param {string} [args.bridgeToken]
  * @param {string} [args.controlCapabilityToken]
@@ -160,6 +167,8 @@ export async function attach(args) {
     providerProfileId,
     harness,
     project,
+    memoryMode,
+    memoryRoot,
     baseUrl = process.env.ROS_BRIDGE_BASE_URL ?? "http://127.0.0.1:47773",
     bridgeToken = process.env.ROS_BRIDGE_TOKEN ?? "",
     controlCapabilityToken = process.env.ROS_BRIDGE_CONTROL_CAPABILITY ?? "",
@@ -200,6 +209,11 @@ export async function attach(args) {
           ],
         }
       : {}),
+    // M2 memory projection: mode + root ride the POST body (paths only,
+    // never memory content). The route intersects with its host-owned
+    // approved-domain allowlist; the CLI cannot widen it.
+    ...(memoryMode ? { memoryAccess: { archiveReadMode: memoryMode } } : {}),
+    ...(memoryRoot ? { memoryRoot } : {}),
   };
 
   let response;
@@ -275,6 +289,8 @@ async function main() {
         "base-url": { type: "string" },
         "auth-file": { type: "string" },
         "error-file": { type: "string" },
+        "memory-mode": { type: "string" },
+        "memory-root": { type: "string" },
       },
       strict: true,
     });
@@ -303,12 +319,24 @@ async function main() {
     }
   }
 
+  // Fail closed on an unknown memory mode before any token file is consumed.
+  const MEMORY_MODES = new Set(["none", "read-only-context", "retrieval-with-citations"]);
+  if (opts["memory-mode"] && !MEMORY_MODES.has(opts["memory-mode"])) {
+    await fail("invalid-memory-mode");
+    return; // unreachable; fail() exits
+  }
+
   const result = await attach({
     sessionId: opts["session-id"],
     tokenFile: opts["token-file"],
     providerProfileId: opts["provider-profile-id"],
     ...(opts.harness ? { harness: opts.harness } : {}),
     ...(opts.project ? { project: JSON.parse(opts.project) } : {}),
+    // M2: validated fail-closed against the contract vocabulary; an unknown
+    // mode never reaches the route (the projection would derive "none" and
+    // silently skip ROS_MEMORY_CONTEXT, which is harder to diagnose).
+    ...(opts["memory-mode"] ? { memoryMode: opts["memory-mode"] } : {}),
+    ...(opts["memory-root"] ? { memoryRoot: opts["memory-root"] } : {}),
     // Precedence: explicit --base-url flag > auth file > env/default.
     ...(opts["base-url"] ? { baseUrl: opts["base-url"] } : auth?.baseUrl ? { baseUrl: auth.baseUrl } : {}),
     ...(auth?.bridgeToken ? { bridgeToken: auth.bridgeToken } : {}),
