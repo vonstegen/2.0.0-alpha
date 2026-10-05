@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { AddOnInstallation, AddOnManifest, CapabilityGrant } from "../../core/contracts";
 import { createHarnessClient, type HarnessProjection } from "../../core/harness-client";
 import { createDefaultInstallation } from "../../core/defaults";
-import { createAddOnSurfaceDockRoutes } from "./surface-routing";
+import { createAddOnSurfaceDockRoutes, groupSurfaceDockRoutesBySection } from "./surface-routing";
 
 const grant = (capability: CapabilityGrant["capability"], granted = false): CapabilityGrant => ({
   capability,
@@ -38,7 +38,12 @@ const manifest = (): AddOnManifest => ({
   ],
   requestedCapabilities: [grant("filesystem"), grant("archive-read")],
   providerRequirements: { sharedProfiles: [], supportsPrivateCredentials: false },
-  archiveIntegration: { readScopes: [], intakeWriteScopes: [], canRequestIngest: false, canWriteKnowledgePages: false },
+  archiveIntegration: {
+    readScopes: [],
+    intakeWriteScopes: [],
+    canRequestIngest: false,
+    canWriteKnowledgePages: false,
+  },
   health: { strategy: "none" },
   installHooks: {},
   compatibility: { shellVersion: "^0.1.0", platforms: ["macOS"] },
@@ -54,12 +59,26 @@ const installed = (addon: AddOnManifest, grants: CapabilityGrant[]): AddOnInstal
 
 const projected = (addon: AddOnManifest, hiddenSurfaceIds: string[] = []): HarnessProjection => {
   const client = createHarnessClient();
-  client.applySnapshot({ bootEpoch: "surfaces", revision: 1, governanceActivated: true,
-    candidates: [addon], installations: { [addon.id]: {
-      addonId: addon.id, installed: true, enabled: true,
-      grantedCapabilities: addon.requestedCapabilities.map(grant => ({ ...grant, granted: true })),
-      disabledOperations: [], hiddenSurfaceIds,
-    } }, slots: {} });
+  client.applySnapshot({
+    bootEpoch: "surfaces",
+    revision: 1,
+    governanceActivated: true,
+    candidates: [addon],
+    installations: {
+      [addon.id]: {
+        addonId: addon.id,
+        installed: true,
+        enabled: true,
+        grantedCapabilities: addon.requestedCapabilities.map((grant) => ({
+          ...grant,
+          granted: true,
+        })),
+        disabledOperations: [],
+        hiddenSurfaceIds,
+      },
+    },
+    slots: {},
+  });
   return client.getSnapshot()!;
 };
 
@@ -67,9 +86,13 @@ describe("add-on surface dock routing", () => {
   it("creates a dock route from an enabled manifest-declared shell surface", () => {
     const addon = manifest();
 
-    const routes = createAddOnSurfaceDockRoutes([addon], {
-      [addon.id]: installed(addon, [grant("filesystem", true), grant("archive-read", true)]),
-    }, projected(addon));
+    const routes = createAddOnSurfaceDockRoutes(
+      [addon],
+      {
+        [addon.id]: installed(addon, [grant("filesystem", true), grant("archive-read", true)]),
+      },
+      projected(addon),
+    );
 
     expect(routes).toEqual([
       {
@@ -85,14 +108,32 @@ describe("add-on surface dock routing", () => {
   });
 
   it("surfaces and labels agree with projected governance despite forged local state", () => {
-    const addon = { ...manifest(), systemSlots: [{ id: "memory-system" as const, role: "default-provider" as const, replaceable: true }] };
-    const local = { [addon.id]: installed(addon, [grant("filesystem", true), grant("archive-read", true)]) };
+    const addon = {
+      ...manifest(),
+      systemSlots: [
+        { id: "memory-system" as const, role: "default-provider" as const, replaceable: true },
+      ],
+    };
+    const local = {
+      [addon.id]: installed(addon, [grant("filesystem", true), grant("archive-read", true)]),
+    };
     const projection = projected(addon);
-    const owned = { ...projection, slots: { "memory-system": { addonId: addon.id, generation: 1, available: true } } };
+    const owned = {
+      ...projection,
+      slots: { "memory-system": { addonId: addon.id, generation: 1, available: true } },
+    };
     expect(createAddOnSurfaceDockRoutes([addon], local, owned)).toHaveLength(1);
-    expect(createAddOnSurfaceDockRoutes([addon], local, {
-      ...owned, installations: { [addon.id]: { ...owned.installations[addon.id], hiddenSurfaceIds: [addon.surfaces[0].id] } },
-    })).toEqual([]);
+    expect(
+      createAddOnSurfaceDockRoutes([addon], local, {
+        ...owned,
+        installations: {
+          [addon.id]: {
+            ...owned.installations[addon.id],
+            hiddenSurfaceIds: [addon.surfaces[0].id],
+          },
+        },
+      }),
+    ).toEqual([]);
     expect(createAddOnSurfaceDockRoutes([addon], local, projection)).toEqual([]);
     expect(createAddOnSurfaceDockRoutes([addon], local, null)).toEqual([]);
   });
@@ -100,11 +141,21 @@ describe("add-on surface dock routing", () => {
   it("hides manifest-declared dock routes until required grants are present", () => {
     const addon = manifest();
 
-    const routes = createAddOnSurfaceDockRoutes([addon], {
-      [addon.id]: installed(addon, [grant("filesystem", true), grant("archive-read", false)]),
-    }, { ...projected(addon), installations: { [addon.id]: {
-      ...projected(addon).installations[addon.id], grantedCapabilities: [grant("filesystem", true), grant("archive-read", false)],
-    } } });
+    const routes = createAddOnSurfaceDockRoutes(
+      [addon],
+      {
+        [addon.id]: installed(addon, [grant("filesystem", true), grant("archive-read", false)]),
+      },
+      {
+        ...projected(addon),
+        installations: {
+          [addon.id]: {
+            ...projected(addon).installations[addon.id],
+            grantedCapabilities: [grant("filesystem", true), grant("archive-read", false)],
+          },
+        },
+      },
+    );
 
     expect(routes).toEqual([]);
   });
@@ -113,12 +164,126 @@ describe("add-on surface dock routing", () => {
     const addon = manifest();
     const projection = projected(addon);
     expect(createAddOnSurfaceDockRoutes([], {}, projection)).toHaveLength(1);
-    const stale = { ...addon, name: "Stale name", surfaces: [{ ...addon.surfaces[0], label: "Stale label" }] };
+    const stale = {
+      ...addon,
+      name: "Stale name",
+      surfaces: [{ ...addon.surfaces[0], label: "Stale label" }],
+    };
     expect(createAddOnSurfaceDockRoutes([stale], {}, projection)[0].label).toBe("Custom Tool");
-    for (const denied of [{ installed: false }, { enabled: false }, { hiddenSurfaceIds: [addon.surfaces[0].id] }]) {
-      expect(createAddOnSurfaceDockRoutes([addon], { [addon.id]: installed(addon, [grant("filesystem", true), grant("archive-read", true)]) }, {
-        ...projection, installations: { [addon.id]: { ...projection.installations[addon.id], ...denied } },
-      })).toEqual([]);
+    for (const denied of [
+      { installed: false },
+      { enabled: false },
+      { hiddenSurfaceIds: [addon.surfaces[0].id] },
+    ]) {
+      expect(
+        createAddOnSurfaceDockRoutes(
+          [addon],
+          {
+            [addon.id]: installed(addon, [grant("filesystem", true), grant("archive-read", true)]),
+          },
+          {
+            ...projection,
+            installations: { [addon.id]: { ...projection.installations[addon.id], ...denied } },
+          },
+        ),
+      ).toEqual([]);
     }
+  });
+});
+
+describe("add-on surface dock section grouping", () => {
+  const terminalRoute = (addonId: string, surfaceId: string, label: string, order: number) => ({
+    addonId,
+    surfaceId,
+    sectionId: "terminal",
+    label,
+    eyebrow: "Terminal",
+    dockIcon: "terminal",
+    order,
+  });
+
+  it("groups multiple routes sharing a sectionId into one section with tabs", () => {
+    const sections = groupSurfaceDockRoutesBySection([
+      terminalRoute(
+        "addon.resonant-terminal-ghostty",
+        "ghostty-terminal-host",
+        "Ghostty Terminal Host",
+        50,
+      ),
+      terminalRoute(
+        "addon.resonant-terminal-iterm2",
+        "iterm2-terminal-host",
+        "iTerm2 Terminal Host",
+        51,
+      ),
+    ]);
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0].sectionId).toBe("terminal");
+    expect(sections[0].label).toBe("Ghostty Terminal Host");
+    expect(sections[0].eyebrow).toBe("Terminal");
+    expect(sections[0].tabs.map((tab) => tab.label)).toEqual([
+      "Ghostty Terminal Host",
+      "iTerm2 Terminal Host",
+    ]);
+  });
+
+  it("yields a single-tab section for a lone surface", () => {
+    const sections = groupSurfaceDockRoutesBySection([
+      terminalRoute(
+        "addon.resonant-terminal-ghostty",
+        "ghostty-terminal-host",
+        "Ghostty Terminal Host",
+        50,
+      ),
+    ]);
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0].tabs).toHaveLength(1);
+  });
+
+  it("returns an empty list for no routes", () => {
+    expect(groupSurfaceDockRoutesBySection([])).toEqual([]);
+  });
+
+  it("preserves the caller's order within a section and across sections (deterministic, pure)", () => {
+    // The helper does NOT sort on its own — `createAddOnSurfaceDockRoutes`
+    // is the single source of order/label tiebreak via Array.prototype.sort.
+    // The helper preserves the input order, so callers that sort upstream
+    // get a stable, deterministic section + tab list.
+    const sorted = [
+      terminalRoute("addon.a", "a-surface", "Alpha Surface", 100),
+      terminalRoute("addon.z", "z-surface", "Zulu Surface", 100),
+      terminalRoute("addon.b", "b-surface", "Bravo Surface", 200),
+    ];
+    const sections = groupSurfaceDockRoutesBySection(sorted);
+
+    expect(sections.map((section) => section.sectionId)).toEqual(["terminal"]);
+    expect(sections[0].tabs.map((tab) => tab.label)).toEqual([
+      "Alpha Surface",
+      "Zulu Surface",
+      "Bravo Surface",
+    ]);
+    // Two distinct sections: each preserves input order; the first route
+    // wins the section-level label/eyebrow/order.
+    const sectionsWithTwoGroups = groupSurfaceDockRoutesBySection([
+      {
+        addonId: "addon.b",
+        surfaceId: "b",
+        sectionId: "settings",
+        label: "Settings Tool",
+        eyebrow: "Settings",
+        dockIcon: "settings",
+        order: 50,
+      },
+      terminalRoute("addon.a", "a", "Alpha", 100),
+    ]);
+    expect(sectionsWithTwoGroups.map((section) => section.sectionId)).toEqual([
+      "settings",
+      "terminal",
+    ]);
+    expect(sectionsWithTwoGroups[0].label).toBe("Settings Tool");
+    expect(sectionsWithTwoGroups[0].eyebrow).toBe("Settings");
+    expect(sectionsWithTwoGroups[1].label).toBe("Alpha");
   });
 });
