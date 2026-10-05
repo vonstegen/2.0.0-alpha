@@ -311,3 +311,111 @@ describe("launchBootstrap integration", () => {
     await service.stop();
   });
 });
+
+describe("launchBootstrap auth-file ownership (CP-S5H3)", () => {
+  let dir;
+  let counter;
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "ros-5h3-"));
+    counter = 0;
+    __resetSessionBootstrapGrantBroker();
+  });
+  afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
+
+  function buildServiceWithAuth(stub, attachAuth) {
+    return createTerminalHostService({
+      env: { RESONANT_TERMINAL_DRIVER: "ghostty" },
+      rosSessionPath: "/stub/ros-session.mjs",
+      tokenFilePath: () => join(dir, `tok-${counter++}.token`),
+      authFilePath: () => join(dir, `auth-${counter}.json`),
+      attachAuth,
+      spawn: () => stub.child,
+    });
+  }
+
+  it("with attachAuth wired: writes a 0600 auth file, the command references only its path, and the tokens never enter argv", async () => {
+    const stub = makeStubChild();
+    const baseUrl = "http://127.0.0.1:47773";
+    const bridgeToken = "bt-secret-1";
+    const controlToken = "ct-secret-2";
+    const service = buildServiceWithAuth(stub, async () => ({ baseUrl, bridgeToken, controlCapabilityToken: controlToken }));
+    await service.start();
+    const result = await service.launchBootstrap({
+      sessionId: "s-5h3-1",
+      providerProfileId: "openai",
+      harness: "addon.resonant-terminal-iterm2",
+    });
+
+    // Exactly one auth file was written, mode 0600, with the reviewed JSON payload.
+    const entries = await readdir(dir);
+    const authFiles = entries.filter((e) => e.startsWith("auth-"));
+    assert.equal(authFiles.length, 1, `expected one auth file, got: ${authFiles.join(",")}`);
+    const authFile = join(dir, authFiles[0]);
+    assert.equal(((await stat(authFile)).mode & 0o777), 0o600, "auth file must be mode 0600");
+    const authPayload = JSON.parse(await readFile(authFile, "utf8"));
+    assert.deepEqual(authPayload, { baseUrl, bridgeToken, controlCapabilityToken: controlToken });
+
+    // The composed command carries --auth-file <path>; the secret values are not in argv.
+    const reqObj = JSON.parse(stub.getCaptured());
+    const cmd = reqObj.params.bootstrapCommand;
+    assert.ok(cmd.includes(`--auth-file '${authFile}'`), "composed command must reference the auth file path");
+    assert.equal(cmd.includes(bridgeToken), false, "composed command must NOT include the bridge token value");
+    assert.equal(cmd.includes(controlToken), false, "composed command must NOT include the control capability token value");
+    // The host's non-secret return metadata echoes the auth file path only.
+    assert.equal(result.authFilePath, authFile);
+    assert.equal(result.token, undefined);
+
+    await service.stop();
+  });
+
+  it("without attachAuth: no auth file is written and no --auth-file flag appears", async () => {
+    const stub = makeStubChild();
+    const service = buildServiceWithAuth(stub, undefined);
+    await service.start();
+    const result = await service.launchBootstrap({ sessionId: "s-5h3-2", providerProfileId: "openai" });
+    const entries = await readdir(dir);
+    assert.equal(entries.filter((e) => e.startsWith("auth-")).length, 0, "no auth file when attachAuth is absent");
+    const cmd = JSON.parse(stub.getCaptured()).params.bootstrapCommand;
+    assert.equal(cmd.includes("--auth-file"), false, "no --auth-file flag when attachAuth is absent");
+    assert.equal(result.authFilePath, undefined);
+    await service.stop();
+  });
+
+  it("errorFile flag is included in the composed command (CLI writes structured failure)", async () => {
+    const stub = makeStubChild();
+    const service = buildServiceWithAuth(stub, undefined);
+    await service.start();
+    const errorFile = join(dir, "attach-err.json");
+    await service.launchBootstrap({ sessionId: "s-5h3-3", providerProfileId: "openai", errorFile });
+    const cmd = JSON.parse(stub.getCaptured()).params.bootstrapCommand;
+    assert.ok(cmd.includes(`--error-file '${errorFile}'`), "composed command must reference the error file path");
+    // The host never writes the error file itself.
+    assert.equal((await stat(errorFile).catch((e) => e)).code, "ENOENT");
+    await service.stop();
+  });
+
+  it("adapter-rejection cleanup unlinks BOTH the token file and the auth file", async () => {
+    const stub = makeStubChild({ fail: true });
+    const service = buildServiceWithAuth(stub, async () => ({ baseUrl: "http://127.0.0.1:1", bridgeToken: "bt", controlCapabilityToken: "ct" }));
+    await service.start();
+    await assert.rejects(
+      () => service.launchBootstrap({ sessionId: "s-5h3-4", providerProfileId: "openai" }),
+      /stub adapter rejected the launch/,
+    );
+    const entries = await readdir(dir);
+    assert.equal(entries.filter((e) => e.startsWith("tok-")).length, 0, "token file must be unlinked on adapter failure");
+    assert.equal(entries.filter((e) => e.startsWith("auth-")).length, 0, "auth file must be unlinked on adapter failure");
+    await service.stop();
+  });
+
+  it("bootstrapCommand override: no auth file is written (composition is skipped)", async () => {
+    const stub = makeStubChild();
+    const service = buildServiceWithAuth(stub, async () => ({ baseUrl: "http://127.0.0.1:1", bridgeToken: "bt", controlCapabilityToken: "ct" }));
+    await service.start();
+    await service.launchBootstrap({ sessionId: "s-5h3-5", bootstrapCommand: "echo x" });
+    const entries = await readdir(dir);
+    assert.equal(entries.filter((e) => e.startsWith("auth-")).length, 0, "no auth file on bootstrapCommand override");
+    assert.equal(entries.filter((e) => e.startsWith("tok-")).length, 0, "no token file on bootstrapCommand override");
+    await service.stop();
+  });
+});
