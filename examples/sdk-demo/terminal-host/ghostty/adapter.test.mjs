@@ -90,7 +90,7 @@ describe("CP-SG1 — long composed commands are delivered via a 0600 script file
       sessionId: "ghostty-sg1-test-2",
     });
     assert.ok(osa.startsWith(`tell application "Ghostty" to return id of (new window with configuration {command:"`), "OSA literal begins with the standard record");
-    assert.ok(osa.endsWith(`, wait after command:false})`), "OSA carries wait-after-command:false");
+    assert.ok(osa.includes(`, wait after command:true`), "OSA carries wait-after-command:true (default; keeps window open after the one-shot for clean close)");
     // The composed command itself must NOT appear verbatim in the OSA.
     assert.ok(!osa.includes(`--token-file`), "token-file flag is NOT in the AppleScript literal");
     assert.ok(!osa.includes(`--auth-file`), "auth-file flag is NOT in the AppleScript literal");
@@ -151,6 +151,14 @@ describe("CP-SG1 — long composed commands are delivered via a 0600 script file
   it("rejects a non-string bootstrapCommand and an empty sessionId", async () => {
     await assert.rejects(composeGhosttyNewWindowOsa({ bootstrapCommand: 123, sessionId: "x" }), TypeError);
     await assert.rejects(composeGhosttyNewWindowOsa({ bootstrapCommand: "ok", sessionId: "" }), TypeError);
+  });
+
+  it("waitAfterCommand:false emits the legacy close-on-exit OSA form (production pi path)", async () => {
+    const cmd = "echo MARKER";
+    const { osa } = await composeGhosttyNewWindowOsa({
+      bootstrapCommand: cmd, sessionId: "ghostty-sg1-false", waitAfterCommand: false,
+    });
+    assert.ok(osa.includes(`, wait after command:false`), "OSA carries wait-after-command:false when explicitly disabled");
   });
 
   it("POSIX single-quote-escapes the script path safely when the path contains a quote (defensive)", async () => {

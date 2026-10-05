@@ -163,7 +163,16 @@ function shellSingleQuoteEscape(value) {
  * cleanup (best-effort unlink is a no-op while bash is still forking
  * into it; the reaper in startPoller() bounds the lifetime).
  *
- * @param {{ bootstrapCommand: string, sessionId: string }} args
+ * CP-SW2: `waitAfterCommand` controls whether Ghostty holds the window
+ * open AFTER the command exits. The default (true) keeps the window
+ * open — appropriate for the smoke's one-shot proof window (no shell
+ * runs after the proof, but the window must stay open for the smoke
+ * to see it; a non-running surface is the prerequisite for a clean
+ * programmatic close with no "Close Window?" confirm prompt). Set
+ * `false` for the production pi-terminal path: pi is a long-lived
+ * process and the window should close after pi exits.
+ *
+ * @param {{ bootstrapCommand: string, sessionId: string, waitAfterCommand?: boolean }} args
  * @returns {{
  *   osa: string,
  *   scriptFilePath: string,
@@ -172,7 +181,7 @@ function shellSingleQuoteEscape(value) {
  *   appleScriptBytes: number,
  * }}
  */
-export async function composeGhosttyNewWindowOsa({ bootstrapCommand, sessionId }) {
+export async function composeGhosttyNewWindowOsa({ bootstrapCommand, sessionId, waitAfterCommand = true }) {
   if (typeof bootstrapCommand !== "string") {
     throw new TypeError("composeGhosttyNewWindowOsa: bootstrapCommand must be a string");
   }
@@ -194,7 +203,7 @@ export async function composeGhosttyNewWindowOsa({ bootstrapCommand, sessionId }
   const inner = `bash ${shellPath}`;
   const fields = [];
   fields.push(`command:"${osaEscape(inner)}"`);
-  fields.push(`wait after command:false`);
+  fields.push(`wait after command:${waitAfterCommand ? "true" : "false"}`);
   const osa = `tell application "Ghostty" to return id of (new window with configuration {${fields.join(", ")}})`;
   return {
     osa,
