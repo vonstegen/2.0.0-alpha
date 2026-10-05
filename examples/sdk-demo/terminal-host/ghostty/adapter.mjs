@@ -32,9 +32,19 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
+import { mkdir, writeFile, unlink, stat, readdir, chmod } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const JSON_RPC_VERSION = "2.0";
 const POLL_INTERVAL_MS = 250;
+const SCRIPT_DIR = `${tmpdir()}/ros-ghostty-bootstrap`;
+/** Bounded cleanup window (CP-SG1). The shell inside Ghostty reads the
+ *  script file via `bash '<file>'` AFTER osascript returns, so we cannot
+ *  unlink synchronously. Anything older than this is reaped by the
+ *  poller on each tick; long enough that the in-window shell has had
+ *  plenty of wall-clock to read + exec. */
+const SCRIPT_REAPER_MAX_AGE_MS = 5 * 60 * 1000;
 const SUPPORTED_METHODS = new Set([
   "createSession",
   "launchBootstrap",
@@ -47,6 +57,10 @@ const grantTokens = new Set();
 
 /** sessionId -> { windowId, lastTitle, lastCwd, startedAt } */
 const sessions = new Map();
+
+/** sessionId -> scriptFilePath (CP-SG1). Reaped on next launch or by
+ *  the poller; never leaked (0600, no secrets). */
+const scriptFiles = new Map();
 
 /** Pending RPCs: id -> { resolve, reject, timer, method } */
 const pending = new Map();
@@ -134,19 +148,112 @@ function osaEscape(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-async function ghosttyNewWindow({ command, initialInput, workingDirectory }) {
-  // Build a surface configuration record. Ghostty's sdef accepts a
-  // record literal: {command:"...", initial input:"...", initial
-  // working directory:"..."}. The keys are the sdef's exact spelling.
+/** Escape a string for embedding inside single-quoted POSIX shell
+ *  (`bash '<path>'`). Closes the quote, escapes any embedded single
+ *  quote (close + literal + open), reopens. */
+function shellSingleQuoteEscape(value) {
+  return String(value).replace(/'/g, "'\\''");
+}
+
+/**
+ * Compose the Ghostty `new window with configuration …` AppleScript
+ * literal. CP-SG1: the bootstrap command is written to a 0600 file and
+ * delivered as `bash '<scriptFile>'` — the AppleScript literal never
+ * carries the long composed command. The caller owns the script file
+ * cleanup (best-effort unlink is a no-op while bash is still forking
+ * into it; the reaper in startPoller() bounds the lifetime).
+ *
+ * @param {{ bootstrapCommand: string, sessionId: string }} args
+ * @returns {{
+ *   osa: string,
+ *   scriptFilePath: string,
+ *   cleanup: () => Promise<void>,
+ *   bootstrapCommandBytes: number,
+ *   appleScriptBytes: number,
+ * }}
+ */
+export async function composeGhosttyNewWindowOsa({ bootstrapCommand, sessionId }) {
+  if (typeof bootstrapCommand !== "string") {
+    throw new TypeError("composeGhosttyNewWindowOsa: bootstrapCommand must be a string");
+  }
+  if (typeof sessionId !== "string" || !sessionId.trim()) {
+    throw new TypeError("composeGhosttyNewWindowOsa: sessionId must be a non-empty string");
+  }
+  await mkdir(SCRIPT_DIR, { recursive: true, mode: 0o700 });
+  const safeSession = sessionId.replace(/[^A-Za-z0-9._-]/g, "_");
+  const scriptFilePath = join(SCRIPT_DIR, `${safeSession}-${randomUUID()}.sh`);
+  // Write the script first so the file exists before we hand the path
+  // to osascript. chmod after for the same mode the token/auth files
+  // use. No secrets ride the file (only paths + shell syntax).
+  await writeFile(scriptFilePath, bootstrapCommand, { encoding: "utf8" });
+  await chmod(scriptFilePath, 0o600);
+  // The bash invocation inside Ghostty reads the script. POSIX
+  // single-quote-escape the path; the outer AppleScript literal wraps
+  // it in double quotes.
+  const shellPath = `'${shellSingleQuoteEscape(scriptFilePath)}'`;
+  const inner = `bash ${shellPath}`;
   const fields = [];
-  if (command) fields.push(`command:"${osaEscape(command)}"`);
-  if (initialInput) fields.push(`initial input:"${osaEscape(initialInput)}"`);
-  if (workingDirectory) fields.push(`initial working directory:"${osaEscape(workingDirectory)}"`);
+  fields.push(`command:"${osaEscape(inner)}"`);
   fields.push(`wait after command:false`);
-  const cfg = `{${fields.join(", ")}}`;
-  const result = await runOsa(`tell application "Ghostty" to return id of (new window with configuration ${cfg})`);
-  // result looks like "window id window-XXXX"
-  return result.replace(/^window id /, "").trim();
+  const osa = `tell application "Ghostty" to return id of (new window with configuration {${fields.join(", ")}})`;
+  return {
+    osa,
+    scriptFilePath,
+    cleanup: async () => {
+      try { await unlink(scriptFilePath); } catch { /* already gone */ }
+    },
+    bootstrapCommandBytes: Buffer.byteLength(bootstrapCommand, "utf8"),
+    appleScriptBytes: Buffer.byteLength(osa, "utf8"),
+  };
+}
+
+/** Reap script files older than SCRIPT_REAPER_MAX_AGE_MS. Best-effort;
+ *  never throws into the polling loop. */
+async function reapScriptFiles() {
+  let entries;
+  try { entries = await readdir(SCRIPT_DIR); } catch { return; }
+  const cutoff = Date.now() - SCRIPT_REAPER_MAX_AGE_MS;
+  for (const name of entries) {
+    if (!name.endsWith(".sh")) continue;
+    const p = join(SCRIPT_DIR, name);
+    try {
+      const st = await stat(p);
+      if (st.mtimeMs < cutoff) await unlink(p);
+    } catch { /* raced; gone */ }
+  }
+}
+
+async function ghosttyNewWindow({ command, initialInput, workingDirectory, sessionId, deps }) {
+  const executeOsa = deps?.executeOsa ?? runOsa;
+  // Long composed commands are walked via a 0600 script file.
+  // CP-SG1: the long form is NEVER embedded in an AppleScript literal.
+  let composed;
+  let osa;
+  if (command && sessionId) {
+    composed = await composeGhosttyNewWindowOsa({ bootstrapCommand: command, sessionId });
+    osa = composed.osa;
+    scriptFiles.set(sessionId, composed.scriptFilePath);
+  } else {
+    const fields = [];
+    if (command) fields.push(`command:"${osaEscape(command)}"`);
+    if (initialInput) fields.push(`initial input:"${osaEscape(initialInput)}"`);
+    if (workingDirectory) fields.push(`initial working directory:"${osaEscape(workingDirectory)}"`);
+    fields.push(`wait after command:false`);
+    osa = `tell application "Ghostty" to return id of (new window with configuration {${fields.join(", ")}})`;
+  }
+  const result = await executeOsa(osa);
+  // Unlink-on-next-launch: any prior script for this session is now
+  // dead — bash will not race because the osascript call returned
+  // before bash forked into the file (macOS Apple Events are
+  // synchronous; the shell exec happens inside the new window after
+  // this returns).
+  const prior = scriptFiles.get(sessionId);
+  if (prior && prior !== composed?.scriptFilePath) {
+    try { await unlink(prior); } catch { /* */ }
+    scriptFiles.delete(sessionId);
+  }
+  const windowId = String(result).replace(/^window id /, "").trim();
+  return composed ? { windowId, scriptFilePath: composed.scriptFilePath } : { windowId };
 }
 
 async function ghosttyCloseTerminal(windowId) {
@@ -220,9 +327,16 @@ async function handleRequest(msg) {
         // needs to inject more text later, that's a follow-up sendInput
         // (degrades to "fires immediately" in 1.3.1; tracked as a known
         // limitation in TERMINAL-HOST-GHOSTTY-RECONCILIATION.md).
-        const windowId = await ghosttyNewWindow({
+        //
+        // CP-SG1: long composed commands are NEVER embedded in the
+        // AppleScript literal — ghosttyNewWindow writes a 0600 script
+        // file and delivers `bash '<scriptFile>'`. The script file is
+        // returned to the host in the RPC result so the host can audit
+        // (it does not own the cleanup; the adapter does).
+        const { windowId, scriptFilePath } = await ghosttyNewWindow({
           command: bootstrapCommand,
           initialInput: "",
+          sessionId,
         });
         sessions.set(sessionId, { windowId, lastTitle: "", lastCwd: "", startedAt: nowIso() });
         emit(sessionId, { type: "terminal.session.started", sessionId, at: nowIso() });
@@ -230,7 +344,9 @@ async function handleRequest(msg) {
         // application.windows list; we emit session.started immediately
         // for the lowest-latency path. terminal.command.started /
         // ended come from title diffs.
-        return ok(id, { sessionId, grant, windowId });
+        const result = { sessionId, grant, windowId };
+        if (scriptFilePath) result.scriptFilePath = scriptFilePath;
+        return ok(id, result);
       }
       case "sendInput": {
         const sessionId = params?.sessionId;
@@ -377,7 +493,12 @@ function startPoller() {
     .catch(() => {})
     .finally(() => {
       pollTimer = setInterval(() => {
-        pollOnce().catch(() => {});
+        Promise.all([
+          pollOnce(),
+          // CP-SG1: reap stale 0600 bootstrap script files. Best-effort,
+          // never throws into the polling loop.
+          reapScriptFiles(),
+        ]).catch(() => {});
       }, POLL_INTERVAL_MS);
     });
 }
@@ -389,10 +510,24 @@ function stopPoller() {
   }
 }
 
-const rl = createInterface({ input: process.stdin });
-rl.on("line", handleLine);
+// The adapter is consumed two ways:
+//   1. As the JSON-RPC stdio peer (production: spawned by the bridge).
+//      In that mode we want the poller to start so terminal events fire.
+//   2. As an ES module import (unit tests, type-aware consumers).
+//      In that mode we want the module to be side-effect-free so
+//      `node --test …` doesn't hang on the poller's interval.
+// We gate the auto-start on the entrypoint check: only start the
+// poller if this file is the script Node is running directly.
+// ROS_GHOSTTY_ADAPTER_AUTOSTART=0 always disables; =1 forces it.
+const __entry = process.argv[1] ? process.argv[1].replace(/^file:\/\//, "") : "";
+const __here = new URL(import.meta.url).pathname;
+if (process.env.ROS_GHOSTTY_ADAPTER_AUTOSTART === "0") {
+} else if (process.env.ROS_GHOSTTY_ADAPTER_AUTOSTART === "1" || __entry === __here) {
+  const rl = createInterface({ input: process.stdin });
+  rl.on("line", handleLine);
 
-process.on("SIGTERM", () => { alive = false; stopPoller(); process.exit(0); });
-process.on("SIGINT", () => { alive = false; stopPoller(); process.exit(0); });
+  process.on("SIGTERM", () => { alive = false; stopPoller(); process.exit(0); });
+  process.on("SIGINT", () => { alive = false; stopPoller(); process.exit(0); });
 
-startPoller();
+  startPoller();
+}
