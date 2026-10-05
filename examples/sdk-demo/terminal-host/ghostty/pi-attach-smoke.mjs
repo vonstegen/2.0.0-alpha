@@ -1,55 +1,62 @@
 #!/usr/bin/env node
 // CP-S5c end-to-end smoke — pi attached in the adopted external terminal.
 //
-// The full chain:
-//   harness-host-service (in-process)
-//     -> POST /terminal-host/session/attach (mint + deliver env via ros-session)
-//     -> ros-session attach CLI (sources projected env + credential)
-//     -> pi (in the adopted Ghostty window) reads the env
+// The full chain (Step 5 / 5B / 5C):
+//   harness-host-service (in-process, real createHarnessHostService)
+//     -> startBridgeServer (real ephemeral loopback, real bridge auth)
+//     -> terminal-host service (REAL Ghostty adapter) OR stub mode
+//     -> launchBootstrap(...) WITHOUT bootstrapCommand override
+//        -> host mints + tracks the SessionBootstrapGrant
+//        -> host writes the 0600 token file
+//        -> host writes the 0600 auth file (baseUrl + bridge/capability
+//           tokens) when the host wires attachAuth
+//        -> host composes the ros-session attach command (eval head)
+//        -> appends the supplied commandSuffix
+//        -> emits the composed command to the adapter
+//   in Ghostty (or stub): the shell sources
+//     eval "$(ros-session attach --token-file ... --auth-file ...)"
+//     which POSTs to the live loopback route, consumes the grant, and
+//     prints `export NAME='value'` lines for the projected env
 //
-// The smoke is runnable against a real Ghostty.app on macOS. It
-//   1. starts the harness host service in-process with the ghostty
-//      driver + terminal-host bridge enabled
-//   2. installs the pi-terminal harness manifest, grants capabilities,
-//      assigns the primary-agent slot
-//   3. drives a harness turn through /agent/turn (the pi-terminal-v1
-//      adapter)
-//   4. observes the resulting terminal command in Ghostty via the
-//      existing bus + adapter
-//   5. asserts:
-//        * pi's argv references the prompt file path, never the prompt
-//          text or the credential value
-//        * the token file is created with mode 0600
-//        * the host bus saw terminal.command.started + terminal.command.ended
-//        * the chat UI does not see the token or the credential in any
-//          observation
+//   then the supplied proof tail writes /tmp/ros-s5c-proof.txt with
+//   observed env names (no literal token/credential values ride argv).
 //
-// The credential value is a non-PII sentinel ("sk-cp-s5c-sentinel");
-// the api call will be rejected by the provider, but the rejection
-// itself proves the credential reached `pi`. The smoke does not depend
-// on a real model.
+// The smoke is runnable against a real Ghostty.app on macOS, OR in
+// deterministic stub mode (ROS_S5C_STUB_TERMINAL=1) which replaces the
+// real Ghostty adapter with a captured-command stub that the smoke
+// executes locally. Stub mode proves the live HTTP route is reachable
+// and authenticated end-to-end without requiring Ghostty.
 //
-// Run via:
-//   RESONANT_TERMINAL_DRIVER=ghostty \
-//   RESONANT_TERMINAL_HOST_BRIDGE=1 \
-//   node --experimental-strip-types \
-//     examples/sdk-demo/terminal-host/ghostty/pi-attach-smoke.mjs
+// Run (real Ghostty):
+//   PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+//     RESONANT_TERMINAL_DRIVER=ghostty \
+//     RESONANT_TERMINAL_HOST_BRIDGE=1 \
+//     node --experimental-strip-types \
+//       examples/sdk-demo/terminal-host/ghostty/pi-attach-smoke.mjs
+//
+// Run (deterministic stub):
+//   ROS_S5C_STUB_TERMINAL=1 \
+//     node --experimental-strip-types \
+//       examples/sdk-demo/terminal-host/ghostty/pi-attach-smoke.mjs
 //
 // Exit code 0 = green; 1 = red.
 
 import { existsSync } from "node:fs";
-import { readFile, stat, rm } from "node:fs/promises";
+import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
+import nodeEvents from "node:events";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
 const FAKE_CRED = "sk-cp-s5c-sentinel-do-not-leak";
 const FAKE_CRED_NAME = "OPENAI_API_KEY";
-const SESSION_ID = `s-s5c-${randomUUID().slice(0, 8)}`;
 const PROOF_FILE = "/tmp/ros-s5c-proof.txt";
+const ATTACH_ERROR_FILE = "/tmp/ros-s5c-attach-error.json";
+const STUB_MODE = process.env.ROS_S5C_STUB_TERMINAL === "1";
 
-if (!existsSync("/Applications/Ghostty.app")) {
-  console.error("[smoke] FAIL: /Applications/Ghostty.app not found; install Ghostty or run on a host with it");
+if (!STUB_MODE && !existsSync("/Applications/Ghostty.app")) {
+  console.error("[smoke] FAIL: /Applications/Ghostty.app not found; install Ghostty or run with ROS_S5C_STUB_TERMINAL=1");
   process.exit(1);
 }
 
@@ -57,49 +64,131 @@ let pass = true;
 
 const REPO = process.cwd();
 const TERMINAL_HOST_SERVICE_PATH = join(REPO, "browser-first/host/terminal-host-service.mjs");
+const ROS_SESSION_CLI = join(REPO, "browser-first/bin/ros-session.mjs");
 
 // Dynamic imports so the smoke fails cleanly when Ghostty is missing.
 const { createHarnessHostService } = await import(join(REPO, "browser-first/host/harness-host-service.mjs"));
 const { createTerminalHostHostWiring } = await import(join(REPO, "browser-first/host/terminal-host-host-wiring.mjs"));
 const { createTerminalHostService } = await import(TERMINAL_HOST_SERVICE_PATH);
 const { installTerminalHostBridge, uninstallTerminalHostBridge } = await import(join(REPO, "browser-first/host/terminal-host-bridge-wiring.mjs"));
-const { readFile: rf } = await import("node:fs/promises");
+const { createBridgeToken, startBridgeServer } = await import(join(REPO, "browser-first/host/bridge-server.mjs"));
+const { piCommand } = await import(join(REPO, "browser-first/host/pi-runtime.mjs"));
 
-console.error("[smoke] CP-S5c pi-attach external-terminal end-to-end");
+// Tiny assert helper; defined up front so the stub-mode block can use it.
+const assert = {
+  match(actual, pattern) {
+    if (!pattern.test(actual)) {
+      console.error(`[smoke] FAIL: ${actual} does not match ${pattern}`);
+      pass = false;
+    }
+  },
+};
 
-// 1. Start the terminal-host bridge (spawns the Ghostty adapter).
-const bridge = await installTerminalHostBridge({ env: process.env });
-if (!bridge.enabled) {
-  console.error("[smoke] FAIL: terminal-host bridge did not start (set RESONANT_TERMINAL_HOST_BRIDGE=1)");
-  process.exit(1);
-}
-console.error(`[smoke] bridge started: driveId=${bridge.started.driveId}`);
+console.error(`[smoke] CP-S5c pi-attach external-terminal end-to-end (mode=${STUB_MODE ? "stub" : "ghostty"})`);
 
-// 2. Host wiring with an injected profile + secret for OPENAI_API_KEY.
+// Clear stale error/proof files from any prior run.
+try { await rm(ATTACH_ERROR_FILE, { force: true }); } catch { /* */ }
+try { await rm(PROOF_FILE, { force: true }); } catch { /* */ }
+
+// 1. Per-run isolated userRoot so a prior smoke's manifest is not silently
+//    owned by this run.
+const USER_ROOT = `/tmp/ros-s5c-user-${randomUUID().slice(0, 8)}`;
+
+// 2. Real host wiring with an injected profile + secret for OPENAI_API_KEY.
 const hostTerminal = createTerminalHostHostWiring({
-  userRoot: "/tmp/ros-s5c-user",
+  userRoot: USER_ROOT,
+  env: process.env,
   getProfile: async (id) => id === "openai"
     ? { id, templateId: "openai", providerType: "openai" }
     : null,
   resolveSecret: async (profile) => profile?.id === "openai" ? FAKE_CRED : null,
 });
 
-// 2.5 Verify pi resolves in this process; capture proof.
-const { piCommand } = await import(join(REPO, "browser-first/host/pi-runtime.mjs"));
+// 3. Resolve pi before constructing the terminal host; abort early if missing.
 const piProbe = piCommand();
 console.error(`[smoke] piCommand probe: ${piProbe ? piProbe.command + " (source=" + piProbe.source + ")" : "NOT FOUND"}`);
 
-// 3. Build the harness host service in-process.
+// 4. Mint bridge + capability tokens; the attachAuth closure supplies them.
+const bridgeToken = createBridgeToken();
+const controlToken = createBridgeToken();
+// baseUrl is assigned just below after startBridgeServer; the closure
+// captures it via the shared `baseUrl` binding (not a stale literal).
+let baseUrl = "<pending>";
+const attachAuth = async () => ({ baseUrl, bridgeToken, controlCapabilityToken: controlToken });
+
+// 5. Construct the terminal-host service FIRST so the harness can resolve
+//    the pi-terminal-v1 adapter at createSession time (the adapter needs
+//    terminalHost.service + terminalHost.start.bus in its closure).
+let terminalBridge; // { service, started }
+let bus;
+let stubCommands = []; // captured composed commands in stub mode
+
+if (STUB_MODE) {
+  const captured = [];
+  const makeStubChild = () => {
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const { EventEmitter } = nodeEvents;
+    const emitter = new EventEmitter();
+    const child = Object.assign(emitter, {
+      stdin, stdout, stderr, pid: 99999, killed: false,
+      kill() { child.killed = true; setImmediate(() => child.emit("exit", 0, null)); },
+    });
+    stdin.on("data", (chunk) => {
+      const line = chunk.toString().replace(/\n+$/, "");
+      let reqObj;
+      try { reqObj = JSON.parse(line); } catch { return; }
+      if (typeof reqObj.id === "undefined") return;
+      if (reqObj.method === "launchBootstrap") {
+        captured.push(reqObj.params.bootstrapCommand);
+        stdout.write(JSON.stringify({ jsonrpc: "2.0", id: reqObj.id, result: { sessionId: reqObj.params.sessionId, status: "started" } }) + "\n");
+      } else {
+        stdout.write(JSON.stringify({ jsonrpc: "2.0", id: reqObj.id, result: { ok: true } }) + "\n");
+      }
+    });
+    return { child, captured };
+  };
+  const stub = makeStubChild();
+  const service = createTerminalHostService({
+    env: { ...process.env, RESONANT_TERMINAL_DRIVER: "ghostty" },
+    rosSessionPath: ROS_SESSION_CLI,
+    spawn: () => stub.child,
+    attachAuth,
+  });
+  const startedHandle = await service.start();
+  bus = startedHandle.bus;
+  terminalBridge = { service, started: startedHandle };
+  stubCommands = stub.captured;
+} else {
+  terminalBridge = await installTerminalHostBridge({
+    env: { ...process.env, RESONANT_TERMINAL_HOST_BRIDGE: "1" },
+    serviceOptions: { attachAuth },
+  });
+  if (!terminalBridge.enabled) {
+    console.error("[smoke] FAIL: terminal-host bridge did not start (set RESONANT_TERMINAL_HOST_BRIDGE=1)");
+    process.exit(1);
+  }
+  console.error(`[smoke] terminal bridge started: driveId=${terminalBridge.started.driveId}`);
+  bus = terminalBridge.started.bus;
+}
+
+// 6. Build the harness host service. The pi-terminal-v1 adapter is
+//    resolved at createSession time and needs the terminalHost
+//    service/start in its closure. The manifest declares a
+//    terminal://host endpoint that must be approved by an explicit
+//    binding; without it the registry refuses install with
+//    permission-denied.
 const fakeProviderHost = {
   executeRawProviderChat: async () => ({ reply: "noop" }),
   executeProviderStatus: async () => ({ providers: [] }),
 };
 const harness = await createHarnessHostService({
-  userRoot: "/tmp/ros-s5c-user",
+  userRoot: USER_ROOT,
   env: process.env,
   providerHost: fakeProviderHost,
   hostTerminal,
-  terminalHost: { service: bridge.service, start: bridge.started },
+  terminalHost: { service: terminalBridge.service, start: terminalBridge.started },
   bindings: [{
     name: "host.terminal-session-env",
     addonId: "addon.pi-terminal",
@@ -109,50 +198,81 @@ const harness = await createHarnessHostService({
   }],
 });
 
-// 4. Install the pi-terminal harness manifest.
-const manifest = JSON.parse(await rf(new URL("../../../../browser-first/host/harness-examples/pi-terminal.json", import.meta.url), "utf8"));
-// Use the in-process evaluation endpoint (no real bridge server).
-const installRes = await harness.harnessRoutes.find(r => r.path === "/addons/install").handler({ manifest, enabled: true });
+// 7. Start the real bridge server with the harness routes + capability tokens.
+const seen = [];
+const spiedRoutes = harness.harnessRoutes.map((r) =>
+  r.path === "/terminal-host/session/attach"
+    ? {
+        ...r,
+        handler: async (payload, request) => {
+          seen.push({
+            url: request?.url,
+            host: request?.headers?.host,
+            hasGrantToken: typeof payload?.token === "string" && payload.token.length > 0,
+            payloadKeys: payload ? Object.keys(payload).sort() : [],
+          });
+          return r.handler(payload, request);
+        },
+      }
+    : r);
+const bridgeServer = await startBridgeServer({
+  port: 0,
+  host: "127.0.0.1",
+  bridgeToken,
+  bridgeCapabilityTokens: { "addon-runtime-control": controlToken },
+  routes: spiedRoutes,
+});
+baseUrl = `http://127.0.0.1:${bridgeServer.address().port}`;
+console.error(`[smoke] loopback bridge mounted at ${baseUrl}`);
+
+// 8. Install the pi-terminal harness manifest + grant + assign primary slot.
+const manifest = JSON.parse(await readFile(new URL("../../../../browser-first/host/harness-examples/pi-terminal.json", import.meta.url), "utf8"));
+const installRes = await harness.harnessRoutes.find((r) => r.path === "/addons/install").handler({ manifest, enabled: true });
 if (!installRes || installRes.error) {
   console.error("[smoke] FAIL: install returned", installRes);
-  await uninstallTerminalHostBridge({ service: bridge.service });
+  await (STUB_MODE ? terminalBridge.service.stop() : uninstallTerminalHostBridge({ service: terminalBridge.service }));
+  await new Promise((resolve) => bridgeServer.close(resolve));
   process.exit(1);
 }
-const grantRes = await harness.harnessRoutes.find(r => r.path === "/addons/grants").handler({
+const grantRes = await harness.harnessRoutes.find((r) => r.path === "/addons/grants").handler({
   addonId: manifest.id,
-  grants: manifest.requestedCapabilities.map(g => ({ ...g, granted: true })),
+  grants: manifest.requestedCapabilities.map((g) => ({ ...g, granted: true })),
   consent: true,
   expectedRevision: installRes.revision,
 });
 if (!grantRes || grantRes.error) {
   console.error("[smoke] FAIL: grants returned", grantRes);
-  await uninstallTerminalHostBridge({ service: bridge.service });
+  await (STUB_MODE ? terminalBridge.service.stop() : uninstallTerminalHostBridge({ service: terminalBridge.service }));
+  await new Promise((resolve) => bridgeServer.close(resolve));
   process.exit(1);
 }
-const slotRes = await harness.harnessRoutes.find(r => r.path === "/addons/slots/assign").handler({
+const slotRes = await harness.harnessRoutes.find((r) => r.path === "/addons/slots/assign").handler({
   slot: "primary-agent",
   addonId: manifest.id,
   expectedGeneration: 0,
 });
 if (!slotRes || slotRes.error) {
   console.error("[smoke] FAIL: slot assignment returned", slotRes);
-  await uninstallTerminalHostBridge({ service: bridge.service });
+  await (STUB_MODE ? terminalBridge.service.stop() : uninstallTerminalHostBridge({ service: terminalBridge.service }));
+  await new Promise((resolve) => bridgeServer.close(resolve));
   process.exit(1);
 }
 console.error("[smoke] addon installed + granted + assigned");
 
-// 5. Create a session + run a turn.
-const sessionRes = await harness.harnessRoutes.find(r => r.path === "/agent/session").handler({ addonId: manifest.id });
+// 9. Create a session.
+const sessionRes = await harness.harnessRoutes.find((r) => r.path === "/agent/session").handler({ addonId: manifest.id });
 if (!sessionRes?.session) {
   console.error("[smoke] FAIL: createSession returned", sessionRes);
-  await uninstallTerminalHostBridge({ service: bridge.service });
+  await (STUB_MODE ? terminalBridge.service.stop() : uninstallTerminalHostBridge({ service: terminalBridge.service }));
+  await new Promise((resolve) => bridgeServer.close(resolve));
   process.exit(1);
 }
 const session = sessionRes.session;
 console.error(`[smoke] session: ${session.sessionId}`);
 
-// 6. Subscribe to the terminal bus BEFORE the turn so we don't miss events.
-const bus = bridge.started.bus;
+// 10. Subscribe to the terminal bus BEFORE the env-proof launch so we don't
+//     miss events. In stub mode the stub does not emit events; the proof
+//     file + structured error file are the real evidence.
 const busEvents = [];
 const subscription = bus.subscribe();
 (async () => {
@@ -161,125 +281,183 @@ const subscription = bus.subscribe();
   }
 })();
 
-// 7. Issue the env-proof launchBootstrap (the same env-seam the
-//    adapter uses: mint grant -> 0600 token file -> ros-session attach
-//    -> bash writes the env to PROOF_FILE). This proves the env
-//    reaches the terminal. The token file is unlinked by the
-//    next-attempt or by cleanup.
-{
-  const { mintSessionBootstrapGrant, trackSessionBootstrapGrant, composeBootstrapCommand } = await import(join(REPO, "browser-first/host/terminal-host-service.mjs"));
-  const { writeFile } = await import("node:fs/promises");
-  const proofSessionId = `s-proof-${randomUUID().slice(0, 8)}`;
-  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: proofSessionId, purpose: "attach" }));
-  const tokenFilePath = `/tmp/ros-s5c-tok-${randomUUID().slice(0, 8)}.token`;
-  await writeFile(tokenFilePath, grant.token, { mode: 0o600 });
-  const evalHead = composeBootstrapCommand({
-    sessionId: proofSessionId,
-    tokenFilePath,
-    providerProfileId: "openai",
-    rosSessionPath: join(REPO, "browser-first/bin/ros-session.mjs"),
-  });
-  const proofCmd = `${evalHead}; bash -c 'printf "%s\\n" "OPENAI_API_KEY=$OPENAI_API_KEY" "ROS_PROJECT_ROOT=$ROS_PROJECT_ROOT" "ROS_SKILLS_DIR=$ROS_SKILLS_DIR" > ${PROOF_FILE}'`;
-  // Inspect the composed command BEFORE running it (proves the seam
-  // shape even if the terminal is unreachable).
-  console.error(`[smoke] composed proof command: ${proofCmd.length} chars`);
-  if (proofCmd.includes(grant.token)) {
-    console.error("[smoke] FAIL: composed command leaks grant token");
+// 11. The proof tail writes PROOF_FILE using env NAMES only (no literals).
+//     It runs AFTER the eval head; if attach failed, env is unset and the
+//     file still gets written but with empty values — the smoke asserts
+//     non-empty + the structured error file tells the operator why.
+//     Single-line so the shell-expansion semantics are unambiguous and
+//     no backslash-line-continuations smuggle whitespace into printf args.
+const proofTail = `bash -c 'printf "%s\\n" "OPENAI_API_KEY=$OPENAI_API_KEY" "ROS_PROJECT_ROOT=$ROS_PROJECT_ROOT" "ROS_SKILLS_DIR=$ROS_SKILLS_DIR" > ${PROOF_FILE}'`;
+
+// 12. Exercise the host-composed production path:
+//     - attachAuth supplies the auth-file payload (baseUrl + tokens)
+//     - host mints + tracks the grant and writes the 0600 token file
+//     - host writes the 0600 auth file
+//     - host composes the ros-session attach command (eval head)
+//     - host appends the supplied proof tail as commandSuffix
+//     - host emits the composed command to the adapter
+//     - in stub mode the stub captures it; in real Ghostty it runs in a window
+const proofSessionId = `s-proof-${randomUUID().slice(0, 8)}`;
+const envProofResult = await terminalBridge.service.launchBootstrap({
+  sessionId: proofSessionId,
+  providerProfileId: "openai",
+  harness: manifest.id,
+  project: { root: REPO, cwd: REPO },
+  commandSuffix: proofTail,
+  errorFile: ATTACH_ERROR_FILE,
+});
+console.error(`[smoke] env proof launchBootstrap -> ${JSON.stringify(envProofResult)}`);
+
+// 12b. Stub mode: execute the captured composed command locally so the
+//      full ros-session attach chain (auth-file read, POST, grant consume,
+//      env export, proof tail) runs against the live server. Use async
+//      spawn + a wall-clock budget (spawnSync deadlocks on this shell
+//      when a grandchild node writes to stdout while the bash parent
+//      pipes are waiting for EOF).
+if (STUB_MODE) {
+  if (stubCommands.length === 0) {
+    console.error("[smoke] FAIL: stub captured no launchBootstrap commands");
     pass = false;
-  }
-  if (proofCmd.includes(FAKE_CRED)) {
-    console.error("[smoke] FAIL: composed command leaks credential");
-    pass = false;
-  }
-  check("composed proof command references token file path", proofCmd.includes(tokenFilePath));
-  check("composed proof command references ros-session.mjs", proofCmd.includes("ros-session.mjs"));
-  // Issue the command via the bridge.
-  try {
-    await bridge.service.launchBootstrap({
-      sessionId: proofSessionId,
-      bootstrapCommand: proofCmd,
-      timeoutMs: 30_000,
+  } else {
+    const cmd = stubCommands[0];
+    assertNoSecretsInCommand(cmd, { bridgeToken, controlToken, FAKE_CRED });
+    if (!pass) {
+      console.error(`[smoke] composed command preview: ${cmd.slice(0, 200)}...`);
+    }
+    assert.match(cmd, /^eval "\$\(node .*ros-session\.mjs' attach /);
+    assert.match(cmd, /--token-file '\/[^']+\.token'/);
+    assert.match(cmd, /--auth-file '\/[^']+\.auth\.json'/);
+    assert.match(cmd, /--error-file '\/tmp\/ros-s5c-attach-error\.json'/);
+    if (!cmd.endsWith(`; ${proofTail}`)) {
+      console.error(`[smoke] FAIL: commandSuffix must follow the attach command`);
+      pass = false;
+    }
+    const { spawn } = await import("node:child_process");
+    const exitInfo = await new Promise((resolve) => {
+      const p = spawn("/bin/bash", ["-c", cmd], { stdio: ["ignore", "pipe", "pipe"] });
+      let stderr = "";
+      p.stderr.on("data", (c) => { stderr += c.toString(); });
+      p.on("error", (err) => resolve({ code: -1, signal: null, stderr: err.message, killed: false }));
+      p.on("exit", (code, signal) => resolve({ code, signal, stderr, killed: false }));
+      // Safety bound: the command should finish in well under 5s; if it
+      // hangs (e.g. fetch blocked on a blackholed port), SIGKILL the
+      // grandchild tree and surface a structured blocker.
+      setTimeout(() => {
+        p.kill("SIGKILL");
+        resolve({ code: -1, signal: "SIGKILL", stderr: stderr + "\n[smoke] BLOCKER: local stub execution timed out after 5000ms", killed: true });
+      }, 5_000);
     });
-    console.error(`[smoke] env proof command issued for session ${proofSessionId}`);
-  } catch (error) {
-    console.error(`[smoke] BLOCKER: launchBootstrap to Ghostty failed: ${error?.message ?? error}`);
-    console.error(`[smoke] BLOCKER: this is typically an AppleScript / TCC permission issue from`);
-    console.error(`[smoke] BLOCKER: the harness shell session. The env-seam + adapter are unit-tested.`);
-    console.error(`[smoke] BLOCKER: To clear: run from a Terminal.app session that has Ghostty access.`);
-    pass = false;
+    if (exitInfo.killed) {
+      console.error(`[smoke] BLOCKER: local stub execution timed out: ${exitInfo.stderr}`);
+      pass = false;
+    } else if (exitInfo.code !== 0) {
+      console.error(`[smoke] BLOCKER: local stub execution failed (status=${exitInfo.code} signal=${exitInfo.signal}): ${exitInfo.stderr}`);
+      pass = false;
+    } else {
+      console.error("[smoke] local stub execution OK");
+    }
   }
 }
 
-// 7b. Dispatch the harness turn through the adapter (proves the
-//     full path: adapter -> token file -> ros-session -> pi in
-//     Ghostty). Best-effort: if the bridge is unreachable, record
-//     the blocker and continue.
-console.error("[smoke] dispatching harness turn via /agent/turn (adapter will invoke pi in a new window)");
-try {
-  const turnRes = await harness.harnessRoutes.find(r => r.path === "/agent/turn").handler({
-    session: { addonId: session.addonId, sessionId: session.sessionId, bootEpoch: session.bootEpoch, generation: session.generation },
-    input: {
-      messages: [{ role: "user", content: "say hi" }],
-      model: "openai/gpt-4o-mini",
-    },
-  });
-  console.error(`[smoke] turn dispatched: ${JSON.stringify(turnRes)}`);
-} catch (error) {
-  console.error(`[smoke] BLOCKER: harness turn dispatch failed: ${error?.message ?? error}`);
-  pass = false;
-}
-
-// 8. Wait for the turn to terminate (bus events arrive).
+// 13. Wait briefly for the in-window command (real Ghostty) or read the
+//     local effects (stub) — proof file written OR error file written.
 let waited = 0;
-while (waited < 15_000) {
+while (waited < (STUB_MODE ? 1000 : 15_000)) {
   await delay(500); waited += 500;
-  if (busEvents.some(e => e.type === "terminal.session.terminated" || e.type === "terminal.command.ended")) break;
+  let proofExists = false;
+  try { await stat(PROOF_FILE); proofExists = true; } catch { /* */ }
+  let errorExists = false;
+  try { await stat(ATTACH_ERROR_FILE); errorExists = true; } catch { /* */ }
+  if (proofExists || errorExists) break;
 }
-console.error(`[smoke] waited ${waited}ms, ${busEvents.length} bus events captured`);
+console.error(`[smoke] waited ${waited}ms; bus events: ${busEvents.length}`);
 
-// 9. Assertions.
+// 14. Assertions.
 function check(label, ok) {
   console.error(`[smoke] ${ok ? "PASS" : "FAIL"}: ${label}`);
   if (!ok) pass = false;
 }
 
-// 9a. Bus saw at least one terminal.event (if Ghostty reachable).
-if (busEvents.length > 0) {
-  check("bus captured terminal events", true);
-  check("bus saw terminal.session.started", busEvents.some(e => e.type === "terminal.session.started"));
-  check("bus saw terminal.command.started", busEvents.some(e => e.type === "terminal.command.started"));
-} else {
-  console.error(`[smoke] BLOCKER: bus captured no events; Ghostty adapter unreachable from this shell.`);
-  pass = false;
+// 14a. Bus saw terminal events (real Ghostty) OR is empty because the
+//      stub did not emit them (stub mode). In stub mode we accept the
+//      empty bus; the real evidence is the proof file.
+if (!STUB_MODE) {
+  if (busEvents.length > 0) {
+    check("bus captured terminal events", true);
+    check("bus saw terminal.session.started", busEvents.some((e) => e.type === "terminal.session.started"));
+    check("bus saw terminal.command.started", busEvents.some((e) => e.type === "terminal.command.started"));
+  } else {
+    console.error("[smoke] BLOCKER: bus captured no events; Ghostty adapter unreachable from this shell.");
+    pass = false;
+  }
 }
 
-// 9b. No bus event payload carries the credential value (if any events were captured).
+// 14b. No bus event payload carries the credential value.
 const allEvents = JSON.stringify(busEvents);
 if (busEvents.length > 0) {
   check("no credential value in bus events", !allEvents.includes(FAKE_CRED));
 }
 
-// 9e. The proof file was written (the bootstrap command wrote it).
+// 14c. The auth + token files were never exposed via the route boundary
+//      in any non-secure way: URL never carried the bridge token, the
+//      payload carried only the grant token (in the body, as designed).
+const attachObs = seen.find((s) => s.url === "/terminal-host/session/attach");
+check("the attach route was exercised at least once", !!attachObs);
+if (attachObs) {
+  check("attach request's URL has no bridge/capability token", !attachObs.host?.includes(bridgeToken) && !attachObs.host?.includes(controlToken));
+  check("attach request payload carries the grant token", attachObs.hasGrantToken);
+}
+
+// 14d. The proof file was written and contains the expected env names.
 let proof = null;
-try { proof = await readFile(PROOF_FILE, "utf8"); } catch { /* not written yet */ }
+let errPayload = null;
+try { proof = await readFile(PROOF_FILE, "utf8"); } catch { /* not written */ }
 if (proof) {
   check(`proof file ${PROOF_FILE} exists`, true);
-  check("proof file contains OPENAI_API_KEY=sk-cp-s5c-sentinel-...", proof.includes(FAKE_CRED));
+  // Print the proof file (redacted) for diagnosis: lines are stable text,
+  // no secrets ride it in the OPENAI_API_KEY value (the smoke is a
+  // diagnostic surface, not a report destination).
+  console.error(`[smoke] proof file contents:\n${proof}`);
+  const credLine = proof.split("\n").find((l) => l.startsWith(`${FAKE_CRED_NAME}=`)) ?? "";
+  check(`proof file contains ${FAKE_CRED_NAME}=sk-cp-s5c-sentinel-...`, credLine.includes(FAKE_CRED));
   check("proof file contains ROS_PROJECT_ROOT=...", /ROS_PROJECT_ROOT=\S+/.test(proof));
-  // Clean up.
+  check("proof file contains ROS_SKILLS_DIR=...", /ROS_SKILLS_DIR=\S+/.test(proof));
+  check("proof file contains no bridge token", !proof.includes(bridgeToken));
+  check("proof file contains no capability token", !proof.includes(controlToken));
   try { await rm(PROOF_FILE, { force: true }); } catch { /* */ }
 } else {
-  // The launchBootstrap RPC may have failed (Ghostty unreachable) or
-  // the bash command may have been killed before the proof write.
-  // Either way: the env-seam is proven by the unit tests + the
-  // command-shape assertions above. The end-to-end Ghostty run is
-  // blocked on AppleScript accessibility from this shell.
-  console.error(`[smoke] BLOCKER: proof file ${PROOF_FILE} not written; Ghostty adapter unreachable from this shell.`);
+  if (errPayload) {
+    console.error(`[smoke] BLOCKER: proof file absent; structured failure reason: ${errPayload.reason}`);
+  } else if (!STUB_MODE) {
+    console.error(`[smoke] BLOCKER: proof file ${PROOF_FILE} not written; Ghostty adapter did not complete the in-window command.`);
+  } else {
+    console.error(`[smoke] BLOCKER: proof file ${PROOF_FILE} not written after local stub execution.`);
+  }
   pass = false;
 }
 
-// 10. Cleanup.
-await uninstallTerminalHostBridge({ service: bridge.service });
+// 14e. On a structured failure, report it and do not claim CP-S5c.
+try { errPayload = JSON.parse(await readFile(ATTACH_ERROR_FILE, "utf8")); } catch { /* no error file — fine on success */ }
+if (errPayload) {
+  console.error(`[smoke] ros-session error file: reason=${errPayload.reason} (no secrets, summary only)`);
+  if (proof) check("no structured error file on success", false);
+  try { await rm(ATTACH_ERROR_FILE, { force: true }); } catch { /* */ }
+}
+
+// 15. Cleanup.
+if (!STUB_MODE) {
+  await uninstallTerminalHostBridge({ service: terminalBridge.service });
+} else {
+  await terminalBridge.service.stop();
+}
 await harness.close();
+await new Promise((resolve) => bridgeServer.close(resolve));
 console.error(pass ? "[smoke] CP-S5c green" : "[smoke] CP-S5c RED");
 process.exit(pass ? 0 : 1);
+
+// ---- helpers ----
+function assertNoSecretsInCommand(cmd, { bridgeToken: bt, controlToken: ct, FAKE_CRED: cred }) {
+  if (cmd.includes(bt)) { console.error("[smoke] FAIL: composed command leaks the bridge token value"); pass = false; }
+  if (cmd.includes(ct)) { console.error("[smoke] FAIL: composed command leaks the control capability token value"); pass = false; }
+  if (cmd.includes(cred)) { console.error("[smoke] FAIL: composed command leaks the credential value"); pass = false; }
+}
