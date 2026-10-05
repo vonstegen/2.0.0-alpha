@@ -13,6 +13,8 @@
   "r-awareness.json",
   "shield.json",
   "telegram-channel.json",
+  "terminal-host-ghostty.json",
+  "terminal-host-iterm2.json",
   "tts-enforcer.json",
   "usage-tracker.json"
 ]

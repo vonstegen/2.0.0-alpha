@@ -287,3 +287,124 @@ describe("add-on surface dock section grouping", () => {
     expect(sectionsWithTwoGroups[1].label).toBe("Alpha");
   });
 });
+
+describe("terminal-host catalog registration gate", () => {
+  // CP-XH4b: the host catalog exposes the bundled manifests to
+  // createAddOnSurfaceDockRoutes. The gate semantics (install + enable +
+  // requiredCapabilities granted + not hidden) must drop terminal surfaces
+  // until every condition is met.
+  const terminalManifest = (addonId: string, surfaceId: string): AddOnManifest => ({
+    id: addonId,
+    name: `Resonant ${addonId}`,
+    version: "0.1.0",
+    author: "ResonantOS",
+    category: "integration",
+    description: "Terminal host reference add-on.",
+    runtimeType: "local-service",
+    surfaces: [
+      {
+        id: surfaceId,
+        type: "panel",
+        label: `${addonId} terminal host`,
+        description: "Manage terminal sessions from ResonantOS.",
+        shellNavigation: {
+          sectionId: "terminal",
+          dockIcon: "terminal",
+          eyebrow: "Terminal",
+          requiredCapabilities: ["terminal-host"],
+        },
+      },
+    ],
+    requestedCapabilities: [grant("terminal-host")],
+    providerRequirements: { sharedProfiles: [], supportsPrivateCredentials: false },
+    archiveIntegration: { readScopes: [], intakeWriteScopes: [], canRequestIngest: false, canWriteKnowledgePages: false },
+    health: { strategy: "none" },
+    installHooks: {},
+    compatibility: { shellVersion: "^0.1.0", platforms: ["macOS"] },
+  });
+
+  const ghosttyManifest = terminalManifest("addon.resonant-terminal-ghostty", "ghostty-terminal-host");
+  const iterm2Manifest = terminalManifest("addon.resonant-terminal-iterm2", "iterm2-terminal-host");
+
+  const projectedState = (
+    manifests: AddOnManifest[],
+    installedAddonIds: Set<string>,
+    enabledAddonIds: Set<string>,
+    grantedCapabilities: Record<string, CapabilityGrant[]>,
+    hiddenSurfaceIds: Record<string, string[]> = {},
+  ): HarnessProjection => {
+    const client = createHarnessClient();
+    client.applySnapshot({
+      bootEpoch: "terminal-host-xh4",
+      revision: 1,
+      governanceActivated: true,
+      candidates: manifests,
+      installations: Object.fromEntries(
+        manifests.map((m) => [
+          m.id,
+          {
+            addonId: m.id,
+            installed: installedAddonIds.has(m.id),
+            enabled: enabledAddonIds.has(m.id),
+            grantedCapabilities: grantedCapabilities[m.id] ?? [],
+            disabledOperations: [],
+            hiddenSurfaceIds: hiddenSurfaceIds[m.id] ?? [],
+          },
+        ]),
+      ),
+      slots: {},
+    });
+    return client.getSnapshot()!;
+  };
+
+  it("emits no terminal routes before install + enable + grant", () => {
+    const projection = projectedState(
+      [ghosttyManifest, iterm2Manifest],
+      new Set(),
+      new Set(),
+      { "addon.resonant-terminal-ghostty": [grant("terminal-host", false)], "addon.resonant-terminal-iterm2": [grant("terminal-host", false)] },
+    );
+    const routes = createAddOnSurfaceDockRoutes([ghosttyManifest, iterm2Manifest], {}, projection);
+    expect(routes).toEqual([]);
+  });
+
+  it("emits grouped terminal routes after install + enable + grant", () => {
+    const projection = projectedState(
+      [ghosttyManifest, iterm2Manifest],
+      new Set(["addon.resonant-terminal-ghostty", "addon.resonant-terminal-iterm2"]),
+      new Set(["addon.resonant-terminal-ghostty", "addon.resonant-terminal-iterm2"]),
+      {
+        "addon.resonant-terminal-ghostty": [grant("terminal-host", true)],
+        "addon.resonant-terminal-iterm2": [grant("terminal-host", true)],
+      },
+    );
+    const routes = createAddOnSurfaceDockRoutes([ghosttyManifest, iterm2Manifest], {}, projection);
+    const sections = groupSurfaceDockRoutesBySection(routes);
+    expect(sections.map((s) => s.sectionId)).toEqual(["terminal"]);
+    expect(sections[0].tabs.map((t) => t.surfaceId).sort()).toEqual([
+      "ghostty-terminal-host",
+      "iterm2-terminal-host",
+    ]);
+  });
+
+  it("hides routes on hiddenSurfaceIds or ungranted terminal-host capability", () => {
+    for (const denied of [
+      { hiddenSurfaceIds: { "addon.resonant-terminal-ghostty": ["ghostty-terminal-host"] } },
+      { ungranted: { "addon.resonant-terminal-ghostty": [grant("terminal-host", false)] } },
+    ]) {
+      const projection = projectedState(
+        [ghosttyManifest, iterm2Manifest],
+        new Set(["addon.resonant-terminal-ghostty", "addon.resonant-terminal-iterm2"]),
+        new Set(["addon.resonant-terminal-ghostty", "addon.resonant-terminal-iterm2"]),
+        denied.ungranted ?? {
+          "addon.resonant-terminal-ghostty": [grant("terminal-host", true)],
+          "addon.resonant-terminal-iterm2": [grant("terminal-host", true)],
+        },
+        denied.hiddenSurfaceIds ?? {},
+      );
+      const routes = createAddOnSurfaceDockRoutes([ghosttyManifest, iterm2Manifest], {}, projection);
+      const ghosttyRoutes = routes.filter((r) => r.surfaceId === "ghostty-terminal-host");
+      expect(ghosttyRoutes).toEqual([]);
+    }
+  });
+});
