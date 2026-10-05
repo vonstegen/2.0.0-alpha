@@ -300,13 +300,23 @@ const subscription = bus.subscribe();
 //     hosted-terminal behavior after the probe). In stub mode the smoke
 //     runs the composed command locally and we cannot keep the local exec
 //     alive (it would hang the test); we use the simple one-shot form.
+//
+//     CP-S5T-2 (paste-input): the inner `bash -c '...; exec $SHELL'`
+//     execs the interactive shell inside a child process. If the outer
+//     proofTail ALSO execs $SHELL, we end up with TWO shells on the
+//     same stdin (the inner $SHELL replaced the child; the outer
+//     proofTail exec REPLACES the parent). Both shells then race for
+//     the same input — pasting a command can be split or echoed between
+//     them and never execute cleanly. The keep-alive lives entirely
+//     inside the child `bash -c`, so the outer bash exits cleanly
+//     after the child execs and only ONE shell owns the TTY.
 const STDERR_FILE = "/tmp/ros-s5c-stderr.txt";
 // Bash default-value form is ${VAR:-default} — JS template literals would
 // try to parse the interior as JS, so we build the literal at runtime
 // (no JS interpolation of the ${...}).
 const probeShellForm = "${SHELL:-/bin/bash}";
 const proofTailOneShot = `bash -c 'printf "%s\\n" "OPENAI_API_KEY=$OPENAI_API_KEY" "ROS_PROJECT_ROOT=$ROS_PROJECT_ROOT" "ROS_SKILLS_DIR=$ROS_SKILLS_DIR" > ${PROOF_FILE} 2>${STDERR_FILE}'`;
-const proofTailKeepAlive = `${proofTailOneShot}; exec "${probeShellForm}" || exec /bin/bash`;
+const proofTailKeepAlive = `${proofTailOneShot}; exec "${probeShellForm}"`;
 const proofTail = STUB_MODE ? proofTailOneShot : proofTailKeepAlive;
 
 // 12. Exercise the host-composed production path:
