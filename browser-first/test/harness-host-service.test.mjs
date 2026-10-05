@@ -157,7 +157,7 @@ test('demo candidates require host opt-in and never confer bindings or grants', 
   const demo = await fixture(t, { env });
   env.RESONANTOS_HARNESS_DEMO = '0';
   const snapshot = (await demo.call('/addons/registry')).payload;
-  assert.deepEqual(snapshot.candidates.map(m => m.id).sort(), ['addon.deepseek-harness', 'addon.provider-chat-demo']);
+  assert.deepEqual(snapshot.candidates.map(m => m.id).sort(), ['addon.deepseek-harness', 'addon.pi', 'addon.provider-chat-demo']);
   assert.deepEqual(snapshot.installations, {});
   const manifest = await example('deepseek-harness');
   assert.equal((await demo.call('/addons/install', { manifest, enabled: true })).payload.code, 'permission-denied');
@@ -178,7 +178,7 @@ test('demo catalog requires exactly the string opt-in in a populated environment
       const result = await f.call('/addons/registry');
       assert.equal(result.status, 200);
       assert.deepEqual(result.payload.candidates.map(candidate => candidate.id).sort(),
-        label === 'enabled' ? ['addon.deepseek-harness', 'addon.provider-chat-demo'] : [],
+        label === 'enabled' ? ['addon.deepseek-harness', 'addon.pi', 'addon.provider-chat-demo'] : [],
         `${label}: unrelated environment keys must not enable demo candidates`);
     });
   }
