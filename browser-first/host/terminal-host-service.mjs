@@ -27,6 +27,8 @@ import { once } from "node:events";
 import { createInterface } from "node:readline";
 import { performance } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
+import { tmpdir as osTmpdir } from "node:os";
+import { writeFile, unlink } from "node:fs/promises";
 
 import { createHarnessEventBus } from "./harness-event-bus.mjs";
 import { validateHarnessEvent } from "./harness-adapter-contract.mjs";
@@ -38,6 +40,48 @@ import { createHarnessSkillsProjection } from "./harness-skills-projection.mjs";
 
 const TERMINAL_HOST_ADDON_ID = "addon.resonant-terminal-iterm2";
 const JSON_RPC_VERSION = "2.0";
+
+/**
+ * POSIX shell single-quote escape. Wraps the value in single quotes and
+ * replaces any embedded single quotes with the standard '\'' sequence.
+ * Suitable for embedding in shell command strings (eval "$(... )" form).
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Pure bootstrap-command composer. Given the attach context and a known
+ * token-file path + ros-session CLI path, returns the shell command string
+ * the adapter will run. The grant token never appears in the returned
+ * string — only its file path.
+ *
+ * Extracted as a pure function so tests can verify the composition without
+ * driving the in-process IPC.
+ *
+ * @param {object} args
+ * @param {string} args.sessionId
+ * @param {string} args.tokenFilePath
+ * @param {string} args.providerProfileId
+ * @param {string} args.rosSessionPath
+ * @param {string} [args.harness]
+ * @param {{ root: string, cwd: string }} [args.project]
+ * @returns {string}
+ */
+export function composeBootstrapCommand({ sessionId, tokenFilePath, providerProfileId, rosSessionPath, harness, project } = {}) {
+  if (typeof sessionId !== "string" || !sessionId) throw new TypeError("composeBootstrapCommand: sessionId required");
+  if (typeof tokenFilePath !== "string" || !tokenFilePath) throw new TypeError("composeBootstrapCommand: tokenFilePath required");
+  if (typeof rosSessionPath !== "string" || !rosSessionPath) throw new TypeError("composeBootstrapCommand: rosSessionPath required");
+  const projectFlag = project ? ` --project ${shellQuote(JSON.stringify(project))}` : "";
+  const harnessFlag = harness ? ` --harness ${shellQuote(harness)}` : "";
+  return `eval "$(node ${shellQuote(rosSessionPath)} attach --session-id ${shellQuote(sessionId)}` +
+    ` --token-file ${shellQuote(tokenFilePath)}` +
+    ` --provider-profile-id ${shellQuote(providerProfileId ?? "")}` +
+    `${harnessFlag}${projectFlag})"`;
+}
 
 // Adapter spawn env allowlist. ADR-039/040 require no `process.env`
 // inheritance into the adapter; only PATH (runtime resolution) and HOME
@@ -604,6 +648,10 @@ export function createTerminalHostService(options = {}) {
     : "examples/sdk-demo/terminal-host/iterm2"
   );
   const spawnFn = options.spawn ?? ((cmd, args, envArg) => spawn(cmd, args, { cwd, env: envArg, stdio: ["pipe", "pipe", "pipe"] }));
+  // Path to the ros-session CLI used to compose the bootstrap command. By
+  // default it is the absolute path to browser-first/bin/ros-session.mjs
+  // resolved relative to this module. Tests inject a stub path.
+  const rosSessionPath = options.rosSessionPath ?? new URL("../bin/ros-session.mjs", import.meta.url).pathname;
   const spawnPlan = SPAWN_PLANS[driveId] ?? { command: "node", args: ["adapter.mjs"] };
   const entrypoint = options.entrypoint ?? spawnPlan.command;
   const script = options.script ?? spawnPlan.args[0];
@@ -750,21 +798,65 @@ export function createTerminalHostService(options = {}) {
     child = null;
   }
 
-  async function launchBootstrap({ sessionId, bootstrapCommand, turnId, timeoutMs = 5000 }) {
+  async function launchBootstrap({
+    sessionId,
+    bootstrapCommand,
+    turnId,
+    timeoutMs = 5000,
+    // Attach context (step-4 / S4b). When supplied and bootstrapCommand is
+    // absent, the host composes a bootstrap command that sources the
+    // projected session environment via the ros-session attach CLI.
+    providerProfileId,
+    harness,
+    project,
+  } = {}) {
     if (driveId === "in-memory") {
       throw new Error("launchBootstrap unavailable: in-memory driver has no stdio surface");
     }
-    // Per v5: consumer receives the resolved environment via the bootstrap
-    // RPC return value + `terminal.session.started` event. We return the
-    // grant here; the bus event is published by the adapter's notification
-    // and observed via bus.subscribe().
-    const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId, purpose: "attach" }));
-    const result = await request(
-      "launchBootstrap",
-      { sessionId, bootstrapCommand, grant },
-      { timeoutMs },
-    );
-    return /** @type {any} */ (result);
+
+    // Hard rule #1: a literal token never enters argv/env/shell history.
+    // The grant token rides a 0600 file only; the composed command
+    // references the file path, never the value.
+    let composedCommand = bootstrapCommand;
+    let grant = null;
+    let tokenFilePath = null;
+
+    if (!composedCommand) {
+      // Mint + track the grant so the eventual attachSessionEnv claim is
+      // authorized (single-use, audience-bound, expiration-aware).
+      grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId, purpose: "attach" }));
+      // Write the token to a 0600 temp file. Default tmp dir; can be injected
+      // for tests. Cleanup is best-effort: the CLI's readTokenFile already
+      // renames-then-unlinks on success. If the adapter fails before the
+      // CLI runs, the host will unlink on the next launchBootstrap invocation
+      // for the same sessionId (single-session overwrite policy of the
+      // grant broker).
+      tokenFilePath = options.tokenFilePath?.() ?? `${osTmpdir()}/ros-session-${sessionId}-${randomUUID()}.token`;
+      await writeFile(tokenFilePath, grant.token, { mode: 0o600 });
+      composedCommand = composeBootstrapCommand({
+        sessionId,
+        tokenFilePath,
+        providerProfileId: providerProfileId ?? "",
+        rosSessionPath,
+        ...(harness ? { harness } : {}),
+        ...(project ? { project } : {}),
+      });
+    }
+
+    try {
+      const result = await request(
+        "launchBootstrap",
+        { sessionId, bootstrapCommand: composedCommand, ...(grant ? { grant } : {}) },
+        { timeoutMs },
+      );
+      return /** @type {any} */ (result);
+    } catch (error) {
+      // Best-effort cleanup if the adapter call fails before the CLI runs.
+      if (tokenFilePath) {
+        try { await unlink(tokenFilePath); } catch { /* already gone */ }
+      }
+      throw error;
+    }
   }
 
   async function sendInput({ sessionId, text, turnId, timeoutMs = 5000 }) {
