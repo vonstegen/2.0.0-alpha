@@ -12,7 +12,13 @@
       "id": "iterm2-terminal-host",
       "type": "panel",
       "label": "iTerm2 Terminal Host",
-      "description": "Manage iTerm2 terminal sessions from ResonantOS."
+      "description": "Manage iTerm2 terminal sessions from ResonantOS.",
+      "shellNavigation": {
+        "sectionId": "terminal",
+        "dockIcon": "terminal",
+        "eyebrow": "Terminal",
+        "requiredCapabilities": ["terminal-host"]
+      }
     }
   ],
   "requestedCapabilities": [

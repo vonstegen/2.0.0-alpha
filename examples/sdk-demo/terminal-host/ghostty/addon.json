@@ -12,7 +12,13 @@
       "id": "ghostty-terminal-host",
       "type": "panel",
       "label": "Ghostty Terminal Host",
-      "description": "Manage Ghostty terminal sessions from ResonantOS."
+      "description": "Manage Ghostty terminal sessions from ResonantOS.",
+      "shellNavigation": {
+        "sectionId": "terminal",
+        "dockIcon": "terminal",
+        "eyebrow": "Terminal",
+        "requiredCapabilities": ["terminal-host"]
+      }
     }
   ],
   "requestedCapabilities": [
