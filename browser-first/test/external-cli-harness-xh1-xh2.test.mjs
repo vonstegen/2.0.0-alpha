@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import { describe, it, beforeEach, afterEach } from "node:test";
 import { readFile } from "node:fs/promises";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -29,6 +29,7 @@ import {
   listReviewedPolicyIds,
   validateHarnessRuntimePolicyRequest,
 } from "../host/harness-policy-registry.mjs";
+import { resolveHarnessTerminalCompatibility } from "../host/harness-terminal-compatibility.mjs";
 import { createExternalCliTerminalAdapter } from "../host/agent-adapters/external-cli-terminal.mjs";
 
 function makeBus() {
@@ -308,5 +309,205 @@ describe("XH2 — generic launcher is harness/terminal-agnostic", () => {
     } finally {
       unregisterFixturePolicy();
     }
+  });
+});
+
+describe("XH3b — launcher fail-closed on incompatible terminal", () => {
+  it("yields a structured unsupported-terminal error BEFORE grant, token file, or launchBootstrap", async () => {
+    const {
+      registerUnsatisfiablePolicy,
+      unregisterUnsatisfiablePolicy,
+      UNSATISFIABLE_POLICY_ID,
+    } = await import("./_fixture-policy.mjs");
+    const {
+      __resetSessionBootstrapGrantBroker,
+      listOutstandingGrants,
+    } = await import("../host/terminal-host-service.mjs");
+    registerUnsatisfiablePolicy();
+    __resetSessionBootstrapGrantBroker();
+    try {
+      const dir = await mkdtemp(join(tmpdir(), "xh3b-"));
+      // Track every launch RPC + every file under the temp root so
+      // the assertions can prove NO side effect happened.
+      let launchCalls = 0;
+      const bus = makeBus();
+      const service = {
+        async launchBootstrap(args) { launchCalls += 1; return { sessionId: "term-xh3b" }; },
+        async terminateSession() {},
+      };
+      // Token file path is hard-coded so we can assert it was
+      // NEVER written (the grant flow owns this file).
+      const tokenFilePath = join(dir, "grant.token");
+      const authFilePath = join(dir, "grant.auth.json");
+      const adapter = createExternalCliTerminalAdapter({
+        sessionId: "s-xh3b-1",
+        policyId: UNSATISFIABLE_POLICY_ID,
+        terminalHostService: {
+          launchBootstrap: (...a) => service.launchBootstrap(...a),
+          terminateSession: () => service.terminateSession(),
+          // Simulate the real service's launchBootstrap by writing
+          // the token / auth file IF the launcher ever asked. The
+          // XH3b assertion is that the launcher NEVER asks.
+          async composeBootstrapCommand() { return `echo ${tokenFilePath}`; },
+          async attachSessionEnv() { return {}; },
+        },
+        terminalHostStart: { bus, driveId: "in-memory", adapterId: "in-memory" },
+        promptFilePath: () => join(dir, "prompt.txt"),
+        providerProfileId: "openai",
+        hostTerminal: {
+          resolveCredential: async () => ({ name: "OPENAI_API_KEY", value: "x" }),
+          resolveProjectIdentity: async ({ root }) => ({ id: "p1", label: "P1", root }),
+          skillSourceRoot: dir,
+          stagingBase: dir,
+        },
+      });
+      // The construction-time verdict is INCOMPATIBLE (the policy
+      // requires screen-stream, which no real driver exposes).
+      assert.equal(adapter.initialCompatibility.compatible, false);
+      assert.ok(adapter.initialCompatibility.missingCapabilities.includes("screen-stream"));
+
+      // Drive invoke(). No side effects should happen.
+      const events = [];
+      for await (const ev of adapter.invoke({
+        session: { sessionId: "s-xh3b-1" },
+        input: { messages: [{ role: "user", content: "should never run" }] },
+      })) events.push(ev);
+      const err = events.find((e) => e.type === "error");
+      assert.ok(err, "yielded an error event");
+      // Public, non-secret shape. The error is a public error code
+      // with the missing capability listed; NO path, token,
+      // credential, or env value is included.
+      assert.equal(err.data.code, "unsupported-terminal");
+      assert.match(err.data.message, /no terminal surface satisfies/);
+      assert.deepEqual([...err.data.missingCapabilities].sort(), ["screen-stream"]);
+      assert.equal(err.data.policyId, UNSATISFIABLE_POLICY_ID);
+      // The error data must not contain a path / token / credential /
+      // env value. Walk it.
+      for (const [k, v] of Object.entries(err.data)) {
+        if (typeof v === "string") {
+          assert.ok(
+            /^[a-zA-Z][a-zA-Z0-9-]*$/.test(v) || v === err.data.message,
+            `error data field ${k} looks non-public: ${JSON.stringify(v)}`,
+          );
+        }
+        if (Array.isArray(v)) {
+          for (const item of v) {
+            assert.ok(
+              /^[a-zA-Z][a-zA-Z0-9-]*$/.test(item),
+              `error data array field ${k} has non-public element: ${JSON.stringify(item)}`,
+            );
+          }
+        }
+      }
+
+      // Hard rules from §4 XH3b:
+      assert.equal(launchCalls, 0, "no launchBootstrap RPC reached the terminal peer");
+      assert.equal(listOutstandingGrants().length, 0, "no grant was tracked");
+      // The token / auth file paths were never even read.
+      let tokenExists = false;
+      let authExists = false;
+      try { await stat(tokenFilePath); tokenExists = true; } catch { /* not written */ }
+      try { await stat(authFilePath); authExists = true; } catch { /* not written */ }
+      assert.equal(tokenExists, false, "no token file was written");
+      assert.equal(authExists, false, "no auth file was written");
+      await rm(dir, { recursive: true, force: true });
+    } finally {
+      unregisterUnsatisfiablePolicy();
+    }
+  });
+
+  it("a compatible policy (no screen-stream) proceeds normally", async () => {
+    // The pi-v1 policy's requirement set ([command, environment,
+    // lifecycle-events]) is satisfiable by all three real drivers,
+    // so the launcher must NOT short-circuit.
+    const dir = await mkdtemp(join(tmpdir(), "xh3b-ok-"));
+    let launchArgs = null;
+    const bus = makeBus();
+    const service = {
+      async launchBootstrap(args) { launchArgs = args; return { sessionId: "term-ok" }; },
+      async terminateSession() {},
+    };
+    const adapter = createExternalCliTerminalAdapter({
+      sessionId: "s-xh3b-ok",
+      policyId: "pi-v1",
+      terminalHostService: service,
+      terminalHostStart: { bus, driveId: "in-memory", adapterId: "in-memory" },
+      promptFilePath: () => join(dir, "p.txt"),
+      providerProfileId: "openai",
+      project: { root: dir },
+      hostTerminal: {
+        resolveCredential: async () => ({ name: "OPENAI_API_KEY", value: "x" }),
+        resolveProjectIdentity: async ({ root }) => ({ id: "p1", label: "P1", root }),
+        skillSourceRoot: dir,
+        stagingBase: dir,
+      },
+    });
+    assert.equal(adapter.initialCompatibility.compatible, true);
+    assert.equal(adapter.surfaceAdapterId, "in-memory");
+    const controller = new AbortController();
+    const events = [];
+    const it = (async () => {
+      for await (const ev of adapter.invoke({
+        session: { sessionId: "s-xh3b-ok" },
+        input: { messages: [{ role: "user", content: "ok" }] },
+        signal: controller.signal,
+      })) events.push(ev);
+    })();
+    for (let i = 0; i < 100 && !launchArgs; i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    assert.ok(launchArgs, "compatible policy reached launchBootstrap");
+    controller.abort();
+    await it;
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe("XH3c — compatibility matrix (pi-v1 + fixture)", () => {
+  it("pi-v1 × {ghostty, iterm2, in-memory} all resolve compatible", async () => {
+    const REQS = ["command", "environment", "lifecycle-events"];
+    const { getTerminalSurfaceDescriptor } = await import("../host/terminal-surface-registry.mjs");
+    for (const id of ["ghostty", "iterm2", "in-memory"]) {
+      const desc = getTerminalSurfaceDescriptor(id);
+      assert.ok(desc);
+      const r = resolveHarnessTerminalCompatibility({ requirements: REQS, descriptors: [desc] });
+      assert.equal(r.compatible, true, `pi-v1 must be compatible with ${id}`);
+      assert.equal(r.surface.adapterId, id);
+      assert.equal(r.provenanceFidelity, "telemetry");
+    }
+  });
+
+  it("Pi parameterization: pi-v1 + ghostty AND pi-v1 + iterm2 both resolve compatible", async () => {
+    const REQS = ["command", "environment", "lifecycle-events"];
+    const { getTerminalSurfaceDescriptor } = await import("../host/terminal-surface-registry.mjs");
+    const ghostty = getTerminalSurfaceDescriptor("ghostty");
+    const iterm2 = getTerminalSurfaceDescriptor("iterm2");
+    const r1 = resolveHarnessTerminalCompatibility({ requirements: REQS, descriptors: [ghostty] });
+    const r2 = resolveHarnessTerminalCompatibility({ requirements: REQS, descriptors: [iterm2] });
+    assert.equal(r1.compatible, true);
+    assert.equal(r1.surface.adapterId, "ghostty");
+    assert.equal(r2.compatible, true);
+    assert.equal(r2.surface.adapterId, "iterm2");
+  });
+
+  it("fixture (screen-stream) × ghostty is INCOMPATIBLE with the right missing capability", async () => {
+    const { getTerminalSurfaceDescriptor } = await import("../host/terminal-surface-registry.mjs");
+    const ghostty = getTerminalSurfaceDescriptor("ghostty");
+    const r = resolveHarnessTerminalCompatibility({
+      requirements: ["command", "environment", "screen-stream"],
+      descriptors: [ghostty],
+    });
+    assert.equal(r.compatible, false);
+    assert.deepEqual([...r.missingCapabilities], ["screen-stream"]);
+    assert.equal(r.provenanceFidelity, "unsupported");
+  });
+
+  it("matrix row: in-memory satisfies command+environment but NOT screen-stream", () => {
+    const inMemory = getTerminalSurfaceDescriptor("in-memory");
+    const r1 = resolveHarnessTerminalCompatibility({ requirements: ["command", "environment"], descriptors: [inMemory] });
+    const r2 = resolveHarnessTerminalCompatibility({ requirements: ["command", "environment", "screen-stream"], descriptors: [inMemory] });
+    assert.equal(r1.compatible, true);
+    assert.equal(r2.compatible, false);
+    assert.deepEqual([...r2.missingCapabilities], ["screen-stream"]);
   });
 });

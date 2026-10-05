@@ -25,7 +25,8 @@ import {
   buildProjectedSessionEnv,
 } from "../terminal-host-service.mjs";
 import { getHarnessPolicy } from "../harness-policy-registry.mjs";
-import { getTerminalSurfaceDescriptor, terminalSurfaceSatisfies } from "../terminal-surface-registry.mjs";
+import { listTerminalSurfaceDescriptors } from "../terminal-surface-registry.mjs";
+import { resolveHarnessTerminalCompatibility } from "../harness-terminal-compatibility.mjs";
 
 const PROMPT_ARGV_MAX_BYTES = 4096;
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -79,44 +80,68 @@ export function createExternalCliTerminalAdapter(options = {}) {
     );
   }
 
-  // 2. Pick a compatible terminal surface. The host's currently-running
-  //    terminal-host adapter id is preferred; we fall back to the
-  //    in-memory driver for tests.
+  // 2. Resolve harness↔terminal compatibility AT INVOKE TIME so an
+  //    incompatible pairing yields a structured fail-closed error
+  //    BEFORE any grant/token/launch work happens. The resolver
+  //    takes a snapshot of the available surfaces now (so the
+  //    adapter exposes its verdict in the construction-time shape
+  //    for callers that want a synchronous answer), but the actual
+  //    `invoke()` re-resolves to guarantee the fail-closed
+  //    ordering: no `launchBootstrap` RPC, no grant minting, no
+  //    token/auth file write on an incompatible verdict.
   const requestedRequirements = policy.terminalRequirements ?? [];
   const preferred = options.preferredSurfaces ?? [options.terminalHostStart.adapterId, "in-memory"];
-  let surface = null;
-  for (const id of preferred) {
-    const desc = getTerminalSurfaceDescriptor(id);
-    if (desc && terminalSurfaceSatisfies(desc, requestedRequirements)) {
-      surface = desc;
-      break;
-    }
-  }
-  if (!surface) {
-    throw Object.assign(
-      new Error(`no compatible terminal surface for policy ${options.policyId} (requires ${requestedRequirements.join(", ")})`),
-      { code: "runtime-unavailable", detail: "terminalSurfaceSatisfies returned no descriptor" }
-    );
-  }
+  const initialVerdict = resolveHarnessTerminalCompatibility({
+    requirements: requestedRequirements,
+    descriptors: listTerminalSurfaceDescriptors(),
+    preferred,
+  });
 
   let closed = false;
   return {
     policyId: policy.policyId,
     harnessId: policy.harnessId,
-    surfaceAdapterId: surface.adapterId,
-    surfaceCapabilities: [...surface.capabilities],
+    surfaceAdapterId: initialVerdict.surface?.adapterId ?? null,
+    surfaceCapabilities: initialVerdict.surface ? [...initialVerdict.surface.capabilities] : [],
     policySupportsModelSelection: !!policy.supportsModelSelection,
+    initialCompatibility: { compatible: initialVerdict.compatible, missingCapabilities: [...initialVerdict.missingCapabilities], provenanceFidelity: initialVerdict.provenanceFidelity },
 
     async probe() { return { available: !closed }; },
 
     async createSession({ signal } = {}) {
       if (closed) throw fail("runtime-unavailable");
       if (signal?.aborted) throw fail("cancelled");
-      return { sessionId: options.sessionId, surface: surface.adapterId, policyId: policy.policyId };
+      return { sessionId: options.sessionId, surface: initialVerdict.surface?.adapterId ?? null, policyId: policy.policyId };
     },
 
     async *invoke({ session, input, signal } = {}) {
       if (closed) throw fail("runtime-unavailable");
+      // 0. XH3b: re-resolve harness↔terminal compatibility. The
+      //    verdict is recomputed at invoke time so an incompatible
+      //    pairing yields a structured fail-closed error BEFORE
+      //    any of: grant minting, token/auth file write, or
+      //    launchBootstrap RPC. No side effects on reject.
+      const verdict = resolveHarnessTerminalCompatibility({
+        requirements: requestedRequirements,
+        descriptors: listTerminalSurfaceDescriptors(),
+        preferred,
+      });
+      if (!verdict.compatible) {
+        yield {
+          type: "error",
+          data: {
+            code: "unsupported-terminal",
+            message: `no terminal surface satisfies policy ${policy.policyId} requirements`,
+            policyId: policy.policyId,
+            requestedCapabilities: [...requestedRequirements],
+            missingCapabilities: [...verdict.missingCapabilities],
+            provenanceFidelity: verdict.provenanceFidelity,
+          },
+        };
+        return;
+      }
+      const surface = verdict.surface;
+
       // 1. Pull the prompt from input.messages (last user message).
       const messages = Array.isArray(input?.messages) ? input.messages : [];
       const lastUser = [...messages].reverse().find((m) => record(m) && m.role === "user" && typeof m.content === "string");
