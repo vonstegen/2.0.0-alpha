@@ -608,7 +608,7 @@ export function envelopeToHarnessEvent(envelope, provenance) {
  * @typedef {Object} TerminalHostService
  * @property {() => Promise<{ adapterId: string, bus: ReturnType<typeof createHarnessEventBus>, driveId: string }>} start
  * @property {() => Promise<void>} stop
- * @property {(args: { sessionId: string, bootstrapCommand: string, turnId?: string, timeoutMs?: number }) => Promise<import("../../src/core/terminal-host-contract.ts").SessionBootstrapGrant>} launchBootstrap
+ * @property {(args: { sessionId: string, bootstrapCommand?: string, commandSuffix?: string, providerProfileId?: string, harness?: string, project?: object, turnId?: string, timeoutMs?: number }) => Promise<object>} launchBootstrap
  * @property {(args: { sessionId: string, text: string, turnId?: string, timeoutMs?: number }) => Promise<{ sessionId: string, delivered: boolean }>} sendInput
  * @property {(args: { sessionId: string, turnId?: string, timeoutMs?: number }) => Promise<{ sessionId: string, terminated: boolean }>} terminateSession
  * @property {(args: { sessionId: string, entryMode?: "create" | "adopt" | "detached", turnId?: string, timeoutMs?: number }) => Promise<{ sessionId: string }>} createSession
@@ -809,9 +809,28 @@ export function createTerminalHostService(options = {}) {
     providerProfileId,
     harness,
     project,
+    // Executable tail (step-5 / S5F1). When supplied (and bootstrapCommand
+    // is absent), the host appends `; <commandSuffix>` after its own
+    // composed ros-session attach command. The suffix is accepted only
+    // from reviewed host code (pi-terminal-v1) after piCommand()
+    // validation and shell quoting; the host never sources it from a
+    // manifest or caller argv.
+    commandSuffix,
   } = {}) {
     if (driveId === "in-memory") {
       throw new Error("launchBootstrap unavailable: in-memory driver has no stdio surface");
+    }
+
+    // The explicit bootstrapCommand override is an escape hatch for
+    // reviewed smokes/legacy callers: it does NOT request grant/env
+    // composition, so it cannot be combined with commandSuffix.
+    if (commandSuffix !== undefined) {
+      if (bootstrapCommand) {
+        throw new TypeError("launchBootstrap: commandSuffix requires host composition (no bootstrapCommand)");
+      }
+      if (typeof commandSuffix !== "string" || commandSuffix.trim().length === 0) {
+        throw new TypeError("launchBootstrap: commandSuffix must be a non-empty string");
+      }
     }
 
     // Hard rule #1: a literal token never enters argv/env/shell history.
@@ -841,6 +860,9 @@ export function createTerminalHostService(options = {}) {
         ...(harness ? { harness } : {}),
         ...(project ? { project } : {}),
       });
+      if (commandSuffix) {
+        composedCommand = `${composedCommand}; ${commandSuffix}`;
+      }
     }
 
     try {
@@ -849,6 +871,12 @@ export function createTerminalHostService(options = {}) {
         { sessionId, bootstrapCommand: composedCommand, ...(grant ? { grant } : {}) },
         { timeoutMs },
       );
+      // Non-secret launch metadata for reviewed callers/tests: the token
+      // file path (never the token value). Only present when the host
+      // composed the command.
+      if (grant && result !== null && typeof result === "object") {
+        return { ...result, tokenFilePath };
+      }
       return /** @type {any} */ (result);
     } catch (error) {
       // Best-effort cleanup if the adapter call fails before the CLI runs.

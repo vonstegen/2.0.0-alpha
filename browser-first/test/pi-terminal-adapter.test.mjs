@@ -1,4 +1,4 @@
-// CP-S5b: pi-terminal-v1 adapter (Step 5, 5B).
+// CP-S5b: pi-terminal-v1 adapter (Step 5, 5B), updated for CP-S5F2.
 //
 // Drives createPiTerminalAdapter against a stubbed terminal-host service
 // + bus. Verifies:
@@ -7,32 +7,29 @@
 //     metadata so the host can audit it)
 //   * buildProjectedSessionEnv is called (host wiring injects the
 //     credential; missing-credential surfaces as harness error event)
-//   * launchBootstrap RPC is issued with a composed command whose argv
-//     references the token-file PATH + (when multi-line) prompt-file
-//     PATH, but never the token VALUE or the credential VALUE
+//   * launchBootstrap is called WITHOUT bootstrapCommand: grant minting,
+//     the 0600 token file, and attach-command composition are owned by
+//     terminal-host-service (CP-S5F1). The adapter passes only attach
+//     context + a reviewed commandSuffix built from the validated
+//     absolute Pi executable.
+//   * the commandSuffix references the validated executable PATH + (when
+//     multi-line) the prompt-file PATH, but never the token VALUE, the
+//     credential VALUE, or (multi-line) the prompt text
 //   * Bus events translate to delta / final / error harness events with
 //     correct provenance
 //   * Fail closed: missing pi (via env override), missing profile,
 //     shared-* profile, missing prompt -> error event
 
 import assert from "node:assert/strict";
-import { describe, it, beforeEach } from "node:test";
-import { mkdtemp, rm, readFile, stat, writeFile } from "node:fs/promises";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { mkdtemp, rm, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { EventEmitter } from "node:events";
 
 import {
   createPiTerminalAdapter,
   composePiInvocation,
-  composePiTerminalBootstrap,
 } from "../host/agent-adapters/pi-terminal.mjs";
-import {
-  __resetSessionBootstrapGrantBroker,
-  trackSessionBootstrapGrant,
-  mintSessionBootstrapGrant,
-  listOutstandingGrants,
-} from "../host/terminal-host-service.mjs";
 
 function makeBus() {
   const queue = [];
@@ -58,93 +55,54 @@ function makeBus() {
   };
 }
 
+const EXEC = "/usr/local/bin/pi";
+
 describe("composePiInvocation", () => {
-  it("uses pi @<file> for multi-line prompts", () => {
-    const out = composePiInvocation({ prompt: "line1\nline2", promptFilePath: "/tmp/p.txt" });
-    assert.equal(out, "pi '@/tmp/p.txt'");
+  it("uses <exec> @<file> for multi-line prompts", () => {
+    const out = composePiInvocation({ executable: EXEC, prompt: "line1\nline2", promptFilePath: "/tmp/p.txt" });
+    assert.equal(out, `'/usr/local/bin/pi' '@/tmp/p.txt'`);
   });
 
-  it("uses pi @<file> for oversize prompts", () => {
+  it("uses <exec> @<file> for oversize prompts", () => {
     const big = "x".repeat(5000);
-    const out = composePiInvocation({ prompt: big, promptFilePath: "/tmp/p.txt" });
-    assert.equal(out, "pi '@/tmp/p.txt'");
+    const out = composePiInvocation({ executable: EXEC, prompt: big, promptFilePath: "/tmp/p.txt" });
+    assert.equal(out, `'/usr/local/bin/pi' '@/tmp/p.txt'`);
   });
 
   it("argv-quotes single-line short prompts", () => {
-    const out = composePiInvocation({ prompt: "hello world", promptFilePath: null });
-    assert.equal(out, "pi 'hello world'");
+    const out = composePiInvocation({ executable: EXEC, prompt: "hello world", promptFilePath: null });
+    assert.equal(out, `'/usr/local/bin/pi' 'hello world'`);
   });
 
   it("argv-quotes prompts with single quotes (POSIX escape)", () => {
-    const out = composePiInvocation({ prompt: "it's fine", promptFilePath: null });
-    assert.equal(out, "pi 'it'\\''s fine'");
+    const out = composePiInvocation({ executable: EXEC, prompt: "it's fine", promptFilePath: null });
+    assert.equal(out, `'/usr/local/bin/pi' 'it'\\''s fine'`);
   });
 
   it("rejects empty prompts", () => {
-    assert.throws(() => composePiInvocation({ prompt: "   ", promptFilePath: null }), /empty/);
-  });
-});
-
-describe("composePiTerminalBootstrap", () => {
-  it("prefixes the eval ros-session attach with a semicolon and a pi invocation", () => {
-    const out = composePiTerminalBootstrap({
-      sessionId: "s1",
-      tokenFilePath: "/tmp/tok",
-      providerProfileId: "openai",
-      rosSessionPath: "/srv/ros-session.mjs",
-      prompt: "hello",
-      promptFilePath: null,
-    });
-    assert.match(out, /^\s*eval "\$\(node '?\/srv\/ros-session\.mjs'? attach/);
-    assert.match(out, /; pi 'hello'\s*$/);
+    assert.throws(() => composePiInvocation({ executable: EXEC, prompt: "   ", promptFilePath: null }), /empty/);
   });
 
-  it("embeds --harness and --project JSON when supplied", () => {
-    const out = composePiTerminalBootstrap({
-      sessionId: "s1",
-      tokenFilePath: "/tmp/tok",
-      providerProfileId: "openai",
-      rosSessionPath: "/srv/ros-session.mjs",
-      harness: "addon.resonant-terminal-iterm2",
-      project: { root: "/srv/proj" },
-      prompt: "hi",
-      promptFilePath: null,
-    });
-    assert.match(out, /--harness 'addon\.resonant-terminal-iterm2'/);
-    assert.match(out, /--project '\{[^']*"root":"\/srv\/proj"[^']*\}'/);
-  });
-
-  it("never includes the token value in the composed command", () => {
-    const out = composePiTerminalBootstrap({
-      sessionId: "s1",
-      tokenFilePath: "/tmp/tok",
-      providerProfileId: "openai",
-      rosSessionPath: "/srv/ros-session.mjs",
-      prompt: "hi",
-      promptFilePath: null,
-    });
-    // The token value is the secret; it must not appear anywhere in argv.
-    assert.equal(out.includes("sk-"), false);
+  it("rejects a non-absolute executable (never a bare ambient command)", () => {
+    assert.throws(() => composePiInvocation({ executable: "pi", prompt: "hi", promptFilePath: null }), /absolute path/);
+    assert.throws(() => composePiInvocation({ executable: "", prompt: "hi", promptFilePath: null }), /absolute path/);
+    assert.throws(() => composePiInvocation({ prompt: "hi", promptFilePath: null }), /absolute path/);
   });
 });
 
 describe("createPiTerminalAdapter", () => {
   let dir;
   beforeEach(async () => {
-    __resetSessionBootstrapGrantBroker();
     dir = await mkdtemp(join(tmpdir(), "pi-term-"));
   });
+  afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
 
-  function buildStubHost({ grant, grantToken, tokenFilePath, promptFilePath }) {
+  function buildStubHost() {
     let launchArgs = null;
     const bus = makeBus();
     const service = {
       async launchBootstrap(args) {
         launchArgs = args;
-        // Write the token file the way the real launchBootstrap does so
-        // the test can assert mode 0600.
-        const { writeFile: wf } = await import("node:fs/promises");
-        await wf(tokenFilePath, grantToken, { mode: 0o600 });
         return { sessionId: "term-1", ok: true };
       },
       async terminateSession() {},
@@ -152,114 +110,108 @@ describe("createPiTerminalAdapter", () => {
     return { service, bus, getLaunch: () => launchArgs };
   }
 
-  it("exposes the pi executable metadata (piCommand was consulted)", () => {
-    // Stub host with the bare minimum shape.
-    const bus = makeBus();
-    const service = { launchBootstrap: async () => ({ sessionId: "term-1" }), terminateSession: async () => {} };
-    const adapter = createPiTerminalAdapter({
+  function buildAdapter(service, bus, { promptFilePath, project } = {}) {
+    return createPiTerminalAdapter({
       sessionId: "s-1",
       terminalHostService: service,
       terminalHostStart: { bus, driveId: "iterm2" },
-      rosSessionPath: "/srv/ros-session.mjs",
-      tokenFilePath: () => "/tmp/tok",
-      promptFilePath: () => "/tmp/p.txt",
-      providerProfileId: "openai",
-      harness: "addon.pi-terminal",
-    });
-    assert.equal(typeof adapter.piExecutable, "object");
-    assert.equal(typeof adapter.piExecutable.command, "string");
-    assert.equal(typeof adapter.piExecutable.source, "string");
-  });
-
-  it("issues launchBootstrap with a composed command (token in file, not argv)", async () => {
-    const grantToken = "GRANT-SECRET-VALUE-DO-NOT-LEAK";
-    const tokenFilePath = join(dir, "tok.token");
-    const promptFilePath = join(dir, "prompt.txt");
-    const { service, bus, getLaunch } = buildStubHost({ grantToken, tokenFilePath, promptFilePath });
-    const FAKE_CRED = "sk-CREDENTIAL-DO-NOT-LEAK";
-
-    const adapter = createPiTerminalAdapter({
-      sessionId: "s-1",
-      terminalHostService: service,
-      terminalHostStart: { bus, driveId: "iterm2" },
-      rosSessionPath: "/srv/ros-session.mjs",
-      tokenFilePath: () => tokenFilePath,
       promptFilePath: () => promptFilePath,
       providerProfileId: "openai",
       harness: "addon.pi-terminal",
+      ...(project ? { project } : {}),
       hostTerminal: {
-        resolveCredential: async (id) => id === "openai" ? { name: "OPENAI_API_KEY", value: FAKE_CRED } : null,
+        resolveCredential: async (id) => id === "openai" ? { name: "OPENAI_API_KEY", value: "sk-CREDENTIAL-DO-NOT-LEAK" } : null,
         resolveProjectIdentity: async ({ root }) => ({ id: "p1", label: "P1", root }),
         skillSourceRoot: dir,
         stagingBase: dir,
       },
     });
+  }
 
-    // Drive one invoke. The bus has no events queued; the iterator
-    // blocks. We cancel via the abort signal to unblock.
+  // Drive one invoke until the first delta (turn start) then cancel.
+  async function driveOneTurn(adapter, prompt, { sessionId = "s-1" } = {}) {
     const controller = new AbortController();
     const invokeP = (async () => {
       const events = [];
       for await (const event of adapter.invoke({
-        session: { piTerminalAdapter: true, sessionId: "s-1" },
-        input: { messages: [{ role: "user", content: "say hi" }] },
+        session: { piTerminalAdapter: true, sessionId },
+        input: { messages: [{ role: "user", content: prompt }] },
         signal: controller.signal,
       })) {
         events.push(event);
       }
       return events;
     })();
-
-    // Wait for the first delta (turn start) then cancel.
     await new Promise((r) => setTimeout(r, 50));
     controller.abort();
-    const events = await invokeP;
+    return invokeP;
+  }
+
+  it("exposes the pi executable metadata (piCommand was consulted)", () => {
+    const bus = makeBus();
+    const service = { launchBootstrap: async () => ({ sessionId: "term-1" }), terminateSession: async () => {} };
+    const adapter = createPiTerminalAdapter({
+      sessionId: "s-1",
+      terminalHostService: service,
+      terminalHostStart: { bus, driveId: "iterm2" },
+      promptFilePath: () => join(dir, "p.txt"),
+      providerProfileId: "openai",
+      harness: "addon.pi-terminal",
+    });
+    assert.equal(typeof adapter.piExecutable, "object");
+    assert.equal(typeof adapter.piExecutable.command, "string");
+    assert.ok(adapter.piExecutable.command.startsWith("/"), "executable must be an absolute path");
+    assert.equal(typeof adapter.piExecutable.source, "string");
+  });
+
+  it("launches WITHOUT bootstrapCommand; suffix carries the validated executable and no secrets", async () => {
+    const promptFilePath = join(dir, "prompt.txt");
+    const { service, bus, getLaunch } = buildStubHost();
+    // Project root must be a real directory (the resource projection
+    // canonicalizes it and fails closed on nonexistent roots).
+    const adapter = buildAdapter(service, bus, { promptFilePath, project: { root: dir } });
+
+    const events = await driveOneTurn(adapter, "say hi");
     const firstDelta = events.find((e) => e.type === "delta");
     assert.ok(firstDelta, "expected at least one delta event");
     assert.equal(firstDelta.data.terminalSessionId, "term-1");
 
     const launch = getLaunch();
     assert.ok(launch, "expected launchBootstrap to have been called");
-    const cmd = launch.bootstrapCommand;
-    // Token path appears (argv) but token value NEVER does.
-    assert.match(cmd, new RegExp(tokenFilePath.replace(/[/.]/g, "\\$&")));
-    assert.equal(cmd.includes(grantToken), false);
-    // Credential value NEVER appears.
-    assert.equal(cmd.includes(FAKE_CRED), false);
-    // Token file mode is 0600.
-    const stats = await stat(tokenFilePath);
-    assert.equal(stats.mode & 0o777, 0o600);
+    // The adapter must NOT supply a complete bootstrapCommand: grant
+    // minting + attach composition are host-owned (CP-S5F1/F2).
+    assert.equal("bootstrapCommand" in launch, false, "adapter must not pass bootstrapCommand");
+    // Attach context travels for the host-owned composition.
+    assert.equal(launch.sessionId, "s-1");
+    assert.equal(launch.providerProfileId, "openai");
+    assert.equal(launch.harness, "addon.pi-terminal");
+    assert.deepEqual(launch.project, { root: dir });
+    // The commandSuffix starts with the validated absolute executable.
+    assert.equal(typeof launch.commandSuffix, "string");
+    assert.ok(
+      launch.commandSuffix.startsWith(`'${adapter.piExecutable.command}' `),
+      `suffix must open with the quoted validated executable; got: ${launch.commandSuffix}`,
+    );
+    // Single-line short prompt stays argv-quoted in the suffix.
+    assert.ok(launch.commandSuffix.endsWith(` 'say hi'`), `suffix must carry the quoted prompt; got: ${launch.commandSuffix}`);
+    // Token/credential values are absent from every launch argument.
+    const wire = JSON.stringify(launch);
+    assert.equal(wire.includes("sk-CREDENTIAL-DO-NOT-LEAK"), false, "credential value must never reach launch args");
+    assert.equal("grant" in launch, false, "adapter must never handle the grant");
+    assert.equal("token" in launch, false, "adapter must never handle the token");
   });
 
-  it("uses a prompt file for multi-line prompts and never embeds the prompt in argv", async () => {
-    const grantToken = "GRANT-SECRET";
-    const tokenFilePath = join(dir, "tok2.token");
+  it("uses a prompt file for multi-line prompts and never embeds the prompt in the suffix", async () => {
     const promptFilePath = join(dir, "prompt2.txt");
-    const { service, bus, getLaunch } = buildStubHost({ grantToken, tokenFilePath, promptFilePath });
-    const FAKE_CRED = "sk-CRED";
+    const { service, bus, getLaunch } = buildStubHost();
+    const adapter = buildAdapter(service, bus, { promptFilePath });
     const LONG_PROMPT = "line1\nline2\nline3\nline4";
-
-    const adapter = createPiTerminalAdapter({
-      sessionId: "s-2",
-      terminalHostService: service,
-      terminalHostStart: { bus, driveId: "iterm2" },
-      rosSessionPath: "/srv/ros-session.mjs",
-      tokenFilePath: () => tokenFilePath,
-      promptFilePath: () => promptFilePath,
-      providerProfileId: "openai",
-      hostTerminal: {
-        resolveCredential: async (id) => id === "openai" ? { name: "OPENAI_API_KEY", value: FAKE_CRED } : null,
-        resolveProjectIdentity: async ({ root }) => ({ id: "p1", label: "P1", root }),
-        skillSourceRoot: dir,
-        stagingBase: dir,
-      },
-    });
 
     const controller = new AbortController();
     const invokeP = (async () => {
       const events = [];
       for await (const event of adapter.invoke({
-        session: { piTerminalAdapter: true, sessionId: "s-2" },
+        session: { piTerminalAdapter: true, sessionId: "s-1" },
         input: { messages: [{ role: "user", content: LONG_PROMPT }] },
         signal: controller.signal,
       })) events.push(event);
@@ -267,7 +219,7 @@ describe("createPiTerminalAdapter", () => {
     })();
     // Capture the prompt file content BEFORE the invoke's finally
     // unlinks it. The adapter writes the file synchronously before
-    // launchBootstrap; waiting 30ms is enough for the write + the
+    // launchBootstrap; waiting 50ms is enough for the write + the
     // launchBootstrap to complete.
     await new Promise((r) => setTimeout(r, 50));
     let promptContent = null;
@@ -278,11 +230,15 @@ describe("createPiTerminalAdapter", () => {
     await invokeP;
 
     const launch = getLaunch();
-    const cmd = launch.bootstrapCommand;
-    // Multi-line prompt -> pi @<file> path; prompt text NEVER in argv.
-    assert.match(cmd, new RegExp(`pi '@${promptFilePath.replace(/[/.]/g, "\\$&")}'`));
-    assert.equal(cmd.includes("line1"), false);
-    assert.equal(cmd.includes("line2"), false);
+    assert.ok(launch, "expected launchBootstrap to have been called");
+    assert.equal("bootstrapCommand" in launch, false);
+    // Multi-line prompt -> <exec> '@<file>'; prompt text NEVER in the suffix.
+    assert.ok(
+      launch.commandSuffix.includes(`'@${promptFilePath}'`),
+      `suffix must reference the prompt-file path; got: ${launch.commandSuffix}`,
+    );
+    assert.equal(launch.commandSuffix.includes("line1"), false);
+    assert.equal(launch.commandSuffix.includes("line2"), false);
     if (promptContent !== null) {
       assert.equal(promptContent, LONG_PROMPT);
       assert.equal(promptStats.mode & 0o777, 0o600);
@@ -290,16 +246,13 @@ describe("createPiTerminalAdapter", () => {
   });
 
   it("fails closed when the credential is missing (host wiring returns null)", async () => {
-    const tokenFilePath = join(dir, "tok3.token");
     const promptFilePath = join(dir, "prompt3.txt");
-    const { service, bus } = buildStubHost({ grantToken: "G", tokenFilePath, promptFilePath });
+    const { service, bus, getLaunch } = buildStubHost();
 
     const adapter = createPiTerminalAdapter({
       sessionId: "s-3",
       terminalHostService: service,
       terminalHostStart: { bus, driveId: "iterm2" },
-      rosSessionPath: "/srv/ros-session.mjs",
-      tokenFilePath: () => tokenFilePath,
       promptFilePath: () => promptFilePath,
       providerProfileId: "openai",
       hostTerminal: {
@@ -317,37 +270,22 @@ describe("createPiTerminalAdapter", () => {
     })) events.push(event);
     const errorEv = events.find((e) => e.type === "error");
     assert.ok(errorEv, "expected an error event");
-    // No token file should be created on the missing-credential path
-    // because we never reach the launchBootstrap step.
-    const tokenStat = await stat(tokenFilePath).catch((e) => e);
-    assert.equal(tokenStat.code, "ENOENT");
+    // launchBootstrap is never reached on the missing-credential path.
+    assert.equal(getLaunch(), null, "launchBootstrap must not be called when the credential is missing");
+    // No prompt file is written either.
+    const promptStat = await stat(promptFilePath).catch((e) => e);
+    assert.equal(promptStat.code, "ENOENT");
   });
 
   it("translates terminal.command.ended (exitStatus 0) to a final event", async () => {
-    const tokenFilePath = join(dir, "tok4.token");
     const promptFilePath = join(dir, "prompt4.txt");
-    const { service, bus, getLaunch } = buildStubHost({ grantToken: "G", tokenFilePath, promptFilePath });
-
-    const adapter = createPiTerminalAdapter({
-      sessionId: "s-4",
-      terminalHostService: service,
-      terminalHostStart: { bus, driveId: "iterm2" },
-      rosSessionPath: "/srv/ros-session.mjs",
-      tokenFilePath: () => tokenFilePath,
-      promptFilePath: () => promptFilePath,
-      providerProfileId: "openai",
-      hostTerminal: {
-        resolveCredential: async (id) => id === "openai" ? { name: "OPENAI_API_KEY", value: "sk" } : null,
-        resolveProjectIdentity: async ({ root }) => ({ id: "p1", label: "P1", root }),
-        skillSourceRoot: dir,
-        stagingBase: dir,
-      },
-    });
+    const { service, bus } = buildStubHost();
+    const adapter = buildAdapter(service, bus, { promptFilePath });
 
     const events = [];
     const invokeP = (async () => {
       for await (const event of adapter.invoke({
-        session: { piTerminalAdapter: true, sessionId: "s-4" },
+        session: { piTerminalAdapter: true, sessionId: "s-1" },
         input: { messages: [{ role: "user", content: "hi" }] },
       })) events.push(event);
     })();
@@ -367,30 +305,14 @@ describe("createPiTerminalAdapter", () => {
   });
 
   it("translates terminal.session.terminated to an error event", async () => {
-    const tokenFilePath = join(dir, "tok5.token");
     const promptFilePath = join(dir, "prompt5.txt");
-    const { service, bus } = buildStubHost({ grantToken: "G", tokenFilePath, promptFilePath });
-
-    const adapter = createPiTerminalAdapter({
-      sessionId: "s-5",
-      terminalHostService: service,
-      terminalHostStart: { bus, driveId: "iterm2" },
-      rosSessionPath: "/srv/ros-session.mjs",
-      tokenFilePath: () => tokenFilePath,
-      promptFilePath: () => promptFilePath,
-      providerProfileId: "openai",
-      hostTerminal: {
-        resolveCredential: async (id) => id === "openai" ? { name: "OPENAI_API_KEY", value: "sk" } : null,
-        resolveProjectIdentity: async ({ root }) => ({ id: "p1", label: "P1", root }),
-        skillSourceRoot: dir,
-        stagingBase: dir,
-      },
-    });
+    const { service, bus } = buildStubHost();
+    const adapter = buildAdapter(service, bus, { promptFilePath });
 
     const events = [];
     const invokeP = (async () => {
       for await (const event of adapter.invoke({
-        session: { piTerminalAdapter: true, sessionId: "s-5" },
+        session: { piTerminalAdapter: true, sessionId: "s-1" },
         input: { messages: [{ role: "user", content: "hi" }] },
       })) events.push(event);
     })();

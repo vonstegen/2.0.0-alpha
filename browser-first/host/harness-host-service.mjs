@@ -3,7 +3,6 @@ import { readFile } from 'node:fs/promises';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, createPublicKey, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { tmpdir as osTmpdir } from 'node:os';
-import path from 'node:path';
 import { createHarnessRegistry } from './harness-registry.mjs';
 import { createHarnessRegistryStore } from './harness-registry-store.mjs';
 import { createHarnessBoundary } from './harness-boundary.mjs';
@@ -118,11 +117,11 @@ export function createHarnessStreamSubscription(reader) {
 export async function createHarnessHostService({ userRoot, store = createHarnessRegistryStore({ userRoot }),
   bindings = [], env = process.env, providerHost, hostTerminal, terminalHost, cleanupTimeoutMs = 1000, onReceipt = () => {}, fixtureSigningKey,
   transportFactory = createHarnessTransport, dshAdapterFactory = createDshTypertAdapter, openaiAdapterFactory = createOpenAICompatibleAdapter,
-  tokenFilePath, promptFilePath } = {}) {
+  promptFilePath } = {}) {
   if (!Number.isSafeInteger(cleanupTimeoutMs) || cleanupTimeoutMs < 1 || cleanupTimeoutMs > 30000) throw new TypeError('Bounded cleanup required.');
-  // Step 5, 5B defaults for the pi-terminal-v1 adapter. Tests inject
-  // their own factories to point at temp dirs.
-  const defaultTokenFilePath = tokenFilePath ?? (() => `${osTmpdir()}/ros-session-${randomUUID().slice(0, 8)}.token`);
+  // Step 5, 5B default for the pi-terminal-v1 adapter. Tests inject
+  // their own factory to point at a temp dir. (The grant token file is
+  // owned by terminal-host-service.launchBootstrap, not by this wiring.)
   const defaultPromptFilePath = promptFilePath ?? (() => `${osTmpdir()}/pi-prompt-${randomUUID().slice(0, 8)}.txt`);
   const approvedBindings = structuredClone(bindings);
   const credentials = createHarnessCredentials({ bindings: approvedBindings, env });
@@ -193,16 +192,12 @@ export async function createHarnessHostService({ userRoot, store = createHarness
       // (format: "provider/model" or just "model"). The manifest
       // declares it descriptively in harnessProviderConnection; the
       // concrete value is the chat-ui selection for the turn.
-      const repoRoot = path.resolve(import.meta.dirname, '..', '..');
-      const rosSessionPath = path.join(repoRoot, 'browser-first', 'bin', 'ros-session.mjs');
       const sessionId = `${authorization.addonId}-${randomUUID().slice(0, 8)}`;
       try {
         adapter = createPiTerminalAdapter({
           sessionId,
           terminalHostService: terminalHost.service,
           terminalHostStart: terminalHost.start,
-          rosSessionPath,
-          tokenFilePath: tokenFilePath ?? defaultTokenFilePath,
           promptFilePath: promptFilePath ?? defaultPromptFilePath,
           harness: authorization.addonId,
           ...(hostTerminal ? { hostTerminal } : {}),

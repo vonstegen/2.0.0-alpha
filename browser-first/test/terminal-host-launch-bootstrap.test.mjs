@@ -1,16 +1,20 @@
-// CP-S4b test for composeBootstrapCommand + launchBootstrap env-delivery.
+// CP-S4b test for composeBootstrapCommand + launchBootstrap env-delivery,
+// extended by CP-S5F1 for the host-owned commandSuffix tail.
 //
 // Covers:
 //   - composeBootstrapCommand: pure composer, never embeds the token
 //   - launchBootstrap integration: mints + tracks a grant, writes a 0600
 //     temp file, composes the ros-session attach command, sends the
 //     composed command to the adapter via the launchBootstrap RPC
+//   - commandSuffix (S5F1): appended after the host-owned attach command;
+//     validated as a non-empty string; rejected on the override path
 //   - hard rules: token never in argv, env, or shell history; only the
 //     *file path* appears in the composed command
-//   - bootstrapCommand override: when supplied, composition is skipped
-//     (no grant minted, no token file written)
+//   - bootstrapCommand override: escape hatch — when supplied, composition
+//     is skipped (no grant minted, no token file written)
 //   - failure path: best-effort cleanup of the token file when the
 //     adapter call rejects
+//   - claim semantics: consumeGrant stays single-use and audience-bound
 //   - in-memory driver throws (preserves the stdio surface guard)
 
 import { describe, it, beforeEach, afterEach } from "node:test";
@@ -23,6 +27,7 @@ import nodeEvents from "node:events";
 
 import {
   composeBootstrapCommand,
+  consumeGrant,
   createTerminalHostService,
   __resetSessionBootstrapGrantBroker,
   listOutstandingGrants,
@@ -30,8 +35,10 @@ import {
 
 // Build a stub child whose stdout emits a synthesized JSON-RPC response
 // whenever the IPC writes a request on stdin. Uses PassThrough streams so
-// readline can read them like a real child process stdout.
-function makeStubChild() {
+// readline can read them like a real child process stdout. With
+// `{ fail: true }` the stub responds with a JSON-RPC error instead,
+// simulating an adapter that rejects the launch.
+function makeStubChild({ fail = false } = {}) {
   const stdin = new PassThrough();
   const stdout = new PassThrough();
   const stderr = new PassThrough();
@@ -44,8 +51,10 @@ function makeStubChild() {
     try { reqObj = JSON.parse(line); } catch { return; }
     if (typeof reqObj.id === "undefined") return;
     // Newline-delimited: the readline IPC reads lines.
-    const response = JSON.stringify({ jsonrpc: "2.0", id: reqObj.id, result: { status: "ok" } }) + "\n";
-    stdout.write(response);
+    const payload = fail
+      ? { jsonrpc: "2.0", id: reqObj.id, error: { code: "runtime-unavailable", message: "stub adapter rejected the launch" } }
+      : { jsonrpc: "2.0", id: reqObj.id, result: { status: "ok" } };
+    stdout.write(JSON.stringify(payload) + "\n");
     lastResponseFired = true;
   });
   // Use EventEmitter so events.once() works correctly for stop().
@@ -202,5 +211,103 @@ describe("launchBootstrap integration", () => {
       () => service.launchBootstrap({ sessionId: "x", providerProfileId: "openai" }),
       /in-memory/,
     );
+  });
+
+  it("appends commandSuffix after the host-composed attach command (CP-S5F1)", async () => {
+    const stub = makeStubChild();
+    const service = buildService(stub);
+    await service.start();
+    const result = await service.launchBootstrap({
+      sessionId: "s-5f1-suffix",
+      providerProfileId: "openai",
+      harness: "addon.resonant-terminal-iterm2",
+      commandSuffix: "'/usr/local/bin/pi' 'say hi'",
+    });
+    // One grant tracked; one 0600 token file whose content matches it.
+    const entries = await readdir(dir);
+    const tokenFiles = entries.filter((e) => e.startsWith("tok-"));
+    assert.equal(tokenFiles.length, 1, `expected one token file, got: ${tokenFiles.join(",")}`);
+    const tokenFile = join(dir, tokenFiles[0]);
+    assert.equal(((await stat(tokenFile)).mode & 0o777), 0o600);
+    const tracked = listOutstandingGrants().find((g) => g.sessionId === "s-5f1-suffix");
+    assert.ok(tracked, "grant must be tracked in the broker");
+    const fileContent = (await readFile(tokenFile, "utf8")).replace(/[\r\n]+$/, "");
+    assert.equal(fileContent, tracked.token);
+    // The composed command: attach head, then `; <suffix>`; the suffix
+    // appears strictly after the attach command's token-file reference.
+    const reqObj = JSON.parse(stub.getCaptured());
+    const cmd = reqObj.params.bootstrapCommand;
+    assert.ok(cmd.includes(tokenFile), "composed command must reference the token file path");
+    assert.equal(cmd.includes(tracked.token), false, "composed command must NOT include the token value");
+    assert.ok(cmd.endsWith("; '/usr/local/bin/pi' 'say hi'"), "suffix must be appended verbatim after the attach command");
+    assert.ok(cmd.indexOf("; '/usr/local/bin/pi' 'say hi'") > cmd.indexOf("--token-file"), "suffix must follow the attach command");
+    assert.match(cmd, /^eval "\$\(node /);
+    // Non-secret launch metadata: the token-file path comes back; the
+    // token value never does.
+    assert.equal(result.tokenFilePath, tokenFile);
+    assert.equal(result.token, undefined);
+    await service.stop();
+  });
+
+  it("rejects an invalid commandSuffix without minting a grant or writing a file", async () => {
+    const stub = makeStubChild();
+    const service = buildService(stub);
+    await service.start();
+    const grantsBefore = listOutstandingGrants().length;
+    await assert.rejects(
+      () => service.launchBootstrap({ sessionId: "s-5f1-bad", providerProfileId: "openai", commandSuffix: 42 }),
+      /commandSuffix must be a non-empty string/,
+    );
+    await assert.rejects(
+      () => service.launchBootstrap({ sessionId: "s-5f1-bad", providerProfileId: "openai", commandSuffix: "   " }),
+      /commandSuffix must be a non-empty string/,
+    );
+    await assert.rejects(
+      () => service.launchBootstrap({ sessionId: "s-5f1-bad", bootstrapCommand: "echo x", commandSuffix: "pi 'hi'" }),
+      /requires host composition/,
+    );
+    assert.equal(listOutstandingGrants().length, grantsBefore, "validation failure must not mint a grant");
+    const entries = await readdir(dir);
+    assert.equal(entries.filter((e) => e.startsWith("tok-")).length, 0, "validation failure must not write a token file");
+    await service.stop();
+  });
+
+  it("removes the token file when the adapter rejects the launch", async () => {
+    const stub = makeStubChild({ fail: true });
+    const service = buildService(stub);
+    await service.start();
+    await assert.rejects(
+      () => service.launchBootstrap({ sessionId: "s-5f1-fail", providerProfileId: "openai", commandSuffix: "'/usr/local/bin/pi' 'hi'" }),
+      /stub adapter rejected the launch/,
+    );
+    const entries = await readdir(dir);
+    assert.equal(entries.filter((e) => e.startsWith("tok-")).length, 0, "token file must be unlinked on adapter failure");
+    await service.stop();
+  });
+
+  it("grant claim stays single-use and audience-bound after a suffixed launch", async () => {
+    const stub = makeStubChild();
+    const service = buildService(stub);
+    await service.start();
+    await service.launchBootstrap({
+      sessionId: "s-5f1-claim",
+      providerProfileId: "openai",
+      commandSuffix: "'/usr/local/bin/pi' 'hi'",
+    });
+    const tracked = listOutstandingGrants().find((g) => g.sessionId === "s-5f1-claim");
+    assert.ok(tracked, "grant must be tracked in the broker");
+    // Audience binding: a foreign token for this session is rejected.
+    const foreign = consumeGrant({ sessionId: "s-5f1-claim", token: "not-the-tracked-token" });
+    assert.deepEqual(foreign, { ok: false, reason: "wrong-session" });
+    // Correct claim succeeds exactly once.
+    const claim = consumeGrant({ sessionId: "s-5f1-claim", token: tracked.token });
+    assert.equal(claim.ok, true);
+    // Replay is rejected.
+    const replay = consumeGrant({ sessionId: "s-5f1-claim", token: tracked.token });
+    assert.deepEqual(replay, { ok: false, reason: "already-consumed" });
+    // Unknown session is rejected.
+    const unknown = consumeGrant({ sessionId: "s-never-launched", token: tracked.token });
+    assert.deepEqual(unknown, { ok: false, reason: "unknown-session" });
+    await service.stop();
   });
 });
