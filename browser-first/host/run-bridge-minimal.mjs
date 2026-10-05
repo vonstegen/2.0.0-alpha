@@ -214,14 +214,20 @@ const hostTerminal = createTerminalHostHostWiring({
 // RESONANT_TERMINAL_DRIVER (in-memory | iterm2) selects the driver; the
 // in-memory driver composes the bus without spawning.
 const terminalHostBridge = await installTerminalHostBridge({ env: process.env });
+// installTerminalHostBridge already starts the service when enabled and
+// returns `{ service: null, started: null }` when the env flag is unset.
+// Use the returned handle; never re-start (double-start) or dereference a
+// null service (the default production path has no terminal-host bridge).
 const terminalHostService = terminalHostBridge.service;
-const terminalHostStart = await terminalHostService.start();
+const terminalHostStart = terminalHostBridge.started;
 
 // for Phase-3 (P6) workspace add-on grant lifecycle handlers.
 const harnessService = await createHarnessHostService({
   userRoot: userRoot(), providerHost: providerHostService,
   hostTerminal,
-  terminalHost: { service: terminalHostService, start: terminalHostStart },
+  terminalHost: terminalHostService && terminalHostStart
+    ? { service: terminalHostService, start: terminalHostStart }
+    : undefined,
   bindings: JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]"),
   env: process.env,
 });
