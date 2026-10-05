@@ -113,7 +113,7 @@ export function createHarnessStreamSubscription(reader) {
 }
 
 export async function createHarnessHostService({ userRoot, store = createHarnessRegistryStore({ userRoot }),
-  bindings = [], env = process.env, providerHost, cleanupTimeoutMs = 1000, onReceipt = () => {}, fixtureSigningKey,
+  bindings = [], env = process.env, providerHost, hostTerminal, cleanupTimeoutMs = 1000, onReceipt = () => {}, fixtureSigningKey,
   transportFactory = createHarnessTransport, dshAdapterFactory = createDshTypertAdapter, openaiAdapterFactory = createOpenAICompatibleAdapter } = {}) {
   if (!Number.isSafeInteger(cleanupTimeoutMs) || cleanupTimeoutMs < 1 || cleanupTimeoutMs > 30000) throw new TypeError('Bounded cleanup required.');
   const approvedBindings = structuredClone(bindings);
@@ -128,7 +128,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     },
     write: document => store.write(document),
   };
-  const registry = await createHarnessRegistry({ store: trackedStore, reviewedAdapterIds: ['dsh-typert-v1', 'provider-fabric-v1', 'openai-compatible-v1'],
+  const registry = await createHarnessRegistry({ store: trackedStore, reviewedAdapterIds: ['dsh-typert-v1', 'provider-fabric-v1', 'openai-compatible-v1', 'pi-terminal-v1'],
     bindings: approvedBindings.map(({ name, addonId, adapterId, authScheme, endpoint }) => ({ name, addonId, adapterId, authScheme, endpoint })) });
   // Only the explicit fixture composition injects a public test key. Production
   // keys are generated anew, remain in this closure, and are never persisted.
@@ -279,11 +279,13 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     }),
     route('POST', '/terminal-host/session/attach', control, ['sessionId', 'token', 'providerProfileId'], ['harness', 'project', 'resolveCredential', 'authorizedProject', 'request', 'grantedCapabilities', 'skillCatalog', 'skillSourceRoot', 'stagingBase', 'resourceHooks'], async p => {
       if (!id(p.sessionId) || typeof p.token !== 'string' || p.token.length === 0 || typeof p.providerProfileId !== 'string' || p.providerProfileId.length === 0) throw fail('invalid-event');
-      // resolveCredential is an optional injection point for the route:
-      //   * default: null resolver -> route returns ok:false, reason:'missing-credential'
-      //     (PI-S3b will install a host-owned resolver that maps through
-      //      resolvePiNativeProvider + resolveProviderProfileCredential)
-      //   * tests inject a stub that returns { name, value } deterministically
+      // resolveCredential precedence:
+      //   1. caller-injected (tests + ad-hoc callers) — sync
+      //   2. hostTerminal?.resolveCredential (host boundary, default in
+      //      production) — async. Pre-resolve here so the sync seam used
+      //      by attachSessionEnv / buildProjectedSessionEnv can be satisfied
+      //      without a contract change to step-3.
+      //   3. null (no resolver -> route returns ok:false, reason:'missing-credential')
       let resolveCredential;
       if (typeof p.resolveCredential === 'function') {
         const stub = p.resolveCredential;
@@ -291,13 +293,45 @@ export async function createHarnessHostService({ userRoot, store = createHarness
           const result = stub(profileId);
           return (result && typeof result === 'object' && 'name' in result && 'value' in result) ? result : null;
         };
+      } else if (hostTerminal && typeof hostTerminal.resolveCredential === 'function') {
+        // Pre-resolve the single credential for this request. The host
+        // wiring may be async (e.g. allProviderProfiles() + readProviderSecrets());
+        // the step-3 module's seam is sync, so we bridge once per request.
+        const preResolved = await hostTerminal.resolveCredential(p.providerProfileId);
+        if (preResolved && typeof preResolved === 'object' &&
+            typeof preResolved.name === 'string' && typeof preResolved.value === 'string') {
+          resolveCredential = () => preResolved;
+        }
+        // If pre-resolved is null, the route falls through to attachSessionEnv
+        // / buildProjectedSessionEnv without a resolver, which surfaces
+        // missing-credential as the rejection reason.
+      }
+      // Step 5A: when the caller supplies a plain `project` root and host
+      // wiring is installed, materialize a real authorizedProject from the
+      // host-owned project store. The id + label are NEVER caller-controlled
+      // — the host wiring owns them. The caller may still pass an explicit
+      // authorizedProject + request; that path is unchanged.
+      let authorizedProject = p.authorizedProject;
+      let skillCatalog = p.skillCatalog;
+      let skillSourceRoot = p.skillSourceRoot;
+      let stagingBase = p.stagingBase;
+      if (!authorizedProject && p.project && typeof p.project === 'object' && typeof p.project.root === 'string' && hostTerminal) {
+        const materialized = await hostTerminal.resolveProjectIdentity({ root: p.project.root });
+        if (materialized) {
+          authorizedProject = materialized;
+          if (typeof hostTerminal.resolveSkillCatalog === 'function') {
+            skillCatalog = await hostTerminal.resolveSkillCatalog(materialized);
+          }
+          if (!skillSourceRoot) skillSourceRoot = hostTerminal.skillSourceRoot;
+          if (!stagingBase) stagingBase = hostTerminal.stagingBase;
+        }
       }
       // Projection inputs are optional: when present, the route consumes the
       // grant explicitly, then delegates to buildProjectedSessionEnv for the
       // full projected env (project root + skills dir + credential). When
       // absent, it delegates to attachSessionEnv (step-3 contract) which
       // owns the grant consumption.
-      const hasProjection = !!(p.authorizedProject && p.request);
+      const hasProjection = !!(authorizedProject && p.request);
       let result;
       if (hasProjection) {
         const claim = consumeGrant({ sessionId: p.sessionId, token: p.token });
@@ -305,12 +339,12 @@ export async function createHarnessHostService({ userRoot, store = createHarness
         result = await buildProjectedSessionEnv({
           sessionId: p.sessionId,
           harness: p.harness,
-          authorizedProject: p.authorizedProject,
+          authorizedProject,
           request: p.request,
           grantedCapabilities: p.grantedCapabilities ?? [],
-          skillCatalog: p.skillCatalog,
-          skillSourceRoot: p.skillSourceRoot,
-          stagingBase: p.stagingBase,
+          skillCatalog,
+          skillSourceRoot,
+          stagingBase,
           providerProfileId: p.providerProfileId,
           ...(resolveCredential ? { resolveCredential } : {}),
           ...(p.resourceHooks ? { resourceHooks: p.resourceHooks } : {}),

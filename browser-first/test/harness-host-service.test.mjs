@@ -913,3 +913,216 @@ test('buildProjectedSessionEnv: missing-credential (providerProfileId named but 
   assert.equal(result.payload.ok, false);
   assert.equal(result.payload.reason, 'missing-credential');
 });
+
+// ---------------------------------------------------------------------------
+// CP-S5a: host installation — terminal-host-host-wiring.mjs
+//
+// The route uses hostTerminal.resolveCredential as the default
+// resolveCredential (when the caller does not inject one). The host wiring
+// owns the source-of-truth:
+//   * getProfile (real provider profile, by id)
+//   * resolveSecret (real provider secret, by id)
+//   * resolveProjectIdentity (host-owned id+label from caller root)
+//   * resolveSkillCatalog (host-owned catalog for a project)
+//
+// shared-*/anthropic/google are frozen out of the pi-native map; the
+// resolver returns null and the route returns ok:false.
+// ---------------------------------------------------------------------------
+
+import { createTerminalHostHostWiring } from '../host/terminal-host-host-wiring.mjs';
+
+test('CP-S5a: hostTerminal.resolveCredential maps a real profile to its env-var name + secret', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+
+  const profileMap = new Map([
+    ['openai', { id: 'openai', templateId: 'openai', providerType: 'openai' }],
+  ]);
+  const secretMap = new Map([['openai', 'sk-host-real-secret']]);
+  const hostTerminal = createTerminalHostHostWiring({
+    userRoot: '/tmp/ros-s5a',
+    getProfile: async (id) => profileMap.get(id) ?? null,
+    resolveSecret: async (profile) => secretMap.get(profile?.id) ?? null,
+  });
+
+  const f = await fixture(t, { hostTerminal });
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-5a-1', purpose: 'attach' }));
+  const result = await f.call('/terminal-host/session/attach', {
+    sessionId: 's-5a-1',
+    token: grant.token,
+    providerProfileId: 'openai',
+    // no resolveCredential injection — host wiring supplies it
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.env.OPENAI_API_KEY, 'sk-host-real-secret');
+  // The meta + env payload must not echo the grant token or the secret.
+  const serialized = JSON.stringify(result.payload);
+  assert.equal(serialized.includes(grant.token), false);
+});
+
+test('CP-S5a: hostTerminal fails closed for shared-* / anthropic (no env, no leak)', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+
+  // Profile exists in the registry but the pi-native map excludes it.
+  const profileMap = new Map([
+    ['shared-openai', { id: 'shared-openai', templateId: 'shared-openai', providerType: 'openai' }],
+    ['anthropic', { id: 'anthropic', templateId: 'anthropic', providerType: 'anthropic' }],
+    ['google', { id: 'google', templateId: 'google', providerType: 'google' }],
+  ]);
+  const secretMap = new Map([
+    ['shared-openai', 'should-never-leak'],
+    ['anthropic', 'should-never-leak'],
+  ]);
+  const hostTerminal = createTerminalHostHostWiring({
+    userRoot: '/tmp/ros-s5a-closed',
+    getProfile: async (id) => profileMap.get(id) ?? null,
+    resolveSecret: async (profile) => secretMap.get(profile?.id) ?? null,
+  });
+
+  const f = await fixture(t, { hostTerminal });
+
+  for (const profileId of ['shared-openai', 'anthropic', 'google']) {
+    __resetSessionBootstrapGrantBroker();
+    const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: `s-5a-${profileId}`, purpose: 'attach' }));
+    const result = await f.call('/terminal-host/session/attach', {
+      sessionId: `s-5a-${profileId}`,
+      token: grant.token,
+      providerProfileId: profileId,
+    });
+    assert.equal(result.status, 200, `${profileId}: 200`);
+    assert.equal(result.payload.ok, false, `${profileId}: ok=false`);
+    assert.equal(result.payload.reason, 'missing-credential', `${profileId}: reason=missing-credential`);
+    // The leaked-credential marker must not appear in the payload.
+    const serialized = JSON.stringify(result.payload);
+    assert.equal(serialized.includes('should-never-leak'), false, `${profileId}: secret not in payload`);
+    assert.equal(serialized.includes(grant.token), false, `${profileId}: token not in payload`);
+  }
+});
+
+test('CP-S5a: hostTerminal materializes authorizedProject from project root + feeds ROS_PROJECT_ROOT/CWD/SKILLS_DIR', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+
+  const dir = await mkdtemp(join(tmpdir(), 'ros-s5a-proj-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const projectRoot = join(dir, 'proj');
+  await mkdir(projectRoot);
+  const skillsSource = join(dir, 'skills');
+  await mkdir(skillsSource);
+  const skill = join(skillsSource, 'hello');
+  await mkdir(skill);
+  await writeFile(join(skill, 'SKILL.md'), '# hello');
+  const stagingBase = join(dir, 'staging');
+
+  // Host-owned skill catalog for this project (real data, not fixtures).
+  const HOST_CATALOG = [
+    { id: 'hello', name: 'hello', label: 'Hello', description: 'Hi', version: '1.0.0', source: skill, requiredCapabilities: ['agent-runtime'] },
+  ];
+
+  const hostTerminal = createTerminalHostHostWiring({
+    userRoot: '/tmp/ros-s5a-proj',
+    skillSourceRoot: skillsSource,
+    stagingBase,
+    getProfile: async (id) => id === 'openai' ? { id, templateId: 'openai', providerType: 'openai' } : null,
+    resolveSecret: async (profile) => profile?.id === 'openai' ? 'sk-proj' : null,
+    resolveSkillCatalog: async () => HOST_CATALOG,
+    resourceHooks: {
+      realpath: async (p) => p,
+      statPath: async () => ({ isDirectory: () => true }),
+      homeDir: dir,
+    },
+  });
+  // resourceHooks is on the projection call, not the wiring; pass it through
+  // the route payload so the projection resolves under our temp dir.
+
+  const f = await fixture(t, { hostTerminal });
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-5a-proj', purpose: 'attach' }));
+  // Caller supplies only the project root; hostTerminal materializes the
+  // full authorizedProject + skill catalog + staging base.
+  const result = await f.call('/terminal-host/session/attach', {
+    sessionId: 's-5a-proj',
+    token: grant.token,
+    providerProfileId: 'openai',
+    project: { root: projectRoot },
+    request: { requests: { project: ['read'], skills: ['list', 'read'] } },
+    grantedCapabilities: [
+      { capability: 'filesystem', granted: true },
+      { capability: 'agent-runtime', granted: true },
+    ],
+    resourceHooks: {
+      realpath: async (p) => p,
+      statPath: async () => ({ isDirectory: () => true }),
+      homeDir: dir,
+    },
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.env.OPENAI_API_KEY, 'sk-proj');
+  // The host-derived authorizedProject must produce ROS_PROJECT_ROOT, ROS_PROJECT_CWD.
+  assert.equal(typeof result.payload.env.ROS_PROJECT_ROOT, 'string');
+  assert.ok(result.payload.env.ROS_PROJECT_ROOT.startsWith(projectRoot));
+  assert.equal(typeof result.payload.env.ROS_PROJECT_CWD, 'string');
+  // The host-derived skill catalog + staging base must produce ROS_SKILLS_DIR.
+  assert.equal(typeof result.payload.env.ROS_SKILLS_DIR, 'string');
+  assert.ok(result.payload.env.ROS_SKILLS_DIR.startsWith(stagingBase));
+  assert.ok(result.payload.env.ROS_SKILLS_DIR.includes('/skills/'));
+  // meta carries the host-derived projectId, not the caller.
+  assert.equal(typeof result.payload.meta.projectId, 'string');
+  assert.notEqual(result.payload.meta.projectId, 'caller-controlled');
+  // Token + secret must not be in meta.
+  const metaSerialized = JSON.stringify(result.payload.meta);
+  assert.equal(metaSerialized.includes(grant.token), false);
+  assert.equal(metaSerialized.includes('sk-proj'), false);
+});
+
+test('CP-S5a: caller-supplied authorizedProject takes precedence over host resolution', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+
+  const dir = await mkdtemp(join(tmpdir(), 'ros-s5a-precedence-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const projectRoot = join(dir, 'proj');
+  await mkdir(projectRoot);
+  const skillsSource = join(dir, 'skills');
+  await mkdir(skillsSource);
+  const skill = join(skillsSource, 'hello');
+  await mkdir(skill);
+  await writeFile(join(skill, 'SKILL.md'), '# hello');
+  const stagingBase = join(dir, 'staging');
+
+  const hostTerminal = createTerminalHostHostWiring({
+    userRoot: '/tmp/ros-s5a-precedence',
+    skillSourceRoot: skillsSource,
+    stagingBase,
+    getProfile: async (id) => id === 'openai' ? { id, templateId: 'openai', providerType: 'openai' } : null,
+    resolveSecret: async (profile) => profile?.id === 'openai' ? 'sk-prec' : null,
+  });
+
+  const f = await fixture(t, { hostTerminal });
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-5a-prec', purpose: 'attach' }));
+  const result = await f.call('/terminal-host/session/attach', {
+    sessionId: 's-5a-prec',
+    token: grant.token,
+    providerProfileId: 'openai',
+    // Caller passes a full authorizedProject explicitly.
+    authorizedProject: { id: 'caller-controlled', label: 'Caller', root: projectRoot },
+    request: { requests: { project: ['read'] } },
+    grantedCapabilities: [{ capability: 'filesystem', granted: true }],
+    resourceHooks: {
+      realpath: async (p) => p,
+      statPath: async () => ({ isDirectory: () => true }),
+      homeDir: dir,
+    },
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  // The caller-supplied id flows through unchanged.
+  assert.equal(result.payload.meta.projectId, 'caller-controlled');
+  assert.ok(result.payload.env.ROS_PROJECT_ROOT.startsWith(projectRoot));
+});

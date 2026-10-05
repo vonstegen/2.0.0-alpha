@@ -53,6 +53,7 @@ import {
 } from "./hermes-runtime.mjs";
 import { createHarnessHostService } from "./harness-host-service.mjs";
 import { installTerminalHostBridge, uninstallTerminalHostBridge } from "./terminal-host-bridge-wiring.mjs";
+import { createTerminalHostHostWiring } from "./terminal-host-host-wiring.mjs";
 import { createProviderHostService } from "./provider-host-service.mjs";
 import {
   memorySourceMoveHistoryPath as sourceMoveHistoryPath,
@@ -179,9 +180,36 @@ const {
 // Bindings are operator configuration only. Demo manifests never authorize a
 // credential name, endpoint, or port. Invalid host configuration fails startup.
 // Hoisted above addonDelegationService so the host-owned registry is available
+// Step 5A: assemble the terminal-host host boundary wiring. The wiring owns
+// the host source-of-truth for the /terminal-host/session/attach route:
+//   * getProfile -> allProviderProfiles() (provider-bridge)
+//   * resolveSecret -> readProviderSecrets() (provider-bridge) mapped by id
+//   * resolveProjectIdentity -> synthesized from root (host-owned id+label)
+//   * resolveSkillCatalog -> [] (no host catalog yet; overridable)
+//   * skillSourceRoot / stagingBase -> <userRoot>/BrowserFirst/HostSkills,
+//     <userRoot>/Staging
+// shared-* / anthropic / unknown profiles fail closed: resolvePiNativeProvider
+// returns null for them, so resolveCredential yields null and the route
+// returns ok:false, reason:'missing-credential'.
+const hostTerminal = createTerminalHostHostWiring({
+  userRoot: userRoot(),
+  env: process.env,
+  getProfile: async (profileId) => {
+    const profiles = await allProviderProfiles();
+    return profiles.find((profile) => profile?.id === profileId) ?? null;
+  },
+  resolveSecret: async (profile) => {
+    if (!profile?.id) return null;
+    const secrets = await readProviderSecrets();
+    const value = secrets[profile.id];
+    return typeof value === "string" && value.length > 0 ? value : null;
+  },
+});
+
 // for Phase-3 (P6) workspace add-on grant lifecycle handlers.
 const harnessService = await createHarnessHostService({
   userRoot: userRoot(), providerHost: providerHostService,
+  hostTerminal,
   bindings: JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]"),
   env: process.env,
 });
