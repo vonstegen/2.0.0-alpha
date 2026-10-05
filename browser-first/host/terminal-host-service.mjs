@@ -670,6 +670,14 @@ export function createTerminalHostService(options = {}) {
 
   /** @type {Map<string | number, { resolve: (value: unknown) => void, reject: (reason?: unknown) => void, timer: NodeJS.Timeout, startedAt: number }>} */
   const pending = new Map();
+  /** Service-owned set of session ids the service has launched via
+   *  createSession or launchBootstrap. stop() iterates this and issues
+   *  a terminateSession RPC per id before SIGTERMing the adapter child,
+   *  so windows opened by the service are not leaked across shutdowns.
+   *  See CP-SW1. */
+  const trackedSessions = new Set();
+  const TERMINATE_SESSION_TIMEOUT_MS = 2000;
+  const CLOSE_ALL_TIMEOUT_MS = 5000;
 
   function nextProvenance(turnId) {
     sequence += 1;
@@ -786,7 +794,51 @@ export function createTerminalHostService(options = {}) {
   }
 
   async function stop() {
-    if (!alive) return;
+    if (!alive) return { closedSessions: 0, skipped: true };
+    // CP-SW1: close every tracked session BEFORE we kill the adapter
+    // child. This guarantees windows opened by createSession /
+    // launchBootstrap are not leaked across shutdowns. The close
+    // RPCs tolerate session-not-found and deadline-exceeded so a
+    // half-dead adapter cannot wedge stop(). Bounded by an overall
+    // deadline so the adapter gets a SIGTERM regardless.
+    //
+    // Note: `alive` stays true until AFTER the child is killed so the
+    // bus can keep draining the adapter's terminal events during the
+    // close-all window. Once the child exits we mark the bus dead
+    // and the service as stopped.
+    const trackedIds = [...trackedSessions];
+    trackedSessions.clear();
+    let closedSessions = 0;
+    if (trackedIds.length > 0 && child && !child.killed) {
+      const closeAll = (async () => {
+        await Promise.all(trackedIds.map(async (id) => {
+          try {
+            await request(
+              "terminateSession",
+              { sessionId: id },
+              { timeoutMs: TERMINATE_SESSION_TIMEOUT_MS },
+            );
+            closedSessions += 1;
+          } catch (error) {
+            // Tolerate session-not-found (already closed), deadline-exceeded
+            // (adapter unresponsive), and runtime-unavailable (peer gone).
+            // No other code path can throw here.
+          }
+        }));
+      })();
+      await Promise.race([
+        closeAll,
+        delay(CLOSE_ALL_TIMEOUT_MS).then(() => undefined),
+      ]);
+    }
+    if (child && !child.killed) {
+      child.kill("SIGTERM");
+      try { await Promise.race([once(child, "exit"), delay(2000)]); }
+      catch { child.kill("SIGKILL"); }
+    }
+    child = null;
+    // Now that the adapter is dead we can mark the service as stopped
+    // and stop accepting new notifications.
     alive = false;
     if (bus) bus.close("runtime-unavailable");
     for (const waiter of pending.values()) {
@@ -794,12 +846,7 @@ export function createTerminalHostService(options = {}) {
       waiter.reject(Object.assign(new Error("service stopped"), { code: "runtime-unavailable" }));
     }
     pending.clear();
-    if (child && !child.killed) {
-      child.kill("SIGTERM");
-      try { await Promise.race([once(child, "exit"), delay(2000)]); }
-      catch { child.kill("SIGKILL"); }
-    }
-    child = null;
+    return { closedSessions };
   }
 
   async function launchBootstrap({
@@ -898,6 +945,9 @@ export function createTerminalHostService(options = {}) {
         { sessionId, bootstrapCommand: composedCommand, ...(grant ? { grant } : {}) },
         { timeoutMs },
       );
+      // CP-SW1: the adapter accepted the launch — track this session id
+      // so stop() can close the window it opened.
+      trackedSessions.add(sessionId);
       // Non-secret launch metadata for reviewed callers/tests: the token
       // file path (never the token value). Only present when the host
       // composed the command.
@@ -938,6 +988,9 @@ export function createTerminalHostService(options = {}) {
       { sessionId },
       { timeoutMs },
     );
+    // CP-SW1: explicit close removes the session from the tracked set
+    // so stop() does not re-issue a terminateSession RPC for it.
+    trackedSessions.delete(sessionId);
     return /** @type {any} */ (result);
   }
 
@@ -950,6 +1003,8 @@ export function createTerminalHostService(options = {}) {
       { sessionId, entryMode },
       { timeoutMs },
     );
+    // CP-SW1: the adapter accepted the create — track the session id.
+    trackedSessions.add(sessionId);
     return /** @type {any} */ (result);
   }
 
