@@ -199,3 +199,179 @@ describe("pi-terminal-v1 -> terminal-host-service real grant chain (CP-S5F3)", (
     assert.equal((await stat(tokenFilePath).catch((e) => e)).code, "ENOENT", "token file must be cleaned up");
   });
 });
+
+// ---------------------------------------------------------------------------
+// CP-M3: real-chain test for memory projection + cleanup.
+//
+// Drives the full real chain (buildProjectedSessionEnv -> launchBootstrap ->
+// tracked session -> service.stop) and asserts:
+//   * ROS_MEMORY_CONTEXT is set during the session and points at an existing
+//     0600 file.
+//   * After service.stop(), the file is removed (no leak).
+//   * When memory is NOT declared, ROS_MEMORY_CONTEXT is never set, no
+//     context file is written, and cleanup is a no-op.
+// ---------------------------------------------------------------------------
+
+import { buildProjectedSessionEnv } from "../host/terminal-host-service.mjs";
+
+describe("CP-M3: memory projection through the real chain + service cleanup", () => {
+  let dir;
+  let service;
+  beforeEach(async () => {
+    __resetSessionBootstrapGrantBroker();
+    dir = await realpath(await mkdtemp(join(tmpdir(), "pi-m3-")));
+  });
+  afterEach(async () => {
+    try { await service?.stop(); } catch { /* already stopped */ }
+    service = null;
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("during the session ROS_MEMORY_CONTEXT points at an existing 0600 file; after stop() the file is gone", async () => {
+    const tokenFilePath = join(dir, "grant.token");
+    const promptFilePath = join(dir, "prompt.txt");
+    const fakeHome = join(dir, "home");
+    const memoryRoot = join(dir, "memory");
+    await mkdir(memoryRoot, { recursive: true });
+    const stagingBase = join(dir, "staging");
+    await mkdir(stagingBase);
+    const piExecutable = await makeFixedRootPi(fakeHome);
+    const peer = makeStubTerminalPeer();
+
+    service = createTerminalHostService({
+      env: { RESONANT_TERMINAL_DRIVER: "ghostty" },
+      rosSessionPath: "/stub/ros-session.mjs",
+      tokenFilePath: () => tokenFilePath,
+      promptFilePath: () => promptFilePath,
+      stagingBase,
+      spawn: () => peer.child,
+    });
+    await service.start();
+
+    // Drive the full real chain: buildProjectedSessionEnv with memory,
+    // then launchBootstrap through the service.
+    const grant = service.mintSessionBootstrapGrant
+      ? null
+      : (await import("../host/terminal-host-service.mjs")).mintSessionBootstrapGrant;
+    const minted = grant({ sessionId: "s-m3-1", purpose: "attach" });
+    service.trackSessionTrackedGrant
+      ? null
+      : null;
+    const { trackSessionBootstrapGrant } = await import("../host/terminal-host-service.mjs");
+    trackSessionBootstrapGrant(minted);
+
+    const projected = await buildProjectedSessionEnv({
+      sessionId: "s-m3-1",
+      memoryAccess: { archiveReadMode: "read-only-context" },
+      memoryRoot,
+      stagingBase,
+      providerProfileId: "openai",
+      resolveCredential: () => ({ name: "OPENAI_API_KEY", value: "sk-m3-1" }),
+    });
+    assert.equal(projected.ok, true, "buildProjectedSessionEnv must succeed");
+    // ROS_MEMORY_CONTEXT is set and points at an existing 0600 file.
+    const memPath = projected.env.ROS_MEMORY_CONTEXT;
+    assert.equal(typeof memPath, "string");
+    assert.ok(memPath.startsWith(await realpath(stagingBase)));
+    const st = await stat(memPath);
+    assert.ok(st.isFile());
+    assert.equal((st.mode & 0o777), 0o600);
+
+    // Now drive launchBootstrap through the real service (with the
+    // real pi-v1 policy via the generic adapter — see CP-S5F3 test above).
+    const { createHarnessEventBus } = await import("../host/harness-event-bus.mjs");
+    const bus = createHarnessEventBus({
+      provenance: { addonId: "addon.test", sessionId: "test-bus", turnId: "test", bootEpoch: "boot-test", generation: 0 },
+      isCurrent: () => true,
+      maxReaders: 8,
+    });
+    const adapter = createExternalCliTerminalAdapter({
+      sessionId: "s-m3-1",
+      policyId: "pi-v1",
+      terminalHostService: {
+        launchBootstrap: (...args) => service.launchBootstrap(...args),
+        terminateSession: (...args) => service.terminateSession(...args),
+      },
+      terminalHostStart: {
+        driveId: "ghostty",
+        adapterId: "ghostty",
+        bus,
+      },
+      promptFilePath: () => promptFilePath,
+      providerProfileId: "openai",
+      hostTerminal: {
+        resolveCredential: async () => ({ name: "OPENAI_API_KEY", value: "sk-m3-1" }),
+        resolveProjectIdentity: async ({ root }) => ({ id: "p1", label: "P1", root }),
+        skillSourceRoot: dir,
+        stagingBase,
+      },
+      // piCommand() needs an env override to find our fake `pi` binary.
+      env: { ...process.env, PATH: join(fakeHome, "npm-global", "bin"), HOME: fakeHome },
+    });
+    const controller = new AbortController();
+    const invokeTask = (async () => {
+      const events = [];
+      for await (const ev of adapter.invoke({
+        session: { sessionId: "s-m3-1" },
+        input: { messages: [{ role: "user", content: "use memory" }] },
+        signal: controller.signal,
+      })) events.push(ev);
+      return events;
+    })();
+    // Wait until launchBootstrap has been driven (peer has captured request).
+    for (let i = 0; i < 200 && !peer.getCaptured(); i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    assert.ok(peer.getCaptured(), "adapter reached launchBootstrap through the real service");
+    // The file STILL exists while the session is tracked.
+    assert.equal((await stat(memPath).catch((e) => e)).code, undefined);
+    controller.abort();
+    await invokeTask;
+
+    // Tear down: stop() must clean up the context file.
+    await service.stop();
+    const postStop = await stat(memPath).catch((e) => e);
+    assert.equal(postStop.code, "ENOENT", "memory context file must be removed after stop()");
+    void piExecutable; // referenced for makeFixedRootPi side effect
+  });
+
+  it("without memory declared, no context file is ever written and cleanup is a no-op", async () => {
+    const tokenFilePath = join(dir, "grant.token");
+    const promptFilePath = join(dir, "prompt.txt");
+    const fakeHome = join(dir, "home");
+    const memoryRoot = join(dir, "memory");
+    await mkdir(memoryRoot, { recursive: true });
+    const stagingBase = join(dir, "staging");
+    await mkdir(stagingBase);
+    await makeFixedRootPi(fakeHome);
+    const peer = makeStubTerminalPeer();
+
+    service = createTerminalHostService({
+      env: { RESONANT_TERMINAL_DRIVER: "ghostty" },
+      rosSessionPath: "/stub/ros-session.mjs",
+      tokenFilePath: () => tokenFilePath,
+      promptFilePath: () => promptFilePath,
+      stagingBase,
+      spawn: () => peer.child,
+    });
+    await service.start();
+
+    const projected = await buildProjectedSessionEnv({
+      sessionId: "s-m3-2",
+      memoryAccess: { archiveReadMode: "none" },
+      stagingBase,
+      providerProfileId: "openai",
+      resolveCredential: () => ({ name: "OPENAI_API_KEY", value: "sk-m3-2" }),
+    });
+    assert.equal(projected.ok, true);
+    assert.equal(projected.env.ROS_MEMORY_CONTEXT, undefined);
+    // No memory-context/<id> dir under staging base.
+    const { readdir } = await import("node:fs/promises");
+    const entries = await readdir(stagingBase);
+    assert.ok(!entries.includes("memory-context"), "no memory-context dir under staging base");
+    // stop() must not throw, and no file should appear after.
+    await service.stop();
+    const afterEntries = await readdir(stagingBase);
+    assert.ok(!afterEntries.includes("memory-context"));
+  });
+});
