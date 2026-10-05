@@ -76,9 +76,15 @@
 //   2. Run the smoke with ROS_S5C_OPENAI_KEY_FILE=<path> — the host wiring
 //      resolves that key for profile "openai" instead of the sentinel, and
 //      every no-leak assertion switches to the real value.
-//   3. Operator confirms in the Pi TUI that /models lists models and one
-//      cheap chat turn completes with the delivered credential.
-//   This is a manual gate; record the outcome in the run report.
+//   3. At the operator prompt, confirm the Pi TUI is up; then, inside the
+//      TUI, switch to the OpenAI-backed model and complete one cheap turn
+//      (e.g. ask for the single word PONG) or list models — with the
+//      delivered credential this succeeds instead of the "Connection
+//      error" retries seen with the sentinel.
+//   4. Record in the run report: the model used, that the turn completed,
+//      and that the proof file's OPENAI_API_KEY line carried the real key
+//      (the smoke asserts it) while argv, bus events, and logs did not.
+//   This is a manual gate; no automated assertion covers it.
 //
 // Exit code 0 = green; 1 = red.
 
