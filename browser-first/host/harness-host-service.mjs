@@ -316,7 +316,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
       if (!id(p.addonId) || !Array.isArray(p.grants) || typeof p.consent !== 'boolean' || !revision(p.expectedRevision)) throw fail('invalid-event');
       await registry.setGrants(p.addonId, p.grants, p); return snapshot();
     }),
-    route('POST', '/terminal-host/session/attach', control, ['sessionId', 'token', 'providerProfileId'], ['harness', 'project', 'resolveCredential', 'authorizedProject', 'request', 'grantedCapabilities', 'skillCatalog', 'skillSourceRoot', 'stagingBase', 'resourceHooks'], async p => {
+    route('POST', '/terminal-host/session/attach', control, ['sessionId', 'token', 'providerProfileId'], ['harness', 'project', 'resolveCredential', 'authorizedProject', 'request', 'grantedCapabilities', 'skillCatalog', 'skillSourceRoot', 'stagingBase', 'resourceHooks', 'memoryAccess', 'memoryRoot', 'approvedMemoryDomains'], async p => {
       if (!id(p.sessionId) || typeof p.token !== 'string' || p.token.length === 0 || typeof p.providerProfileId !== 'string' || p.providerProfileId.length === 0) throw fail('invalid-event');
       // resolveCredential precedence:
       //   1. caller-injected (tests + ad-hoc callers) — sync
@@ -376,19 +376,46 @@ export async function createHarnessHostService({ userRoot, store = createHarness
         const claim = consumeGrant({ sessionId: p.sessionId, token: p.token });
         if (!claim.ok) return { ok: false, reason: claim.reason };
         result = await buildProjectedSessionEnv({
-          sessionId: p.sessionId,
-          harness: p.harness,
-          authorizedProject,
-          request: p.request,
-          grantedCapabilities: p.grantedCapabilities ?? [],
-          skillCatalog,
-          skillSourceRoot,
-          stagingBase,
-          providerProfileId: p.providerProfileId,
-          ...(resolveCredential ? { resolveCredential } : {}),
-          ...(p.resourceHooks ? { resourceHooks: p.resourceHooks } : {}),
-        });
+        sessionId: p.sessionId,
+        harness: p.harness,
+        authorizedProject,
+        request: p.request,
+        grantedCapabilities: p.grantedCapabilities ?? [],
+        skillCatalog,
+        skillSourceRoot,
+        stagingBase,
+        providerProfileId: p.providerProfileId,
+        ...(resolveCredential ? { resolveCredential } : {}),
+        ...(p.resourceHooks ? { resourceHooks: p.resourceHooks } : {}),
+        ...(p.memoryAccess !== undefined ? { memoryAccess: p.memoryAccess } : {}),
+        ...(p.memoryRoot !== undefined ? { memoryRoot: p.memoryRoot } : {}),
+        ...(p.approvedMemoryDomains !== undefined ? { approvedMemoryDomains: p.approvedMemoryDomains } : {}),
+      });
       } else {
+        // CP-M2: when there is no resource projection, but the caller
+        // declared memory access, we still want to surface ROS_MEMORY_CONTEXT
+        // (or a non-secret meta marker). attachSessionEnv does NOT own the
+        // memory seam; instead we issue a minimal buildProjectedSessionEnv
+        // call with no resource/skills projection so the memory step runs.
+        if (p.memoryAccess !== undefined) {
+          const claim = consumeGrant({ sessionId: p.sessionId, token: p.token });
+          if (!claim.ok) return { ok: false, reason: claim.reason };
+          result = await buildProjectedSessionEnv({
+            sessionId: p.sessionId,
+            harness: p.harness,
+            ...(p.project ? { authorizedProject: { id: 'memory-only', label: 'Memory Only', root: typeof p.project?.root === 'string' ? p.project.root : '' } } : {}),
+            grantedCapabilities: p.grantedCapabilities ?? [],
+            ...(skillCatalog ? { skillCatalog } : {}),
+            ...(skillSourceRoot ? { skillSourceRoot } : {}),
+            ...(stagingBase ? { stagingBase } : {}),
+            providerProfileId: p.providerProfileId,
+            ...(resolveCredential ? { resolveCredential } : {}),
+            ...(p.resourceHooks ? { resourceHooks: p.resourceHooks } : {}),
+            ...(p.memoryAccess !== undefined ? { memoryAccess: p.memoryAccess } : {}),
+            ...(p.memoryRoot !== undefined ? { memoryRoot: p.memoryRoot } : {}),
+            ...(p.approvedMemoryDomains !== undefined ? { approvedMemoryDomains: p.approvedMemoryDomains } : {}),
+          });
+        } else {
         result = attachSessionEnv({
           sessionId: p.sessionId,
           token: p.token,
@@ -397,6 +424,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
           providerProfileId: p.providerProfileId,
           ...(resolveCredential ? { resolveCredential } : {}),
         });
+        }
       }
       if (!result.ok) return { ok: false, reason: result.reason, ...(result.code ? { code: result.code } : {}) };
       const { _meta, ...envOnly } = result.env;

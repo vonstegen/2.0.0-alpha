@@ -326,6 +326,7 @@ export const PROJECTED_SESSION_ENV_NAMES = Object.freeze({
   projectRoot: "ROS_PROJECT_ROOT",
   projectCwd: "ROS_PROJECT_CWD",
   skillsDir: "ROS_SKILLS_DIR",
+  memoryContext: "ROS_MEMORY_CONTEXT",
 });
 
 /**
@@ -387,6 +388,12 @@ export async function buildProjectedSessionEnv(args) {
     parentEnv,
     buildSessionEnv = buildSessionEnvironment,
     resourceHooks,
+    // M2: memory projection inputs. Default to "none" / empty so the
+    // existing call sites (which don't yet pass these) see no behavior
+    // change.
+    memoryAccess = { archiveReadMode: "none" },
+    memoryRoot = null,
+    approvedMemoryDomains = null,
   } = args ?? {};
 
   if (typeof sessionId !== "string" || !sessionId) {
@@ -448,6 +455,64 @@ export async function buildProjectedSessionEnv(args) {
     }
   }
 
+  // 2b. Memory projection (Phase M2): yields ROS_MEMORY_CONTEXT only when
+  // the manifest grants read-only-context AND stagingBase is supplied.
+  // For "none" or missing staging base, no file / no env var. For
+  // "retrieval-with-citations", no file but a non-secret `notImplemented`
+  // marker recorded in meta (deferred endpoint).
+  let memoryProjection = null;
+  let memoryRejection = null;
+  const memoryMode = (memoryAccess && typeof memoryAccess === "object")
+    ? memoryAccess.archiveReadMode
+    : "none";
+  if (memoryMode === "read-only-context") {
+    if (!stagingBase) {
+      memoryRejection = "memory-staging-base-missing";
+    } else if (!memoryRoot) {
+      memoryRejection = "memory-root-missing";
+    } else {
+      const { buildHarnessMemoryProjection } = await import("./harness-memory-projection.mjs");
+      const memOutcome = await buildHarnessMemoryProjection({
+        sessionId,
+        memoryAccess,
+        memoryRoot,
+        approvedDomains: approvedMemoryDomains,
+        stagingBase,
+        now,
+      });
+      if (memOutcome.rejection) {
+        memoryRejection = memOutcome.rejection.code;
+      } else {
+        memoryProjection = memOutcome.projection;
+      }
+    }
+  } else if (memoryMode === "retrieval-with-citations") {
+    // Placeholder only — no file, no env var, but record the notImplemented
+    // marker in meta so callers know the deferred endpoint is in scope.
+    const { deriveMemoryStagingIdentity } = await import("./harness-memory-projection.mjs");
+    memoryProjection = Object.freeze({
+      projectionId: deriveMemoryStagingIdentity(TERMINAL_HOST_ADDON_ID, sessionId),
+      sessionId,
+      archiveReadMode: "retrieval-with-citations",
+      path: null,
+      domains: Object.freeze([]),
+      expiresAt: now().toISOString(),
+      notImplemented: "retrieval-with-citations",
+    });
+  } else if (memoryMode === "none") {
+    // Record the "none" verdict in meta so callers can see the session was
+    // inspected for memory access (not silently skipped). No file, no env
+    // var, no projection identity allocation cost.
+    memoryProjection = Object.freeze({
+      projectionId: null,
+      sessionId,
+      archiveReadMode: "none",
+      path: null,
+      domains: Object.freeze([]),
+      expiresAt: now().toISOString(),
+    });
+  }
+
   // 3. Credential resolution (fail closed: null when providerProfileId named but credential not resolvable).
   let credential = null;
   if (providerProfileId) {
@@ -483,6 +548,9 @@ export async function buildProjectedSessionEnv(args) {
   if (skillsStagingRoot) {
     baseWithProjections[PROJECTED_SESSION_ENV_NAMES.skillsDir] = skillsStagingRoot;
   }
+  if (memoryProjection && memoryProjection.path) {
+    baseWithProjections[PROJECTED_SESSION_ENV_NAMES.memoryContext] = memoryProjection.path;
+  }
 
   const env = buildSessionEnv({
     baseEnv: baseWithProjections,
@@ -503,6 +571,22 @@ export async function buildProjectedSessionEnv(args) {
       code: resourceRejection ?? skillsRejection,
       meta: { ...meta, resourceRejection, skillsRejection },
     };
+  }
+
+  // M2 meta augmentation: carry non-secret memory projection summary
+  // (mode + projectionId + domains). NEVER the path or the context file
+  // content — the path lives under env.ROS_MEMORY_CONTEXT, not meta.
+  if (memoryProjection) {
+    meta.memoryProjection = Object.freeze({
+      projectionId: memoryProjection.projectionId,
+      archiveReadMode: memoryProjection.archiveReadMode,
+      domains: [...memoryProjection.domains],
+      expiresAt: memoryProjection.expiresAt,
+      ...(memoryProjection.notImplemented ? { notImplemented: memoryProjection.notImplemented } : {}),
+    });
+  }
+  if (memoryRejection) {
+    meta.memoryRejection = memoryRejection;
   }
 
   return {
@@ -606,6 +690,11 @@ export function envelopeToHarnessEvent(envelope, provenance) {
  * @property {string} [script]    default per RESONANT_TERMINAL_DRIVER
  * @property {string} [cwd]       default per RESONANT_TERMINAL_DRIVER
  *                                    (iTerm2 -> iterm2/, Ghostty -> ghostty/)
+ * @property {string} [stagingBase]    Host-owned staging root. When set,
+ *   the service cleans the memory-context tree for tracked sessions on
+ *   `terminateSession` / `stop()` (Phase M3). When absent, no memory
+ *   cleanup is attempted (safe default for the in-memory driver + tests
+ *   that don't materialize a memory projection).
  */
 
 /**
@@ -632,6 +721,7 @@ export function createTerminalHostService(options = {}) {
   const env = options.env ?? process.env;
   const addonId = options.addonId ?? (() => TERMINAL_HOST_ADDON_ID);
   const bootEpoch = options.bootEpoch ?? (() => env.RESONANTOS_HARNESS_BOOTEPOCH ?? `boot-${randomUUID().slice(0, 8)}`);
+  const stagingBase = typeof options.stagingBase === "string" ? options.stagingBase : null;
   const driveId = env.RESONANT_TERMINAL_DRIVER ?? "in-memory";
   // Driver-specific spawn plan. The iTerm2 driver is a Python script
   // (iterm2's control API is Python; the bridge is the stdio JSON-RPC
@@ -831,6 +921,17 @@ export function createTerminalHostService(options = {}) {
         delay(CLOSE_ALL_TIMEOUT_MS).then(() => undefined),
       ]);
     }
+    // CP-M3: best-effort memory-context cleanup for every tracked
+    // session. The staging identity is deterministic from sessionId,
+    // so we don't need to keep a side-table.
+    if (stagingBase) {
+      await Promise.all(trackedIds.map(async (id) => {
+        try {
+          const { cleanupHarnessMemoryProjection } = await import("./harness-memory-projection.mjs");
+          await cleanupHarnessMemoryProjection({ stagingBase, sessionId: id });
+        } catch { /* best-effort */ }
+      }));
+    }
     if (child && !child.killed) {
       child.kill("SIGTERM");
       try { await Promise.race([once(child, "exit"), delay(2000)]); }
@@ -991,6 +1092,15 @@ export function createTerminalHostService(options = {}) {
     // CP-SW1: explicit close removes the session from the tracked set
     // so stop() does not re-issue a terminateSession RPC for it.
     trackedSessions.delete(sessionId);
+    // CP-M3: best-effort memory-context cleanup. The file path is
+    // deterministic from sessionId + stagingBase, so no side-table
+    // is required.
+    if (stagingBase) {
+      try {
+        const { cleanupHarnessMemoryProjection } = await import("./harness-memory-projection.mjs");
+        await cleanupHarnessMemoryProjection({ stagingBase, sessionId });
+      } catch { /* best-effort */ }
+    }
     return /** @type {any} */ (result);
   }
 

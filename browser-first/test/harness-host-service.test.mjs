@@ -759,7 +759,7 @@ test('POST /terminal-host/session/attach takes optional harness/project and pass
 // uniform across both paths.
 // ---------------------------------------------------------------------------
 
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -1125,4 +1125,177 @@ test('CP-S5a: caller-supplied authorizedProject takes precedence over host resol
   // The caller-supplied id flows through unchanged.
   assert.equal(result.payload.meta.projectId, 'caller-controlled');
   assert.ok(result.payload.env.ROS_PROJECT_ROOT.startsWith(projectRoot));
+});
+
+// ---------------------------------------------------------------------------
+// CP-M2: memory projection wired into buildProjectedSessionEnv.
+// ROS_MEMORY_CONTEXT must be emitted ONLY when archiveReadMode is
+// 'read-only-context' and a memory root + staging base are provided.
+// 'none' / missing staging base / wrong root -> env var must NOT be
+// present; meta carries the projection summary (mode + projectionId +
+// domains) but NEVER the path or the file content.
+// ---------------------------------------------------------------------------
+
+test('CP-M2: read-only-context memory projection emits ROS_MEMORY_CONTEXT pointing at an existing 0600 file', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+  const dir = await mkdtemp(join(tmpdir(), 'ros-m2-ctx-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const memoryRoot = join(dir, 'memory');
+  await mkdir(memoryRoot, { recursive: true });
+  const stagingBase = join(dir, 'staging');
+  await mkdir(stagingBase);
+
+  const f = await fixture(t);
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-m2-ctx', purpose: 'attach' }));
+  const result = await f.call('/terminal-host/session/attach', {
+    sessionId: 's-m2-ctx',
+    token: grant.token,
+    providerProfileId: 'openai',
+    resolveCredential: () => ({ name: 'OPENAI_API_KEY', value: 'sk-m2-ctx' }),
+    memoryAccess: { archiveReadMode: 'read-only-context' },
+    memoryRoot,
+    stagingBase,
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  // ROS_MEMORY_CONTEXT is emitted as an absolute path under staging.
+  assert.equal(typeof result.payload.env.ROS_MEMORY_CONTEXT, 'string');
+  assert.equal(PROJECTED_SESSION_ENV_NAMES.memoryContext, 'ROS_MEMORY_CONTEXT');
+  assert.ok(result.payload.env.ROS_MEMORY_CONTEXT.startsWith(await realpath(stagingBase)));
+  assert.ok(result.payload.env.ROS_MEMORY_CONTEXT.includes('/memory-context/'));
+  assert.ok(result.payload.env.ROS_MEMORY_CONTEXT.endsWith('/context.md'));
+  // meta.memoryProjection carries the summary (non-secret shape).
+  const mp = result.payload.meta.memoryProjection;
+  assert.ok(mp);
+  assert.equal(mp.archiveReadMode, 'read-only-context');
+  assert.match(mp.projectionId, /^[a-f0-9]{32}$/);
+  assert.deepEqual([...mp.domains], ['AI_MEMORY/wiki', 'AI_MEMORY/provenance', 'AI_MEMORY/backups']);
+  // meta must NOT contain the file path (path is the env value, not meta).
+  const metaSerialized = JSON.stringify(result.payload.meta);
+  assert.equal(metaSerialized.includes(result.payload.env.ROS_MEMORY_CONTEXT), false);
+  assert.equal(metaSerialized.includes('sk-m2-ctx'), false);
+});
+
+test('CP-M2: archiveReadMode "none" -> ROS_MEMORY_CONTEXT is NOT emitted; meta has no memoryProjection', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+  const dir = await mkdtemp(join(tmpdir(), 'ros-m2-none-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const memoryRoot = join(dir, 'memory');
+  await mkdir(memoryRoot, { recursive: true });
+  const stagingBase = join(dir, 'staging');
+  await mkdir(stagingBase);
+
+  const f = await fixture(t);
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-m2-none', purpose: 'attach' }));
+  const result = await f.call('/terminal-host/session/attach', {
+    sessionId: 's-m2-none',
+    token: grant.token,
+    providerProfileId: 'openai',
+    resolveCredential: () => ({ name: 'OPENAI_API_KEY', value: 'sk-m2-none' }),
+    memoryAccess: { archiveReadMode: 'none' },
+    memoryRoot,
+    stagingBase,
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.env.ROS_MEMORY_CONTEXT, undefined);
+  // For "none" mode, the meta carries a projection with path:null so
+  // callers can see the session was inspected for memory access (not just
+  // skipped silently). The path is still null and never present in the
+  // env.
+  const mp = result.payload.meta.memoryProjection;
+  assert.ok(mp);
+  assert.equal(mp.archiveReadMode, 'none');
+  assert.equal(mp.path, undefined); // path NEVER present in meta (env is the only place)
+});
+
+test('CP-M2: archiveReadMode "retrieval-with-citations" -> no ROS_MEMORY_CONTEXT, meta carries notImplemented marker', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+  const f = await fixture(t);
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-m2-ret', purpose: 'attach' }));
+  const result = await f.call('/terminal-host/session/attach', {
+    sessionId: 's-m2-ret',
+    token: grant.token,
+    providerProfileId: 'openai',
+    resolveCredential: () => ({ name: 'OPENAI_API_KEY', value: 'sk-m2-ret' }),
+    memoryAccess: { archiveReadMode: 'retrieval-with-citations' },
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.env.ROS_MEMORY_CONTEXT, undefined);
+  const mp = result.payload.meta.memoryProjection;
+  assert.ok(mp);
+  assert.equal(mp.archiveReadMode, 'retrieval-with-citations');
+  assert.equal(mp.notImplemented, 'retrieval-with-citations');
+  assert.deepEqual([...mp.domains], []);
+});
+
+test('CP-M2: read-only-context without memoryRoot -> ok:true, no env var, meta.memoryRejection carries the public code', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+  const dir = await mkdtemp(join(tmpdir(), 'ros-m2-noroot-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const stagingBase = join(dir, 'staging');
+  await mkdir(stagingBase);
+
+  const f = await fixture(t);
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-m2-noroot', purpose: 'attach' }));
+  const result = await f.call('/terminal-host/session/attach', {
+    sessionId: 's-m2-noroot',
+    token: grant.token,
+    providerProfileId: 'openai',
+    resolveCredential: () => ({ name: 'OPENAI_API_KEY', value: 'sk-m2-noroot' }),
+    memoryAccess: { archiveReadMode: 'read-only-context' },
+    stagingBase,
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.env.ROS_MEMORY_CONTEXT, undefined);
+  assert.equal(result.payload.meta.memoryRejection, 'memory-root-missing');
+});
+
+test('CP-M2: meta carries NO path / token / credential / memory content', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+  const dir = await mkdtemp(join(tmpdir(), 'ros-m2-secret-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const memoryRoot = join(dir, 'memory');
+  await mkdir(memoryRoot, { recursive: true });
+  const stagingBase = join(dir, 'staging');
+  await mkdir(stagingBase);
+
+  const f = await fixture(t);
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-m2-secret', purpose: 'attach' }));
+  const result = await f.call('/terminal-host/session/attach', {
+    sessionId: 's-m2-secret',
+    token: grant.token,
+    providerProfileId: 'openai',
+    resolveCredential: () => ({ name: 'OPENAI_API_KEY', value: 'sk-m2-secret' }),
+    memoryAccess: { archiveReadMode: 'read-only-context' },
+    memoryRoot,
+    stagingBase,
+  });
+  assert.equal(result.status, 200);
+  const metaSerialized = JSON.stringify(result.payload.meta);
+  // Token / API key / path value / memory context file content MUST NOT be
+  // present in meta.
+  assert.equal(metaSerialized.includes(grant.token), false);
+  assert.equal(metaSerialized.includes('sk-m2-secret'), false);
+  assert.equal(metaSerialized.includes(result.payload.env.ROS_MEMORY_CONTEXT), false);
+  // The memory projection summary is the ONLY thing in meta for memory,
+  // and it's identifier-shaped.
+  const mp = result.payload.meta.memoryProjection;
+  assert.equal(typeof mp.projectionId, 'string');
+  assert.match(mp.projectionId, /^[a-f0-9]{32}$/);
+  for (const d of mp.domains) {
+    assert.match(d, /^[A-Z_]+\/[a-z-]+$/);
+  }
 });
