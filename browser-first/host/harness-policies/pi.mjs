@@ -77,6 +77,39 @@ export function composePiInvocation(input) {
 }
 
 /**
+ * Compose a reviewed invocation from a pre-staged 0600 prompt file.
+ * The host has validated the path (absolute, mode 0600, regular
+ * file) via `stat`; the policy MUST NOT read the file content. The
+ * byte size is supplied for the audit summary so the policy never
+ * has to open the file.
+ *
+ * Hard rule: the prompt content NEVER appears in the commandSuffix.
+ * We only reference the file via `pi @<path>`, which is the same
+ * shell-escaped pattern used by the in-band `composeInvocation`
+ * path — the policy is the only place that decides how to cite the
+ * prompt file, and the escape is its responsibility.
+ */
+export function composePiInvocationFromFile(input) {
+  if (!input || typeof input.executable?.command !== "string") {
+    throw new TypeError("pi policy: composeInvocationFromFile requires a reviewed executable");
+  }
+  if (typeof input.promptPath !== "string" || input.promptPath.length === 0) {
+    throw new TypeError("pi policy: composeInvocationFromFile requires a promptPath");
+  }
+  if (typeof input.promptBytes !== "number" || !Number.isFinite(input.promptBytes) || input.promptBytes < 0) {
+    throw new TypeError("pi policy: composeInvocationFromFile requires a finite non-negative promptBytes");
+  }
+  const executable = input.executable.command;
+  if (!executable.startsWith("/")) {
+    throw new TypeError("pi policy: composeInvocationFromFile requires an absolute executable path");
+  }
+  return {
+    commandSuffix: `${shellQuote(executable)} ${shellQuote(`@${input.promptPath}`)}`,
+    auditSummary: `pi @<file> (${input.promptBytes} bytes)`,
+  };
+}
+
+/**
  * Build the reviewed pi-v1 policy. The `supportedProviderFamilies`
  * mirrors the Pi native provider identities; the host owns profile
  * resolution and will reject a profile that is not in
@@ -98,5 +131,6 @@ export function createPiHarnessPolicy() {
     supportsModelSelection: true,
     resolveExecutable: resolvePiExecutable,
     composeInvocation: composePiInvocation,
+    composeInvocationFromFile: composePiInvocationFromFile,
   };
 }

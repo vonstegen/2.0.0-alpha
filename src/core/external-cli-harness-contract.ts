@@ -76,6 +76,20 @@ export interface ReviewedInvocation {
 }
 
 /**
+ * Input to a policy's `composeInvocationFromFile` (CP-XH5a). The
+ * host has already validated `promptPath` (absolute, 0600, regular
+ * file) via `stat` — the policy MUST NOT read the prompt content.
+ * The byte size is supplied so the policy can produce a non-secret
+ * `auditSummary` without opening the file.
+ */
+export interface HarnessInvocationFromFileInput {
+  readonly executable: ReviewedExecutable;
+  readonly promptPath: string;
+  readonly promptBytes: number;
+  readonly credentialEnvVarName: string | null;
+}
+
+/**
  * How the harness obtains its provider authentication. The host owns
  * resolution in every mode; the policy only declares the shape.
  *
@@ -139,6 +153,14 @@ export interface ExternalCliHarnessPolicy {
   /** Host invokes this on every `invoke()` after the prompt has
    *  been staged. MUST return a reviewed `commandSuffix`. */
   composeInvocation(input: HarnessInvocationInput): ReviewedInvocation;
+
+  /** Optional (CP-XH5a). When the host has a pre-staged 0600 prompt
+   *  file at a validated absolute path and the prompt content must
+   *  NEVER cross a host boundary, the policy composes the reviewed
+   *  commandSuffix from the file path + byte size alone. The policy
+   *  MUST NOT read the file. Policies that omit this hook are not
+   *  eligible for the `POST /terminal-host/launch` route. */
+  composeInvocationFromFile?(input: HarnessInvocationFromFileInput): ReviewedInvocation;
 }
 
 const KNOWN_CREDENTIAL_SOURCES: ReadonlySet<PolicyCredentialSource> = new Set([

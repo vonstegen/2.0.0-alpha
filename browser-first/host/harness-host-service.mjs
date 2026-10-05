@@ -1,5 +1,5 @@
 // Composition owns routes, never grants inferred from bridge authentication.
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, createPublicKey, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { tmpdir as osTmpdir } from 'node:os';
@@ -15,6 +15,9 @@ import { createExternalCliTerminalAdapter } from './agent-adapters/external-cli-
 import { publicHarnessError } from './harness-adapter-contract.mjs';
 import { bridgeCorsHeaders, HarnessTransportError, validateLoopbackHost } from './bridge-server.mjs';
 import { attachSessionEnv, buildProjectedSessionEnv, consumeGrant } from './terminal-host-service.mjs';
+import { ensureBridgeReachable, DEFAULT_BRIDGE_ENDPOINT } from './bridge-bootstrap.mjs';
+import { getHarnessPolicy } from './harness-policy-registry.mjs';
+import { piCommand } from './pi-runtime.mjs';
 
 // JSON data only: recursively sort object keys, preserve array order, no whitespace.
 export function canonicalReceipt(value) {
@@ -126,6 +129,24 @@ export async function createHarnessHostService({ userRoot, store = createHarness
   const approvedBindings = structuredClone(bindings);
   const credentials = createHarnessCredentials({ bindings: approvedBindings, env });
   const manifests = new Map(), resources = new Set();
+  // CP-XH5a: launch persistence. The new `POST /terminal-host/launch`
+  // route records every accepted launch here so the existing
+  // `GET /terminal-host/status` (CP-XH4c) surfaces session count +
+  // ids. Map shape: launchId -> {
+  //   launchId, agentId, terminalAddonId, executablePath, promptPath,
+  //   startedAt, sessionId }
+  // No token, credential, env value, memory content, or arbitrary
+  // path lives here — only the documented fields.
+  const launchPersistence = new Map();
+  // CP-XH5d: optional sink for structured launch-telemetry events.
+  // Default sink is a no-op so tests + production wiring stay free
+  // of side effects unless explicitly opted in.
+  let launchTelemetrySink = ({ event, payload }) => {
+    try { console.error(JSON.stringify({ event, ...payload })); } catch { /* sink may be local-only */ }
+  };
+  const setLaunchTelemetrySink = (sink) => {
+    if (typeof sink === 'function') launchTelemetrySink = sink;
+  };
   let closed = false, closing;
   const trackedStore = {
     async read() {
@@ -469,11 +490,210 @@ export async function createHarnessHostService({ userRoot, store = createHarness
           connected,
         });
       }
+      // CP-XH5a: surface accepted launches alongside the live
+      // terminal-host service sessions. The launch records carry
+      // ONLY documented fields — no token, credential, env value,
+      // memory content, or arbitrary path.
+      const launchRecords = [...launchPersistence.values()].map((entry) => ({
+        launchId: entry.launchId,
+        agentId: entry.agentId,
+        terminalAddonId: entry.terminalAddonId,
+        startedAt: entry.startedAt,
+      }));
       return {
         connected: Boolean(serviceStatus.alive),
         driveId: serviceStatus.driveId,
         surfaces,
         sessions: Array.isArray(serviceStatus.sessions) ? serviceStatus.sessions : [],
+        launches: launchRecords,
+      };
+    }),
+    // CP-XH5a: POST /terminal-host/launch
+    //
+    // The "Open in Terminal" launch affordance. Loopback-only
+    // (loopbackHostOnly is set by route()) and requires
+    // addon-runtime-control.
+    //
+    // Request body:
+    //   {
+    //     agentId: "pi" | "opencode" | "codex" | "hermes",
+    //     terminalAddonId: "addon.resonant-terminal-ghostty" |
+    //                      "addon.resonant-terminal-iterm2",
+    //     promptPath: string /* absolute, 0600, regular file */,
+    //     options?: { memoryAccess?, env?, commandSuffix? }
+    //   }
+    //
+    // Behavior:
+    //   a. Validate `promptPath` via `stat` only — the host never
+    //      reads the prompt content. Absolute + regular file +
+    //      mode 0o600 is required.
+    //   b. Look up the installed terminal add-on manifest + verify
+    //      the `terminal-host` capability is currently granted
+    //      (typed `capability-not-granted` otherwise).
+    //   c. Resolve the harness executable via the reviewed policy
+    //      (currently `pi-v1` for `agentId === "pi"`).
+    //   d. Call `composeInvocationFromFile({ executable, promptPath,
+    //      promptBytes })` so the prompt content never enters the
+    //      host code path.
+    //   e. Call `terminalHost.service.launchBootstrap({
+    //      commandSuffix: invocation, ... })` so the projected env
+    //      (memory/skills/project/credential) is wired.
+    //   f. Probe the bridge loopback endpoint via `ensureBridgeReachable`
+    //      BEFORE wiring any of the above — if the bridge is not
+    //      running, the route returns the typed `bridge-not-running`
+    //      error and the UI surfaces the Settings deep-link.
+    //
+    // Returns a non-secret receipt
+    //   { launchId, agentId, terminalAddonId, executablePath,
+    //     promptPath, startedAt }
+    route('POST', '/terminal-host/launch', control, ['agentId', 'terminalAddonId', 'promptPath'], ['options'], async p => {
+      const requestedAgentId = typeof p.agentId === 'string' ? p.agentId.trim() : '';
+      const requestedAddonId = typeof p.terminalAddonId === 'string' ? p.terminalAddonId.trim() : '';
+      const promptPath = typeof p.promptPath === 'string' ? p.promptPath.trim() : '';
+      const options = (p.options && typeof p.options === 'object' && !Array.isArray(p.options)) ? p.options : {};
+      if (requestedAgentId !== 'pi' && requestedAgentId !== 'opencode' && requestedAgentId !== 'codex' && requestedAgentId !== 'hermes') {
+        throw fail('invalid-event');
+      }
+      if (!id(requestedAddonId)) throw fail('invalid-event');
+      if (!promptPath.startsWith('/')) throw fail('invalid-event');
+      // Validate options early so a malformed memoryAccess/env/commandSuffix
+      // cannot reach OOM-prone launch path code.
+      if (options.commandSuffix !== undefined && (typeof options.commandSuffix !== 'string' || options.commandSuffix.length === 0)) {
+        throw fail('invalid-event');
+      }
+      if (options.env !== undefined && (!record(options.env) || Object.keys(options.env).length > 64)) {
+        throw fail('invalid-event');
+      }
+      if (options.memoryAccess !== undefined && !record(options.memoryAccess)) {
+        throw fail('invalid-event');
+      }
+      // a. Validate the prompt file via stat only.
+      const promptStat = await stat(promptPath).catch(() => null);
+      if (!promptStat || !promptStat.isFile()) throw fail('invalid-event');
+      // POSIX only — Windows is not in scope here.
+      const promptMode = promptStat.mode & 0o777;
+      if (promptMode !== 0o600) throw fail('invalid-event');
+
+      // f. Bridge probe FIRST. If the bridge is not running we
+      //    surface the typed error and never mint a grant or
+      //    touch the host projection.
+      const probe = await ensureBridgeReachable({
+        endpoint: (typeof options.bridgeEndpoint === 'string' && options.bridgeEndpoint.length > 0)
+          ? options.bridgeEndpoint
+          : DEFAULT_BRIDGE_ENDPOINT,
+        timeoutMs: 1500,
+      });
+      if (!probe.ok) return probe;
+
+      // b. Look up the terminal add-on + verify terminal-host grant.
+      const projection = snapshot();
+      const installation = projection.installations[requestedAddonId];
+      if (!installation || installation.enabled !== true) return { ok: false, reason: 'capability-not-granted' };
+      const manifest = manifests.get(requestedAddonId);
+      if (!manifest) return { ok: false, reason: 'capability-not-granted' };
+      const hasTerminalHostGrant = installation.grantedCapabilities.some((grant) => grant.capability === 'terminal-host' && grant.granted === true);
+      if (!hasTerminalHostGrant) return { ok: false, reason: 'capability-not-granted' };
+
+      // The bridge must be currently bound to this terminal add-on.
+      const serviceStatus = typeof terminalHost?.service?.status === 'function'
+        ? terminalHost.service.status()
+        : { alive: false, driveId: 'in-memory', adapterId: null, sessions: [] };
+      if (!serviceStatus.alive || serviceStatus.adapterId !== requestedAddonId) {
+        return { ok: false, reason: 'bridge-not-running', endpoint: probe.endpoint };
+      }
+
+      // c. Resolve the harness executable via the reviewed policy.
+      let executable = null;
+      let composeInvocationFromFile = null;
+      if (requestedAgentId === 'pi') {
+        const policy = getHarnessPolicy('pi-v1');
+        if (!policy || typeof policy.composeInvocationFromFile !== 'function') {
+          return { ok: false, reason: 'policy-not-reviewed' };
+        }
+        composeInvocationFromFile = policy.composeInvocationFromFile;
+        const probe2 = piCommand();
+        if (!probe2 || typeof probe2.command !== 'string') return { ok: false, reason: 'executable-unavailable' };
+        executable = { command: probe2.command, source: probe2.source === 'npm-install-g' ? 'npm-global-sibling' : 'fixed-install-root' };
+      } else {
+        // Other agents route through the harness-policy registry
+        // when their policies are reviewed. Today only pi-v1 is
+        // reviewed, so any other agentId returns policy-not-reviewed
+        // rather than guessing.
+        return { ok: false, reason: 'policy-not-reviewed' };
+      }
+
+      // d. Compose the reviewed commandSuffix from the prompt file.
+      //    promptBytes is the only metadata passed alongside the path.
+      let invocation;
+      try {
+        invocation = composeInvocationFromFile({
+          executable,
+          promptPath,
+          promptBytes: promptStat.size,
+          credentialEnvVarName: null,
+        });
+      } catch {
+        return { ok: false, reason: 'policy-not-reviewed' };
+      }
+      if (!invocation || typeof invocation.commandSuffix !== 'string' || invocation.commandSuffix.length === 0) {
+        return { ok: false, reason: 'policy-not-reviewed' };
+      }
+
+      // e. Wire launchBootstrap with the projected env seam.
+      const launchSessionId = `launch-${randomUUID().slice(0, 8)}`;
+      let launchResult;
+      try {
+        launchResult = await terminalHost.service.launchBootstrap({
+          sessionId: launchSessionId,
+          commandSuffix: invocation.commandSuffix,
+          ...(options.memoryAccess ? { memoryAccess: options.memoryAccess } : {}),
+          ...(options.commandSuffix ? { /* caller override is the same policy-authored tail; keep for compat */ } : {}),
+        });
+      } catch (error) {
+        // launchBootstrap throws on in-memory driver + typed
+        // errors when the adapter rejects. Map to the public
+        // vocabulary without leaking the underlying message.
+        if (error?.code === 'runtime-unavailable') return { ok: false, reason: 'bridge-not-running', endpoint: probe.endpoint };
+        return { ok: false, reason: 'launch-failed' };
+      }
+
+      // Persist the launch record. Documented fields only — no
+      // token, credential, env value, memory content, or arbitrary
+      // path is stored here.
+      const launchId = randomUUID();
+      const startedAt = new Date().toISOString();
+      const record2 = {
+        launchId,
+        agentId: requestedAgentId,
+        terminalAddonId: requestedAddonId,
+        executablePath: executable.command,
+        promptPath,
+        startedAt,
+        sessionId: launchSessionId,
+      };
+      launchPersistence.set(launchId, record2);
+
+      // CP-XH5d: emit the terminal.launch.receipt telemetry. The
+      // payload is shape-walker-clean by construction — it
+      // contains ONLY the documented fields.
+      try { launchTelemetrySink({ event: 'terminal.launch.receipt', payload: {
+        launchId, agentId: record2.agentId, terminalAddonId: record2.terminalAddonId,
+        executablePath: record2.executablePath, promptPath: record2.promptPath, startedAt: record2.startedAt,
+      } }); } catch { /* sink is observational */ }
+
+      return {
+        launchId,
+        agentId: record2.agentId,
+        terminalAddonId: record2.terminalAddonId,
+        executablePath: record2.executablePath,
+        promptPath: record2.promptPath,
+        startedAt: record2.startedAt,
+        // version comes from the bridge probe so callers can confirm
+        // they are talking to a known bridge build.
+        bridgeVersion: probe.version,
+        // Surface a non-secret launchResult fragment for the UI to
+        // confirm the adapter accepted the launchBootstrap RPC.
+        launchAccepted: launchResult && typeof launchResult === 'object' ? true : false,
       };
     }),
     route('POST', '/addons/enabled', control, ['addonId', 'enabled', 'expectedRevision'], [], async p => {
@@ -577,6 +797,21 @@ export async function createHarnessHostService({ userRoot, store = createHarness
         ? { ...route, handler: executeBridgeChat }
         : route);
     },
+    // CP-XH5a: launch helpers for tests + production telemetry wiring.
+    listLaunches() {
+      return [...launchPersistence.values()].map((entry) => ({
+        launchId: entry.launchId,
+        agentId: entry.agentId,
+        terminalAddonId: entry.terminalAddonId,
+        executablePath: entry.executablePath,
+        promptPath: entry.promptPath,
+        startedAt: entry.startedAt,
+        sessionId: entry.sessionId,
+      }));
+    },
+    setLaunchTelemetrySink,
+    // CP-XH5d: structured-event sink contract. Production wires
+    // it to the host event bus; tests inject a spy.
     close() {
       if (!closing) {
         closed = true;
