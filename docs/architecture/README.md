@@ -56,6 +56,7 @@ components:
 - [Bridge Bootstrap ROS Startup, Shutdown, And Recovery (CP-BR2)](BRIDGE-BOOTSTRAP-ROS-STARTUP.md)
 - [SDK Add-on Runtime Lifecycle Contract (CP-BR3)](SDK-RUNTIME-LIFECYCLE-CONTRACT.md)
 - [Runtime Factory Registry And Reconciler (CP-BR4)](RUNTIME-FACTORY-REGISTRY-AND-RECONCILER.md)
+- [Bridge, Runtime, Connector, And Session Projection (CP-BR5)](BRIDGE-RUNTIME-PROJECTION.md)
 - [Paperclip engineer setup](addon-runbooks/paperclip/ENGINEER_SETUP.md)
 - [RecursiveMAS engineer setup](addon-runbooks/recursive-mas/ENGINEER_SETUP.md)
 

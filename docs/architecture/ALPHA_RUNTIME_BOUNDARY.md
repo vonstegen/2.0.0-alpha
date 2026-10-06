@@ -35,7 +35,18 @@ See [SDK-RUNTIME-LIFECYCLE-CONTRACT.md](SDK-RUNTIME-LIFECYCLE-CONTRACT.md)
 and
 [RUNTIME-FACTORY-REGISTRY-AND-RECONCILER.md](RUNTIME-FACTORY-REGISTRY-AND-RECONCILER.md)
 for the contract. A macOS `launchd` unit may be an optional supervisor
-but is not the Alpha lifecycle authority.
+but is not the Alpha lifecycle authority. **CP-BR5 adds the
+non-secret runtime/connector/session projection** at
+[`browser-first/host/runtime-projection.mjs`](../../browser-first/host/runtime-projection.mjs),
+[`runtime-projection-service.mjs`](../../browser-first/host/runtime-projection-service.mjs),
+and
+[`bridge-runtimes-host-service.mjs`](../../browser-first/host/bridge-runtimes-host-service.mjs);
+the public route is `GET /bridge/runtimes` (`addon-runtime-read`,
+`loopbackHostOnly`). See
+[BRIDGE-RUNTIME-PROJECTION.md](BRIDGE-RUNTIME-PROJECTION.md) for the
+schema, the privacy/redaction contract, the failure-code catalog, and
+the update mechanism. The Bridge & Runtimes UI (CP-BR6) consumes this
+projection; CP-BR5 ships the data contract and host route only.
 
 The only privileged request path is:
 
