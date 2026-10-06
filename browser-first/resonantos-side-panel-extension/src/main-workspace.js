@@ -2,6 +2,7 @@ import { createBrowserPageActions } from "./lib/browser-page-actions.js";
 import { normalizeBrowserUrl } from "./lib/browser-command-parser.js";
 import { isControllableTabUrl } from "./lib/control-target-classification.js";
 import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, initCapabilityTokens, isUnauthorizedBridgeError, resolveBridgeConfig } from "./lib/bridge-client.js";
+import { createBootstrapRenderer } from "./lib/bootstrap-renderer.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 import { createChatSessionStore } from "./lib/chat-session-store.js";
 import { shouldSyncChatChange } from "./lib/chat-sync.js";
@@ -178,6 +179,13 @@ async function currentRawFetch(route, options = {}) {
 const getBridgeRequest = () => currentBridgeRequest;
 
 void hydrateAfterRebind();
+
+// CP-BR2: bridge bootstrap renderer. Polls the SW's lifecycle snapshot
+// (which the SW owns via the native-messaging host) so the workspace
+// header and Settings can surface the bridge state without touching
+// chrome.runtime.connectNative.
+const bootstrapRenderer = createBootstrapRenderer({});
+bootstrapRenderer.start();
 
 chrome?.storage?.onChanged?.addListener?.((changes, area) => {
   if (area !== "local") return;

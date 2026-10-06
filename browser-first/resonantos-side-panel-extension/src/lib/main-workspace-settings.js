@@ -1,6 +1,7 @@
 import { renderAddonsSection } from "./settings/addons-section.js";
 import { renderAboutSection } from "./settings/about-section.js";
 import { renderAppearanceSection } from "./settings/appearance-section.js";
+import { renderBridgeBootstrapSection } from "./settings/bridge-bootstrap-section.js";
 import { renderBridgeTargetSection } from "./settings/bridge-target-section.js";
 import { renderBrowserControlSection } from "./settings/browser-control-section.js";
 import { renderDiagnosticsSection } from "./settings/diagnostics-section.js";
@@ -89,6 +90,13 @@ const sections = [
     hint: "Cross-machine bridge URL",
     group: "Advanced",
     render: renderBridgeTargetSection
+  },
+  {
+    id: "bridge-bootstrap",
+    label: "Bridge Bootstrap",
+    hint: "Native host lifecycle",
+    group: "Advanced",
+    render: renderBridgeBootstrapSection
   },
   {
     id: "appearance",

@@ -27,6 +27,9 @@ async function loadBridgeConfig() {
   return __bridgeConfigPromise;
 }
 import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, resolveBridgeConfig, initCapabilityTokens, isUnauthorizedBridgeError } from "./lib/bridge-client.js";
+import { createRebindCoordinator } from "./lib/rebind-coordinator.js";
+import { createBootstrapClient } from "./lib/bootstrap-client.js";
+import { createBootstrapStartup } from "./lib/bootstrap-startup.js";
 import { isTopFrameSender, sanitizeInlineAssistantBody, sanitizeResonantContextSnapshot } from "./lib/background-message-policy.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 
@@ -114,6 +117,46 @@ function rebindAndHydrate({ refreshGenerated = false } = {}) {
 }
 
 void rebindAndHydrate();
+
+// CP-BR2: bridge bootstrap startup orchestrator. Single owner for the
+// service-worker's bridge lifecycle. Status/start/restart are issued
+// through the CP-BR1 native-messaging host. The "healthy after start"
+// trigger re-runs the rebind chain so a fresh start picks up the
+// generated bridge config and the new bridge token.
+const bootstrapCoordinator = createRebindCoordinator();
+bootstrapCoordinator.subscribe((event) => {
+  if (event.ok) {
+    bridgeRequest = event.bridgeRequest;
+    rawFetch = event.rawFetch;
+  }
+});
+
+const bootstrapStartup = createBootstrapStartup({
+  bootstrapClient: createBootstrapClient(),
+  healthProbe: async (endpoint) => {
+    if (!endpoint) return { ok: false, version: null };
+    try {
+      const response = await fetch(`${endpoint.replace(/\/+$/, "")}/healthz`, { method: "GET" });
+      if (response.status === 200) {
+        const body = await response.json().catch(() => ({}));
+        return { ok: true, version: typeof body?.version === "string" ? body.version : null };
+      }
+      return { ok: false, version: null };
+    } catch {
+      return { ok: false, version: null };
+    }
+  },
+  onHealthyAfterStart: async () => {
+    const result = await bootstrapCoordinator.rebind({ source: "healthy-after-start" });
+    if (!result?.ok) {
+      throw new Error("rebind-after-start-failed");
+    }
+  },
+});
+
+// Fire-and-forget; the SW stays responsive while the orchestrator
+// runs the bounded status/start/health sequence.
+void bootstrapStartup.boot().catch(() => undefined);
 
 async function currentBridgeRequest(route, options = {}) {
   const req = typeof bridgeRequest === "function"
@@ -336,6 +379,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         ok: false,
         error: error instanceof Error ? error.message : String(error)
       }));
+    return true;
+  }
+
+  // CP-BR2: privileged bootstrap control channel. The Settings page and
+  // the side panel use this to ask the SW to query/stop/retry the bridge
+  // bootstrap lifecycle. The SW is the only owner of the orchestrator;
+  // the renderer never talks to chrome.runtime.connectNative directly.
+  if (message.type === "bootstrap:get-status") {
+    Promise.resolve(bootstrapStartup.getSnapshot())
+      .then((snapshot) => sendResponse({ ok: true, snapshot }))
+      .catch((error) => sendResponse({ ok: false, error: error?.message ?? String(error) }));
+    return true;
+  }
+  if (message.type === "bootstrap:stop") {
+    void bootstrapStartup.stopForShutdown()
+      .then((snapshot) => sendResponse({ ok: true, snapshot }))
+      .catch((error) => sendResponse({ ok: false, error: error?.message ?? String(error) }));
+    return true;
+  }
+  if (message.type === "bootstrap:retry") {
+    void bootstrapStartup.retryOnce()
+      .then((snapshot) => sendResponse({ ok: true, snapshot }))
+      .catch((error) => sendResponse({ ok: false, error: error?.message ?? String(error) }));
+    return true;
+  }
+  if (message.type === "bootstrap:restart") {
+    void bootstrapStartup.restart()
+      .then((snapshot) => sendResponse({ ok: true, snapshot }))
+      .catch((error) => sendResponse({ ok: false, error: error?.message ?? String(error) }));
     return true;
   }
 
