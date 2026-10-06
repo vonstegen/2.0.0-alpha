@@ -209,7 +209,7 @@ the source of truth.
 | CP-BR2     | Core bridge starts/stops with ROS                 | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR3     | Generic SDK runtime lifecycle contract + resolver | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR4     | Runtime factory registry + reconciler             | **Complete (r-and-d/terminal-host-current-dev)** |
-| CP-BR5     | Runtime/connector/session projection              | Not started |
+| CP-BR5     | Runtime/connector/session projection              | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR6     | Bridge & Runtimes UI                              | Not started |
 | CP-BR7     | Terminal add-ons use generic lifecycle            | Not started |
 | CP-BR8     | UI-only end-to-end acceptance                     | Not started |
@@ -423,29 +423,40 @@ Expose a single non-secret projection for the Bridge & Runtimes UI.
 
 ### Checklist
 
-- [ ] Add bridge overview projection.
-- [ ] Add runtime list projection.
-- [ ] Add connector list projection.
-- [ ] Add active-session summary.
-- [ ] Include public health and failure codes.
-- [ ] Include active session counts, not private session data.
-- [ ] Define polling/push update mechanism.
-- [ ] Shape-walker every public payload.
-- [ ] Redact logs and rejection serialization.
-- [ ] Add stale projection/generation behavior.
+- [x] Add bridge overview projection.
+- [x] Add runtime list projection.
+- [x] Add connector list projection.
+- [x] Add active-session summary.
+- [x] Include public health and failure codes.
+- [x] Include active session counts, not private session data.
+- [x] Define polling/push update mechanism.
+- [x] Shape-walker every public payload.
+- [x] Redact logs and rejection serialization.
+- [x] Add stale projection/generation behavior.
 
 ### Gate
 
-- Projection reflects lifecycle transitions in order.
-- No token, credential, prompt content, memory content, raw env, auth-file path,
-  token-file path, or child argv is present.
+- Projection reflects lifecycle transitions in order. **Met** —
+  `runtime-projection-staleness.test.mjs` proves monotonic
+  `projectionGeneration` across `refresh()` calls and rejects equal or
+  older generations through `applyProjectionUpdate`.
+- No token, credential, prompt content, memory content, raw env,
+  auth-file path, token-file path, or child argv is present. **Met** —
+  `runtime-projection-shape-walker.test.mjs` and `redactLogValue`
+  enforce the closed field set at every depth; the hostile host
+  registry cannot smuggle a `token` / `pid` / `argv` field into the
+  projection.
 - Unknown runtime types remain displayable through public identifiers.
+  **Met** — `runtime-projection.mjs` accepts any non-empty runtime
+  type and coerces unknown values to the `unknown` bucket while
+  preserving the public `addonId` / `runtimeId` / `displayLabel`.
 
 ### Documentation
 
-- Bridge/runtime projection schema.
-- Public failure-code catalog.
-- Privacy and redaction contract.
+- [Bridge, Runtime, Connector, And Session Projection (CP-BR5)](BRIDGE-RUNTIME-PROJECTION.md)
+  — schema, failure-code catalog, privacy and redaction contract,
+  update mechanism, ordering and staleness, purity rules, test
+  evidence.
 
 ---
 

@@ -52,6 +52,8 @@ import {
   hermesPythonRuntimeDiagnostics,
 } from "./hermes-runtime.mjs";
 import { createHarnessHostService } from "./harness-host-service.mjs";
+import { createRuntimeProjectionService } from "./runtime-projection-service.mjs";
+import { createBridgeRuntimesHostService } from "./bridge-runtimes-host-service.mjs";
 import { installTerminalHostBridge, uninstallTerminalHostBridge } from "./terminal-host-bridge-wiring.mjs";
 import { createTerminalHostHostWiring } from "./terminal-host-host-wiring.mjs";
 import { createProviderHostService } from "./provider-host-service.mjs";
@@ -482,6 +484,38 @@ const { extensionPrefsRoutes, flushPendingExtensionPrefs } = createExtensionPref
 const { harnessRoutes } = harnessService;
 const providerBridgeRoutes = harnessService.composeProviderRoutes(legacyProviderBridgeRoutes);
 
+// CP-BR5: non-secret runtime/connector/session projection. The projection
+// service reads the harness registry + the (optional) CP-BR4 reconciler
+// active list and produces the public BridgeRuntimesProjection. The
+// bridge-runtimes host service attaches a single GET /bridge/runtimes
+// route to the route table; the route is capability-gated
+// (addon-runtime-read) and loopback-only.
+const runtimeProjection = createRuntimeProjectionService({
+  hostRegistry: harnessService.registry,
+  reconciler: typeof harnessService.runtimeReconciler === "object" ? harnessService.runtimeReconciler : {},
+  bridgeStatus: {
+    snapshot: () => {
+      const port = getPublicPort();
+      const publicUrl = getBridgePublicUrlValue();
+      return {
+        status: "connected",
+        version: typeof process.env.RESONANTOS_BRIDGE_VERSION === "string" ? process.env.RESONANTOS_BRIDGE_VERSION : "alpha",
+        endpoint: publicUrl ?? (port ? `http://${getBridgeHost()}:${port}` : undefined),
+        bootEpoch: typeof harnessService.registry?.snapshot === "function"
+          ? String(harnessService.registry.snapshot().bootEpoch ?? "")
+          : "",
+        instanceId: typeof process.env.RESONANTOS_BRIDGE_INSTANCE_ID === "string" ? process.env.RESONANTOS_BRIDGE_INSTANCE_ID : "bridge-0",
+      };
+    },
+  },
+  sessionCounts: { getSessionsByRuntime: () => ({ activeSessionCount: 0 }) },
+});
+const bridgeRuntimesRoute = [];
+createBridgeRuntimesHostService({
+  runtimeProjection,
+  attachRoute: (route) => { bridgeRuntimesRoute.push(route); },
+});
+
 const bridgeRoutes = [
   ...browserDiagnosticsRoutes,
   ...providerBridgeRoutes,
@@ -491,6 +525,7 @@ const bridgeRoutes = [
   ...opencodeSessionRoutes,
   ...extensionPrefsRoutes,
   ...harnessRoutes,
+  ...bridgeRuntimesRoute,
 ];
 
 const bridgeToken = args.get("bridge-token") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? createBridgeToken();
