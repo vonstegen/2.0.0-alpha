@@ -56,6 +56,19 @@ export interface OpenInTerminalButtonProps {
   promptPath: string | null;
   /** Harness agent id the launch should target. */
   agentId: string;
+  /** Callback when the operator authorises the terminal-host
+   *  capability grant (wired in CP-XH5c). The callback applies
+   *  `grants` via the grant-broker route; the button auto-retries
+   *  the launch on success. */
+  onAuthorizeGrant: (
+    terminalAddonId: string,
+    grants: ReadonlyArray<{
+      capability: string;
+      granted: boolean;
+      scope: string;
+      revocationBehavior: string;
+    }>,
+  ) => Promise<void>;
   /** Callback to navigate to Settings → Bridge Target on
    *  `bridge-not-running`. */
   onOpenBridgeSettings: () => void;
@@ -167,7 +180,26 @@ export const OpenInTerminalButton = (
         return;
       }
       if (result.reason === "capability-not-granted") {
-        setLastError("Terminal host capability is not granted.");
+        // CP-XH5c: surface the Authorize action. The component does
+        // NOT auto-grant; the parent owns the grant-broker wiring so
+        // it can refresh the registry and retry.
+        await props.onAuthorizeGrant(
+          preferred.addonId,
+          preferred.grantPresetGrants,
+        );
+        // Auto-retry on success: the parent's onAuthorizeGrant
+        // resolves only when the grant has been applied + the
+        // registry refreshed.
+        const second = await launchFn({
+          agentId: props.agentId,
+          terminalAddonId: preferred.addonId,
+          promptPath: props.promptPath,
+        });
+        if (second.ok) {
+          props.onFocusTerminalDock(preferred.addonId);
+          return;
+        }
+        setLastError(`Authorization did not unlock the launch (${second.reason}).`);
         return;
       }
       setLastError(`Launch failed: ${result.reason}.`);

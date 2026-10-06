@@ -80,6 +80,18 @@ type AddOnsWorkspaceProps = {
   resolveLaunchPromptPath?: () => string | null;
   /** Whether a valid 0600 file exists at the resolved prompt path. */
   launchPromptFileValid?: boolean;
+  /** Apply the terminal-host grant preset (CP-XH5c). The callback
+   *  resolves when the grant has been recorded and the registry
+   *  refreshed, so the button can auto-retry. */
+  onAuthorizeTerminalHostGrant?: (
+    terminalAddonId: string,
+    grants: ReadonlyArray<{
+      capability: string;
+      granted: boolean;
+      scope: string;
+      revocationBehavior: string;
+    }>,
+  ) => Promise<void>;
   /** Navigate to Settings → Bridge Target. */
   onOpenBridgeSettings?: () => void;
   /** Focus the Terminal dock entry; sets `currentSection = "terminal"`. */
@@ -269,7 +281,7 @@ export function AddOnsWorkspace(props: AddOnsWorkspaceProps) {
                   </button>
                 ) : null}
                 {isTerminalHarness && props.terminalHostStatus !== undefined && props.openInTerminalAddons
-                  && props.onOpenBridgeSettings
+                  && props.onAuthorizeTerminalHostGrant && props.onOpenBridgeSettings
                   && props.onFocusTerminalDock && props.resolveLaunchPromptPath
                   && props.onOpenInTerminalReceipt ? (
                   <OpenInTerminalButton
@@ -277,6 +289,7 @@ export function AddOnsWorkspace(props: AddOnsWorkspaceProps) {
                     availableTerminals={props.openInTerminalAddons}
                     promptPath={props.launchPromptFileValid ? props.resolveLaunchPromptPath() : null}
                     agentId={manifest.agentRuntime?.adapterId === "external-cli-terminal-v1" ? "opencode" : "pi"}
+                    onAuthorizeGrant={props.onAuthorizeTerminalHostGrant}
                     onOpenBridgeSettings={props.onOpenBridgeSettings}
                     onFocusTerminalDock={props.onFocusTerminalDock}
                     launch={async (args) => {

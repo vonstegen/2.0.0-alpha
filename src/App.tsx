@@ -7,6 +7,7 @@ import { createHarnessChatRuntime, selectHarnessModel } from "./modules/chat/har
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import type {
   AddOnManifest,
+  Capability,
   ArchiveAiMemoryBuildJobSummary,
   ArchiveAiMemoryBuildResult,
   ArchiveBackgroundCycleResult,
@@ -1608,6 +1609,31 @@ export function App() {
   const reportAddonError = (error: unknown) => setChatNotice(errorMessageOf(error, "Host denied add-on change."));
   const grantBrowserVisibleAccess = () =>
     grantWorkspaceAccess(browserManifest, addonMutationDeps).catch(reportAddonError);
+  // CP-XH5c: apply the terminal-host grant preset via the existing
+  // grant-broker pipeline. The helper resolves the addon manifest +
+  // the requested capability and routes through `grantAddonCapabilities`
+  // so the F1 grant-ownership fix + XH3 compatibility fail-closed
+  // guards stay in effect.
+  const authorizeTerminalHostGrant = async (
+    terminalAddonId: string,
+    grants: ReadonlyArray<{
+      capability: string;
+      granted: boolean;
+      scope: string;
+      revocationBehavior: string;
+    }>,
+  ): Promise<void> => {
+    const addonManifest = allManifests.find((m) => m.id === terminalAddonId);
+    if (!addonManifest) throw new Error(`Terminal add-on ${terminalAddonId} is not installed.`);
+    const capabilities: Capability[] = grants
+      .filter((g) => g.granted === true)
+      .map((g) => g.capability)
+      .filter((capability): capability is Capability =>
+        typeof capability === "string" && capability.length > 0,
+      );
+    if (capabilities.length === 0) return;
+    await grantAddonCapabilities(addonManifest, capabilities, addonMutationDeps);
+  };
   const updateBrowserWorkspaceState = (browserWorkspace: ResonantShellState["uiPreferences"]["browserWorkspace"]) => {
     updateRuntimeState((draft) => {
       draft.uiPreferences.browserWorkspace = browserWorkspace;
@@ -2496,6 +2522,7 @@ export function App() {
                 openInTerminalAddons={openInTerminalAddons}
                 resolveLaunchPromptPath={() => launchPromptPath}
                 launchPromptFileValid={launchPromptFileValid}
+                onAuthorizeTerminalHostGrant={authorizeTerminalHostGrant}
                 onOpenBridgeSettings={() => setSection("settings")}
                 onFocusTerminalDock={() => setSection("terminal")}
                 onOpenInTerminalReceipt={setLaunchReceipt}
