@@ -31,3 +31,18 @@ export type { AddOnRegistryBuildInput, AddOnRegistryEntryOptions, AddOnRegistryS
 export { createAddOnSurfaceDockRoutes, groupSurfaceDockRoutesBySection } from "./surface-routing";
 export type { AddOnSurfaceDockRoute, AddOnSurfaceDockSection } from "./surface-routing";
 export { assertValidAddOnManifest, validateAddOnManifest } from "./validation";
+export {
+  ADDON_RUNTIME_LIFECYCLE_STATUSES,
+  ADDON_RUNTIME_PUBLIC_FAILURE_CODES,
+  deriveDesiredRuntimeState,
+  projectLifecycleSnapshot,
+} from "./runtime-lifecycle";
+export type {
+  AddOnRuntimeAuthorityProjection,
+  AddOnRuntimeDesiredState,
+  AddOnRuntimeDesiredStateDecision,
+  AddOnRuntimeLifecycleInput,
+  AddOnRuntimeLifecycleSnapshot,
+  AddOnRuntimeLifecycleStatus,
+  AddOnRuntimePublicFailureCode,
+} from "./runtime-lifecycle";
