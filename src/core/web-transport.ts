@@ -52,6 +52,23 @@ const commandRouteMap: Record<string, CommandRoute> = {
   // tab. Requires addon-runtime-control to mirror the harness route's
   // gate. Result is plain JSON; no transformation required.
   terminal_host_status: { method: "GET", path: "/terminal-host/status", capability: "addon-runtime-control" },
+  // CP-XH5b: prompt-path resolver — the host owns the file path the
+  // operator should author their 0600 prompt at. The UI calls this
+  // route on mount + when the terminal-host status changes so the
+  // "Open in Terminal" button can enable / disable itself. Result is
+  // non-secret (just a path string + a boolean validity flag).
+  terminal_host_prompt_path: { method: "GET", path: "/terminal-host/prompt-path", capability: "addon-runtime-control" },
+  // CP-XH5a: terminal-host launch affordance — the "Open in Terminal"
+  // host-driven action. POSTs the prompt file path + agent id + preferred
+  // terminal addon id; the host validates the prompt file (0600 +
+  // absolute + regular) and returns a non-secret receipt or a typed
+  // rejection. Requires addon-runtime-control to mirror the launch
+  // route's gate.
+  terminal_host_launch: {
+    method: "POST",
+    path: "/terminal-host/launch",
+    capability: "addon-runtime-control",
+  },
 };
 
 export const WEB_TRANSPORT_CAPABILITIES: readonly string[] = [...new Set(
@@ -162,7 +179,9 @@ const performInvoke = async <T>(
 
   const response = await fetch(`${baseUrl}${route.path}`, {
     method: route.method,
-    ...(command.startsWith("harness_") || command === "terminal_host_status" ? { redirect: "error" as const } : {}),
+    ...(command.startsWith("harness_") || command === "terminal_host_status" || command === "terminal_host_launch" || command === "terminal_host_prompt_path"
+      ? { redirect: "error" as const }
+      : {}),
     headers,
     body: route.method === "POST" ? JSON.stringify(route.body ? route.body(args) : args) : undefined,
   });
@@ -187,6 +206,11 @@ const performInvoke = async <T>(
   }
   if (!response.ok || payload.ok === false) {
     if (command.startsWith("harness_")) throw harnessResponseError(payload);
+    // CP-XH5a: terminal_host_launch returns typed rejections as
+    // { ok: false, reason, ... } with HTTP 200 so the UI can branch
+    // on the public reason without a separate error vocabulary.
+    // Surface the payload to the caller instead of throwing.
+    if (command === "terminal_host_launch") return payload as T;
     throw new Error(payload.error || `Bridge request failed for ${command}.`);
   }
   if (command.startsWith("harness_")) {

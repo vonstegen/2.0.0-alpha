@@ -172,13 +172,14 @@ async function fixture(t, options = {}) {
       start: { bus: {} },
     },
     ...options,
+    ...(options.promptFilePath ? { promptFilePath: options.promptFilePath } : {}),
   });
   t.after(() => host.close());
   host.setLaunchTelemetrySink(({ event, payload }) => {
     telemetryEvents.push({ event, payload });
   });
   const call = (url, body = {}, overrides = {}) => {
-    const method = url.startsWith("/terminal-host/status") || url.startsWith("/addons/registry") || url.startsWith("/agent/events")
+    const method = url.startsWith("/terminal-host/status") || url.startsWith("/terminal-host/prompt-path") || url.startsWith("/addons/registry") || url.startsWith("/agent/events")
       ? "GET"
       : "POST";
     const baseUrl = url.split("?")[0];
@@ -559,4 +560,50 @@ test("pi policy composeInvocationFromFile refuses a non-absolute executable", as
     }),
     /absolute executable/i,
   );
+});
+
+// ---------------------------------------------------------------------------
+// CP-XH5b: GET /terminal-host/prompt-path
+// ---------------------------------------------------------------------------
+
+test("GET /terminal-host/prompt-path requires addon-runtime-control", async (t) => {
+  const f = await fixture(t);
+  const result = await f.call("/terminal-host/prompt-path", {}, {
+    headers: { host: "127.0.0.1:47773", "x-resonantos-bridge-token": "bridge-token" },
+  });
+  assert.equal(result.status, 403);
+  assert.equal(result.payload.code, "permission-denied");
+});
+
+test("GET /terminal-host/prompt-path returns the host factory's path + valid=false when no file exists", async (t) => {
+  const f = await fixture(t);
+  const result = await f.call("/terminal-host/prompt-path");
+  assert.equal(result.status, 200);
+  assert.equal(typeof result.payload.promptPath, "string");
+  assert.ok(result.payload.promptPath.startsWith("/"));
+  assert.equal(result.payload.valid, false);
+});
+
+test("GET /terminal-host/prompt-path returns valid=true when a 0600 file exists at the configured path", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "xh5-prompt-path-"));
+  const promptFile = join(dir, "prompt.txt");
+  await writeFile(promptFile, "the operator's prompt", { mode: 0o600 });
+  const f = await fixture(t, { promptFilePath: () => promptFile });
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const result = await f.call("/terminal-host/prompt-path");
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.promptPath, promptFile);
+  assert.equal(result.payload.valid, true);
+  assertNoSecretShapedValue(result.payload, "$.payload");
+});
+
+test("GET /terminal-host/prompt-path returns valid=false when the existing file is not 0600", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "xh5-prompt-path-bad-"));
+  const promptFile = join(dir, "prompt.txt");
+  await writeFile(promptFile, "the operator's prompt", { mode: 0o644 });
+  const f = await fixture(t, { promptFilePath: () => promptFile });
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const result = await f.call("/terminal-host/prompt-path");
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.valid, false);
 });

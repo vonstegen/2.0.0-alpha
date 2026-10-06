@@ -318,6 +318,12 @@ const harnessRoutes = [
   // entry. Read-only, requires addon-runtime-control to mirror the harness
   // route's gate.
   ["terminal_host_status", "GET", "/terminal-host/status", "addon-runtime-control"],
+  // CP-XH5b: prompt-path resolver so the "Open in Terminal" button can
+  // enable/disable itself based on whether a valid 0600 file exists.
+  ["terminal_host_prompt_path", "GET", "/terminal-host/prompt-path", "addon-runtime-control"],
+  // CP-XH5a: terminal-host launch affordance for the "Open in Terminal"
+  // button on the Pi agent entry. Loopback-only + addon-runtime-control.
+  ["terminal_host_launch", "POST", "/terminal-host/launch", "addon-runtime-control"],
 ];
 const session = { addonId: "addon.demo", sessionId: "session-1", bootEpoch: "boot-1", generation: 2 };
 

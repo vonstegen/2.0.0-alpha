@@ -25,6 +25,14 @@ import { ObsidianAddonPanel } from "./ObsidianAddonPanel";
 import { TelegramAddonPanel } from "./TelegramAddonPanel";
 import { addonWorkRegistry, withAddonWork } from "./running-work";
 import type { UninstallAddonBlockReason, UninstallAddonResult } from "./controller";
+import {
+  OpenInTerminalButton,
+  type OpenInTerminalAddonInfo,
+  type OpenInTerminalReceipt,
+  type OpenInTerminalResult,
+} from "../terminal/OpenInTerminalButton";
+import type { TerminalSurfaceStatus } from "../terminal/TerminalSurfaceTabs";
+import { webInvoke } from "../../core/web-transport";
 
 type HarnessClient = ReturnType<typeof createHarnessClient>;
 
@@ -63,6 +71,21 @@ type AddOnsWorkspaceProps = {
   onAskAugmentor: (message: string) => Promise<void>;
   onOpenArchiveReview: () => void;
   onOpenSurface: (sectionId: ShellSectionId) => void;
+  // CP-XH5b: "Open in Terminal" affordance on the Pi agent entry.
+  terminalHostStatus?: TerminalSurfaceStatus | null;
+  /** Terminal add-ons the UI may launch into; the host owns the
+   *  source-of-truth via `GET /terminal-host/status`. */
+  openInTerminalAddons?: ReadonlyArray<OpenInTerminalAddonInfo>;
+  /** Resolve the prompt path the host wants the operator to use. */
+  resolveLaunchPromptPath?: () => string | null;
+  /** Whether a valid 0600 file exists at the resolved prompt path. */
+  launchPromptFileValid?: boolean;
+  /** Navigate to Settings → Bridge Target. */
+  onOpenBridgeSettings?: () => void;
+  /** Focus the Terminal dock entry; sets `currentSection = "terminal"`. */
+  onFocusTerminalDock?: (terminalAddonId: string) => void;
+  /** Surface a non-secret toast for the launch receipt. */
+  onOpenInTerminalReceipt?: (receipt: OpenInTerminalReceipt) => void;
 };
 
 const prettyCapability = (grant: CapabilityGrant): string => grant.capability.replaceAll("-", " ");
@@ -126,6 +149,17 @@ const addonPrimaryActionLabel = (manifest: AddOnManifest, installation: AddOnIns
   }
   return installation.enabled ? "Disable" : "Enable";
 };
+
+// CP-XH5b: launch dispatch for the "Open in Terminal" affordance.
+// Goes through `webInvoke("terminal_host_launch", ...)` so the host
+// enforces addon-runtime-control + loopback-only transport.
+async function requestLaunchTerminalHost(args: {
+  agentId: string;
+  terminalAddonId: string;
+  promptPath: string;
+}): Promise<OpenInTerminalResult> {
+  return webInvoke<OpenInTerminalResult>("terminal_host_launch", args);
+}
 
 const UNINSTALL_CONFIRMATION_COPY =
   "Uninstall clears this add-on's grants, private provider links, and settings. It keeps source files, Living Archive intake/review records, delegation packets, drafts, and result artifacts. Review those records separately before deleting them.";
@@ -197,6 +231,8 @@ export function AddOnsWorkspace(props: AddOnsWorkspaceProps) {
             const canOpenSurface = Boolean(
               shellNavigationSection && effectiveInstallation?.installed && effectiveInstallation.enabled,
             );
+            const isTerminalHarness = manifest.agentRuntime?.adapterId === "pi-terminal-v1"
+              || manifest.agentRuntime?.adapterId === "external-cli-terminal-v1";
             return (
               <article
                 key={manifest.id}
@@ -231,6 +267,24 @@ export function AddOnsWorkspace(props: AddOnsWorkspaceProps) {
                   >
                     Open {manifest.name}
                   </button>
+                ) : null}
+                {isTerminalHarness && props.terminalHostStatus !== undefined && props.openInTerminalAddons
+                  && props.onOpenBridgeSettings
+                  && props.onFocusTerminalDock && props.resolveLaunchPromptPath
+                  && props.onOpenInTerminalReceipt ? (
+                  <OpenInTerminalButton
+                    status={props.terminalHostStatus}
+                    availableTerminals={props.openInTerminalAddons}
+                    promptPath={props.launchPromptFileValid ? props.resolveLaunchPromptPath() : null}
+                    agentId={manifest.agentRuntime?.adapterId === "external-cli-terminal-v1" ? "opencode" : "pi"}
+                    onOpenBridgeSettings={props.onOpenBridgeSettings}
+                    onFocusTerminalDock={props.onFocusTerminalDock}
+                    launch={async (args) => {
+                      const result = await requestLaunchTerminalHost(args);
+                      if (result.ok) props.onOpenInTerminalReceipt!(result);
+                      return result;
+                    }}
+                  />
                 ) : null}
                 <button
                   type="button"

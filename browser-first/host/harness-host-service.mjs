@@ -138,6 +138,13 @@ export async function createHarnessHostService({ userRoot, store = createHarness
   // No token, credential, env value, memory content, or arbitrary
   // path lives here — only the documented fields.
   const launchPersistence = new Map();
+  // CP-XH5b: prompt-path resolver. The UI asks the host what path
+  // the operator should write their prompt to, and whether a valid
+  // 0600 file currently exists there. The host owns this seam so
+  // the renderer never invents the path itself.
+  const resolvePromptPath = () => {
+    try { return defaultPromptFilePath(); } catch { return null; }
+  };
   // CP-XH5d: optional sink for structured launch-telemetry events.
   // Default sink is a no-op so tests + production wiring stay free
   // of side effects unless explicitly opted in.
@@ -507,6 +514,23 @@ export async function createHarnessHostService({ userRoot, store = createHarness
         sessions: Array.isArray(serviceStatus.sessions) ? serviceStatus.sessions : [],
         launches: launchRecords,
       };
+    }),
+    // CP-XH5b: GET /terminal-host/prompt-path
+    //
+    // The "Open in Terminal" UI asks the host what path the operator
+    // should write their prompt to, and whether a valid 0600 file is
+    // already there. Loopback-only, addon-runtime-control. Returns
+    // `{ promptPath, valid }`. The route NEVER reads the file
+    // content; it only stats it for existence + mode.
+    route('GET', '/terminal-host/prompt-path', control, [], [], async () => {
+      const promptPath = resolvePromptPath();
+      if (!promptPath || typeof promptPath !== 'string' || !promptPath.startsWith('/')) {
+        return { promptPath: null, valid: false };
+      }
+      const fileStat = await stat(promptPath).catch(() => null);
+      if (!fileStat || !fileStat.isFile()) return { promptPath, valid: false };
+      const mode = fileStat.mode & 0o777;
+      return { promptPath, valid: mode === 0o600 };
     }),
     // CP-XH5a: POST /terminal-host/launch
     //

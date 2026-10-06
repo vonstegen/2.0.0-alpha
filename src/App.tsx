@@ -1,7 +1,7 @@
 // Intent citation: docs/architecture/ADR-002-modular-codebase.md
 // Intent citation: docs/architecture/ADR-003-engineering-standards.md
 
-import { Suspense, lazy, startTransition, useDeferredValue, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Suspense, lazy, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createHarnessClient } from "./core/harness-client";
 import { createHarnessChatRuntime, selectHarnessModel } from "./modules/chat/harness-turn";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
@@ -188,6 +188,11 @@ import {
 } from "./modules/strategist/controller";
 import TerminalDockEntry from "./modules/terminal/TerminalDockEntry";
 import { useTerminalHostStatus } from "./modules/terminal/useTerminalHostStatus";
+import { useTerminalPromptPath } from "./modules/terminal/useTerminalPromptPath";
+import type {
+  OpenInTerminalAddonInfo,
+  OpenInTerminalReceipt,
+} from "./modules/terminal/OpenInTerminalButton";
 
 const ArchiveWorkspace = lazy(() =>
   import("./modules/archive/ArchiveWorkspace").then((module) => ({ default: module.ArchiveWorkspace })),
@@ -619,6 +624,46 @@ export function App() {
     intervalMs: 5000,
     enabled: terminalPollingEnabled,
   });
+  // CP-XH5b: prompt-path resolution. The host owns the file path the
+  // operator should author their 0600 prompt at; the UI polls the
+  // dedicated route at the same cadence so the "Open in Terminal"
+  // button can enable/disable itself when a valid file is staged.
+  const { promptPath: launchPromptPath, valid: launchPromptFileValid } = useTerminalPromptPath({
+    intervalMs: 5000,
+    enabled: terminalPollingEnabled,
+  });
+  // CP-XH5b: receipt banner. The host returns a non-secret receipt
+  // on launch success; the UI surfaces the documented fields via
+  // a banner state (textContent only, no HTML injection). Cleared
+  // after a short delay so the operator is not stuck with stale text.
+  const [launchReceipt, setLaunchReceipt] = useState<OpenInTerminalReceipt | null>(null);
+  useEffect(() => {
+    if (!launchReceipt) return undefined;
+    const timer = setTimeout(() => setLaunchReceipt(null), 12_000);
+    return () => clearTimeout(timer);
+  }, [launchReceipt]);
+  const openInTerminalAddons: ReadonlyArray<OpenInTerminalAddonInfo> = useMemo(() => {
+    if (!terminalHostStatus) return [];
+    return terminalHostStatus.surfaces.map((surface) => ({
+      addonId: surface.adapterId,
+      label: surface.label,
+      capability: "terminal-host",
+      // The host owns the grant preset id; the UI only knows the
+      // documented shape. The defaults mirror the manifest's
+      // grantPresets[0].grants block.
+      grantPresetId: surface.adapterId === "addon.resonant-terminal-ghostty"
+        ? "ghostty-terminal-host"
+        : "iterm2-terminal-host",
+      grantPresetGrants: [
+        {
+          capability: "terminal-host",
+          granted: true,
+          scope: "system",
+          revocationBehavior: "degrade",
+        },
+      ],
+    }));
+  }, [terminalHostStatus]);
 
   if (loadState.phase === "loading") {
     return (
@@ -1981,6 +2026,19 @@ export function App() {
 
       <main className={`main-shell ${!recoveryModeActive && currentSection === "obsidian" ? "notes-shell-active" : ""}`}>
 
+        {launchReceipt ? (
+          <div
+            className="inline-notice success terminal-launch-receipt"
+            data-testid="terminal-launch-receipt"
+            data-launch-id={launchReceipt.launchId}
+            data-terminal-addon-id={launchReceipt.terminalAddonId}
+          >
+            Opened {launchReceipt.agentId} in {launchReceipt.terminalAddonId}.{" "}
+            launch id {launchReceipt.launchId}; binary {launchReceipt.executablePath}; prompt {launchReceipt.promptPath};{" "}
+            started {launchReceipt.startedAt}{launchReceipt.bridgeVersion ? `; bridge ${launchReceipt.bridgeVersion}` : ""}.
+          </div>
+        ) : null}
+
         {recoveryModeActive && (
           <div className="inline-notice warning recovery-notice">
             Recovery mode is active. Augmentor and archive ingest are offline while the Resonant Engineer Agent handles diagnosis and repair.
@@ -2434,6 +2492,13 @@ export function App() {
                 }}
                 onOpenArchiveReview={openArchiveReview}
                 onOpenSurface={(sectionId) => setSection(sectionId)}
+                terminalHostStatus={terminalHostStatus}
+                openInTerminalAddons={openInTerminalAddons}
+                resolveLaunchPromptPath={() => launchPromptPath}
+                launchPromptFileValid={launchPromptFileValid}
+                onOpenBridgeSettings={() => setSection("settings")}
+                onFocusTerminalDock={() => setSection("terminal")}
+                onOpenInTerminalReceipt={setLaunchReceipt}
               />
             </Suspense>
           )}
