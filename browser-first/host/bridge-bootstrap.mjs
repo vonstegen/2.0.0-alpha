@@ -1,19 +1,31 @@
 // CP-XH5a: shared bridge-bootstrap probe.
 //
 // `ensureBridgeReachable({ endpoint, timeoutMs })` is the single owner of
-// the loopback bridge health-check. It is shared by the new
-// `POST /terminal-host/launch` route and any future bridge-aware route.
+// the loopback bridge health-check. It is shared by the
+// `POST /terminal-host/launch` route and the CP-BR1 independent
+// native-messaging bootstrap host (browser-first/bootstrap/).
 //
 // Hard rules (CP-XH5a invariants):
 //   * No auto-start. The probe never spawns or restarts the bridge; that
-//     is a future "Launch Bridge" prompt. On a closed port or timeout
-//     the caller gets a typed `{ ok: false, reason: "bridge-not-running",
+//     belongs to the independent bootstrap owner selected by ADR-047. On a
+//     closed port or timeout the caller gets `{ ok: false, reason: "bridge-not-running",
 //     endpoint }` and the UI surfaces the Settings deep-link.
 //   * Never reads a secret. The probe only opens a TCP socket and
 //     reads `GET /healthz`; it never touches token, credential, or
 //     prompt content paths.
 //   * Bounded. The TCP connect + HTTP probe share a single timeout
 //     (default 1500 ms) so a hung bridge cannot wedge the launch path.
+//
+// Health attribution (CP-BR1): the Alpha bridge serves no unauthenticated
+// health route; every unauthenticated request is answered 401 with the
+// exact body `{"ok":false,"error":"Unauthorized browser-first bridge request."}`.
+// That auth-guard signature is emitted only by a ResonantOS bridge whose
+// token check held, so it is treated as proof of a healthy bridge (version
+// unknown → null), mirroring the extension's detectLoopbackBridge
+// signature matching in bridge-client.js. A fixture serving
+// `200 { ok: true, version? }` on /healthz is also accepted. Any other
+// status or body maps to `bridge-not-running`, so an arbitrary process
+// answering the port is never reported as a healthy bridge.
 //
 // The function is intentionally tiny: it has no opinion on terminal
 // add-ons, harnesses, grants, or projections. The launch route layers
@@ -108,6 +120,11 @@ export async function ensureBridgeReachable({
             } else {
               settle({ ok: false, reason: "bridge-not-running", endpoint, code: "BAD_HEALTHZ" });
             }
+          } else if (status === 401 && isBridgeAuthGuardBody(body)) {
+            // CP-BR1: the bridge's unauthenticated refusal is emitted only
+            // by a ResonantOS bridge whose token check held. Version is not
+            // exposed without credentials.
+            settle({ ok: true, version: null, endpoint });
           } else {
             settle({ ok: false, reason: "bridge-not-running", endpoint, code: `HTTP_${status}` });
           }
@@ -155,7 +172,26 @@ function defaultTcpProbe(host, port, timeoutMs) {
 }
 
 /**
- * Default endpoint when none is injected. Matches the loopback bridge
- * convention used by run-bridge-minimal.mjs / run-browser-first.mjs.
+ * Exact match for the bridge's unauthenticated refusal body. Kept in sync
+ * with `writeJson(response, 401, {ok:false,error:"Unauthorized browser-first
+ * bridge request."})` in bridge-server.mjs.
  */
-export const DEFAULT_BRIDGE_ENDPOINT = "http://127.0.0.1:47800";
+function isBridgeAuthGuardBody(body) {
+  let parsed = null;
+  try { parsed = JSON.parse(body); } catch { return false; }
+  return Boolean(
+    parsed
+    && typeof parsed === "object"
+    && parsed.ok === false
+    && typeof parsed.error === "string"
+    && parsed.error.includes("Unauthorized browser-first bridge request"),
+  );
+}
+
+/**
+ * Default endpoint when none is injected. CP-BR1 resolved the historical
+ * port mismatch: 47773 is the authoritative Alpha port, matching
+ * `defaultBridgePort` in run-bridge-minimal.mjs and `getBridgePort()` in
+ * bridge-server.mjs.
+ */
+export const DEFAULT_BRIDGE_ENDPOINT = "http://127.0.0.1:47773";

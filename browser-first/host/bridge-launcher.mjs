@@ -1,11 +1,10 @@
-// CP-LBa: idempotent bridge launcher.
+// DEPRECATED CP-BR0 IMPLEMENTATION EVIDENCE — not a bootstrap boundary.
 //
-// `launchBridge({ endpoint, bridgeEntry, env,
-//   probe = ensureBridgeReachable, spawnImpl = spawn,
-//   timeoutMs = 10_000 })` is the host-owned auto-start seam for
-// `run-bridge-minimal.mjs`. It is invoked from the new
-// `POST /bridge/launch` route (CP-LBb) when the operator clicks the
-// "Launch Bridge" action in the UI.
+// This launcher is intentionally unreachable from bridge routes and UI. A
+// stopped bridge cannot serve a route that starts itself. CP-BR1 may reuse its
+// probe-first, env-allowlist, and bounded-polling ideas inside the independent
+// native-messaging bootstrap host after correcting spawn ownership, generation
+// fencing, concurrent-start handling, and timeout cleanup.
 //
 // Hard rules (CP-LBa invariants):
 //   * Probe first via the existing `ensureBridgeReachable`. The probe
@@ -51,7 +50,7 @@ export const __launchBridgeForTest = { value: null };
 
 /**
  * @typedef {Object} LaunchBridgeArgs
- * @property {string} endpoint                  Absolute loopback URL, e.g. http://127.0.0.1:47800
+ * @property {string} endpoint                  Absolute loopback URL, e.g. http://127.0.0.1:47773
  * @property {string} bridgeEntry               Pinned absolute path to run-bridge-minimal.mjs
  * @property {NodeJS.ProcessEnv} env            Minimal allowlist (see CP-LBa invariants)
  * @property {(args: { endpoint: string, timeoutMs?: number }) => Promise<{ ok: true, version: string | null, endpoint: string } | { ok: false, reason: "bridge-not-running", endpoint: string, code?: string }>} [probe]
