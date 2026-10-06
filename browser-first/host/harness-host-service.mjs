@@ -13,12 +13,9 @@ import { createDshTypertAdapter } from './agent-adapters/dsh-typert.mjs';
 import { createProviderFabricAdapter } from './agent-adapters/provider-fabric.mjs';
 import { createExternalCliTerminalAdapter } from './agent-adapters/external-cli-terminal.mjs';
 import { publicHarnessError } from './harness-adapter-contract.mjs';
-import { bridgeCorsHeaders, HarnessTransportError, isLoopbackBridgeHost, validateLoopbackHost } from './bridge-server.mjs';
+import { bridgeCorsHeaders, HarnessTransportError, validateLoopbackHost } from './bridge-server.mjs';
 import { attachSessionEnv, buildProjectedSessionEnv, consumeGrant } from './terminal-host-service.mjs';
 import { ensureBridgeReachable, DEFAULT_BRIDGE_ENDPOINT } from './bridge-bootstrap.mjs';
-import { launchBridge, __launchBridgeForTest } from './bridge-launcher.mjs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 import { getHarnessPolicy } from './harness-policy-registry.mjs';
 import { piCommand } from './pi-runtime.mjs';
 
@@ -722,68 +719,6 @@ export async function createHarnessHostService({ userRoot, store = createHarness
         // confirm the adapter accepted the launchBootstrap RPC.
         launchAccepted: launchResult && typeof launchResult === 'object' ? true : false,
       };
-    }),
-    // CP-LBb: POST /bridge/launch — operator-initiated host-driven
-    // auto-start of `run-bridge-minimal.mjs`. Loopback-only
-    // (loopbackHostOnly is set by route()) and requires
-    // addon-runtime-control to mirror /terminal-host/status +
-    // /terminal-host/launch.
-    //
-    // Request body:
-    //   {}                                       // use DEFAULT_BRIDGE_ENDPOINT
-    //   { endpoint?: "<loopback http(s) URL>" }  // bounded to loopback
-    //
-    // Hard rules (CP-LBb invariants):
-    //   * No command, argv, env vars, or secret fields are accepted.
-    //     The bridge entry is pinned in host code (derived from
-    //     import.meta.url). The child env is the documented allowlist.
-    //   * The optional `endpoint` MUST be a loopback URL with no
-    //     userinfo, query, fragment, or non-loopback host.
-    //   * On `bridge-start-failed` the route returns a typed
-    //     public rejection without surfacing internal spawn details.
-    //   * Response carries only documented fields
-    //     ({ ok, endpoint, version, alreadyRunning, pid? } on
-    //     success; { ok: false, reason: "bridge-start-failed",
-    //     endpoint, code? } on failure). No token, credential,
-    //     bridge-config.generated.js content, or arbitrary path.
-    route('POST', '/bridge/launch', control, [], ['endpoint'], async p => {
-      const bridgeEntry = path.resolve(fileURLToPath(new URL('./run-bridge-minimal.mjs', import.meta.url)));
-      const requestedEndpoint = typeof p.endpoint === 'string' && p.endpoint.length > 0
-        ? p.endpoint
-        : DEFAULT_BRIDGE_ENDPOINT;
-      let parsedEndpoint;
-      try {
-        parsedEndpoint = new URL(requestedEndpoint);
-      } catch {
-        throw fail('invalid-event');
-      }
-      if (parsedEndpoint.protocol !== 'http:' && parsedEndpoint.protocol !== 'https:') throw fail('invalid-event');
-      if (!isLoopbackBridgeHost(parsedEndpoint.hostname)) throw fail('invalid-event');
-      if (parsedEndpoint.username || parsedEndpoint.password) throw fail('invalid-event');
-      if (parsedEndpoint.search || parsedEndpoint.hash) throw fail('invalid-event');
-      if (!parsedEndpoint.port || Number(parsedEndpoint.port) === 0 || Number(parsedEndpoint.port) > 65535) throw fail('invalid-event');
-      const launchImpl = typeof __launchBridgeForTest.value === 'function'
-        ? __launchBridgeForTest.value
-        : launchBridge;
-      const result = await launchImpl({
-        endpoint: parsedEndpoint.toString().replace(/\/$/, ""),
-        bridgeEntry,
-        env: process.env,
-      });
-      if (!result || typeof result !== 'object') throw fail('runtime-unavailable');
-      if (result.ok === true) {
-        // Documented fields only.
-        const receipt = {
-          ok: true,
-          endpoint: result.endpoint,
-          version: result.version ?? null,
-          alreadyRunning: result.alreadyRunning === true,
-        };
-        if (typeof result.pid === 'number') receipt.pid = result.pid;
-        return receipt;
-      }
-      // bridge-start-failed → public rejection, no spawn details.
-      return { ok: false, reason: 'bridge-start-failed', endpoint: result.endpoint };
     }),
     route('POST', '/addons/enabled', control, ['addonId', 'enabled', 'expectedRevision'], [], async p => {
       if (!id(p.addonId) || typeof p.enabled !== 'boolean' || !revision(p.expectedRevision)) throw fail('invalid-event');

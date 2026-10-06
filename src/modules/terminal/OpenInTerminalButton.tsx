@@ -14,14 +14,9 @@
 //      Host" affordance (wired by CP-XH5c),
 //   6. on success focuses the Terminal dock entry.
 //
-// CP-LBc: Launch Bridge affordance. When the bridge is not running
-// AND no terminal surface is connected, render a "Launch Bridge"
-// button alongside the existing Settings deep-link. The click handler
-// POSTs /bridge/launch (via the `launchBridge` test seam or
-// `webInvoke("bridge_launch")` in production), and on success
-// auto-retries the terminal launch (same retry shape as the XH5c
-// authorize path). A second click while already running surfaces
-// `alreadyRunning: true` and does NOT spawn twice.
+// CP-BR0: core bridge bootstrap is owned outside the bridge. When no
+// terminal surface is connected, this component links to Settings only;
+// it never calls a bridge-hosted self-start route.
 //
 // Hard rules:
 //   - textContent rendering only (no innerHTML, no script injection).
@@ -89,8 +84,6 @@ export interface OpenInTerminalButtonProps {
     terminalAddonId: string;
     promptPath: string;
   }) => Promise<OpenInTerminalReceipt | OpenInTerminalRejection>;
-  /** CP-LBc: test seam for the bridge launch affordance. */
-  launchBridge?: (args: { endpoint?: string }) => Promise<BridgeLaunchReceipt | BridgeLaunchRejection>;
 }
 
 /** Public, documented receipt shape. No token, credential, env
@@ -123,24 +116,6 @@ export type OpenInTerminalRejection = {
 
 export type OpenInTerminalResult = OpenInTerminalReceipt | OpenInTerminalRejection;
 
-/** CP-LBc: documented bridge-launch receipt. Only `ok`, `endpoint`,
- *  `version`, `alreadyRunning`, and `pid` are surfaced. */
-export type BridgeLaunchReceipt = {
-  ok: true;
-  endpoint: string;
-  version: string | null;
-  alreadyRunning: boolean;
-  pid?: number;
-};
-
-/** CP-LBc: bridge-launch rejection. Only `bridge-start-failed` is
- *  documented for this route. */
-export type BridgeLaunchRejection = {
-  ok: false;
-  reason: "bridge-start-failed";
-  endpoint: string;
-};
-
 const resolvePreferredTerminal = (
   available: ReadonlyArray<OpenInTerminalAddonInfo>,
   status: TerminalSurfaceStatus | null,
@@ -161,25 +136,6 @@ const resolvePreferredTerminal = (
   return null;
 };
 
-/** CP-LBc: resolve a terminal for the Launch Bridge auto-retry. The
- *  bridge just came up; the surface status may still report
- * `connected:false` because the terminal-host service hasn't bound
- *  the addon yet. Fall back to the first compatible addon so the
- *  /terminal-host/launch probe can succeed once the bus is wired. */
-const resolveLaunchBridgeAutoRetryTarget = (
-  available: ReadonlyArray<OpenInTerminalAddonInfo>,
-  status: TerminalSurfaceStatus | null,
-): OpenInTerminalAddonInfo | null => {
-  if (status?.connected) return resolvePreferredTerminal(available, status);
-  const compatible = new Set(
-    (status?.surfaces ?? []).filter((surface) => surface.compatible).map((surface) => surface.adapterId),
-  );
-  for (const addon of available) {
-    if (compatible.has(addon.addonId)) return addon;
-  }
-  return null;
-};
-
 const defaultLaunch = async (args: {
   agentId: string;
   terminalAddonId: string;
@@ -189,37 +145,18 @@ const defaultLaunch = async (args: {
   return payload;
 };
 
-/** CP-LBc: default bridge-launch seam. POSTs to /bridge/launch via
- *  the commandRouteMap. Documented fields only (endpoint, version,
- *  alreadyRunning, pid). */
-const defaultLaunchBridge = async (
-  args: { endpoint?: string } = {},
-): Promise<BridgeLaunchReceipt | BridgeLaunchRejection> => {
-  const payload = await webInvoke<BridgeLaunchReceipt | BridgeLaunchRejection>("bridge_launch", args);
-  return payload;
-};
-
 export const OpenInTerminalButton = (
   props: OpenInTerminalButtonProps,
 ): JSX.Element | null => {
   const launchFn = props.launch ?? defaultLaunch;
-  const launchBridgeFn = props.launchBridge ?? defaultLaunchBridge;
   const preferred = useMemo(
     () => resolvePreferredTerminal(props.availableTerminals, props.status),
     [props.availableTerminals, props.status],
   );
 
   const [busy, setBusy] = useState(false);
-  const [launchingBridge, setLaunchingBridge] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
-  const [bridgeAlreadyRunning, setBridgeAlreadyRunning] = useState(false);
 
-  // CP-LBc: when the bridge is up but the terminal surface hasn't
-  // surfaced yet (still in the `Starting` window), keep the Launch
-  // Bridge affordance live. The host's GET /terminal-host/status
-  // reports `connected: false` during this window; the UI branch
-  // `bridge-not-running` is replaced by a `bridge-starting` branch
-  // that simply tells the operator the auto-start kicked off.
   const bridgeNotRunning = !props.status || props.status.connected !== true;
 
   const handleClick = useCallback(async () => {
@@ -279,92 +216,19 @@ export const OpenInTerminalButton = (
     }
   }, [launchFn, preferred, props]);
 
-  // CP-LBc: Launch Bridge handler. Mirrors the XH5c auto-retry shape.
-  // On a non-secret receipt the component auto-retries the terminal
-  // launch (re-running `launchFn` once) so the operator does not have
-  // to click again. A second click while `alreadyRunning: true` is
-  // surfaced does NOT spawn twice (the host returns immediately).
-  const handleLaunchBridge = useCallback(async () => {
-    setLastError(null);
-    setLaunchingBridge(true);
-    try {
-      const result = await launchBridgeFn({});
-      if (result.ok) {
-        setBridgeAlreadyRunning(result.alreadyRunning === true);
-        // Auto-retry the terminal launch on success. Same shape as
-        // the XH5c authorize retry: if the bridge is now healthy,
-        // the /terminal-host/launch probe will return ok:true.
-        //
-        // Resolve the auto-retry target: prefer a connected
-        // terminal; if none is connected yet (the typical post-
-        // bring-up state), fall back to the first compatible
-        // surface so the operator does not have to click again.
-        const retryTarget = resolveLaunchBridgeAutoRetryTarget(props.availableTerminals, props.status);
-        if (props.promptPath && retryTarget) {
-          const second = await launchFn({
-            agentId: props.agentId,
-            terminalAddonId: retryTarget.addonId,
-            promptPath: props.promptPath,
-          });
-          if (second.ok) {
-            props.onFocusTerminalDock(retryTarget.addonId);
-            return;
-          }
-        }
-        return;
-      }
-      setLastError("Bridge failed to start. Open Settings → Bridge Target for details.");
-    } catch (error) {
-      setLastError(error instanceof Error ? error.message : "Bridge failed to start.");
-    } finally {
-      setLaunchingBridge(false);
-    }
-  }, [launchBridgeFn, launchFn, props]);
-
-  // CP-LBc: when the bridge is not running and no terminal surface
-  // is connected, render the Launch Bridge affordance alongside the
-  // existing Settings deep-link. TextContent rendering only.
   if (bridgeNotRunning) {
-    const disabled = launchingBridge;
     return (
-      <span className="open-in-terminal-launch-bridge" data-testid="open-in-terminal-launch-bridge-group">
-        <button
-          type="button"
-          className="button-secondary launch-bridge"
-          data-testid="launch-bridge"
-          disabled={disabled}
-          title={launchingBridge ? "Starting bridge…" : "Start the ResonantOS bridge."}
-          onClick={(event) => {
-            event.stopPropagation();
-            if (disabled) return;
-            void handleLaunchBridge();
-          }}
-        >
-          {launchingBridge ? "Starting bridge…" : "Launch Bridge"}
-        </button>
-        <button
-          type="button"
-          className="button-secondary bridge-settings"
-          data-testid="open-bridge-settings"
-          onClick={(event) => {
-            event.stopPropagation();
-            props.onOpenBridgeSettings();
-          }}
-        >
-          Open Settings
-        </button>
-        {lastError ? (
-          <span className="open-in-terminal-error" data-testid="open-in-terminal-error">
-            {" — "}
-            {lastError}
-          </span>
-        ) : null}
-        {bridgeAlreadyRunning ? (
-          <span className="open-in-terminal-bridge-already" data-testid="open-in-terminal-bridge-already">
-            {" — bridge already running"}
-          </span>
-        ) : null}
-      </span>
+      <button
+        type="button"
+        className="button-secondary bridge-settings"
+        data-testid="open-bridge-settings"
+        onClick={(event) => {
+          event.stopPropagation();
+          props.onOpenBridgeSettings();
+        }}
+      >
+        Open Settings
+      </button>
     );
   }
 
@@ -413,16 +277,4 @@ export const renderReceiptText = (receipt: OpenInTerminalReceipt): string => {
     `started: ${receipt.startedAt}`,
     receipt.bridgeVersion ? `bridge: ${receipt.bridgeVersion}` : "",
   ].filter(Boolean).join(" · ");
-};
-
-/** CP-LBc: pure helper that produces the documented Bridge Target
- *  status line for the Settings panel. Only the documented fields
- *  (`endpoint`, `version`, `alreadyRunning`) are surfaced. */
-export const renderBridgeStatusText = (args: {
-  endpoint: string;
-  status: "connected" | "starting" | "not-running";
-}): string => {
-  if (args.status === "connected") return `Connected · ${args.endpoint}`;
-  if (args.status === "starting") return `Starting · ${args.endpoint}`;
-  return `Not running · ${args.endpoint}`;
 };

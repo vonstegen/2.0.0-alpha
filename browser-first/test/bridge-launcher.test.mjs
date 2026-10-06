@@ -85,7 +85,7 @@ function makeFakeSpawn() {
   return { spawn, calls, failing };
 }
 
-const ENDPOINT = "http://127.0.0.1:47800";
+const ENDPOINT = "http://127.0.0.1:47773";
 const ENTRY = "/Users/host/projects/resonant-os/2.0.0-alpha/browser-first/host/run-bridge-minimal.mjs";
 
 const ENV_ALLOWLIST = {
@@ -139,7 +139,7 @@ test("launchBridge spawns the pinned bridge entry with --bridge-port=<port> + en
   // argv shape is pinned.
   const [command, argv, options] = spawnCalls[0];
   assert.equal(command, ENTRY, "spawn executes the pinned bridge entry");
-  assert.deepEqual(argv, ["--bridge-port=47800"], "fixed argv shape only");
+  assert.deepEqual(argv, ["--bridge-port=47773"], "fixed argv shape only");
   assert.equal(options.detached, true, "child is detached");
   assert.equal(options.stdio, "ignore", "stdio is suppressed");
   // Env allowlist: RESONANT_TERMINAL_HOST_BRIDGE=1 + caller-supplied allowlist keys.
