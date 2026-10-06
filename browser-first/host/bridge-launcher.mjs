@@ -41,6 +41,15 @@ import { ensureBridgeReachable as defaultEnsureBridgeReachable } from "./bridge-
 const POLL_INTERVAL_MS = 250;
 
 /**
+ * Test seam. Tests may reassign this module-level export to swap in
+ * a fake launchBridge without redefining the module's named export
+ * (ESM forbids re-defining own properties of a module namespace
+ * object). Production code NEVER reads this seam — it always calls
+ * the named `launchBridge` defined below.
+ */
+export const __launchBridgeForTest = { value: null };
+
+/**
  * @typedef {Object} LaunchBridgeArgs
  * @property {string} endpoint                  Absolute loopback URL, e.g. http://127.0.0.1:47800
  * @property {string} bridgeEntry               Pinned absolute path to run-bridge-minimal.mjs

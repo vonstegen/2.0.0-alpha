@@ -69,6 +69,17 @@ const commandRouteMap: Record<string, CommandRoute> = {
     path: "/terminal-host/launch",
     capability: "addon-runtime-control",
   },
+  // CP-LBb: bridge auto-start affordance — the "Launch Bridge" host-driven
+  // action. POSTs `{ endpoint? }` (or `{}`); the host pins the bridge
+  // entry, validates the optional endpoint is loopback-only, probes +
+  // spawns a detached child with the env allowlist, and returns a
+  // non-secret receipt. Requires addon-runtime-control to mirror the
+  // /bridge/launch route's gate.
+  bridge_launch: {
+    method: "POST",
+    path: "/bridge/launch",
+    capability: "addon-runtime-control",
+  },
 };
 
 export const WEB_TRANSPORT_CAPABILITIES: readonly string[] = [...new Set(
@@ -179,7 +190,7 @@ const performInvoke = async <T>(
 
   const response = await fetch(`${baseUrl}${route.path}`, {
     method: route.method,
-    ...(command.startsWith("harness_") || command === "terminal_host_status" || command === "terminal_host_launch" || command === "terminal_host_prompt_path"
+    ...(command.startsWith("harness_") || command === "terminal_host_status" || command === "terminal_host_launch" || command === "terminal_host_prompt_path" || command === "bridge_launch"
       ? { redirect: "error" as const }
       : {}),
     headers,

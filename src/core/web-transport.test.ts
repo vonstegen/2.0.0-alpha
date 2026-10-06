@@ -324,6 +324,9 @@ const harnessRoutes = [
   // CP-XH5a: terminal-host launch affordance for the "Open in Terminal"
   // button on the Pi agent entry. Loopback-only + addon-runtime-control.
   ["terminal_host_launch", "POST", "/terminal-host/launch", "addon-runtime-control"],
+  // CP-LBb: bridge auto-start affordance for the "Launch Bridge" host-
+  // driven action. Loopback-only + addon-runtime-control.
+  ["bridge_launch", "POST", "/bridge/launch", "addon-runtime-control"],
 ];
 const session = { addonId: "addon.demo", sessionId: "session-1", bootEpoch: "boot-1", generation: 2 };
 
