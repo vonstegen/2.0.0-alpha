@@ -123,7 +123,7 @@ function healthCard({ label, value, detail, tone }) {
   return metricCard({ label, value, detail, tone });
 }
 
-export function renderBridgeTargetSection(container, { bridgeRequest, onBridgeConfigChanged, prefsSync = null } = {}) {
+export function renderBridgeTargetSection(container, { bridgeRequest, onBridgeConfigChanged, prefsSync = null, launchBridge = null } = {}) {
   container.innerHTML = "";
   container.append(
     settingsHeader({
@@ -146,6 +146,96 @@ export function renderBridgeTargetSection(container, { bridgeRequest, onBridgeCo
     healthCard({ label: "Bridge health", value: "—", detail: "probing /status" })
   );
   container.append(healthGrid);
+
+  // CP-LBc: host-driven auto-start affordance. Renders a non-secret
+  // status line (endpoint + Connected/Starting/Not running) and a
+  // Launch Bridge button that POSTs /bridge/launch via the
+  // injected `launchBridge` seam (or, when supplied, `bridgeRequest`).
+  // TextContent rendering only — no innerHTML / script injection.
+  // The status line ONLY surfaces documented values (`endpoint`,
+  // `version`, `alreadyRunning`); never token, credential, or path.
+  const launchBridgeCard = document.createElement("section");
+  launchBridgeCard.className = "settings-provider-card";
+  const launchBridgeHeading = document.createElement("strong");
+  launchBridgeHeading.className = "settings-provider-heading";
+  launchBridgeHeading.textContent = "Launch bridge";
+  const launchBridgeHint = document.createElement("p");
+  launchBridgeHint.className = "settings-provider-help";
+  launchBridgeHint.textContent =
+    "Start the ResonantOS browser-first bridge on the host when it is not running. The route spawns run-bridge-minimal.mjs detached so it outlives this panel, with the reviewed env vars. The status line below surfaces Connected / Starting / Not running only; it never logs the token, credential, or the generated config content.";
+  const launchBridgeStatus = document.createElement("p");
+  launchBridgeStatus.className = "settings-status";
+  launchBridgeStatus.dataset.testid = "bridge-launch-status";
+  launchBridgeStatus.textContent = "Not running · resolving…";
+  // The button itself is owned by the host; we wire click -> the
+  // `launchBridge` seam (or `bridgeRequest` fallback) and refresh the
+  // status line on success.
+  const launchBridgeButton = document.createElement("button");
+  launchBridgeButton.type = "button";
+  launchBridgeButton.textContent = "Launch Bridge";
+  launchBridgeButton.dataset.testid = "bridge-launch-button";
+  launchBridgeButton.dataset.tone = "primary";
+  // Track live status: "connected" / "starting" / "not-running".
+  // We expose a refresh handle to the caller so the test harness
+  // (or any later wiring) can drive the status line from the live
+  // terminal-host status polling.
+  let launchBridgeState = { status: "not-running", endpoint: "" };
+  const renderLaunchBridgeStatus = () => {
+    const status = launchBridgeState.status;
+    const endpoint = launchBridgeState.endpoint || "(resolving)";
+    let text_ = "";
+    if (status === "connected") text_ = `Connected · ${endpoint}`;
+    else if (status === "starting") text_ = `Starting · ${endpoint}`;
+    else text_ = `Not running · ${endpoint}`;
+    launchBridgeStatus.textContent = text_;
+  };
+  const updateLaunchBridgeState = (next) => {
+    launchBridgeState = { ...launchBridgeState, ...next };
+    renderLaunchBridgeStatus();
+  };
+  launchBridgeButton.addEventListener("click", async () => {
+    if (launchBridgeButton.disabled) return;
+    launchBridgeButton.disabled = true;
+    const previousLabel = launchBridgeButton.textContent;
+    launchBridgeButton.textContent = "Starting…";
+    updateLaunchBridgeState({ status: "starting" });
+    try {
+      let result;
+      if (typeof launchBridge === "function") {
+        result = await launchBridge({});
+      } else if (typeof bridgeRequest === "function") {
+        result = await bridgeRequest("/bridge/launch", { body: {} });
+      } else {
+        // No seam wired: surface a non-secret error and bail. The
+        // host-owned renderer still has only the documented status.
+        throw new Error("Launch Bridge is not wired in this surface.");
+      }
+      if (result?.ok === true) {
+        const status = result.alreadyRunning === true ? "connected" : "starting";
+        updateLaunchBridgeState({ status, endpoint: result.endpoint ?? launchBridgeState.endpoint });
+        // Surface the receipt via textContent: documented fields only.
+        launchBridgeStatus.textContent = `${status === "connected" ? "Already running" : "Started"} · ${result.endpoint ?? ""}${typeof result.pid === "number" ? ` · pid ${result.pid}` : ""}`;
+        setStatus(statusNode, `Bridge ${result.endpoint} is ${result.alreadyRunning ? "already running" : "started"}.`, "success");
+      } else {
+        updateLaunchBridgeState({ status: "not-running" });
+        launchBridgeStatus.textContent = `Not running · ${result?.endpoint ?? "(unknown)"}`;
+        setStatus(statusNode, `Bridge failed to start (${result?.reason ?? "unknown"}).`, "error");
+      }
+    } catch (error) {
+      updateLaunchBridgeState({ status: "not-running" });
+      setStatus(statusNode, safeErrorMessage(error), "error");
+    } finally {
+      launchBridgeButton.disabled = false;
+      launchBridgeButton.textContent = previousLabel;
+    }
+  });
+  launchBridgeCard.append(
+    launchBridgeHeading,
+    launchBridgeHint,
+    launchBridgeStatus,
+    launchBridgeButton,
+  );
+  container.append(launchBridgeCard);
 
   const syncCard = document.createElement("section");
   syncCard.className = "settings-provider-card";
