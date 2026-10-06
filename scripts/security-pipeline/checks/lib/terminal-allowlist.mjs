@@ -25,17 +25,40 @@ const SHELL_FLAGS = new Set(["-lc", "-c", "-ic", "/c", "/C", "-Command", "-comma
 export const ALLOWLIST = {
   approval_marker_field: "approved_by",
   shell_wrappers: ["sh", "bash", "zsh", "cmd", "powershell", "pwsh"],
+  // Each entry below is a closed head allowlist. Per-site invariants
+  // (shell: false, env_clear, env_vars allowlist, pinned roots, no argv
+  // secret) are enforced by the matching record in
+  // .github/security-pipeline/checks.yml under
+  // recordSets.browser-first-production-spawns. Adding a head to this list
+  // is an explicit, reviewed decision; platform dispatch helpers (open,
+  // xdg-open, explorer.exe, osascript, powershell.exe, zenity, kdialog)
+  // are intentionally NOT here and remain on per-site approval markers.
   allow: [
-    "command",
+    // Read-only / inspection probes.
+    "command",  // builtin: prints command-not-found diagnostics, no side effects
     "which",
     "where",
     "ps",
     "nm",
     "rg",
-    "git",
-    "ollama",
+    "git",       // read-only git invocations only; no commit/push from these sites
+    // Reviewed runtimes with fixed user-install roots; see hermes-runtime.mjs
+    // and opencode-runtime.mjs for pinned resolution.
     "hermes",
-    "uv",
+    "ollama",
+    "uv",        // Python package manager pinned to a per-user install root
+    // CP-BR1 + bridge TLS: pinned OpenSSL at /usr/bin/openssl.
+    // See browser-first/host/bridge-tls.mjs (resolveOpenSslPath).
+    "openssl",
+    // addon-delegation-service.mjs:execHermesPythonAdapter. The Python
+    // binary is pinned to <home>/.hermes/hermes-agent/venv/bin/python;
+    // the script and args are reviewed; the spawn is shell: false with
+    // a fixed env allowlist (see checks.yml).
+    "python",
+    // addon-delegation-service.mjs:execOpenCodeCli. The CLI is pinned to
+    // <home>/.opencode/bin/opencode; the task packet path and args are
+    // reviewed; the spawn is shell: false with a fixed env allowlist.
+    "opencode",
   ],
 };
 
