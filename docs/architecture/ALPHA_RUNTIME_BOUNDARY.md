@@ -2,12 +2,40 @@
 
 ## Normative Boundary
 
-ResonantOS 2.0.0 Alpha has exactly two required runtime components:
+At CP-BR0, ResonantOS 2.0.0 Alpha has exactly two implemented runtime components:
 
 1. The Chrome Manifest V3 extension in
    `browser-first/resonantos-side-panel-extension/`.
 2. The authenticated local Node.js bridge started by
    `npm run browser-first:bridge`, implemented under `browser-first/host/`.
+
+ADR-047 selects a dedicated Browser-First Chrome native-messaging bootstrap host
+as the third packaged Alpha boundary. CP-BR1 implements and ships that host
+under `browser-first/bootstrap/`, including its macOS per-user installer
+(`install-macos.mjs`) and uninstaller (`uninstall-macos.mjs`). **CP-BR2
+extends the boundary into the extension**: the manifest carries
+`nativeMessaging`; `bootstrap-client.js`,
+`bootstrap-startup.js`, `bootstrap-renderer.js`, and
+`rebind-coordinator.js` are the extension-side owners of the lifecycle;
+the background service worker drives the bounded startup sequence
+through `chrome.runtime.connectNative("com.resonantos.bridge_bootstrap")`.
+See [BRIDGE-BOOTSTRAP-ROS-STARTUP.md](BRIDGE-BOOTSTRAP-ROS-STARTUP.md)
+for the contract. **CP-BR3 + CP-BR4 add the host-side add-on runtime
+lifecycle**: the pure resolver in
+[`packages/addon-sdk/src/runtime-lifecycle.ts`](../../packages/addon-sdk/src/runtime-lifecycle.ts)
+produces the desired-state decision; the reviewed factory registry and
+idempotent reconciler in
+[`browser-first/host/runtime-factory-registry.mjs`](../../browser-first/host/runtime-factory-registry.mjs)
+and
+[`browser-first/host/runtime-reconciler.mjs`](../../browser-first/host/runtime-reconciler.mjs)
+translate it into bounded, generation-fenced, per-add-on
+start / stop / degrade actions. The composition root is
+[`browser-first/host/runtime-lifecycle-host.mjs`](../../browser-first/host/runtime-lifecycle-host.mjs).
+See [SDK-RUNTIME-LIFECYCLE-CONTRACT.md](SDK-RUNTIME-LIFECYCLE-CONTRACT.md)
+and
+[RUNTIME-FACTORY-REGISTRY-AND-RECONCILER.md](RUNTIME-FACTORY-REGISTRY-AND-RECONCILER.md)
+for the contract. A macOS `launchd` unit may be an optional supervisor
+but is not the Alpha lifecycle authority.
 
 The only privileged request path is:
 
@@ -21,7 +49,10 @@ Chrome MV3 extension
 The extension owns browser UI and browser-page interaction. The bridge owns
 provider credentials, provider calls, local filesystem state, process-backed
 add-ons, Living Archive mutation, diagnostics export, and other privileged
-local operations. No web page or add-on iframe is a privileged authority.
+local operations. The planned native-messaging bootstrap host owns only core
+bridge status/start/restart/shutdown and its private process-generation state; it
+does not own bridge routes, add-on grants, provider credentials, or runtime
+factory policy. No web page or add-on iframe is a privileged authority.
 
 ## Extension Boundary
 
@@ -122,7 +153,10 @@ An approved destination does not remove a route's capability or human-approval
 requirements.
 
 The following are historical, deferred, experimental, or supporting code. They
-are not shipped Alpha runtime components and are not Alpha build prerequisites:
+are not shipped Alpha runtime components and are not Alpha build prerequisites.
+The dedicated native-messaging bootstrap host shipped at CP-BR1
+(`browser-first/bootstrap/`) is the sole exception; extension-side startup
+integration is CP-BR2 and remains deferred.
 
 ## Out Of Scope
 

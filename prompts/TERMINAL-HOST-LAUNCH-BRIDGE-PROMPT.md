@@ -1,6 +1,12 @@
 # Terminal Host — Launch Bridge: Auto-Start the Bridge from the UI — OMP Prompt (v1)
 
-**Handoff from AVIS → OMP (on AVIS). Read this whole document before acting.**
+> **SUPERSEDED — DO NOT IMPLEMENT.** A stopped bridge cannot serve the
+> `/bridge/launch` route proposed below. This prompt is retained as decision
+> history only. Its replacement is the independent ROS bootstrap + modular SDK
+> runtime lifecycle program in
+> [`docs/architecture/ADDON-BRIDGE-RUNTIME-ROADMAP.md`](../docs/architecture/ADDON-BRIDGE-RUNTIME-ROADMAP.md).
+
+**Historical handoff from AVIS → OMP. Do not execute this prompt.**
 
 XH4 (tabbed Terminal surface + connection badge) and XH5 (the "Open in
 Terminal" launch action) are complete and green. The remaining runtime gap is

@@ -49,6 +49,13 @@ components:
 - [Add-on agent contract template](ADDON_AGENT_CONTRACT_TEMPLATE.md)
 - [Add-on Augmentor skill template](ADDON_AUGMENTOR_SKILL_TEMPLATE.md)
 - [Add-on engineer setup runbook template](ADDON_ENGINEER_SETUP_RUNBOOK_TEMPLATE.md)
+- [ROS Bridge + SDK Add-on Runtime Lifecycle roadmap](ADDON-BRIDGE-RUNTIME-ROADMAP.md)
+- [ADR-047: Core Bridge Bootstrap And Add-on Runtime Lifecycle](ADR-047-core-bridge-bootstrap-runtime-lifecycle.md)
+- [Bridge Bootstrap Protocol (CP-BR1)](BRIDGE-BOOTSTRAP-PROTOCOL.md)
+- [Bridge Bootstrap macOS Runbook (CP-BR1)](BRIDGE-BOOTSTRAP-MACOS-RUNBOOK.md)
+- [Bridge Bootstrap ROS Startup, Shutdown, And Recovery (CP-BR2)](BRIDGE-BOOTSTRAP-ROS-STARTUP.md)
+- [SDK Add-on Runtime Lifecycle Contract (CP-BR3)](SDK-RUNTIME-LIFECYCLE-CONTRACT.md)
+- [Runtime Factory Registry And Reconciler (CP-BR4)](RUNTIME-FACTORY-REGISTRY-AND-RECONCILER.md)
 - [Paperclip engineer setup](addon-runbooks/paperclip/ENGINEER_SETUP.md)
 - [RecursiveMAS engineer setup](addon-runbooks/recursive-mas/ENGINEER_SETUP.md)
 
@@ -117,6 +124,7 @@ Add-on skill contracts:
 | [ADR-044: Generic Harness Skills Projection](ADR-044-generic-harness-skills-projection.md)                                    | Accepted        | Partial             | -                                                                            | Core and add-ons         | Skills resource family projection: host-injected staging under `.pi/skills/...`; raw sessionIds cannot widen the staging location; canonical source is never cleanup target. |
 | [ADR-045: Harness Runtime Category And Central Provider Profiles](ADR-045-harness-runtime-provider-profiles.md)              | Accepted        | Partial             | -                                                                            | Core and add-ons         | Provider-profile credential mode and the host-owned resolver (`createHarnessCredentials`) carried from feature/pi-testing-phase; renumbered from ADR-039 to resolve TH branch collision. |
 | [ADR-046: Add-on Classification, Category Registry, And Dynamic Surface Discovery](ADR-046-addon-classification-category-discovery.md) | Accepted        | Partial             | -                                                                            | Core and add-ons         | Classification registry, category discovery, and dynamic surface discovery carried from feature/pi-testing-phase; renumbered from ADR-040 to resolve TH branch collision. |
+| [ADR-047: Core Bridge Bootstrap And Add-on Runtime Lifecycle](ADR-047-core-bridge-bootstrap-runtime-lifecycle.md)                      | Accepted        | Partial             | -                                                                            | Core and add-ons         | Selects a dedicated native-messaging host as the independent Alpha bootstrap owner; one core bridge and modular reviewed runtimes remain separate lifecycle boundaries.   |
 
 ## Authority Rules
 
