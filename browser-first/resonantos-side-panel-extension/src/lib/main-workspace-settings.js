@@ -2,6 +2,7 @@ import { renderAddonsSection } from "./settings/addons-section.js";
 import { renderAboutSection } from "./settings/about-section.js";
 import { renderAppearanceSection } from "./settings/appearance-section.js";
 import { renderBridgeBootstrapSection } from "./settings/bridge-bootstrap-section.js";
+import { renderBridgeRuntimesSection } from "./settings/bridge-runtimes-section.js";
 import { renderBridgeTargetSection } from "./settings/bridge-target-section.js";
 import { renderBrowserControlSection } from "./settings/browser-control-section.js";
 import { renderDiagnosticsSection } from "./settings/diagnostics-section.js";
@@ -97,6 +98,13 @@ const sections = [
     hint: "Native host lifecycle",
     group: "Advanced",
     render: renderBridgeBootstrapSection
+  },
+  {
+    id: "bridge-runtimes",
+    label: "Bridge & Runtimes",
+    hint: "Core bridge + add-on runtimes",
+    group: "Advanced",
+    render: renderBridgeRuntimesSection
   },
   {
     id: "appearance",
@@ -200,7 +208,35 @@ export function renderSettingsWorkspace({
       activeId = nextId;
       renderActive();
     }));
-    activeSection.render(panel, { ...context, sectionId: activeSection.id });
+    const sectionContext = { ...context, sectionId: activeSection.id };
+    if (activeSection.id === "bridge-runtimes") {
+      // Inject host seams for the Bridge & Runtimes surface. Every
+      // seam is derived from the existing `bridgeRequest` callback;
+      // no new bridge client is required and no global state is read.
+      sectionContext.fetchProjection = async () => {
+        const request = bridge();
+        if (typeof request !== "function") return null;
+        return await request("/bridge/runtimes", { method: "GET" });
+      };
+      sectionContext.getBootstrapSnapshot = () => null; // wired by the renderer via chrome.runtime.sendMessage in the production entry point
+      sectionContext.enableTransaction = async (addonId, enabled) => {
+        const request = bridge();
+        if (typeof request !== "function") {
+          throw new Error("Bridge request is not configured.");
+        }
+        await request("/addons/enabled", {
+          method: "POST",
+          body: { addonId, enabled: Boolean(enabled) },
+        });
+      };
+      sectionContext.supportedActions = {
+        enableDisable: true,
+        retry: false,
+        restart: false,
+        terminateSession: false,
+      };
+    }
+    activeSection.render(panel, sectionContext);
   };
 
   shell.append(nav, panel);

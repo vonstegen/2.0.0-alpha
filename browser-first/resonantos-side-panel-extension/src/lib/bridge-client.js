@@ -80,6 +80,7 @@ const BRIDGE_ROUTE_CAPABILITIES = Object.freeze({
   "POST /browser/downloads/action": "browser-download-action",
   "POST /diagnostics/report": "diagnostics-report-export",
   "GET /addons/registry": "addon-runtime-read",
+  "GET /bridge/runtimes": "addon-runtime-read",
   "POST /addons/install": "addon-runtime-control",
   "POST /addons/grants": "addon-runtime-control",
   "POST /addons/enabled": "addon-runtime-control",
