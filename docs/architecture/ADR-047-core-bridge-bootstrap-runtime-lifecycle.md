@@ -3,9 +3,9 @@
 ## Decision Metadata
 
 - Decision status: Accepted
-- Alpha applicability: Applies incrementally from CP-BR0
+- Alpha applicability: Partial
 - Superseded by: None
-- Owner: Browser-First bootstrap, core bridge, and Add-on SDK
+- Owner: Core and add-ons
 - Decision date: 2026-10-06
 
 ## Context
@@ -162,18 +162,18 @@ unredacted exceptions, or arbitrary caller values.
 The three historical commits remain in Git as decision evidence. CP-BR0 treats
 their files as follows:
 
-| Historical file | CP-BR0 disposition | Reusable material |
-| --- | --- | --- |
-| `browser-first/host/bridge-launcher.mjs` | Kept but marked deprecated and unreachable | `ensureBridgeReachable` reuse, env allowlist, bounded polling, spawn seam |
-| `browser-first/test/bridge-launcher.test.mjs` | Kept as historical launcher-policy coverage | Idempotence, allowlist, timeout, and shape-walker assertions to port to CP-BR1 |
-| `browser-first/host/harness-host-service.mjs` | Changed: removed `POST /bridge/launch` | No offline lifecycle authority remains in the bridge |
-| `browser-first/test/bridge-launch-route.test.mjs` | Changed: now asserts the route is absent | Regression proof for the CP-BR0 gate |
-| `src/core/web-transport.ts` | Changed: removed `bridge_launch` | Ordinary authenticated bridge transport remains unchanged |
-| `src/core/web-transport.test.ts` | Changed: removed the superseded route expectation | Existing route/capability inventory remains authoritative |
-| `browser-first/resonantos-side-panel-extension/src/lib/settings/bridge-target-section.js` | Changed: removed the bridge-hosted launch action | Existing target resolution, health, and rebind UI remain |
-| `browser-first/test/bridge-target-section-launch.test.mjs` | Changed: asserts no self-start action is rendered | UI regression proof for CP-BR0 |
-| `src/modules/terminal/OpenInTerminalButton.tsx` | Changed: disconnected state links to Settings only | Existing terminal launch, authorization, and settings recovery remain |
-| `src/modules/terminal/OpenInTerminalButton.test.tsx` | Changed: asserts no self-start action | Existing XH5 terminal behavior remains covered |
+| Historical file                                                                           | CP-BR0 disposition                                 | Reusable material                                                              |
+| ----------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `browser-first/host/bridge-launcher.mjs`                                                  | Kept but marked deprecated and unreachable         | `ensureBridgeReachable` reuse, env allowlist, bounded polling, spawn seam      |
+| `browser-first/test/bridge-launcher.test.mjs`                                             | Kept as historical launcher-policy coverage        | Idempotence, allowlist, timeout, and shape-walker assertions to port to CP-BR1 |
+| `browser-first/host/harness-host-service.mjs`                                             | Changed: removed `POST /bridge/launch`             | No offline lifecycle authority remains in the bridge                           |
+| `browser-first/test/bridge-launch-route.test.mjs`                                         | Changed: now asserts the route is absent           | Regression proof for the CP-BR0 gate                                           |
+| `src/core/web-transport.ts`                                                               | Changed: removed `bridge_launch`                   | Ordinary authenticated bridge transport remains unchanged                      |
+| `src/core/web-transport.test.ts`                                                          | Changed: removed the superseded route expectation  | Existing route/capability inventory remains authoritative                      |
+| `browser-first/resonantos-side-panel-extension/src/lib/settings/bridge-target-section.js` | Changed: removed the bridge-hosted launch action   | Existing target resolution, health, and rebind UI remain                       |
+| `browser-first/test/bridge-target-section-launch.test.mjs`                                | Changed: asserts no self-start action is rendered  | UI regression proof for CP-BR0                                                 |
+| `src/modules/terminal/OpenInTerminalButton.tsx`                                           | Changed: disconnected state links to Settings only | Existing terminal launch, authorization, and settings recovery remain          |
+| `src/modules/terminal/OpenInTerminalButton.test.tsx`                                      | Changed: asserts no self-start action              | Existing XH5 terminal behavior remains covered                                 |
 
 The UI launch/status patterns may return only after they consume authoritative
 status from the independent bootstrap transport. They must not infer core bridge
