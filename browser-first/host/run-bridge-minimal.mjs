@@ -56,6 +56,12 @@ import { createRuntimeProjectionService } from "./runtime-projection-service.mjs
 import { createBridgeRuntimesHostService } from "./bridge-runtimes-host-service.mjs";
 import { installTerminalHostBridge, uninstallTerminalHostBridge } from "./terminal-host-bridge-wiring.mjs";
 import { createTerminalHostHostWiring } from "./terminal-host-host-wiring.mjs";
+import {
+  createRuntimeFactoryRegistry,
+  ensureReviewedRuntimeFactories,
+} from "./runtime-factory-registry.mjs";
+import { createHostRuntimeLifecycle } from "./runtime-lifecycle-host.mjs";
+import { seedTerminalRuntimeFactories } from "./terminal-runtime-factories.mjs";
 import { createProviderHostService } from "./provider-host-service.mjs";
 import {
   memorySourceMoveHistoryPath as sourceMoveHistoryPath,
@@ -484,6 +490,47 @@ const { extensionPrefsRoutes, flushPendingExtensionPrefs } = createExtensionPref
 const { harnessRoutes } = harnessService;
 const providerBridgeRoutes = harnessService.composeProviderRoutes(legacyProviderBridgeRoutes);
 
+// CP-BR7: wire the CP-BR4 reconciler into the production composition
+// root. The reconciler consumes the host registry projection and the
+// CP-BR3 resolver decisions; the projection service (CP-BR5) then
+// reflects live `listActive()` state. The two CP-BR7 reviewed terminal
+// factories (Ghostty + iTerm2) are seeded here; the existing
+// `external-cli-terminal` and `pi-runtime` seeds are left untouched.
+const terminalFactoryRegistry = createRuntimeFactoryRegistry({});
+ensureReviewedRuntimeFactories(terminalFactoryRegistry, { observers: new Map() });
+seedTerminalRuntimeFactories(terminalFactoryRegistry, {
+  // The terminal-host bridge service is the production seam; when it
+  // is null (default in production) the factories use the in-memory
+  // fallback. The bridge service is started later in this file; the
+  // factories pick it up at the next start.
+  serviceFactory: undefined,
+  baseEnv: process.env,
+  terminalHostService: null,
+});
+
+const hostRuntimeLifecycle = createHostRuntimeLifecycle({
+  factoryRegistry: terminalFactoryRegistry,
+  hostRegistry: harnessService.registry,
+  emit: (event) => {
+    // Non-secret lifecycle event sink. The CP-BR4 reconciler emits
+    // public identifiers only; this sink is a no-op in production
+    // (future CP-BR6 push subscribers will consume it).
+    void event;
+  },
+});
+
+const { reconciler: hostRuntimeReconciler } = hostRuntimeLifecycle;
+
+// Reconcile on mount and on every registry fence. The reconciler is
+// idempotent; calling it twice in the same projection generation is a
+// no-op. The registry's `onFence` hook is the host-owned event source.
+if (typeof harnessService.registry?.onFence === "function") {
+  harnessService.registry.onFence(() => {
+    void hostRuntimeReconciler.reconcile();
+  });
+}
+void hostRuntimeReconciler.reconcile();
+
 // CP-BR5: non-secret runtime/connector/session projection. The projection
 // service reads the harness registry + the (optional) CP-BR4 reconciler
 // active list and produces the public BridgeRuntimesProjection. The
@@ -492,7 +539,7 @@ const providerBridgeRoutes = harnessService.composeProviderRoutes(legacyProvider
 // (addon-runtime-read) and loopback-only.
 const runtimeProjection = createRuntimeProjectionService({
   hostRegistry: harnessService.registry,
-  reconciler: typeof harnessService.runtimeReconciler === "object" ? harnessService.runtimeReconciler : {},
+  reconciler: hostRuntimeReconciler,
   bridgeStatus: {
     snapshot: () => {
       const port = getPublicPort();
