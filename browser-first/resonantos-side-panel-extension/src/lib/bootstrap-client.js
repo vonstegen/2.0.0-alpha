@@ -37,7 +37,11 @@ import {
   projectPublicResult,
   validateBootstrapRequest,
 } from "../../../bootstrap/bootstrap-protocol.mjs";
-import { NATIVE_HOST_NAME } from "../../../bootstrap/bridge-policy.mjs";
+// NATIVE_HOST_NAME is the Chrome native-messaging host identity. It must stay
+// byte-identical to NATIVE_HOST_NAME in browser-first/bootstrap/bridge-policy.mjs.
+// Inlined (not imported) because bridge-policy.mjs imports Node builtins
+// (node:fs/os/path/url) that a Chrome extension service worker cannot load.
+const NATIVE_HOST_NAME = "com.resonantos.bridge_bootstrap";
 
 export const BOOTSTRAP_PROTOCOL = "resonantos/bootstrap/v1";
 export const DEFAULT_REQUEST_TIMEOUT_MS = 5000;
@@ -72,25 +76,29 @@ export function projectBootstrapResponse(response) {
   // Reject unknown fields. The host projects results the same way, so any
   // extra field on the response is either a host bug or a forgery attempt.
   for (const key of Object.keys(response)) {
-    if (!KNOWN_ENVELOPE_FIELDS.has(key)
-      && key !== "result"
-      && key !== "ok"
-      && key !== "status"
-      && key !== "version"
-      && key !== "endpoint"
-      && key !== "instanceId"
-      && key !== "generation"
-      && key !== "startedAt"
-      && key !== "alreadyRunning"
-      && key !== "failureCode"
-      && key !== "failureMessage") {
+    if (
+      !KNOWN_ENVELOPE_FIELDS.has(key) &&
+      key !== "result" &&
+      key !== "ok" &&
+      key !== "status" &&
+      key !== "version" &&
+      key !== "endpoint" &&
+      key !== "instanceId" &&
+      key !== "generation" &&
+      key !== "startedAt" &&
+      key !== "alreadyRunning" &&
+      key !== "failureCode" &&
+      key !== "failureMessage"
+    ) {
       return null;
     }
   }
   if (response.protocol !== BOOTSTRAP_PROTOCOL) return null;
-  if (typeof response.requestId !== "string"
-    || response.requestId.length === 0
-    || response.requestId.length > REQUEST_ID_MAX_LENGTH) {
+  if (
+    typeof response.requestId !== "string" ||
+    response.requestId.length === 0 ||
+    response.requestId.length > REQUEST_ID_MAX_LENGTH
+  ) {
     return null;
   }
   // Strict exact-shape on the result: the host may project leniently, but
@@ -115,8 +123,11 @@ export function projectBootstrapResponse(response) {
     if (!KNOWN_RESULT_FIELDS.has(key)) return null;
   }
   if (typeof result.status !== "string" || !STATUS_SET.has(result.status)) return null;
-  if (result.failureCode !== undefined && result.failureCode !== null
-    && (typeof result.failureCode !== "string" || !FAILURE_SET.has(result.failureCode))) {
+  if (
+    result.failureCode !== undefined &&
+    result.failureCode !== null &&
+    (typeof result.failureCode !== "string" || !FAILURE_SET.has(result.failureCode))
+  ) {
     return null;
   }
   const failureCode = result.failureCode ?? null;
@@ -138,11 +149,18 @@ export function projectBootstrapResponse(response) {
 // Build the outbound envelope. Strict exact-shape: only the three closed
 // fields. Anything else is dropped here. Used by tests and by the public
 // request path.
-export function buildBootstrapRequestEnvelope({ operation, requestId = defaultRequestIdFactory() } = {}) {
+export function buildBootstrapRequestEnvelope({
+  operation,
+  requestId = defaultRequestIdFactory(),
+} = {}) {
   if (!OPERATION_SET.has(operation)) {
     throw new Error("bootstrap-client: unknown operation");
   }
-  if (typeof requestId !== "string" || requestId.length === 0 || requestId.length > REQUEST_ID_MAX_LENGTH) {
+  if (
+    typeof requestId !== "string" ||
+    requestId.length === 0 ||
+    requestId.length > REQUEST_ID_MAX_LENGTH
+  ) {
     throw new Error("bootstrap-client: invalid requestId");
   }
   return Object.freeze({
@@ -154,10 +172,20 @@ export function buildBootstrapRequestEnvelope({ operation, requestId = defaultRe
 
 function closedFailure(code, message) {
   if (!FAILURE_SET.has(code)) code = "internal-error";
-  const safeMessage = typeof message === "string" && message.length > 0 && message.length <= 256
-    ? message
-    : null;
-  return { ok: false, status: null, version: null, endpoint: null, instanceId: null, generation: null, startedAt: null, alreadyRunning: false, failureCode: code, failureMessage: safeMessage };
+  const safeMessage =
+    typeof message === "string" && message.length > 0 && message.length <= 256 ? message : null;
+  return {
+    ok: false,
+    status: null,
+    version: null,
+    endpoint: null,
+    instanceId: null,
+    generation: null,
+    startedAt: null,
+    alreadyRunning: false,
+    failureCode: code,
+    failureMessage: safeMessage,
+  };
 }
 
 function checkPrivilegedContext() {
@@ -171,8 +199,11 @@ function checkPrivilegedContext() {
     throw new Error("bootstrap-client: chrome.runtime is not available in this context");
   }
   const protocol = (() => {
-    try { return new URL(globalThis.location?.href ?? "").protocol; }
-    catch { return ""; }
+    try {
+      return new URL(globalThis.location?.href ?? "").protocol;
+    } catch {
+      return "";
+    }
   })();
   if (protocol === "http:" || protocol === "https:") {
     throw new Error("bootstrap-client: refused in page context");
@@ -193,8 +224,9 @@ function checkPrivilegedContext() {
  * }} [options]
  */
 export function createBootstrapClient(options = {}) {
-  const createPort = options.createPort
-    ?? (() => {
+  const createPort =
+    options.createPort ??
+    (() => {
       const port = globalThis.chrome.runtime.connectNative(NATIVE_HOST_NAME);
       return port;
     });
@@ -205,7 +237,8 @@ export function createBootstrapClient(options = {}) {
   const clearTimeoutImpl = options.clearTimeoutImpl ?? clearTimeout;
   const requestIdFactory = options.requestIdFactory ?? defaultRequestIdFactory;
   const privilegedCheck = options.privilegedCheck ?? checkPrivilegedContext;
-  const readLastError = options.lastErrorMessage ?? (() => globalThis.chrome?.runtime?.lastError?.message ?? null);
+  const readLastError =
+    options.lastErrorMessage ?? (() => globalThis.chrome?.runtime?.lastError?.message ?? null);
 
   // Privilege guard at construction time (so an injected createPort can't
   // bypass it; the production factory is the only caller that needs the
@@ -243,17 +276,27 @@ export function createBootstrapClient(options = {}) {
         settled = true;
         if (timer) clearTimeoutImpl(timer);
         if (disconnectTimer) clearTimeoutImpl(disconnectTimer);
-        try { port.disconnect?.(); } catch { /* defensive */ }
+        try {
+          port.disconnect?.();
+        } catch {
+          /* defensive */
+        }
         resolve(value);
       };
-      timer = setTimeoutImpl(() => finish(closedFailure("internal-error", "request-timeout")), requestTimeoutMs);
+      timer = setTimeoutImpl(
+        () => finish(closedFailure("internal-error", "request-timeout")),
+        requestTimeoutMs,
+      );
       // Chrome ports dispatch a native message via `port.onMessage`. We
       // accept any payload (string or object); strings are parsed as JSON.
       const onMessage = (raw) => {
         let decoded = raw;
         if (typeof decoded === "string") {
-          try { decoded = JSON.parse(decoded); }
-          catch { return finish(closedFailure("invalid-request", "non-json response")); }
+          try {
+            decoded = JSON.parse(decoded);
+          } catch {
+            return finish(closedFailure("invalid-request", "non-json response"));
+          }
         }
         const projected = projectBootstrapResponse(decoded);
         if (!projected) {
@@ -269,7 +312,10 @@ export function createBootstrapClient(options = {}) {
         // Chrome sets chrome.runtime.lastError on disconnect. Read it
         // through the injected seam; never echo raw text to the caller.
         const lastError = readLastError();
-        if (!settled) finish(closedFailure(lastError ? "internal-error" : "internal-error", "port-disconnected"));
+        if (!settled)
+          finish(
+            closedFailure(lastError ? "internal-error" : "internal-error", "port-disconnected"),
+          );
       };
       try {
         port.onMessage?.addListener?.(onMessage);
@@ -295,4 +341,12 @@ export function createBootstrapClient(options = {}) {
 
 // Re-export closed vocabularies for callers that need to validate UI state
 // (e.g. the bridge-status badge or the Settings → Stop bridge confirmation).
-export { BOOTSTRAP_OPERATIONS, PUBLIC_FAILURE_CODES, PUBLIC_STATUS_VALUES, validateBootstrapRequest, buildSuccessResponse, buildErrorResponse, NATIVE_HOST_NAME };
+export {
+  BOOTSTRAP_OPERATIONS,
+  PUBLIC_FAILURE_CODES,
+  PUBLIC_STATUS_VALUES,
+  validateBootstrapRequest,
+  buildSuccessResponse,
+  buildErrorResponse,
+  NATIVE_HOST_NAME,
+};
