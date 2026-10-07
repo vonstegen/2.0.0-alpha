@@ -57,6 +57,7 @@ const isIsoTimestamp = (value) =>
  *   status: string,
  *   version?: string,
  *   endpoint?: string,
+ *   publicEndpoint?: string,
  *   startedAt?: string,
  *   uptimeSeconds?: number,
  *   generation?: number,
@@ -109,7 +110,9 @@ export function createRuntimeProjectionService(options) {
   if (!bridgeStatus || typeof bridgeStatus.snapshot !== "function") {
     throw new TypeError("createRuntimeProjectionService requires a bridgeStatus.snapshot()");
   }
-  const sessionCounts = options.sessionCounts ?? { getSessionsByRuntime: () => ({ activeSessionCount: 0 }) };
+  const sessionCounts = options.sessionCounts ?? {
+    getSessionsByRuntime: () => ({ activeSessionCount: 0 }),
+  };
   const now = options.now ?? (() => new Date().toISOString());
   const onUpdate = typeof options.onUpdate === "function" ? options.onUpdate : null;
 
@@ -126,7 +129,8 @@ export function createRuntimeProjectionService(options) {
   function buildRuntimeEntries() {
     const registryProjection = hostRegistry.snapshot();
     const installations = registryProjection?.installations ?? {};
-    const activeList = typeof reconciler.listActive === "function" ? (reconciler.listActive() ?? []) : [];
+    const activeList =
+      typeof reconciler.listActive === "function" ? (reconciler.listActive() ?? []) : [];
     // Index the active list by addonId for O(1) lookup.
     const activeByAddon = new Map();
     for (const active of activeList) {
@@ -144,9 +148,10 @@ export function createRuntimeProjectionService(options) {
       if (!installation || typeof installation !== "object") continue;
       const manifest = installation.manifest;
       if (!manifest || typeof manifest !== "object") continue;
-      const runtimeType = typeof manifest.runtimeType === "string" && KNOWN_RUNTIME_TYPES.has(manifest.runtimeType)
-        ? manifest.runtimeType
-        : "unknown";
+      const runtimeType =
+        typeof manifest.runtimeType === "string" && KNOWN_RUNTIME_TYPES.has(manifest.runtimeType)
+          ? manifest.runtimeType
+          : "unknown";
       const active = activeByAddon.get(addonId);
       let status;
       if (active) {
@@ -161,9 +166,10 @@ export function createRuntimeProjectionService(options) {
         ? installation.projectionGeneration
         : 0;
       const sessionCount = sessionCounts.getSessionsByRuntime(addonId);
-      const activeSessionCount = isPlainObject(sessionCount) && isNonNegativeSafeInteger(sessionCount.activeSessionCount)
-        ? sessionCount.activeSessionCount
-        : 0;
+      const activeSessionCount =
+        isPlainObject(sessionCount) && isNonNegativeSafeInteger(sessionCount.activeSessionCount)
+          ? sessionCount.activeSessionCount
+          : 0;
       entries.push({
         addonId: assertBoundedString(addonId, "runtime.addonId"),
         runtimeId: typeof active?.factoryId === "string" ? active.factoryId : addonId,
@@ -183,12 +189,18 @@ export function createRuntimeProjectionService(options) {
     if (installation?.enabled !== true) return "inactive";
     if (installation?.revocation === "hard-stop") return "inactive";
     if (runtimeType === "ui-module" || runtimeType === "embedded-module") return "inactive";
-    const grants = Array.isArray(installation.grantedCapabilities) ? installation.grantedCapabilities : [];
-    const required = Array.isArray(installation.requiredCapabilities) ? installation.requiredCapabilities : [];
+    const grants = Array.isArray(installation.grantedCapabilities)
+      ? installation.grantedCapabilities
+      : [];
+    const required = Array.isArray(installation.requiredCapabilities)
+      ? installation.requiredCapabilities
+      : [];
     if (required.length > 0) {
       const granted = new Set(
         grants
-          .filter((grant) => grant && grant.granted === true && typeof grant.capability === "string")
+          .filter(
+            (grant) => grant && grant.granted === true && typeof grant.capability === "string",
+          )
           .map((grant) => grant.capability),
       );
       for (const cap of required) {
@@ -215,21 +227,30 @@ export function createRuntimeProjectionService(options) {
       if (!installation || typeof installation !== "object") continue;
       const manifest = installation.manifest;
       if (!manifest || typeof manifest !== "object") continue;
-      const isConnector = manifest.category === "connector"
-        || manifest.runtimeType === "channel-addon";
+      const isConnector =
+        manifest.category === "connector" || manifest.runtimeType === "channel-addon";
       if (!isConnector) continue;
-      const runtimeType = typeof manifest.runtimeType === "string" && KNOWN_RUNTIME_TYPES.has(manifest.runtimeType)
-        ? manifest.runtimeType
-        : "unknown";
+      const runtimeType =
+        typeof manifest.runtimeType === "string" && KNOWN_RUNTIME_TYPES.has(manifest.runtimeType)
+          ? manifest.runtimeType
+          : "unknown";
       const installed = installation.installed === true;
       const enabled = installation.enabled === true;
       const connectionState = !installed
         ? "not-installed"
         : !enabled
           ? "disabled"
-          : (installation.revocation === "hard-stop" ? "revoked" : (manifest.runtimeType === "channel-addon" ? "installed" : "installed"));
-      const grants = Array.isArray(installation.grantedCapabilities) ? installation.grantedCapabilities : [];
-      const required = Array.isArray(installation.requiredCapabilities) ? installation.requiredCapabilities : [];
+          : installation.revocation === "hard-stop"
+            ? "revoked"
+            : manifest.runtimeType === "channel-addon"
+              ? "installed"
+              : "installed";
+      const grants = Array.isArray(installation.grantedCapabilities)
+        ? installation.grantedCapabilities
+        : [];
+      const required = Array.isArray(installation.requiredCapabilities)
+        ? installation.requiredCapabilities
+        : [];
       const authorizationState = deriveAuthorizationState(grants, required, installation);
       entries.push({
         addonId: assertBoundedString(addonId, "connector.addonId"),
@@ -285,12 +306,14 @@ export function createRuntimeProjectionService(options) {
       status: typeof raw.status === "string" ? raw.status : "offline",
       version: typeof raw.version === "string" ? raw.version : undefined,
       endpoint: typeof raw.endpoint === "string" ? raw.endpoint : undefined,
+      publicEndpoint: typeof raw.publicEndpoint === "string" ? raw.publicEndpoint : undefined,
       startedAt: isIsoTimestamp(raw.startedAt) ? raw.startedAt : undefined,
       uptimeSeconds: isNonNegativeSafeInteger(raw.uptimeSeconds) ? raw.uptimeSeconds : undefined,
       generation: isNonNegativeSafeInteger(raw.generation) ? raw.generation : undefined,
       instanceId: typeof raw.instanceId === "string" ? raw.instanceId : undefined,
       bootEpoch: typeof raw.bootEpoch === "string" ? raw.bootEpoch : undefined,
-      publicFailureCode: typeof raw.publicFailureCode === "string" ? raw.publicFailureCode : undefined,
+      publicFailureCode:
+        typeof raw.publicFailureCode === "string" ? raw.publicFailureCode : undefined,
     };
   }
 
@@ -325,7 +348,11 @@ export function createRuntimeProjectionService(options) {
       current = projection;
     }
     if (onUpdate) {
-      try { onUpdate(current); } catch { /* subscriber errors are non-fatal */ }
+      try {
+        onUpdate(current);
+      } catch {
+        /* subscriber errors are non-fatal */
+      }
     }
     return current;
   }

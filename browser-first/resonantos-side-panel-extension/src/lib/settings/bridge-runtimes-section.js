@@ -20,7 +20,13 @@
 // Intent citation: docs/architecture/ADDON-BRIDGE-RUNTIME-ROADMAP.md
 // §12 (CP-BR6), BRIDGE-RUNTIME-PROJECTION.md, ADR-047.
 
-import { metricCard, noteCard, safeErrorMessage, setStatus, settingsHeader } from "./settings-common.js";
+import {
+  metricCard,
+  noteCard,
+  safeErrorMessage,
+  setStatus,
+  settingsHeader,
+} from "./settings-common.js";
 import {
   buildBridgeRuntimesView,
   shouldAcceptProjection,
@@ -124,7 +130,8 @@ function renderOverview(view) {
   const heading = element("strong", { className: "settings-provider-heading" });
   heading.textContent = "Core bridge";
   const summary = element("p", { className: "settings-provider-help" });
-  summary.textContent = "Core-bridge health is sourced from the bootstrap host when the projection is unavailable, and from the projection when the bridge is connected.";
+  summary.textContent =
+    "Core-bridge health is sourced from the bootstrap host when the projection is unavailable, and from the projection when the bridge is connected.";
   section.append(heading, summary);
 
   const grid = element("div", { className: "settings-health-grid" });
@@ -132,31 +139,41 @@ function renderOverview(view) {
     metricCard({
       label: "State",
       value: view.overview.label,
-      detail: view.overview.failureCode ? `Failure code: ${view.overview.failureCode}` : "No failure code reported.",
+      detail: view.overview.failureCode
+        ? `Failure code: ${view.overview.failureCode}`
+        : "No failure code reported.",
       tone: view.overview.tone,
     }),
     metricCard({
       label: "Endpoint",
       value: view.overview.endpoint ?? "—",
-      detail: view.overview.version ? `Version ${view.overview.version}` : "Version unknown.",
+      detail: [
+        view.overview.publicEndpoint && view.overview.publicEndpoint !== view.overview.endpoint
+          ? `Public ${view.overview.publicEndpoint}`
+          : null,
+        view.overview.version ? `Version ${view.overview.version}` : "Version unknown.",
+      ]
+        .filter(Boolean)
+        .join(" · "),
       tone: view.overview.tone === VIEW_TONE.error ? VIEW_TONE.error : VIEW_TONE.info,
     }),
     metricCard({
       label: "Uptime",
-      value: view.overview.uptimeSeconds == null
-        ? "—"
-        : `${view.overview.uptimeSeconds}s`,
-      detail: view.overview.startedAt ? `Started ${view.overview.startedAt}` : "Start time unknown.",
+      value: view.overview.uptimeSeconds == null ? "—" : `${view.overview.uptimeSeconds}s`,
+      detail: view.overview.startedAt
+        ? `Started ${view.overview.startedAt}`
+        : "Start time unknown.",
       tone: VIEW_TONE.info,
     }),
     metricCard({
       label: "Instance",
       value: view.overview.instanceId ?? "—",
-      detail: view.overview.generation == null
-        ? "Generation unknown."
-        : `Generation ${view.overview.generation}.`,
+      detail:
+        view.overview.generation == null
+          ? "Generation unknown."
+          : `Generation ${view.overview.generation}.`,
       tone: VIEW_TONE.info,
-    })
+    }),
   );
   section.append(grid);
 
@@ -164,8 +181,8 @@ function renderOverview(view) {
     badge(
       view.viewState.overview === "ready" ? "Live" : statusLabel(view.viewState.overview),
       view.overview.tone,
-      { live: true, labelText: "Core bridge status" }
-    )
+      { live: true, labelText: "Core bridge status" },
+    ),
   );
   return section;
 }
@@ -182,31 +199,31 @@ function renderRuntimeRow(runtime, options) {
   const title = element("strong");
   title.textContent = runtime.label;
   const subtitle = element("span", { className: "settings-runtime-row-type" });
-  subtitle.textContent = runtime.runtimeType === UNKNOWN_RUNTIME_RUNTIME_TYPE
-    ? "Runtime type: unknown"
-    : `Runtime type: ${runtime.runtimeType}`;
+  subtitle.textContent =
+    runtime.runtimeType === UNKNOWN_RUNTIME_RUNTIME_TYPE
+      ? "Runtime type: unknown"
+      : `Runtime type: ${runtime.runtimeType}`;
   header.append(title, subtitle);
   row.append(header);
 
   const detail = element("p", { className: "settings-runtime-row-detail" });
-  const statusBadge = badge(
-    runtime.statusLabel,
-    runtime.tone,
-    { live: true, labelText: `Runtime ${runtime.label} status` }
-  );
+  const statusBadge = badge(runtime.statusLabel, runtime.tone, {
+    live: true,
+    labelText: `Runtime ${runtime.label} status`,
+  });
   detail.append(
     statusBadge,
     document.createTextNode(" "),
     document.createTextNode(
       runtime.activeSessionCount === 1
         ? "1 active session"
-        : `${runtime.activeSessionCount} active sessions`
-    )
+        : `${runtime.activeSessionCount} active sessions`,
+    ),
   );
   if (runtime.publicFailureCode) {
     detail.append(
       document.createTextNode(" — "),
-      document.createTextNode(`Failure code: ${runtime.publicFailureCode}`)
+      document.createTextNode(`Failure code: ${runtime.publicFailureCode}`),
     );
   }
   row.append(detail);
@@ -223,7 +240,7 @@ function renderRuntimeRow(runtime, options) {
         onClick: () => onToggle(runtime.status === "inactive"),
         ariaLabel: `${runtime.status === "inactive" ? "Enable" : "Disable"} ${runtime.label}`,
         testid: `runtime-toggle-${runtime.addonId}`,
-      })
+      }),
     );
   }
   if (options.actions.restart) {
@@ -233,7 +250,7 @@ function renderRuntimeRow(runtime, options) {
         onClick: () => options.onRestart?.(runtime),
         ariaLabel: `Restart ${runtime.label}`,
         testid: `runtime-restart-${runtime.addonId}`,
-      })
+      }),
     );
   }
   if (actions.childElementCount > 0) row.append(actions);
@@ -248,7 +265,8 @@ function renderRuntimes(view, options) {
   const heading = element("strong", { className: "settings-provider-heading" });
   heading.textContent = "Add-on runtimes";
   const summary = element("p", { className: "settings-provider-help" });
-  summary.textContent = "Per-runtime lifecycle state. Enable/disable routes through a host transaction; restart is hidden unless the host exposes a real restart transaction.";
+  summary.textContent =
+    "Per-runtime lifecycle state. Enable/disable routes through a host transaction; restart is hidden unless the host exposes a real restart transaction.";
   section.append(heading, summary);
 
   if (view.viewState.runtimes === "loading") {
@@ -256,24 +274,30 @@ function renderRuntimes(view, options) {
     return section;
   }
   if (view.viewState.runtimes === "empty") {
-    section.append(element("p", { className: "settings-status", text: "No add-on runtimes are installed." }));
+    section.append(
+      element("p", { className: "settings-status", text: "No add-on runtimes are installed." }),
+    );
     return section;
   }
   if (view.viewState.runtimes === "degraded") {
-    section.append(element("p", {
-      className: "settings-status",
-      text: "Bridge is offline or failed. Online runtime detail is unavailable.",
-    }));
+    section.append(
+      element("p", {
+        className: "settings-status",
+        text: "Bridge is offline or failed. Online runtime detail is unavailable.",
+      }),
+    );
     return section;
   }
 
   const list = element("div", { className: "settings-runtime-list" });
   for (const runtime of view.runtimes) {
-    list.append(renderRuntimeRow(runtime, {
-      actions: view.actions,
-      onToggleEnabled: options.onToggleEnabled,
-      onRestart: options.onRestart,
-    }));
+    list.append(
+      renderRuntimeRow(runtime, {
+        actions: view.actions,
+        onToggleEnabled: options.onToggleEnabled,
+        onRestart: options.onRestart,
+      }),
+    );
   }
   section.append(list);
   return section;
@@ -287,7 +311,8 @@ function renderConnectors(view) {
   const heading = element("strong", { className: "settings-provider-heading" });
   heading.textContent = "Connectors";
   const summary = element("p", { className: "settings-provider-help" });
-  summary.textContent = "Public connection and authorization state per connector. Last-successful-health is shown as — when the host has not recorded a public timestamp.";
+  summary.textContent =
+    "Public connection and authorization state per connector. Last-successful-health is shown as — when the host has not recorded a public timestamp.";
   section.append(heading, summary);
 
   if (view.viewState.connectors === "loading") {
@@ -295,14 +320,18 @@ function renderConnectors(view) {
     return section;
   }
   if (view.viewState.connectors === "empty") {
-    section.append(element("p", { className: "settings-status", text: "No connectors are installed." }));
+    section.append(
+      element("p", { className: "settings-status", text: "No connectors are installed." }),
+    );
     return section;
   }
   if (view.viewState.connectors === "degraded") {
-    section.append(element("p", {
-      className: "settings-status",
-      text: "Bridge is offline or failed. Online connector detail is unavailable.",
-    }));
+    section.append(
+      element("p", {
+        className: "settings-status",
+        text: "Bridge is offline or failed. Online connector detail is unavailable.",
+      }),
+    );
     return section;
   }
 
@@ -319,7 +348,7 @@ function renderConnectors(view) {
     const stateBadge = badge(
       connector.connectionLabel,
       connector.connectionState === "enabled" ? VIEW_TONE.ok : VIEW_TONE.info,
-      { live: true, labelText: `Connector ${connector.label} connection state` }
+      { live: true, labelText: `Connector ${connector.label} connection state` },
     );
     const authBadge = badge(
       connector.authorizationLabel,
@@ -328,7 +357,7 @@ function renderConnectors(view) {
         : connector.authorizationState === "revoked" || connector.authorizationState === "missing"
           ? VIEW_TONE.error
           : VIEW_TONE.warn,
-      { live: true, labelText: `Connector ${connector.label} authorization state` }
+      { live: true, labelText: `Connector ${connector.label} authorization state` },
     );
     row.append(header, stateBadge, document.createTextNode(" "), authBadge);
     if (connector.lastSuccessfulHealthAt) {
@@ -354,7 +383,8 @@ function renderSessions(view) {
   const heading = element("strong", { className: "settings-provider-heading" });
   heading.textContent = "Active sessions";
   const summary = element("p", { className: "settings-provider-help" });
-  summary.textContent = "Public session identifiers and counts. The host never exposes private session data.";
+  summary.textContent =
+    "Public session identifiers and counts. The host never exposes private session data.";
   section.append(heading, summary);
 
   if (view.viewState.sessions === "loading") {
@@ -366,10 +396,12 @@ function renderSessions(view) {
     return section;
   }
   if (view.viewState.sessions === "degraded") {
-    section.append(element("p", {
-      className: "settings-status",
-      text: "Bridge is offline or failed. Online session detail is unavailable.",
-    }));
+    section.append(
+      element("p", {
+        className: "settings-status",
+        text: "Bridge is offline or failed. Online session detail is unavailable.",
+      }),
+    );
     return section;
   }
 
@@ -393,7 +425,8 @@ function renderDiagnostics(view) {
   const heading = element("strong", { className: "settings-provider-heading" });
   heading.textContent = "Diagnostics";
   const summary = element("p", { className: "settings-provider-help" });
-  summary.textContent = "Public failure code, update mechanism, and projection generation. Raw errors and paths are never rendered.";
+  summary.textContent =
+    "Public failure code, update mechanism, and projection generation. Raw errors and paths are never rendered.";
   section.append(heading, summary);
 
   if (view.viewState.diagnostics === "loading") {
@@ -401,29 +434,35 @@ function renderDiagnostics(view) {
     return section;
   }
   if (view.viewState.diagnostics === "degraded") {
-    section.append(element("p", {
-      className: "settings-status",
-      text: "Bridge is offline or failed. Bootstrap status is the only available source.",
-    }));
+    section.append(
+      element("p", {
+        className: "settings-status",
+        text: "Bridge is offline or failed. Bootstrap status is the only available source.",
+      }),
+    );
   }
 
   const items = [];
   items.push(
-    element("p", { className: "settings-runtime-row-detail", text: `Public failure code: ${view.overview.failureCode ?? "none"}` })
+    element("p", {
+      className: "settings-runtime-row-detail",
+      text: `Public failure code: ${view.overview.failureCode ?? "none"}`,
+    }),
   );
   items.push(
     element("p", {
       className: "settings-runtime-row-detail",
       text: `Update mechanism: ${view.updateMechanism ?? "polling"}`,
-    })
+    }),
   );
   items.push(
     element("p", {
       className: "settings-runtime-row-detail",
-      text: view.projectionGeneration == null
-        ? "Projection generation: not yet fetched."
-        : `Projection generation: ${view.projectionGeneration}`,
-    })
+      text:
+        view.projectionGeneration == null
+          ? "Projection generation: not yet fetched."
+          : `Projection generation: ${view.projectionGeneration}`,
+    }),
   );
   for (const item of items) section.append(item);
   return section;
@@ -471,7 +510,11 @@ export function renderBridgeRuntimesSection(container, options = {}) {
   statusNode.setAttribute("role", "status");
   statusNode.setAttribute("aria-live", "polite");
   setStatus(statusNode, "Loading projection…", "info");
-  const live = liveRegion({ id: "bridge-runtimes-live", label: "Bridge & Runtimes status", tone: VIEW_TONE.info });
+  const live = liveRegion({
+    id: "bridge-runtimes-live",
+    label: "Bridge & Runtimes status",
+    tone: VIEW_TONE.info,
+  });
 
   const ownership = noteCard({
     title: "Authority boundary",
@@ -506,26 +549,30 @@ export function renderBridgeRuntimesSection(container, options = {}) {
       }),
       renderConnectors(view),
       renderSessions(view),
-      renderDiagnostics(view)
+      renderDiagnostics(view),
     );
     setStatus(
       statusNode,
       view.viewState.overview === "ready"
         ? "Projection live."
         : `Projection: ${view.viewState.overview}.`,
-      view.overview.tone
+      view.overview.tone,
     );
   };
 
   const renderError = (error) => {
     container.replaceChildren(header, statusNode, ownership, live);
     setStatus(statusNode, `Projection fetch failed: ${safeErrorMessage(error)}`, "error");
-    container.append(renderDiagnostics(currentView ?? {
-      viewState: { diagnostics: "loading" },
-      overview: { failureCode: null, status: "offline" },
-      updateMechanism: null,
-      projectionGeneration: null,
-    }));
+    container.append(
+      renderDiagnostics(
+        currentView ?? {
+          viewState: { diagnostics: "loading" },
+          overview: { failureCode: null, status: "offline" },
+          updateMechanism: null,
+          projectionGeneration: null,
+        },
+      ),
+    );
   };
 
   const applyProjection = async (projection) => {
@@ -593,12 +640,14 @@ export function renderBridgeRuntimesSection(container, options = {}) {
   } else {
     setStatus(statusNode, "Projection fetcher is not configured for this surface.", "warn");
     void (async () => {
-      renderView(buildBridgeRuntimesView({
-        projection: null,
-        bootstrapSnapshot: await readBootstrap(),
-        enableTransaction: options.enableTransaction,
-        supportedActions: options.supportedActions ?? {},
-      }));
+      renderView(
+        buildBridgeRuntimesView({
+          projection: null,
+          bootstrapSnapshot: await readBootstrap(),
+          enableTransaction: options.enableTransaction,
+          supportedActions: options.supportedActions ?? {},
+        }),
+      );
     })();
   }
 

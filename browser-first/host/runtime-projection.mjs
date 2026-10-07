@@ -32,7 +32,10 @@
 // Intent citation: docs/architecture/ADDON-BRIDGE-RUNTIME-ROADMAP.md
 // §11 (CP-BR5) and ADR-047 §"Public Status And Non-Leak Boundary".
 
-import { ADDON_RUNTIME_LIFECYCLE_STATUSES, ADDON_RUNTIME_PUBLIC_FAILURE_CODES } from "../../packages/addon-sdk/src/runtime-lifecycle.ts";
+import {
+  ADDON_RUNTIME_LIFECYCLE_STATUSES,
+  ADDON_RUNTIME_PUBLIC_FAILURE_CODES,
+} from "../../packages/addon-sdk/src/runtime-lifecycle.ts";
 
 // ---------------------------------------------------------------------------
 // Closed vocabularies
@@ -64,11 +67,7 @@ export const KNOWN_AUTHORIZATION_STATES = Object.freeze([
   "not-applicable",
 ]);
 
-export const KNOWN_CONNECTOR_HEALTH_STATES = Object.freeze([
-  "ok",
-  "degraded",
-  "unknown",
-]);
+export const KNOWN_CONNECTOR_HEALTH_STATES = Object.freeze(["ok", "degraded", "unknown"]);
 
 // CP-BR5 closed failure code catalog (re-uses CP-BR3/CP-BR4 vocabulary and
 // adds projection-specific codes).
@@ -102,10 +101,7 @@ const RUNTIME_TYPE_KNOWN_SET = new Set([
 // Displayable runtime types include the known five plus an open "unknown"
 // bucket so a future add-on with a novel runtimeType is still surfaced via
 // its public identifiers.
-const DISPLAYABLE_RUNTIME_TYPES = new Set([
-  ...RUNTIME_TYPE_KNOWN_SET,
-  "unknown",
-]);
+const DISPLAYABLE_RUNTIME_TYPES = new Set([...RUNTIME_TYPE_KNOWN_SET, "unknown"]);
 
 const RUNTIME_TYPE_TO_PUBLIC_LABEL = Object.freeze({
   "ui-module": "ui-module",
@@ -115,59 +111,66 @@ const RUNTIME_TYPE_TO_PUBLIC_LABEL = Object.freeze({
   "channel-addon": "channel-addon",
 });
 
-const CLOSED_FIELDS_OVERVIEW = Object.freeze(new Set([
-  "status",
-  "version",
-  "endpoint",
-  "startedAt",
-  "uptimeSeconds",
-  "generation",
-  "publicFailureCode",
-  "bootEpoch",
-  "instanceId",
-]));
+const CLOSED_FIELDS_OVERVIEW = Object.freeze(
+  new Set([
+    "status",
+    "version",
+    "endpoint",
+    "publicEndpoint",
+    "startedAt",
+    "uptimeSeconds",
+    "generation",
+    "publicFailureCode",
+    "bootEpoch",
+    "instanceId",
+  ]),
+);
 
-const CLOSED_FIELDS_RUNTIME = Object.freeze(new Set([
-  "addonId",
-  "runtimeId",
-  "runtimeType",
-  "status",
-  "generation",
-  "activeSessionCount",
-  "startedAt",
-  "lastTransitionAt",
-  "publicFailureCode",
-  "factoryId",
-  "classification",
-  "displayLabel",
-]));
+const CLOSED_FIELDS_RUNTIME = Object.freeze(
+  new Set([
+    "addonId",
+    "runtimeId",
+    "runtimeType",
+    "status",
+    "generation",
+    "activeSessionCount",
+    "startedAt",
+    "lastTransitionAt",
+    "publicFailureCode",
+    "factoryId",
+    "classification",
+    "displayLabel",
+  ]),
+);
 
-const CLOSED_FIELDS_CONNECTOR = Object.freeze(new Set([
-  "addonId",
-  "label",
-  "runtimeType",
-  "connectionState",
-  "authorizationState",
-  "lastSuccessfulHealthAt",
-  "publicFailureCode",
-  "supportedRuntimeTypes",
-]));
+const CLOSED_FIELDS_CONNECTOR = Object.freeze(
+  new Set([
+    "addonId",
+    "label",
+    "runtimeType",
+    "connectionState",
+    "authorizationState",
+    "lastSuccessfulHealthAt",
+    "publicFailureCode",
+    "supportedRuntimeTypes",
+  ]),
+);
 
-const CLOSED_FIELDS_SESSION = Object.freeze(new Set([
-  "addonId",
-  "runtimeId",
-  "activeSessionCount",
-]));
+const CLOSED_FIELDS_SESSION = Object.freeze(
+  new Set(["addonId", "runtimeId", "activeSessionCount"]),
+);
 
-const CLOSED_FIELDS_TOP = Object.freeze(new Set([
-  "bridgeOverview",
-  "runtimeList",
-  "connectorList",
-  "activeSessions",
-  "projectionGeneration",
-  "producedAt",
-  "updateMechanism",
-]));
+const CLOSED_FIELDS_TOP = Object.freeze(
+  new Set([
+    "bridgeOverview",
+    "runtimeList",
+    "connectorList",
+    "activeSessions",
+    "projectionGeneration",
+    "producedAt",
+    "updateMechanism",
+  ]),
+);
 
 // ---------------------------------------------------------------------------
 // Type predicates
@@ -176,8 +179,7 @@ const CLOSED_FIELDS_TOP = Object.freeze(new Set([
 const isPlainObject = (value) =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
-const isNonEmptyString = (value) =>
-  typeof value === "string" && value.trim().length > 0;
+const isNonEmptyString = (value) => typeof value === "string" && value.trim().length > 0;
 
 const isNonNegativeSafeInteger = (value) =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -432,6 +434,7 @@ export function redactLogValue(value) {
  *   status: string,
  *   version?: string,
  *   endpoint?: string,
+ *   publicEndpoint?: string,
  *   startedAt?: string,
  *   uptimeSeconds?: number,
  *   generation?: number,
@@ -443,7 +446,10 @@ export function redactLogValue(value) {
  */
 export function projectBridgeOverview(input) {
   if (!isPlainObject(input)) {
-    throw new ProjectionShapeError("projection-shape-invalid", "bridge overview input must be a plain object");
+    throw new ProjectionShapeError(
+      "projection-shape-invalid",
+      "bridge overview input must be a plain object",
+    );
   }
   // Whitelist: any field not on the closed list is dropped before the
   // public object is built. This is the core non-leak guard.
@@ -460,23 +466,38 @@ export function projectBridgeOverview(input) {
   if (sanitized.endpoint !== undefined) {
     overview.endpoint = assertBoundedString(sanitized.endpoint, "bridge.endpoint", { max: 256 });
   }
+  if (sanitized.publicEndpoint !== undefined) {
+    overview.publicEndpoint = assertBoundedString(
+      sanitized.publicEndpoint,
+      "bridge.publicEndpoint",
+      { max: 256 },
+    );
+  }
   if (sanitized.startedAt !== undefined) {
     overview.startedAt = assertIsoTimestamp(sanitized.startedAt, "bridge.startedAt");
   }
   if (sanitized.uptimeSeconds !== undefined) {
-    overview.uptimeSeconds = assertNonNegativeInteger(sanitized.uptimeSeconds, "bridge.uptimeSeconds");
+    overview.uptimeSeconds = assertNonNegativeInteger(
+      sanitized.uptimeSeconds,
+      "bridge.uptimeSeconds",
+    );
   }
   if (sanitized.generation !== undefined) {
     overview.generation = assertNonNegativeInteger(sanitized.generation, "bridge.generation");
   }
   if (sanitized.instanceId !== undefined) {
-    overview.instanceId = assertBoundedString(sanitized.instanceId, "bridge.instanceId", { max: 128 });
+    overview.instanceId = assertBoundedString(sanitized.instanceId, "bridge.instanceId", {
+      max: 128,
+    });
   }
   if (sanitized.bootEpoch !== undefined) {
     overview.bootEpoch = assertBoundedString(sanitized.bootEpoch, "bridge.bootEpoch", { max: 128 });
   }
   if (sanitized.publicFailureCode !== undefined) {
-    overview.publicFailureCode = assertFailureCode(sanitized.publicFailureCode, "bridge.publicFailureCode");
+    overview.publicFailureCode = assertFailureCode(
+      sanitized.publicFailureCode,
+      "bridge.publicFailureCode",
+    );
   }
   // Map a few bridge statuses to projection failure codes so the UI can
   // surface a uniform "why" without reading raw host state.
@@ -508,7 +529,10 @@ export function projectBridgeOverview(input) {
  */
 export function projectRuntimeEntry(input) {
   if (!isPlainObject(input)) {
-    throw new ProjectionShapeError("projection-shape-invalid", "runtime entry input must be a plain object");
+    throw new ProjectionShapeError(
+      "projection-shape-invalid",
+      "runtime entry input must be a plain object",
+    );
   }
   const sanitized = {};
   for (const key of Object.keys(input)) {
@@ -533,19 +557,29 @@ export function projectRuntimeEntry(input) {
     entry.startedAt = assertIsoTimestamp(sanitized.startedAt, "runtime.startedAt");
   }
   if (sanitized.lastTransitionAt !== undefined) {
-    entry.lastTransitionAt = assertIsoTimestamp(sanitized.lastTransitionAt, "runtime.lastTransitionAt");
+    entry.lastTransitionAt = assertIsoTimestamp(
+      sanitized.lastTransitionAt,
+      "runtime.lastTransitionAt",
+    );
   }
   if (sanitized.publicFailureCode !== undefined) {
-    entry.publicFailureCode = assertFailureCode(sanitized.publicFailureCode, "runtime.publicFailureCode");
+    entry.publicFailureCode = assertFailureCode(
+      sanitized.publicFailureCode,
+      "runtime.publicFailureCode",
+    );
   }
   if (sanitized.factoryId !== undefined) {
     entry.factoryId = assertBoundedString(sanitized.factoryId, "runtime.factoryId", { max: 128 });
   }
   if (sanitized.classification !== undefined) {
-    entry.classification = assertBoundedString(sanitized.classification, "runtime.classification", { max: 128 });
+    entry.classification = assertBoundedString(sanitized.classification, "runtime.classification", {
+      max: 128,
+    });
   }
   if (sanitized.displayLabel !== undefined) {
-    entry.displayLabel = assertBoundedString(sanitized.displayLabel, "runtime.displayLabel", { max: 128 });
+    entry.displayLabel = assertBoundedString(sanitized.displayLabel, "runtime.displayLabel", {
+      max: 128,
+    });
   } else {
     // Provide a public display label derived from the addonId. This is the
     // public identifier, never a credential or a path.
@@ -578,7 +612,10 @@ export function projectRuntimeEntry(input) {
  */
 export function projectConnectorEntry(input) {
   if (!isPlainObject(input)) {
-    throw new ProjectionShapeError("projection-shape-invalid", "connector entry input must be a plain object");
+    throw new ProjectionShapeError(
+      "projection-shape-invalid",
+      "connector entry input must be a plain object",
+    );
   }
   const sanitized = {};
   for (const key of Object.keys(input)) {
@@ -587,14 +624,21 @@ export function projectConnectorEntry(input) {
   }
   const entry = {};
   entry.addonId = assertString(sanitized.addonId, "connector.addonId");
-  entry.label = assertBoundedString(
-    sanitized.label ?? sanitized.addonId,
-    "connector.label",
-    { max: 128 },
+  entry.label = assertBoundedString(sanitized.label ?? sanitized.addonId, "connector.label", {
+    max: 128,
+  });
+  entry.runtimeType = assertRuntimeType(
+    sanitized.runtimeType ?? "unknown",
+    "connector.runtimeType",
   );
-  entry.runtimeType = assertRuntimeType(sanitized.runtimeType ?? "unknown", "connector.runtimeType");
-  entry.connectionState = assertConnectorState(sanitized.connectionState, "connector.connectionState");
-  entry.authorizationState = assertAuthorizationState(sanitized.authorizationState, "connector.authorizationState");
+  entry.connectionState = assertConnectorState(
+    sanitized.connectionState,
+    "connector.connectionState",
+  );
+  entry.authorizationState = assertAuthorizationState(
+    sanitized.authorizationState,
+    "connector.authorizationState",
+  );
   if (sanitized.lastSuccessfulHealthAt !== undefined) {
     entry.lastSuccessfulHealthAt = assertIsoTimestamp(
       sanitized.lastSuccessfulHealthAt,
@@ -602,13 +646,19 @@ export function projectConnectorEntry(input) {
     );
   }
   if (sanitized.publicFailureCode !== undefined) {
-    entry.publicFailureCode = assertFailureCode(sanitized.publicFailureCode, "connector.publicFailureCode");
+    entry.publicFailureCode = assertFailureCode(
+      sanitized.publicFailureCode,
+      "connector.publicFailureCode",
+    );
   }
   if (Array.isArray(sanitized.supportedRuntimeTypes)) {
     const types = [];
     for (const value of sanitized.supportedRuntimeTypes) {
       if (typeof value !== "string") {
-        throw new ProjectionShapeError("projection-shape-invalid", "connector.supportedRuntimeTypes must be an array of strings");
+        throw new ProjectionShapeError(
+          "projection-shape-invalid",
+          "connector.supportedRuntimeTypes must be an array of strings",
+        );
       }
       types.push(RUNTIME_TYPE_KNOWN_SET.has(value) ? value : "unknown");
     }
@@ -634,7 +684,10 @@ export function projectConnectorEntry(input) {
  */
 export function projectSessionEntry(input) {
   if (!isPlainObject(input)) {
-    throw new ProjectionShapeError("projection-shape-invalid", "session entry input must be a plain object");
+    throw new ProjectionShapeError(
+      "projection-shape-invalid",
+      "session entry input must be a plain object",
+    );
   }
   const sanitized = {};
   for (const key of Object.keys(input)) {
@@ -643,8 +696,15 @@ export function projectSessionEntry(input) {
   }
   const entry = {};
   entry.addonId = assertString(sanitized.addonId, "session.addonId");
-  entry.runtimeId = assertBoundedString(sanitized.runtimeId ?? sanitized.addonId, "session.runtimeId", { max: 128 });
-  entry.activeSessionCount = assertNonNegativeInteger(sanitized.activeSessionCount, "session.activeSessionCount");
+  entry.runtimeId = assertBoundedString(
+    sanitized.runtimeId ?? sanitized.addonId,
+    "session.runtimeId",
+    { max: 128 },
+  );
+  entry.activeSessionCount = assertNonNegativeInteger(
+    sanitized.activeSessionCount,
+    "session.activeSessionCount",
+  );
   return Object.freeze(entry);
 }
 
@@ -668,7 +728,10 @@ export function projectSessionEntry(input) {
  */
 export function projectBridgeRuntimes(input) {
   if (!isPlainObject(input)) {
-    throw new ProjectionShapeError("projection-shape-invalid", "bridgeRuntimes input must be a plain object");
+    throw new ProjectionShapeError(
+      "projection-shape-invalid",
+      "bridgeRuntimes input must be a plain object",
+    );
   }
   // Whitelist at the top level too.
   const sanitized = {};
@@ -677,22 +740,49 @@ export function projectBridgeRuntimes(input) {
     sanitized[key] = input[key];
   }
   if (!isPlainObject(sanitized.bridgeOverview)) {
-    throw new ProjectionShapeError("projection-shape-invalid", "bridgeOverview must be a plain object");
+    throw new ProjectionShapeError(
+      "projection-shape-invalid",
+      "bridgeOverview must be a plain object",
+    );
   }
-  if (!Array.isArray(sanitized.runtimeList) || !Array.isArray(sanitized.connectorList) || !Array.isArray(sanitized.activeSessions)) {
-    throw new ProjectionShapeError("projection-shape-invalid", "runtimeList, connectorList, and activeSessions must be arrays");
+  if (
+    !Array.isArray(sanitized.runtimeList) ||
+    !Array.isArray(sanitized.connectorList) ||
+    !Array.isArray(sanitized.activeSessions)
+  ) {
+    throw new ProjectionShapeError(
+      "projection-shape-invalid",
+      "runtimeList, connectorList, and activeSessions must be arrays",
+    );
   }
-  const projectionGeneration = assertNonNegativeInteger(sanitized.projectionGeneration, "projectionGeneration");
+  const projectionGeneration = assertNonNegativeInteger(
+    sanitized.projectionGeneration,
+    "projectionGeneration",
+  );
   const producedAt = assertIsoTimestamp(sanitized.producedAt, "producedAt");
-  const updateMechanism = sanitized.updateMechanism === undefined
-    ? "polling"
-    : (sanitized.updateMechanism === "polling" || sanitized.updateMechanism === "push" || sanitized.updateMechanism === "both"
+  const updateMechanism =
+    sanitized.updateMechanism === undefined
+      ? "polling"
+      : sanitized.updateMechanism === "polling" ||
+          sanitized.updateMechanism === "push" ||
+          sanitized.updateMechanism === "both"
         ? sanitized.updateMechanism
-        : (() => { throw new ProjectionShapeError("projection-shape-invalid", "updateMechanism must be polling|push|both"); })());
+        : (() => {
+            throw new ProjectionShapeError(
+              "projection-shape-invalid",
+              "updateMechanism must be polling|push|both",
+            );
+          })();
 
-  const runtimeList = Object.freeze(sanitized.runtimeList.map((entry) => projectRuntimeEntry(entry)));
-  const connectorList = Object.freeze(sanitized.connectorList.map((entry) => projectConnectorEntry(entry)));
-  const activeSessions = Object.freeze(sanitized.activeSessions.map((entry) => projectSessionEntry(entry)));
+  const runtimeList = Object.freeze(
+    sanitized.runtimeList.map((entry) => projectRuntimeEntry(entry)),
+  );
+  const connectorList = Object.freeze(
+    sanitized.connectorList.map((entry) => projectConnectorEntry(entry)),
+  );
+  const activeSessions = Object.freeze(
+    sanitized.activeSessions.map((entry) => projectSessionEntry(entry)),
+  );
   const bridgeOverview = projectBridgeOverview(sanitized.bridgeOverview);
 
   return Object.freeze({
@@ -717,12 +807,18 @@ export function projectBridgeRuntimes(input) {
 export function applyProjectionUpdate(current, incoming) {
   if (current === null || current === undefined) return incoming;
   if (!isPlainObject(current) || !isPlainObject(incoming)) {
-    throw new ProjectionShapeError("projection-shape-invalid", "applyProjectionUpdate: both projections must be plain objects");
+    throw new ProjectionShapeError(
+      "projection-shape-invalid",
+      "applyProjectionUpdate: both projections must be plain objects",
+    );
   }
   const currentGen = current.projectionGeneration;
   const incomingGen = incoming.projectionGeneration;
   if (!isNonNegativeSafeInteger(currentGen) || !isNonNegativeSafeInteger(incomingGen)) {
-    throw new ProjectionShapeError("projection-shape-invalid", "applyProjectionUpdate: projectionGeneration must be a non-negative safe integer");
+    throw new ProjectionShapeError(
+      "projection-shape-invalid",
+      "applyProjectionUpdate: projectionGeneration must be a non-negative safe integer",
+    );
   }
   if (incomingGen <= currentGen) {
     // Stale: keep the current projection. Throw a typed error so the
@@ -749,7 +845,10 @@ export function applyProjectionUpdate(current, incoming) {
  */
 export function projectRuntimeList(entries) {
   if (!Array.isArray(entries)) {
-    throw new ProjectionShapeError("projection-shape-invalid", "projectRuntimeList: entries must be an array");
+    throw new ProjectionShapeError(
+      "projection-shape-invalid",
+      "projectRuntimeList: entries must be an array",
+    );
   }
   return Object.freeze(entries.map((entry) => projectRuntimeEntry(entry)));
 }
@@ -763,7 +862,10 @@ export function projectRuntimeList(entries) {
  */
 export function projectConnectorList(entries) {
   if (!Array.isArray(entries)) {
-    throw new ProjectionShapeError("projection-shape-invalid", "projectConnectorList: entries must be an array");
+    throw new ProjectionShapeError(
+      "projection-shape-invalid",
+      "projectConnectorList: entries must be an array",
+    );
   }
   return Object.freeze(entries.map((entry) => projectConnectorEntry(entry)));
 }
@@ -777,7 +879,10 @@ export function projectConnectorList(entries) {
  */
 export function projectSessionSummary(entries) {
   if (!Array.isArray(entries)) {
-    throw new ProjectionShapeError("projection-shape-invalid", "projectSessionSummary: entries must be an array");
+    throw new ProjectionShapeError(
+      "projection-shape-invalid",
+      "projectSessionSummary: entries must be an array",
+    );
   }
   return Object.freeze(entries.map((entry) => projectSessionEntry(entry)));
 }

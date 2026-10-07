@@ -603,6 +603,7 @@ const runtimeProjection = createRuntimeProjectionService({
         // snapshot is only computed lazily on the first /bridge/runtimes
         // read, so the reference is safe.
         endpoint: `http://${getBridgeHost()}:${activeBridgePort}`,
+        publicEndpoint: getBridgePublicUrlValue(),
         startedAt: new Date(bootStartedAt).toISOString(),
         uptimeSeconds: Math.floor(process.uptime()),
         instanceId: bootInstanceId,

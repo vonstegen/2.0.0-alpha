@@ -42,11 +42,11 @@ This document covers:
 
 CP-BR5 ships three host modules and one host route.
 
-| Module | Role |
-| --- | --- |
-| `browser-first/host/runtime-projection.mjs` | Pure non-secret projection. Defines the closed shapes, the `walkShape` walker, the `redactLogValue` helper, the failure-code catalog, and the `applyProjectionUpdate` ordering helper. No I/O. |
-| `browser-first/host/runtime-projection-service.mjs` | Host-side composition. Derives runtime / connector / session entries from the host registry + the (optional) CP-BR4 reconciler `listActive()`, advances the projection generation, and notifies the push subscriber. |
-| `browser-first/host/bridge-runtimes-host-service.mjs` | Thin host route. Attaches `GET /bridge/runtimes` to the route table; the handler returns the current projection. Exposes `logProjection()` for redacted log lines. |
+| Module                                                | Role                                                                                                                                                                                                                 |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `browser-first/host/runtime-projection.mjs`           | Pure non-secret projection. Defines the closed shapes, the `walkShape` walker, the `redactLogValue` helper, the failure-code catalog, and the `applyProjectionUpdate` ordering helper. No I/O.                       |
+| `browser-first/host/runtime-projection-service.mjs`   | Host-side composition. Derives runtime / connector / session entries from the host registry + the (optional) CP-BR4 reconciler `listActive()`, advances the projection generation, and notifies the push subscriber. |
+| `browser-first/host/bridge-runtimes-host-service.mjs` | Thin host route. Attaches `GET /bridge/runtimes` to the route table; the handler returns the current projection. Exposes `logProjection()` for redacted log lines.                                                   |
 
 The route is registered in the bridge composition root
 (`browser-first/host/run-bridge-minimal.mjs`) with the standard harness
@@ -78,13 +78,14 @@ and does not log raw fields. The only public mutator is
 ```ts
 interface BridgeOverview {
   status: "offline" | "starting" | "connected" | "degraded" | "restarting" | "failed";
-  version?: string;          // bounded: <= 64 chars
-  endpoint?: string;         // bounded: <= 256 chars
-  startedAt?: string;        // ISO 8601 with milliseconds
-  uptimeSeconds?: number;    // non-negative safe integer
-  generation?: number;       // non-negative safe integer
-  instanceId?: string;       // bounded: <= 128 chars
-  bootEpoch?: string;        // bounded: <= 128 chars
+  version?: string; // bounded: <= 64 chars
+  endpoint?: string; // bounded: <= 256 chars (loopback)
+  publicEndpoint?: string; // bounded: <= 256 chars (LAN/Tailscale public URL)
+  startedAt?: string; // ISO 8601 with milliseconds
+  uptimeSeconds?: number; // non-negative safe integer
+  generation?: number; // non-negative safe integer
+  instanceId?: string; // bounded: <= 128 chars
+  bootEpoch?: string; // bounded: <= 128 chars
   publicFailureCode?: string; // closed failure code (see §3)
 }
 ```
@@ -99,19 +100,19 @@ projection-side code.
 
 ```ts
 interface RuntimeListEntry {
-  addonId: string;             // bounded: <= 128 chars
-  runtimeId: string;           // bounded: <= 128 chars
-  runtimeType: "ui-module" | "embedded-module" | "local-service" |
-                "agent-addon" | "channel-addon" | "unknown";
+  addonId: string; // bounded: <= 128 chars
+  runtimeId: string; // bounded: <= 128 chars
+  runtimeType:
+    "ui-module" | "embedded-module" | "local-service" | "agent-addon" | "channel-addon" | "unknown";
   status: "inactive" | "starting" | "ready" | "degraded" | "failed" | "stopping";
-  generation: number;          // non-negative safe integer
-  activeSessionCount: number;  // non-negative safe integer
-  startedAt?: string;          // ISO 8601 timestamp
-  lastTransitionAt?: string;   // ISO 8601 timestamp
-  publicFailureCode?: string;  // only on `failed` or `degraded`
-  factoryId?: string;          // public factory id; no process internals
-  classification?: string;     // category; never authority
-  displayLabel: string;        // public display label derived from addonId
+  generation: number; // non-negative safe integer
+  activeSessionCount: number; // non-negative safe integer
+  startedAt?: string; // ISO 8601 timestamp
+  lastTransitionAt?: string; // ISO 8601 timestamp
+  publicFailureCode?: string; // only on `failed` or `degraded`
+  factoryId?: string; // public factory id; no process internals
+  classification?: string; // category; never authority
+  displayLabel: string; // public display label derived from addonId
 }
 ```
 
@@ -124,17 +125,16 @@ across re-reads.
 
 ```ts
 interface ConnectorListEntry {
-  addonId: string;             // bounded: <= 128 chars
-  label: string;               // public label; <= 128 chars
-  runtimeType: "ui-module" | "embedded-module" | "local-service" |
-                "agent-addon" | "channel-addon" | "unknown";
-  connectionState: "installed" | "enabled" | "disabled" |
-                   "not-installed" | "incompatible" | "revoked";
-  authorizationState: "granted" | "partial" | "missing" |
-                      "revoked" | "not-applicable";
+  addonId: string; // bounded: <= 128 chars
+  label: string; // public label; <= 128 chars
+  runtimeType:
+    "ui-module" | "embedded-module" | "local-service" | "agent-addon" | "channel-addon" | "unknown";
+  connectionState:
+    "installed" | "enabled" | "disabled" | "not-installed" | "incompatible" | "revoked";
+  authorizationState: "granted" | "partial" | "missing" | "revoked" | "not-applicable";
   lastSuccessfulHealthAt?: string; // ISO 8601 timestamp
-  publicFailureCode?: string;       // closed failure code
-  supportedRuntimeTypes: string[];  // frozen, public identifiers only
+  publicFailureCode?: string; // closed failure code
+  supportedRuntimeTypes: string[]; // frozen, public identifiers only
 }
 ```
 
@@ -146,9 +146,9 @@ OR whose `runtimeType === "channel-addon"`. The list is sorted by
 
 ```ts
 interface ActiveSessionEntry {
-  addonId: string;             // bounded: <= 128 chars
-  runtimeId: string;           // bounded: <= 128 chars
-  activeSessionCount: number;  // non-negative safe integer
+  addonId: string; // bounded: <= 128 chars
+  runtimeId: string; // bounded: <= 128 chars
+  activeSessionCount: number; // non-negative safe integer
 }
 ```
 
@@ -164,8 +164,8 @@ interface BridgeRuntimesProjection {
   runtimeList: readonly RuntimeListEntry[];
   connectorList: readonly ConnectorListEntry[];
   activeSessions: readonly ActiveSessionEntry[];
-  projectionGeneration: number;     // monotonic, host-supplied
-  producedAt: string;                // ISO 8601 timestamp
+  projectionGeneration: number; // monotonic, host-supplied
+  producedAt: string; // ISO 8601 timestamp
   updateMechanism: "polling" | "push" | "both";
 }
 ```
@@ -183,26 +183,26 @@ vocabulary and adds seven projection-specific codes. The full closed
 set is exported as `PROJECTION_FAILURE_CODES` from
 `runtime-projection.mjs`.
 
-| Code | Source | Meaning |
-| --- | --- | --- |
-| `addon-not-installed` | CP-BR3 | Authority projection reports `installed: false`. |
-| `addon-disabled` | CP-BR3 | Authority projection reports `enabled: false`. |
-| `addon-authorization-required` | CP-BR3 | Required capability not granted. |
-| `addon-incompatible` | CP-BR3 | `compatible: false` against the current shell. |
-| `addon-factory-missing` | CP-BR3/CP-BR4 | No reviewed runtime factory is available. |
-| `addon-revoked` | CP-BR3 | Hard-stop revocation fence is active. |
-| `addon-degraded-by-policy` | CP-BR3 | Degrade revocation policy is in effect. |
-| `addon-runtime-type-unknown` | CP-BR3 | `runtimeType` is missing or not in the known vocabulary. |
-| `addon-authority-input-invalid` | CP-BR3 | Authority projection shape is malformed or forged. |
-| `addon-manifest-invalid` | CP-BR3 | Top-level input shape is malformed. |
-| `projection-bridge-offline` | CP-BR5 | Bridge status is `offline`; carry the offline code in the projection. |
-| `projection-bridge-failed` | CP-BR5 | Bridge status is `failed`; carry the failure code in the projection. |
-| `projection-shape-invalid` | CP-BR5 | Forged or malformed projection input; the projection refuses to assemble. |
-| `projection-stale-superseded` | CP-BR5 | `applyProjectionUpdate` rejected an older or equal generation. |
-| `projection-connector-state-unknown` | CP-BR5 | Connector state is outside the closed vocabulary. |
-| `projection-session-count-invalid` | CP-BR5 | Session count is not a non-negative safe integer. |
-| `projection-runtime-type-unknown` | CP-BR5 | Runtime type is not a non-empty string. |
-| `projection-input-missing` | CP-BR5 | A required input was missing or malformed. |
+| Code                                 | Source        | Meaning                                                                   |
+| ------------------------------------ | ------------- | ------------------------------------------------------------------------- |
+| `addon-not-installed`                | CP-BR3        | Authority projection reports `installed: false`.                          |
+| `addon-disabled`                     | CP-BR3        | Authority projection reports `enabled: false`.                            |
+| `addon-authorization-required`       | CP-BR3        | Required capability not granted.                                          |
+| `addon-incompatible`                 | CP-BR3        | `compatible: false` against the current shell.                            |
+| `addon-factory-missing`              | CP-BR3/CP-BR4 | No reviewed runtime factory is available.                                 |
+| `addon-revoked`                      | CP-BR3        | Hard-stop revocation fence is active.                                     |
+| `addon-degraded-by-policy`           | CP-BR3        | Degrade revocation policy is in effect.                                   |
+| `addon-runtime-type-unknown`         | CP-BR3        | `runtimeType` is missing or not in the known vocabulary.                  |
+| `addon-authority-input-invalid`      | CP-BR3        | Authority projection shape is malformed or forged.                        |
+| `addon-manifest-invalid`             | CP-BR3        | Top-level input shape is malformed.                                       |
+| `projection-bridge-offline`          | CP-BR5        | Bridge status is `offline`; carry the offline code in the projection.     |
+| `projection-bridge-failed`           | CP-BR5        | Bridge status is `failed`; carry the failure code in the projection.      |
+| `projection-shape-invalid`           | CP-BR5        | Forged or malformed projection input; the projection refuses to assemble. |
+| `projection-stale-superseded`        | CP-BR5        | `applyProjectionUpdate` rejected an older or equal generation.            |
+| `projection-connector-state-unknown` | CP-BR5        | Connector state is outside the closed vocabulary.                         |
+| `projection-session-count-invalid`   | CP-BR5        | Session count is not a non-negative safe integer.                         |
+| `projection-runtime-type-unknown`    | CP-BR5        | Runtime type is not a non-empty string.                                   |
+| `projection-input-missing`           | CP-BR5        | A required input was missing or malformed.                                |
 
 The runtime projection only surfaces the `addon-*` codes on
 `runtimeList` entries that are `failed` or `degraded`. The
@@ -223,19 +223,19 @@ object is built.
 
 ### 4.1 What is NEVER in the projection
 
-| Class | Reason |
-| --- | --- |
-| Capability or bootstrap tokens | Bridge authentication. |
-| Provider credentials, provider API keys | Provider boundaries. |
-| Prompt content, memory content | Living Archive / memory boundaries. |
-| Raw environment values | Process boundary. |
-| Auth-file path or token-file path | Process boundary. |
-| Child argv, cwd, executable path, env allowlist keys | Process boundary. |
-| PID, process handle, factory process internals | Process boundary. |
-| Unredacted exception messages, stack traces | Diagnostic boundary. |
-| Private filesystem paths, user home path | Filesystem boundary. |
-| Wallet signing material | Wallet boundaries. |
-| `bridgeToken` header value, scoped capability tokens | Auth boundary. |
+| Class                                                | Reason                              |
+| ---------------------------------------------------- | ----------------------------------- |
+| Capability or bootstrap tokens                       | Bridge authentication.              |
+| Provider credentials, provider API keys              | Provider boundaries.                |
+| Prompt content, memory content                       | Living Archive / memory boundaries. |
+| Raw environment values                               | Process boundary.                   |
+| Auth-file path or token-file path                    | Process boundary.                   |
+| Child argv, cwd, executable path, env allowlist keys | Process boundary.                   |
+| PID, process handle, factory process internals       | Process boundary.                   |
+| Unredacted exception messages, stack traces          | Diagnostic boundary.                |
+| Private filesystem paths, user home path             | Filesystem boundary.                |
+| Wallet signing material                              | Wallet boundaries.                  |
+| `bridgeToken` header value, scoped capability tokens | Auth boundary.                      |
 
 The list is enforced by the shape-walker: every projection is walked
 recursively, and every key is checked against the closed set of allowed
@@ -362,12 +362,12 @@ The purity contract is enforced by a static-source check
 
 The CP-BR5 test suite is 40 tests in 4 files:
 
-| File | Tests | Coverage |
-| --- | --- | --- |
-| `runtime-projection.test.mjs` | 24 | Req #1–#10, #12, #13 (vocabularies, four shapes, ordering, shape-walker, redaction, fail-closed, host route) |
-| `runtime-projection-staleness.test.mjs` | 6 | Req #6 (applyProjectionUpdate), req #7 (ordering and stale rejection through the host route) |
-| `runtime-projection-shape-walker.test.mjs` | 8 | Req #8 (shape-walker contract) + hostile-input shape-walker coverage |
-| `runtime-projection-no-io.test.mjs` | 6 | Req #11 (purity: no I/O, no timers, no wall clock) |
+| File                                       | Tests | Coverage                                                                                                     |
+| ------------------------------------------ | ----- | ------------------------------------------------------------------------------------------------------------ |
+| `runtime-projection.test.mjs`              | 24    | Req #1–#10, #12, #13 (vocabularies, four shapes, ordering, shape-walker, redaction, fail-closed, host route) |
+| `runtime-projection-staleness.test.mjs`    | 6     | Req #6 (applyProjectionUpdate), req #7 (ordering and stale rejection through the host route)                 |
+| `runtime-projection-shape-walker.test.mjs` | 8     | Req #8 (shape-walker contract) + hostile-input shape-walker coverage                                         |
+| `runtime-projection-no-io.test.mjs`        | 6     | Req #11 (purity: no I/O, no timers, no wall clock)                                                           |
 
 Run:
 

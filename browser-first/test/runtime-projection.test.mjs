@@ -92,7 +92,11 @@ const assertNoSecretShapedFields = (label, value) => {
   walk(value, (key, v) => {
     if (typeof v === "string") {
       for (const pattern of SECRET_VALUE_PATTERNS) {
-        assert.doesNotMatch(v, pattern, `${label}: field "${key}" matched forbidden pattern ${pattern}`);
+        assert.doesNotMatch(
+          v,
+          pattern,
+          `${label}: field "${key}" matched forbidden pattern ${pattern}`,
+        );
       }
     }
   });
@@ -115,38 +119,72 @@ const makeReconciler = (active) => ({
 
 const makeSampleProjection = () => {
   const registry = makeRegistry([
-    ["addon.local-svc", {
-      installed: true,
-      enabled: true,
-      grantedCapabilities: [{ capability: "filesystem", scope: "self", revocationBehavior: "hard-stop", granted: true }],
-      requiredCapabilities: ["filesystem"],
-      manifest: { runtimeType: "local-service", category: "tool" },
-      projectionGeneration: 1,
-    }],
-    ["addon.connector", {
-      installed: true,
-      enabled: true,
-      grantedCapabilities: [{ capability: "channel", scope: "self", revocationBehavior: "hard-stop", granted: true }],
-      requiredCapabilities: ["channel"],
-      manifest: { runtimeType: "channel-addon", category: "connector" },
-      projectionGeneration: 1,
-    }],
-    ["addon.ui", {
-      installed: true,
-      enabled: true,
-      grantedCapabilities: [],
-      requiredCapabilities: [],
-      manifest: { runtimeType: "ui-module", category: "tool" },
-      projectionGeneration: 1,
-    }],
+    [
+      "addon.local-svc",
+      {
+        installed: true,
+        enabled: true,
+        grantedCapabilities: [
+          {
+            capability: "filesystem",
+            scope: "self",
+            revocationBehavior: "hard-stop",
+            granted: true,
+          },
+        ],
+        requiredCapabilities: ["filesystem"],
+        manifest: { runtimeType: "local-service", category: "tool" },
+        projectionGeneration: 1,
+      },
+    ],
+    [
+      "addon.connector",
+      {
+        installed: true,
+        enabled: true,
+        grantedCapabilities: [
+          { capability: "channel", scope: "self", revocationBehavior: "hard-stop", granted: true },
+        ],
+        requiredCapabilities: ["channel"],
+        manifest: { runtimeType: "channel-addon", category: "connector" },
+        projectionGeneration: 1,
+      },
+    ],
+    [
+      "addon.ui",
+      {
+        installed: true,
+        enabled: true,
+        grantedCapabilities: [],
+        requiredCapabilities: [],
+        manifest: { runtimeType: "ui-module", category: "tool" },
+        projectionGeneration: 1,
+      },
+    ],
   ]);
   const service = createRuntimeProjectionService({
     hostRegistry: registry,
     reconciler: makeReconciler([
-      { addonId: "addon.local-svc", factoryId: "com.resonantos.factory.local-svc", generation: 1, status: "ready" },
+      {
+        addonId: "addon.local-svc",
+        factoryId: "com.resonantos.factory.local-svc",
+        generation: 1,
+        status: "ready",
+      },
     ]),
-    bridgeStatus: { snapshot: () => ({ status: "connected", version: "alpha", endpoint: "http://127.0.0.1:47773", bootEpoch: "epoch-1", instanceId: "bridge-0" }) },
-    sessionCounts: { getSessionsByRuntime: (id) => (id === "addon.local-svc" ? { activeSessionCount: 2 } : { activeSessionCount: 0 }) },
+    bridgeStatus: {
+      snapshot: () => ({
+        status: "connected",
+        version: "alpha",
+        endpoint: "http://127.0.0.1:47773",
+        bootEpoch: "epoch-1",
+        instanceId: "bridge-0",
+      }),
+    },
+    sessionCounts: {
+      getSessionsByRuntime: (id) =>
+        id === "addon.local-svc" ? { activeSessionCount: 2 } : { activeSessionCount: 0 },
+    },
   });
   return service.snapshot();
 };
@@ -190,6 +228,7 @@ test("CP-BR5 req #1: bridge overview carries status/version/endpoint/generation 
     status: "connected",
     version: "alpha-1.0.0",
     endpoint: "http://127.0.0.1:47773",
+    publicEndpoint: "http://192.168.1.5:47773",
     startedAt: "2026-10-06T12:00:00.000Z",
     uptimeSeconds: 42,
     generation: 7,
@@ -199,6 +238,7 @@ test("CP-BR5 req #1: bridge overview carries status/version/endpoint/generation 
   assert.equal(overview.status, "connected");
   assert.equal(overview.version, "alpha-1.0.0");
   assert.equal(overview.endpoint, "http://127.0.0.1:47773");
+  assert.equal(overview.publicEndpoint, "http://192.168.1.5:47773");
   assert.equal(overview.generation, 7);
   assert.equal(overview.instanceId, "bridge-0");
   assert.equal(overview.bootEpoch, "epoch-1");
@@ -344,13 +384,25 @@ test("CP-BR5 req #6 (helper): applyProjectionUpdate accepts newer and rejects ol
   });
   const applied = applyProjectionUpdate(a, b);
   assert.equal(applied, b);
-  assert.throws(() => applyProjectionUpdate(b, a), (err) => {
-    return err instanceof ProjectionShapeError && err.publicFailureCode === "projection-stale-superseded";
-  });
+  assert.throws(
+    () => applyProjectionUpdate(b, a),
+    (err) => {
+      return (
+        err instanceof ProjectionShapeError &&
+        err.publicFailureCode === "projection-stale-superseded"
+      );
+    },
+  );
   // Equal generation also rejected.
-  assert.throws(() => applyProjectionUpdate(b, b), (err) => {
-    return err instanceof ProjectionShapeError && err.publicFailureCode === "projection-stale-superseded";
-  });
+  assert.throws(
+    () => applyProjectionUpdate(b, b),
+    (err) => {
+      return (
+        err instanceof ProjectionShapeError &&
+        err.publicFailureCode === "projection-stale-superseded"
+      );
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -359,16 +411,33 @@ test("CP-BR5 req #6 (helper): applyProjectionUpdate accepts newer and rejects ol
 
 test("CP-BR5 req #7: the projection reflects lifecycle transitions in order", () => {
   const registry = makeRegistry([
-    ["addon.svc", {
-      installed: true,
-      enabled: true,
-      grantedCapabilities: [{ capability: "filesystem", scope: "self", revocationBehavior: "hard-stop", granted: true }],
-      requiredCapabilities: ["filesystem"],
-      manifest: { runtimeType: "local-service", category: "tool" },
-      projectionGeneration: 1,
-    }],
+    [
+      "addon.svc",
+      {
+        installed: true,
+        enabled: true,
+        grantedCapabilities: [
+          {
+            capability: "filesystem",
+            scope: "self",
+            revocationBehavior: "hard-stop",
+            granted: true,
+          },
+        ],
+        requiredCapabilities: ["filesystem"],
+        manifest: { runtimeType: "local-service", category: "tool" },
+        projectionGeneration: 1,
+      },
+    ],
   ]);
-  let active = [{ addonId: "addon.svc", factoryId: "com.resonantos.factory.x", generation: 1, status: "starting" }];
+  let active = [
+    {
+      addonId: "addon.svc",
+      factoryId: "com.resonantos.factory.x",
+      generation: 1,
+      status: "starting",
+    },
+  ];
   const service = createRuntimeProjectionService({
     hostRegistry: registry,
     reconciler: { listActive: () => active },
@@ -380,7 +449,9 @@ test("CP-BR5 req #7: the projection reflects lifecycle transitions in order", ()
   // Simulate a transition: ready. The reconciler emits an event; the
   // service's recordEvent hook calls refresh() to advance the
   // projection generation and reflect the new active set.
-  active = [{ addonId: "addon.svc", factoryId: "com.resonantos.factory.x", generation: 1, status: "ready" }];
+  active = [
+    { addonId: "addon.svc", factoryId: "com.resonantos.factory.x", generation: 1, status: "ready" },
+  ];
   service.recordEvent({ type: "ready", addonId: "addon.svc" });
   const p2 = service.snapshot();
   assert.equal(p2.runtimeList[0].status, "ready");
@@ -398,7 +469,9 @@ test("CP-BR5 req #8: shape-walker finds no secret-shaped value in any public pay
   assertNoSecretShapedFields("bridgeRuntimes.projection", projection);
   // Explicit shape-walker visit count confirms every value was visited.
   let visited = 0;
-  walkShape(projection, () => { visited += 1; });
+  walkShape(projection, () => {
+    visited += 1;
+  });
   assert.ok(visited > 50, "shape-walker should visit many nodes in a populated projection");
 });
 
@@ -438,78 +511,113 @@ test("CP-BR5 req #9: log and rejection serialization are redacted to the public 
 
 test("CP-BR5 req #10a: malformed runtime input fails closed with projection-shape-invalid", () => {
   // Wrong status vocabulary -> fail closed.
-  assert.throws(() => projectRuntimeEntry({
-    addonId: "addon.x",
-    runtimeId: "addon.x",
-    runtimeType: "local-service",
-    status: "nope",
-    generation: 0,
-    activeSessionCount: 0,
-  }), (err) => err instanceof ProjectionShapeError && err.publicFailureCode === "projection-shape-invalid");
+  assert.throws(
+    () =>
+      projectRuntimeEntry({
+        addonId: "addon.x",
+        runtimeId: "addon.x",
+        runtimeType: "local-service",
+        status: "nope",
+        generation: 0,
+        activeSessionCount: 0,
+      }),
+    (err) =>
+      err instanceof ProjectionShapeError && err.publicFailureCode === "projection-shape-invalid",
+  );
   // Bad generation -> fail closed.
-  assert.throws(() => projectRuntimeEntry({
-    addonId: "addon.x",
-    runtimeId: "addon.x",
-    runtimeType: "local-service",
-    status: "ready",
-    generation: -1,
-    activeSessionCount: 0,
-  }), (err) => err instanceof ProjectionShapeError);
+  assert.throws(
+    () =>
+      projectRuntimeEntry({
+        addonId: "addon.x",
+        runtimeId: "addon.x",
+        runtimeType: "local-service",
+        status: "ready",
+        generation: -1,
+        activeSessionCount: 0,
+      }),
+    (err) => err instanceof ProjectionShapeError,
+  );
   // Bad activeSessionCount -> fail closed.
-  assert.throws(() => projectRuntimeEntry({
-    addonId: "addon.x",
-    runtimeId: "addon.x",
-    runtimeType: "local-service",
-    status: "ready",
-    generation: 0,
-    activeSessionCount: -1,
-  }), (err) => err instanceof ProjectionShapeError);
+  assert.throws(
+    () =>
+      projectRuntimeEntry({
+        addonId: "addon.x",
+        runtimeId: "addon.x",
+        runtimeType: "local-service",
+        status: "ready",
+        generation: 0,
+        activeSessionCount: -1,
+      }),
+    (err) => err instanceof ProjectionShapeError,
+  );
   // Bad timestamp -> fail closed.
-  assert.throws(() => projectRuntimeEntry({
-    addonId: "addon.x",
-    runtimeId: "addon.x",
-    runtimeType: "local-service",
-    status: "ready",
-    generation: 0,
-    activeSessionCount: 0,
-    startedAt: "not-a-timestamp",
-  }), (err) => err instanceof ProjectionShapeError);
+  assert.throws(
+    () =>
+      projectRuntimeEntry({
+        addonId: "addon.x",
+        runtimeId: "addon.x",
+        runtimeType: "local-service",
+        status: "ready",
+        generation: 0,
+        activeSessionCount: 0,
+        startedAt: "not-a-timestamp",
+      }),
+    (err) => err instanceof ProjectionShapeError,
+  );
 });
 
 test("CP-BR5 req #10b: forged connector input fails closed", () => {
-  assert.throws(() => projectConnectorEntry({
-    addonId: "addon.c",
-    label: "C",
-    runtimeType: "channel-addon",
-    connectionState: "wat",
-    authorizationState: "granted",
-  }), (err) => err instanceof ProjectionShapeError && err.publicFailureCode === "projection-connector-state-unknown");
-  assert.throws(() => projectConnectorEntry({
-    addonId: "addon.c",
-    label: "C",
-    runtimeType: "channel-addon",
-    connectionState: "installed",
-    authorizationState: "wat",
-  }), (err) => err instanceof ProjectionShapeError);
+  assert.throws(
+    () =>
+      projectConnectorEntry({
+        addonId: "addon.c",
+        label: "C",
+        runtimeType: "channel-addon",
+        connectionState: "wat",
+        authorizationState: "granted",
+      }),
+    (err) =>
+      err instanceof ProjectionShapeError &&
+      err.publicFailureCode === "projection-connector-state-unknown",
+  );
+  assert.throws(
+    () =>
+      projectConnectorEntry({
+        addonId: "addon.c",
+        label: "C",
+        runtimeType: "channel-addon",
+        connectionState: "installed",
+        authorizationState: "wat",
+      }),
+    (err) => err instanceof ProjectionShapeError,
+  );
 });
 
 test("CP-BR5 req #10c: malformed session input fails closed", () => {
-  assert.throws(() => projectSessionEntry({
-    addonId: "addon.x",
-    runtimeId: "addon.x",
-    activeSessionCount: -1,
-  }), (err) => err instanceof ProjectionShapeError);
+  assert.throws(
+    () =>
+      projectSessionEntry({
+        addonId: "addon.x",
+        runtimeId: "addon.x",
+        activeSessionCount: -1,
+      }),
+    (err) => err instanceof ProjectionShapeError,
+  );
 });
 
 test("CP-BR5 req #10d: composed projection rejects bad overview", () => {
-  assert.throws(() => projectBridgeRuntimes({
-    bridgeOverview: { status: "wat" },
-    runtimeList: [],
-    connectorList: [],
-    activeSessions: [],
-    projectionGeneration: 1,
-    producedAt: "2026-10-06T12:00:00.000Z",
-  }), (err) => err instanceof ProjectionShapeError);
+  assert.throws(
+    () =>
+      projectBridgeRuntimes({
+        bridgeOverview: { status: "wat" },
+        runtimeList: [],
+        connectorList: [],
+        activeSessions: [],
+        projectionGeneration: 1,
+        producedAt: "2026-10-06T12:00:00.000Z",
+      }),
+    (err) => err instanceof ProjectionShapeError,
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -526,7 +634,9 @@ test("CP-BR5 req #12 (host route shape): bridge-runtimes host service attaches o
   const attached = [];
   const host = createBridgeRuntimesHostService({
     runtimeProjection: service,
-    attachRoute: (route) => { attached.push(route); },
+    attachRoute: (route) => {
+      attached.push(route);
+    },
   });
   assert.equal(attached.length, 1);
   assert.equal(attached[0].method, "GET");

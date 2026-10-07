@@ -23,7 +23,10 @@
 // Intent citation: docs/architecture/ADDON-BRIDGE-RUNTIME-ROADMAP.md
 // §12 (CP-BR6), BRIDGE-RUNTIME-PROJECTION.md, ADR-047.
 
-import { PUBLIC_FAILURE_CODES, PUBLIC_STATUS_VALUES } from "../../../../bootstrap/bootstrap-protocol.mjs";
+import {
+  PUBLIC_FAILURE_CODES,
+  PUBLIC_STATUS_VALUES,
+} from "../../../../bootstrap/bootstrap-protocol.mjs";
 
 // ---------------------------------------------------------------------------
 // Closed label vocabulary (UI state glossary)
@@ -89,6 +92,7 @@ const KNOWN_OVERVIEW_FIELDS = new Set([
   "status",
   "version",
   "endpoint",
+  "publicEndpoint",
   "startedAt",
   "uptimeSeconds",
   "generation",
@@ -123,11 +127,7 @@ const KNOWN_CONNECTOR_FIELDS = new Set([
   "supportedRuntimeTypes",
 ]);
 
-const KNOWN_SESSION_FIELDS = new Set([
-  "addonId",
-  "runtimeId",
-  "activeSessionCount",
-]);
+const KNOWN_SESSION_FIELDS = new Set(["addonId", "runtimeId", "activeSessionCount"]);
 
 const KNOWN_BOOTSTRAP_KEYS = new Set([
   "status",
@@ -188,7 +188,11 @@ function coerceProjection(value) {
   if (!isBoundedString(value.producedAt ?? "", 64)) {
     throw new TypeError("projection.producedAt must be a bounded string");
   }
-  if (value.updateMechanism !== "polling" && value.updateMechanism !== "push" && value.updateMechanism !== "both") {
+  if (
+    value.updateMechanism !== "polling" &&
+    value.updateMechanism !== "push" &&
+    value.updateMechanism !== "both"
+  ) {
     throw new TypeError("projection.updateMechanism must be polling | push | both");
   }
   const overview = value.bridgeOverview
@@ -308,7 +312,8 @@ export function buildBridgeRuntimesView(input = {}) {
     sessions,
     viewState,
     actions: {
-      enableDisable: Boolean(actions.enableDisable) && typeof input.enableTransaction === "function",
+      enableDisable:
+        Boolean(actions.enableDisable) && typeof input.enableTransaction === "function",
       retry: Boolean(actions.retry),
       restart: Boolean(actions.restart),
       terminateSession: Boolean(actions.terminateSession),
@@ -346,6 +351,7 @@ function deriveOverview(bootstrap, projection, bridgeConnected) {
       label: BRIDGE_STATUS_LABELS[projection.overview.status] ?? BRIDGE_STATUS_LABELS.connected,
       version: projection.overview.version ?? fallbackVersion,
       endpoint: projection.overview.endpoint ?? fallbackEndpoint,
+      publicEndpoint: projection.overview.publicEndpoint ?? null,
       uptimeSeconds: projection.overview.uptimeSeconds ?? null,
       generation: projection.overview.generation ?? fallbackGeneration,
       instanceId: projection.overview.instanceId ?? fallbackInstance,
@@ -362,6 +368,7 @@ function deriveOverview(bootstrap, projection, bridgeConnected) {
     label: BRIDGE_STATUS_LABELS[fallbackStatus] ?? BRIDGE_STATUS_LABELS.offline,
     version: fallbackVersion,
     endpoint: fallbackEndpoint,
+    publicEndpoint: null,
     uptimeSeconds: null,
     generation: fallbackGeneration,
     instanceId: fallbackInstance,
@@ -400,7 +407,11 @@ function deriveListViewState({ hasProjection, items, runtimes, overview }) {
   if (overview && (overview.status === "offline" || overview.status === "failed")) {
     return "degraded";
   }
-  if (overview && (overview.status === "starting" || overview.status === "restarting") && !hasProjection) {
+  if (
+    overview &&
+    (overview.status === "starting" || overview.status === "restarting") &&
+    !hasProjection
+  ) {
     return "degraded";
   }
   if (!hasProjection) return "loading";
@@ -410,8 +421,14 @@ function deriveListViewState({ hasProjection, items, runtimes, overview }) {
 
 function deriveDiagnosticsViewState({ hasProjection, hasBootstrap, overview }) {
   if (!hasBootstrap && !hasProjection) return "loading";
-  if (overview && (overview.status === "offline" || overview.status === "failed")) return "degraded";
-  if (overview && (overview.status === "starting" || overview.status === "restarting") && !hasProjection) return "degraded";
+  if (overview && (overview.status === "offline" || overview.status === "failed"))
+    return "degraded";
+  if (
+    overview &&
+    (overview.status === "starting" || overview.status === "restarting") &&
+    !hasProjection
+  )
+    return "degraded";
   return "ready";
 }
 
