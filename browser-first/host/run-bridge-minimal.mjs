@@ -36,9 +36,16 @@ import { createAgentControlHostService } from "./agent-control-host-service.mjs"
 import { buildBridgeCapabilityTokens } from "./bridge-capability-tokens.mjs";
 import { createAddonDelegationHostService } from "./addon-delegation-host-service.mjs";
 import { createAddonDelegationService } from "./addon-delegation-service.mjs";
-import { createOpencodeHttpClient, ensureOpencodeServer, forgetOpencodeServer } from "./opencode-client.mjs";
+import {
+  createOpencodeHttpClient,
+  ensureOpencodeServer,
+  forgetOpencodeServer,
+} from "./opencode-client.mjs";
 import { createOpenCodeBoundary } from "./opencode-boundary.mjs";
-import { createOpencodeSessionHandlers, createOpencodeSessionHostService } from "./opencode-session-host-service.mjs";
+import {
+  createOpencodeSessionHandlers,
+  createOpencodeSessionHostService,
+} from "./opencode-session-host-service.mjs";
 import { createArchiveReviewHostService } from "./archive-review-host-service.mjs";
 import { createBrowserDiagnosticsHostService } from "./browser-diagnostics-host-service.mjs";
 import { createExtensionPrefsHostService } from "./extension-prefs-host-service.mjs";
@@ -46,15 +53,14 @@ import { createMemoryHostService } from "./memory-host-service.mjs";
 import { createMemorySourceIntakeHostService } from "./memory-source-intake-host-service.mjs";
 import { createMemorySourceSettingsService } from "./memory-source-settings-service.mjs";
 import { opencodeRuntimeDiagnostics } from "./opencode-runtime.mjs";
-import {
-  hermesCommand,
-  hermesHome,
-  hermesPythonRuntimeDiagnostics,
-} from "./hermes-runtime.mjs";
+import { hermesCommand, hermesHome, hermesPythonRuntimeDiagnostics } from "./hermes-runtime.mjs";
 import { createHarnessHostService } from "./harness-host-service.mjs";
 import { createRuntimeProjectionService } from "./runtime-projection-service.mjs";
 import { createBridgeRuntimesHostService } from "./bridge-runtimes-host-service.mjs";
-import { installTerminalHostBridge, uninstallTerminalHostBridge } from "./terminal-host-bridge-wiring.mjs";
+import {
+  installTerminalHostBridge,
+  uninstallTerminalHostBridge,
+} from "./terminal-host-bridge-wiring.mjs";
 import { createTerminalHostHostWiring } from "./terminal-host-host-wiring.mjs";
 import {
   createRuntimeFactoryRegistry,
@@ -70,7 +76,11 @@ import {
 } from "./memory-source-history.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..");
-const defaultResonantExtension = path.join(repoRoot, "browser-first", "resonantos-side-panel-extension");
+const defaultResonantExtension = path.join(
+  repoRoot,
+  "browser-first",
+  "resonantos-side-panel-extension",
+);
 const resonantExtension = resolveResonantExtensionRoot();
 const defaultBridgePort = 47773;
 const resonantExtensionId = "cdpdmmalhmokbfcfgogoepnjplaakgnl";
@@ -97,7 +107,9 @@ function resolveResonantExtensionRoot() {
 }
 
 function userRoot() {
-  return path.resolve(process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT || path.join(os.homedir(), "ResonantOS_User"));
+  return path.resolve(
+    process.env.RESONANTOS_BROWSER_FIRST_USER_ROOT || path.join(os.homedir(), "ResonantOS_User"),
+  );
 }
 
 function memoryRoot() {
@@ -156,18 +168,16 @@ function extractJsonObject(value) {
 const bridgePublicUrlHolder = { value: undefined };
 const getBridgePublicUrlValue = () => bridgePublicUrlHolder.value;
 let addonRuntimeSelfTestHomeDir = null;
-const addonRuntimeResolverOptions = () => addonRuntimeSelfTestHomeDir
-  ? { homeDir: addonRuntimeSelfTestHomeDir }
-  : {};
+const addonRuntimeResolverOptions = () =>
+  addonRuntimeSelfTestHomeDir ? { homeDir: addonRuntimeSelfTestHomeDir } : {};
 const resolveHermesCommand = () => hermesCommand(addonRuntimeResolverOptions());
 const resolveHermesPythonRuntime = (command) =>
   hermesPythonRuntimeDiagnostics(command, addonRuntimeResolverOptions());
-const resolveOpenCodeRuntimeDiagnostics = () => opencodeRuntimeDiagnostics(addonRuntimeResolverOptions());
+const resolveOpenCodeRuntimeDiagnostics = () =>
+  opencodeRuntimeDiagnostics(addonRuntimeResolverOptions());
 const resolveOpenCodeCommand = () => resolveOpenCodeRuntimeDiagnostics().command;
 const setAddonRuntimeSelfTestHomeDir = (homeDir) => {
-  addonRuntimeSelfTestHomeDir = homeDir
-    ? realpathSync.native(path.resolve(homeDir))
-    : null;
+  addonRuntimeSelfTestHomeDir = homeDir ? realpathSync.native(path.resolve(homeDir)) : null;
 };
 
 const providerHostService = createProviderHostService({ redactDiagnosticText, extractJsonObject });
@@ -231,11 +241,13 @@ const terminalHostStart = terminalHostBridge.started;
 
 // for Phase-3 (P6) workspace add-on grant lifecycle handlers.
 const harnessService = await createHarnessHostService({
-  userRoot: userRoot(), providerHost: providerHostService,
+  userRoot: userRoot(),
+  providerHost: providerHostService,
   hostTerminal,
-  terminalHost: terminalHostService && terminalHostStart
-    ? { service: terminalHostService, start: terminalHostStart }
-    : undefined,
+  terminalHost:
+    terminalHostService && terminalHostStart
+      ? { service: terminalHostService, start: terminalHostStart }
+      : undefined,
   bindings: JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]"),
   env: process.env,
 });
@@ -272,15 +284,21 @@ const addonDelegationService = createAddonDelegationService({
   // Both are operator-pinned via launcher args or env so the demo is
   // reproducible from a clean checkout without a second trust path.
   workspaceAddonBearerTokens: {
-    "addon.resonant-echo": args.get("echo-bearer-token") ?? process.env.RESONANTOS_DEMO_ECHO_BEARER ?? "",
-    "addon.resonant-counter": args.get("counter-bearer-token") ?? process.env.RESONANTOS_DEMO_COUNTER_BEARER ?? "",
-    "addon.sdk-guide": args.get("sdk-guide-bearer-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_BEARER ?? "",
+    "addon.resonant-echo":
+      args.get("echo-bearer-token") ?? process.env.RESONANTOS_DEMO_ECHO_BEARER ?? "",
+    "addon.resonant-counter":
+      args.get("counter-bearer-token") ?? process.env.RESONANTOS_DEMO_COUNTER_BEARER ?? "",
+    "addon.sdk-guide":
+      args.get("sdk-guide-bearer-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_BEARER ?? "",
     "addon.resonant-pi": args.get("pi-bearer-token") ?? process.env.RESONANTOS_DEMO_PI_BEARER ?? "",
   },
   workspaceAddonAdminTokens: {
-    "addon.resonant-echo": args.get("echo-admin-token") ?? process.env.RESONANTOS_DEMO_ECHO_ADMIN ?? "",
-    "addon.resonant-counter": args.get("counter-admin-token") ?? process.env.RESONANTOS_DEMO_COUNTER_ADMIN ?? "",
-    "addon.sdk-guide": args.get("sdk-guide-admin-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_ADMIN ?? "",
+    "addon.resonant-echo":
+      args.get("echo-admin-token") ?? process.env.RESONANTOS_DEMO_ECHO_ADMIN ?? "",
+    "addon.resonant-counter":
+      args.get("counter-admin-token") ?? process.env.RESONANTOS_DEMO_COUNTER_ADMIN ?? "",
+    "addon.sdk-guide":
+      args.get("sdk-guide-admin-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_ADMIN ?? "",
     "addon.resonant-pi": args.get("pi-admin-token") ?? process.env.RESONANTOS_DEMO_PI_ADMIN ?? "",
   },
 });
@@ -293,7 +311,8 @@ function getPublicPort() {
   if (!publicUrl) return undefined;
   try {
     const parsed = new URL(publicUrl);
-    if (!isLoopbackBridgeHost(parsed.hostname) || parsed.username || parsed.password) return undefined;
+    if (!isLoopbackBridgeHost(parsed.hostname) || parsed.username || parsed.password)
+      return undefined;
     if (parsed.port) return parsed.port;
     if (parsed.protocol === "http:") return "80";
     if (parsed.protocol === "https:") return "443";
@@ -308,22 +327,26 @@ function logOpenCodeBoundary({ code, operation } = {}) {
 }
 
 const openCodeBoundary = createOpenCodeBoundary({
-  ensureServer: () => ensureOpencodeServer({
-    fetchImpl: (...args) => fetch(...args),
-    spawnImpl: (cmd, cmdArgs, opts) => spawn(cmd, cmdArgs, opts),
-    command: resolveOpenCodeCommand(),
-    hostname: "127.0.0.1",
-    port: process.env.RESONANTOS_OPENCODE_PORT ? Number(process.env.RESONANTOS_OPENCODE_PORT) : undefined,
-    env: process.env,
-  }),
-  createClient: (baseUrl, opts = {}) => createOpencodeHttpClient({ fetchImpl: (...args) => fetch(...args), baseUrl, ...opts }),
+  ensureServer: () =>
+    ensureOpencodeServer({
+      fetchImpl: (...args) => fetch(...args),
+      spawnImpl: (cmd, cmdArgs, opts) => spawn(cmd, cmdArgs, opts),
+      command: resolveOpenCodeCommand(),
+      hostname: "127.0.0.1",
+      port: process.env.RESONANTOS_OPENCODE_PORT
+        ? Number(process.env.RESONANTOS_OPENCODE_PORT)
+        : undefined,
+      env: process.env,
+    }),
+  createClient: (baseUrl, opts = {}) =>
+    createOpencodeHttpClient({ fetchImpl: (...args) => fetch(...args), baseUrl, ...opts }),
   fetchImpl: (...args) => fetch(...args),
   executionEnabled: () => addonDelegationService.openCodeProxyExecutionEnabled(),
   forgetServer: forgetOpencodeServer,
   log: logOpenCodeBoundary,
 });
-const unsubscribeOpenCodeExecution = addonDelegationService.subscribeOpenCodeExecution(
-  (enabled) => (enabled ? undefined : openCodeBoundary.revoke()),
+const unsubscribeOpenCodeExecution = addonDelegationService.subscribeOpenCodeExecution((enabled) =>
+  enabled ? undefined : openCodeBoundary.revoke(),
 );
 const opencodeSessionHandlers = createOpencodeSessionHandlers({ boundary: openCodeBoundary });
 const { opencodeSessionRoutes } = createOpencodeSessionHostService(opencodeSessionHandlers);
@@ -485,7 +508,9 @@ const { agentControlRoutes } = createAgentControlHostService({
   sanitizeAssistantContent,
 });
 
-const { extensionPrefsRoutes, flushPendingExtensionPrefs } = createExtensionPrefsHostService({ userRoot });
+const { extensionPrefsRoutes, flushPendingExtensionPrefs } = createExtensionPrefsHostService({
+  userRoot,
+});
 
 const { harnessRoutes } = harnessService;
 const providerBridgeRoutes = harnessService.composeProviderRoutes(legacyProviderBridgeRoutes);
@@ -499,13 +524,13 @@ const providerBridgeRoutes = harnessService.composeProviderRoutes(legacyProvider
 const terminalFactoryRegistry = createRuntimeFactoryRegistry({});
 ensureReviewedRuntimeFactories(terminalFactoryRegistry, { observers: new Map() });
 seedTerminalRuntimeFactories(terminalFactoryRegistry, {
-  // The terminal-host bridge service is the production seam; when it
-  // is null (default in production) the factories use the in-memory
-  // fallback. The bridge service is started later in this file; the
-  // factories pick it up at the next start.
+  // Wire the live terminal-host bridge service (installed above) into
+  // the factories' session-close path. When the bridge is disabled
+  // (default production) this is null, and closeSessions falls back to
+  // the per-add-on service's own status()/closeSession() path.
   serviceFactory: undefined,
   baseEnv: process.env,
-  terminalHostService: null,
+  terminalHostService,
 });
 
 const hostRuntimeLifecycle = createHostRuntimeLifecycle({
@@ -537,21 +562,54 @@ void hostRuntimeReconciler.reconcile();
 // bridge-runtimes host service attaches a single GET /bridge/runtimes
 // route to the route table; the route is capability-gated
 // (addon-runtime-read) and loopback-only.
+// Boot identity + in-process health for the bridgeOverview projection. These
+// are derived from real boot/clock/health state rather than fabricated
+// constants (the previous "bridge-0" instance id and hardcoded "connected").
+const bootStartedAt = Date.now();
+const bootInstanceId =
+  typeof process.env.RESONANTOS_BRIDGE_INSTANCE_ID === "string" &&
+  process.env.RESONANTOS_BRIDGE_INSTANCE_ID.length > 0
+    ? process.env.RESONANTOS_BRIDGE_INSTANCE_ID
+    : uniqueRuntimeId("bridge");
+
+function getBridgeHealth() {
+  // The projection is served by the bridge itself, so a reachable bridge is
+  // connected. The one in-process degradation signal is the optional
+  // terminal-host bridge: when a real driver (ghostty/iterm2) is selected and
+  // its adapter child has since exited, the bridge is degraded. The in-memory
+  // driver has no child and is always treated as healthy.
+  if (terminalHostBridge.enabled && terminalHostService) {
+    const terminal = terminalHostService.status();
+    if (terminal && terminal.driveId !== "in-memory" && terminal.alive === false) {
+      return { status: "degraded" };
+    }
+  }
+  return { status: "connected" };
+}
+
 const runtimeProjection = createRuntimeProjectionService({
   hostRegistry: harnessService.registry,
   reconciler: hostRuntimeReconciler,
   bridgeStatus: {
     snapshot: () => {
-      const port = getPublicPort();
-      const publicUrl = getBridgePublicUrlValue();
+      const health = getBridgeHealth();
       return {
-        status: "connected",
-        version: typeof process.env.RESONANTOS_BRIDGE_VERSION === "string" ? process.env.RESONANTOS_BRIDGE_VERSION : "alpha",
-        endpoint: publicUrl ?? (port ? `http://${getBridgeHost()}:${port}` : undefined),
-        bootEpoch: typeof harnessService.registry?.snapshot === "function"
-          ? String(harnessService.registry.snapshot().bootEpoch ?? "")
-          : "",
-        instanceId: typeof process.env.RESONANTOS_BRIDGE_INSTANCE_ID === "string" ? process.env.RESONANTOS_BRIDGE_INSTANCE_ID : "bridge-0",
+        status: health.status,
+        version:
+          typeof process.env.RESONANTOS_BRIDGE_VERSION === "string"
+            ? process.env.RESONANTOS_BRIDGE_VERSION
+            : "alpha",
+        // activeBridgePort is assigned after the server binds below; this
+        // snapshot is only computed lazily on the first /bridge/runtimes
+        // read, so the reference is safe.
+        endpoint: `http://${getBridgeHost()}:${activeBridgePort}`,
+        startedAt: new Date(bootStartedAt).toISOString(),
+        uptimeSeconds: Math.floor(process.uptime()),
+        instanceId: bootInstanceId,
+        bootEpoch:
+          typeof harnessService.registry?.snapshot === "function"
+            ? String(harnessService.registry.snapshot().bootEpoch ?? "")
+            : "",
       };
     },
   },
@@ -560,7 +618,9 @@ const runtimeProjection = createRuntimeProjectionService({
 const bridgeRuntimesRoute = [];
 createBridgeRuntimesHostService({
   runtimeProjection,
-  attachRoute: (route) => { bridgeRuntimesRoute.push(route); },
+  attachRoute: (route) => {
+    bridgeRuntimesRoute.push(route);
+  },
 });
 
 const bridgeRoutes = [
@@ -575,8 +635,12 @@ const bridgeRoutes = [
   ...bridgeRuntimesRoute,
 ];
 
-const bridgeToken = args.get("bridge-token") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ?? createBridgeToken();
-const capabilityBootstrapToken = args.get("capability-bootstrap-token") ??
+const bridgeToken =
+  args.get("bridge-token") ??
+  process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_TOKEN ??
+  createBridgeToken();
+const capabilityBootstrapToken =
+  args.get("capability-bootstrap-token") ??
   process.env.RESONANTOS_BROWSER_FIRST_CAPABILITY_BOOTSTRAP_TOKEN ??
   createBridgeToken();
 const bridgeCapabilityTokens = buildBridgeCapabilityTokens({ args, mint: createBridgeToken });
@@ -586,7 +650,11 @@ const invokeBridgeRouteForSelfTest = createBridgeRouteSelfTestInvoker({
   bridgeCapabilityTokens,
   capabilityBootstrapToken,
   routes: bridgeRoutes,
-  listenerPort: Number(args.get("bridge-port") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_PORT ?? defaultBridgePort),
+  listenerPort: Number(
+    args.get("bridge-port") ??
+      process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_PORT ??
+      defaultBridgePort,
+  ),
   getPublicPort,
 });
 
@@ -616,7 +684,9 @@ if (!existsSync(path.join(resonantExtension, "manifest.json"))) {
   process.exit(1);
 }
 
-const bridgePort = Number(args.get("bridge-port") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_PORT ?? defaultBridgePort);
+const bridgePort = Number(
+  args.get("bridge-port") ?? process.env.RESONANTOS_BROWSER_FIRST_BRIDGE_PORT ?? defaultBridgePort,
+);
 const bridgeInfo = await startBridgeServerWithFallback({
   port: bridgePort,
   bridgeToken,
@@ -639,21 +709,31 @@ const bridgeConfigPath = await writeBridgeConfig({
   publicUrl: bridgePublicUrl,
 });
 
-console.log(JSON.stringify({
-  event: "browser.first.bridge_started",
-  requestedPort: bridgeInfo.requestedPort,
-  attemptedPort: bridgeInfo.attemptedPort,
-  actualPort: activeBridgePort,
-  recovered: bridgeInfo.recovered,
-  bridgeUrl: bridgePublicUrl,
-  bridgeConfigPath,
-  extensionRoot: resonantExtension,
-}, null, 2));
+console.log(
+  JSON.stringify(
+    {
+      event: "browser.first.bridge_started",
+      requestedPort: bridgeInfo.requestedPort,
+      attemptedPort: bridgeInfo.attemptedPort,
+      actualPort: activeBridgePort,
+      recovered: bridgeInfo.recovered,
+      bridgeUrl: bridgePublicUrl,
+      bridgeConfigPath,
+      extensionRoot: resonantExtension,
+    },
+    null,
+    2,
+  ),
+);
 console.log(`Load ${resonantExtension} in Chrome as an unpacked extension.`);
 
 const shutdown = async () => {
   await flushPendingExtensionPrefs().catch(() => undefined);
-  try { unsubscribeOpenCodeExecution(); } catch { /* noop */ }
+  try {
+    unsubscribeOpenCodeExecution();
+  } catch {
+    /* noop */
+  }
   await openCodeBoundary.dispose().catch(() => undefined);
   await harnessService.close();
   await uninstallTerminalHostBridge({ service: terminalHostService });
