@@ -47,6 +47,18 @@ the public route is `GET /bridge/runtimes` (`addon-runtime-read`,
 schema, the privacy/redaction contract, the failure-code catalog, and
 the update mechanism. The Bridge & Runtimes UI (CP-BR6) consumes this
 projection; CP-BR5 ships the data contract and host route only.
+**CP-BR6 adds the Settings → Bridge & Runtimes surface** at
+[`browser-first/resonantos-side-panel-extension/src/lib/settings/bridge-runtimes-section.js`](../../browser-first/resonantos-side-panel-extension/src/lib/settings/bridge-runtimes-section.js)
+with the pure view model at
+[`bridge-runtimes-view.js`](../../browser-first/resonantos-side-panel-extension/src/lib/settings/bridge-runtimes-view.js).
+The surface renders only the public projection; enable/disable route
+through `POST /addons/enabled`; restart/retry is omitted when no host
+transaction exists. See
+[BRIDGE-AND-RUNTIMES.md](../product/BRIDGE-AND-RUNTIMES.md) for the
+user guide, [UI-STATE-GLOSSARY.md](UI-STATE-GLOSSARY.md) for the
+status vocabulary, and
+[BRIDGE-AND-RUNTIMES-TROUBLESHOOTING.md](../BRIDGE-AND-RUNTIMES-TROUBLESHOOTING.md)
+for the operator runbook.
 
 The only privileged request path is:
 

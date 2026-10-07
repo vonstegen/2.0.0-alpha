@@ -210,7 +210,7 @@ the source of truth.
 | CP-BR3     | Generic SDK runtime lifecycle contract + resolver | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR4     | Runtime factory registry + reconciler             | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR5     | Runtime/connector/session projection              | **Complete (r-and-d/terminal-host-current-dev)** |
-| CP-BR6     | Bridge & Runtimes UI                              | Not started |
+| CP-BR6 | Bridge & Runtimes UI | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR7     | Terminal add-ons use generic lifecycle            | Not started |
 | CP-BR8     | UI-only end-to-end acceptance                     | Not started |
 | CP-BR9     | Packaging, recovery, and documentation complete   | Not started |
@@ -502,26 +502,63 @@ inside ROS.
 
 ### Checklist
 
-- [ ] Add **Settings → Bridge & Runtimes** navigation.
-- [ ] Offline UI comes from bootstrap status, not bridge routes.
-- [ ] Online detail comes from bridge runtime projection.
-- [ ] Use textContent/React text rendering only.
-- [ ] Add accessible status badges and live regions.
-- [ ] Add loading, empty, degraded, and failed states.
-- [ ] Confirm UI actions use host transactions, never local flags.
-- [ ] Add component and App integration tests.
+- [x] Add **Settings → Bridge & Runtimes** navigation.
+- [x] Offline UI comes from bootstrap status, not bridge routes.
+- [x] Online detail comes from bridge runtime projection.
+- [x] Use textContent/React text rendering only.
+- [x] Add accessible status badges and live regions.
+- [x] Add loading, empty, degraded, and failed states.
+- [x] Confirm UI actions use host transactions, never local flags.
+- [x] Add component and App integration tests.
 
 ### Gate
 
-- Operator can distinguish core bridge health from an individual add-on runtime.
+- Operator can distinguish core bridge health from an individual add-on
+  runtime. **Met** — the core bridge card and each runtime row carry
+  independent `data-tone` and `data-state` attributes; the
+  `bridge-runtimes-section.test.mjs` test "add-on runtime state is
+  distinct from core bridge state" asserts the per-element distinctness.
 - Every action survives page reload because host state is authoritative.
-- UI displays no secret or private path.
+  **Met** — the renderer re-derives from the projection on mount and
+  after every completed host transaction; no local flag is ever
+  toggled. The enable/disable test asserts the re-fetch.
+- UI displays no secret or private path. **Met** — the
+  `redacted-DOM` test asserts the rendered text never contains a
+  token-shaped, credential-shaped, path-shaped, PID-shaped, or
+  argv-shaped value; the renderer uses `textContent` / `createTextNode`
+  only.
+- Offline state comes from bootstrap status, not bridge routes. **Met**
+  — the renderer's `refresh()` short-circuits to a bootstrap-only view
+  when `bootstrap.status !== "connected"`.
+- Online detail comes from the projection. **Met** — the
+  `addon-runtime-read` capability gates `GET /bridge/runtimes`.
+- Actions route through host transactions. **Met** — `enable`/`disable`
+  call `POST /addons/enabled`; restart/retry is omitted when no host
+  transaction exists.
+- Stale projections are dropped. **Met** —
+  `shouldAcceptProjection(current, incoming)` rejects equal or older
+  generations.
+- Loading/empty/degraded/failed states. **Met** — every section carries
+  a `data-state` attribute; the state tests cover all four.
+- Accessible badges and live regions. **Met** — every status badge has
+  `aria-live="polite"`; the live region test asserts it.
+- Text-only rendering. **Met** — no `innerHTML`, no script injection;
+  the rendering test asserts it.
+- Existing CP-BR1…CP-BR5 tests remain green. **Met** — 465/465
+  browser-first tests pass.
 
 ### Documentation
 
-- User guide: Bridge & Runtimes.
-- UI state glossary.
-- Operator troubleshooting flow.
+- [Bridge & Runtimes — User Guide](../product/BRIDGE-AND-RUNTIMES.md)
+- [UI State Glossary](../architecture/UI-STATE-GLOSSARY.md)
+- [Operator Troubleshooting Flow](../BRIDGE-AND-RUNTIMES-TROUBLESHOOTING.md)
+- Schema and projection: [BRIDGE-RUNTIME-PROJECTION.md](BRIDGE-RUNTIME-PROJECTION.md)
+- Bootstrap: [BRIDGE-BOOTSTRAP-ROS-STARTUP.md](BRIDGE-BOOTSTRAP-ROS-STARTUP.md)
+- Lifecycle: [SDK-RUNTIME-LIFECYCLE-CONTRACT.md](SDK-RUNTIME-LIFECYCLE-CONTRACT.md)
+
+> Terminal add-on migration is **CP-BR7**. CP-BR6 ships the surface; CP-BR7
+> registers the Ghostty/iTerm2 runtime factories and wraps
+> `createTerminalHostService` into the generic lifecycle.
 
 ---
 
