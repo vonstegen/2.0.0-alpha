@@ -60,6 +60,21 @@ export interface OpenInTerminalButtonProps {
   promptPath: string | null;
   /** Harness agent id the launch should target. */
   agentId: string;
+  /**
+   * CP-BR7: the selected terminal runtime's lifecycle status from the
+   * generic runtime projection (CP-BR5). The button is enabled only
+   * when this prop is `"ready"`. When the prop is omitted, the legacy
+   * `status.connected` check is the sole gate. The projection is the
+   * source of truth; the legacy status remains for fallback.
+   */
+  projectionRuntimeStatus?:
+    | "inactive"
+    | "starting"
+    | "ready"
+    | "degraded"
+    | "failed"
+    | "stopping"
+    | null;
   /** Callback when the operator authorises the terminal-host
    * capability grant (wired in CP-XH5c). The callback applies
    * `grants` via the grant-broker route; the button auto-retries
@@ -234,12 +249,37 @@ export const OpenInTerminalButton = (
 
   if (!preferred) return null;
 
-  const disabledLaunch = busy || !props.promptPath;
+  // CP-BR7: the projection is the source of truth. When the caller
+  // supplies `projectionRuntimeStatus`, the button is enabled only
+  // when the selected terminal runtime is `"ready"`. Any other
+  // lifecycle status disables the button with an explanatory tooltip.
+  // The legacy `status.connected` check remains as a fallback when
+  // the prop is omitted.
+  const projectionStatus = props.projectionRuntimeStatus ?? null;
+  const projectionReady = projectionStatus === "ready";
+  const projectionGate = projectionStatus !== null && !projectionReady;
+  const projectionTooltip = !projectionReady
+    ? projectionStatus === "starting"
+      ? "Terminal is starting…"
+      : projectionStatus === "degraded"
+        ? "Terminal is degraded; check Bridge & Runtimes."
+        : projectionStatus === "failed"
+          ? "Terminal failed to start; check Bridge & Runtimes."
+          : projectionStatus === "stopping"
+            ? "Terminal is stopping…"
+            : projectionStatus === "inactive"
+              ? "Terminal is disabled in Bridge & Runtimes."
+              : "Terminal is not ready."
+    : "";
+
+  const disabledLaunch = busy || !props.promptPath || projectionGate;
   const tooltip = !props.promptPath
     ? "Write a prompt first."
-    : busy
-      ? "Launching…"
-      : "";
+    : projectionGate
+      ? projectionTooltip
+      : busy
+        ? "Launching…"
+        : "";
 
   return (
     <button
@@ -248,6 +288,7 @@ export const OpenInTerminalButton = (
       data-testid="open-in-terminal"
       data-agent-id={props.agentId}
       data-terminal-addon-id={preferred.addonId}
+      data-projection-status={projectionStatus ?? "unknown"}
       disabled={disabledLaunch}
       title={tooltip}
       onClick={(event) => {
