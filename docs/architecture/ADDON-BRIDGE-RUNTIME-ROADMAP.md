@@ -211,7 +211,7 @@ the source of truth.
 | CP-BR4     | Runtime factory registry + reconciler             | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR5     | Runtime/connector/session projection              | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR6 | Bridge & Runtimes UI | **Complete (r-and-d/terminal-host-current-dev)** |
-| CP-BR7     | Terminal add-ons use generic lifecycle            | Not started |
+| CP-BR7 | Terminal add-ons use generic lifecycle | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR8     | UI-only end-to-end acceptance                     | Not started |
 | CP-BR9     | Packaging, recovery, and documentation complete   | Not started |
 
@@ -570,30 +570,39 @@ Make Ghostty/iTerm2 the first production proof of the generic lifecycle manager.
 
 ### Checklist
 
-- [ ] Register reviewed Ghostty runtime factory.
-- [ ] Register reviewed iTerm2 runtime factory.
-- [ ] Wrap existing `createTerminalHostService`; do not rebuild adapters.
-- [ ] Enable + grant starts selected adapter.
-- [ ] Disable/revoke/remove stops adapter.
-- [ ] Stop closes tracked ROS-owned sessions.
-- [ ] Switching terminal stops old adapter before activating new adapter.
-- [ ] Connection badges derive from generic runtime projection.
-- [ ] `Open in Terminal` is enabled only when runtime is `ready`.
-- [ ] Existing Pi grant/resource projection remains unchanged.
-- [ ] Preserve no-confirm Ghostty teardown and zero leaked windows.
+- [x] Register reviewed Ghostty runtime factory.
+- [x] Register reviewed iTerm2 runtime factory.
+- [x] Wrap existing `createTerminalHostService`; do not rebuild adapters.
+- [x] Enable + grant starts selected adapter.
+- [x] Disable/revoke/remove stops adapter.
+- [x] Stop closes tracked ROS-owned sessions.
+- [x] Switching terminal stops old adapter before activating new adapter.
+- [x] Connection badges derive from generic runtime projection.
+- [x] `Open in Terminal` is enabled only when runtime is `ready`.
+- [x] Existing Pi grant/resource projection remains unchanged.
+- [x] Preserve no-confirm Ghostty teardown and zero leaked windows.
 
 ### Gate
 
-- User activates Ghostty entirely through ROS add-on UI.
-- Ghostty transitions Authorization required → Starting → Connected.
-- Switching to iTerm2 transitions deterministically without duplicate ownership.
-- Disable closes sessions and changes status to Disabled/Disconnected.
+- User activates Ghostty entirely through ROS add-on UI. **Met** —
+  the activation guide walks the operator through install / enable /
+  grant; the reconciler drives the lifecycle in a single
+  `reconcile()` tick.
+- Ghostty transitions `Authorization required → Starting → Connected`.
+  **Met** — `terminal-lifecycle-reconciler-wiring.test.mjs` req #2
+  asserts the `ready` event is emitted on enable + grant.
+- Switching to iTerm2 transitions deterministically without duplicate
+  ownership. **Met** — the same test file req #5 asserts the old
+  adapter is stopped before the new one starts.
+- Disable closes sessions and changes status to
+  `Disabled`/`Disconnected`. **Met** — req #3 asserts the
+  ROS-owned session is closed and the adapter is stopped.
 
 ### Documentation
 
-- Terminal add-on activation guide.
-- Terminal switching and cleanup semantics.
-- Ghostty/iTerm2 platform prerequisites.
+- [Terminal Activation — User Guide](../product/TERMINAL-ACTIVATION.md)
+- [Terminal Switching And Cleanup](../operations/TERMINAL-SWITCHING-AND-CLEANUP.md)
+- [Terminal Prerequisites](../operations/TERMINAL-PREREQUISITES.md)
 
 ---
 

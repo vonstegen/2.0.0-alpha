@@ -58,6 +58,7 @@ components:
 - [Runtime Factory Registry And Reconciler (CP-BR4)](RUNTIME-FACTORY-REGISTRY-AND-RECONCILER.md)
 - [Bridge, Runtime, Connector, And Session Projection (CP-BR5)](BRIDGE-RUNTIME-PROJECTION.md)
 - [UI State Glossary (CP-BR6)](UI-STATE-GLOSSARY.md)
+- [Terminal Activation (CP-BR7)](../product/TERMINAL-ACTIVATION.md)
 - [Paperclip engineer setup](addon-runbooks/paperclip/ENGINEER_SETUP.md)
 - [RecursiveMAS engineer setup](addon-runbooks/recursive-mas/ENGINEER_SETUP.md)
 

@@ -59,6 +59,24 @@ user guide, [UI-STATE-GLOSSARY.md](UI-STATE-GLOSSARY.md) for the
 status vocabulary, and
 [BRIDGE-AND-RUNTIMES-TROUBLESHOOTING.md](../BRIDGE-AND-RUNTIMES-TROUBLESHOOTING.md)
 for the operator runbook.
+**CP-BR7 wires the CP-BR4 reconciler into the production composition
+root** at
+[`browser-first/host/run-bridge-minimal.mjs`](../../browser-first/host/run-bridge-minimal.mjs)
+with the two reviewed terminal factories at
+[`terminal-runtime-factories.mjs`](../../browser-first/host/terminal-runtime-factories.mjs).
+Ghostty and iTerm2 activate entirely through the generic lifecycle
+(enable + grant → start; disable / revoke / remove → stop with
+session cleanup). Connection badges derive from the CP-BR5
+projection; `Open in Terminal` is gated on `projectionRuntimeStatus
+=== "ready"`. The Pi grant / resource projection is unchanged; the
+no-confirm Ghostty teardown and zero-leaked-windows invariants are
+preserved. See
+[TERMINAL-ACTIVATION.md](../product/TERMINAL-ACTIVATION.md) for the
+user guide,
+[TERMINAL-SWITCHING-AND-CLEANUP.md](../operations/TERMINAL-SWITCHING-AND-CLEANUP.md)
+for switching semantics, and
+[TERMINAL-PREREQUISITES.md](../operations/TERMINAL-PREREQUISITES.md)
+for the Ghostty / iTerm2 platform prerequisites.
 
 The only privileged request path is:
 
