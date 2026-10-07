@@ -59,6 +59,7 @@ components:
 - [Bridge, Runtime, Connector, And Session Projection (CP-BR5)](BRIDGE-RUNTIME-PROJECTION.md)
 - [UI State Glossary (CP-BR6)](UI-STATE-GLOSSARY.md)
 - [Terminal Activation (CP-BR7)](../product/TERMINAL-ACTIVATION.md)
+- [CP-BR8 Acceptance Runbook](../operations/CP-BR8-ACCEPTANCE-RUNBOOK.md)
 - [Paperclip engineer setup](addon-runbooks/paperclip/ENGINEER_SETUP.md)
 - [RecursiveMAS engineer setup](addon-runbooks/recursive-mas/ENGINEER_SETUP.md)
 
