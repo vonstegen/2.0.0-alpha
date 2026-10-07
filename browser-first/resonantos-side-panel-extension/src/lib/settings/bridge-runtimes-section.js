@@ -528,13 +528,13 @@ export function renderBridgeRuntimesSection(container, options = {}) {
     }));
   };
 
-  const applyProjection = (projection) => {
+  const applyProjection = async (projection) => {
     if (projection && !shouldAcceptProjection(currentView, projection)) {
       return; // stale; drop
     }
     const view = buildBridgeRuntimesView({
       projection,
-      bootstrapSnapshot: readBootstrap(),
+      bootstrapSnapshot: await readBootstrap(),
       enableTransaction: options.enableTransaction,
       supportedActions: options.supportedActions ?? {},
     });
@@ -542,16 +542,16 @@ export function renderBridgeRuntimesSection(container, options = {}) {
     renderView(view);
   };
 
-  const readBootstrap = () => {
+  const readBootstrap = async () => {
     if (typeof options.getBootstrapSnapshot === "function") {
-      return options.getBootstrapSnapshot();
+      return await options.getBootstrapSnapshot();
     }
     return null;
   };
 
   const refresh = async () => {
     if (inflight) return;
-    const bootstrap = readBootstrap();
+    const bootstrap = await readBootstrap();
     const bridgeConnected = bootstrap?.status === "connected";
     if (!bridgeConnected) {
       // Bootstrap is the OFFLINE source. Only call the projection
@@ -574,7 +574,7 @@ export function renderBridgeRuntimesSection(container, options = {}) {
     inflight = true;
     try {
       const projection = await options.fetchProjection();
-      applyProjection(projection);
+      await applyProjection(projection);
     } catch (error) {
       renderError(error);
     } finally {
@@ -592,12 +592,14 @@ export function renderBridgeRuntimesSection(container, options = {}) {
     }
   } else {
     setStatus(statusNode, "Projection fetcher is not configured for this surface.", "warn");
-    renderView(buildBridgeRuntimesView({
-      projection: null,
-      bootstrapSnapshot: readBootstrap(),
-      enableTransaction: options.enableTransaction,
-      supportedActions: options.supportedActions ?? {},
-    }));
+    void (async () => {
+      renderView(buildBridgeRuntimesView({
+        projection: null,
+        bootstrapSnapshot: await readBootstrap(),
+        enableTransaction: options.enableTransaction,
+        supportedActions: options.supportedActions ?? {},
+      }));
+    })();
   }
 
   return {

@@ -218,7 +218,16 @@ export function renderSettingsWorkspace({
         if (typeof request !== "function") return null;
         return await request("/bridge/runtimes", { method: "GET" });
       };
-      sectionContext.getBootstrapSnapshot = () => null; // wired by the renderer via chrome.runtime.sendMessage in the production entry point
+      sectionContext.getBootstrapSnapshot = async () => {
+        if (typeof chrome === "undefined" || !chrome?.runtime?.sendMessage) {
+          return null;
+        }
+        const response = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({ type: "bootstrap:get-status" }, (reply) => resolve(reply ?? null));
+        });
+        if (response && response.ok === true && response.snapshot) return response.snapshot;
+        return null;
+      };
       sectionContext.enableTransaction = async (addonId, enabled) => {
         const request = bridge();
         if (typeof request !== "function") {
