@@ -213,6 +213,37 @@ if (!connectedSeen) {
   pass("Bridge & Runtimes renders 'connected'");
 }
 
+// Stability: after another poll cycle (2s) + buffer, the surface must NOT
+// degrade to offline/failed/error, and the bootstrap must still be connected.
+if (connectedSeen) {
+  await sleep(5000);
+  const after = String(
+    (
+      await evaluate(page, `document.body?.innerText ?? ""`).catch(() => ({
+        result: { value: "" },
+      }))
+    )?.result?.value ?? "",
+  ).toLowerCase();
+  const afterStatus = await evaluate(
+    page,
+    `new Promise((resolve) => {
+      try { chrome.runtime.sendMessage({ type: "bootstrap:get-status", channel: "resonantos.browser_first" }, (resp) => resolve(resp?.snapshot?.status ?? null)); }
+      catch (e) { resolve(null); }
+    })`,
+  ).catch(() => ({ result: { value: null } }));
+  const bootstrapAfter = afterStatus?.result?.value;
+  const degraded = ["unknown field", "bridge offline", "projection fetch failed", "loading"].some(
+    (p) => after.includes(p),
+  );
+  if (bootstrapAfter && bootstrapAfter !== "connected") {
+    fail("bootstrap degraded after settling: " + bootstrapAfter);
+  } else if (degraded || !after.includes("connected")) {
+    fail("Bridge & Runtimes degraded after settling. Text:\n" + after.slice(0, 1200));
+  } else {
+    pass("Bridge & Runtimes stays 'connected' across poll cycles");
+  }
+}
+
 // ---------- 5. No secret-shaped values leak into the rendered DOM ----------
 const normalized = text.toLowerCase();
 const forbidden = [
