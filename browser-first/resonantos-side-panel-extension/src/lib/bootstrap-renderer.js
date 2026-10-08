@@ -99,7 +99,7 @@ export function createBootstrapRenderer(options = {}) {
 
   async function refresh() {
     if (stopped) return lastSnapshot;
-    const response = await sendMessage({ type: "bootstrap:get-status" });
+    const response = await sendMessage({ type: "bootstrap:get-status", channel: "resonantos.browser_first" });
     if (response?.ok && response.snapshot) {
       const projected = coerceSnapshot(response.snapshot);
       if (projected) {
@@ -131,7 +131,7 @@ export function createBootstrapRenderer(options = {}) {
   }
 
   async function stopForShutdown() {
-    const response = await sendMessage({ type: "bootstrap:stop" });
+    const response = await sendMessage({ type: "bootstrap:stop", channel: "resonantos.browser_first" });
     if (response?.ok) {
       await refresh();
     }
@@ -139,7 +139,7 @@ export function createBootstrapRenderer(options = {}) {
   }
 
   async function retryOnce() {
-    const response = await sendMessage({ type: "bootstrap:retry" });
+    const response = await sendMessage({ type: "bootstrap:retry", channel: "resonantos.browser_first" });
     if (response?.ok) {
       await refresh();
     }
@@ -147,7 +147,7 @@ export function createBootstrapRenderer(options = {}) {
   }
 
   async function restart() {
-    const response = await sendMessage({ type: "bootstrap:restart" });
+    const response = await sendMessage({ type: "bootstrap:restart", channel: "resonantos.browser_first" });
     if (response?.ok) {
       await refresh();
     }

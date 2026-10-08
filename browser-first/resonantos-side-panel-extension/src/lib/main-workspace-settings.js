@@ -223,7 +223,13 @@ export function renderSettingsWorkspace({
           return null;
         }
         const response = await new Promise((resolve) => {
-          chrome.runtime.sendMessage({ type: "bootstrap:get-status" }, (reply) => resolve(reply ?? null));
+          chrome.runtime.sendMessage({ type: "bootstrap:get-status", channel: "resonantos.browser_first" }, (reply) => {
+            if (chrome.runtime.lastError) {
+              resolve(null);
+              return;
+            }
+            resolve(reply ?? null);
+          });
         });
         if (response && response.ok === true && response.snapshot) return response.snapshot;
         return null;
