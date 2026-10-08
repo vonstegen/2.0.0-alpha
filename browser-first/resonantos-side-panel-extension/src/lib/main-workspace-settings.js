@@ -216,7 +216,15 @@ export function renderSettingsWorkspace({
       sectionContext.fetchProjection = async () => {
         const request = bridge();
         if (typeof request !== "function") return null;
-        return await request("/bridge/runtimes", { method: "GET" });
+        const payload = await request("/bridge/runtimes", { method: "GET" });
+        // The bridge wraps every route result in { ok: true, ... }. The
+        // projection is the unwrapped payload; drop the envelope field so
+        // the view's closed-shape coercion does not reject "ok".
+        if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+          const { ok: _ok, ...projection } = payload;
+          return projection;
+        }
+        return payload;
       };
       sectionContext.getBootstrapSnapshot = async () => {
         if (typeof chrome === "undefined" || !chrome?.runtime?.sendMessage) {
