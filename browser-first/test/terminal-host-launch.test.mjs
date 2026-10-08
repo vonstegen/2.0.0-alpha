@@ -319,6 +319,7 @@ test("POST /terminal-host/launch returns bridge-not-running when the bridge prob
     agentId: "pi",
     terminalAddonId: "addon.resonant-terminal-ghostty",
     promptPath: file,
+    options: { bridgeEndpoint: f.bridgeEndpoint },
   });
   assert.equal(result.status, 200, "typed rejections travel as 200 ok:false so the UI can branch");
   assert.equal(result.payload.ok, false);
