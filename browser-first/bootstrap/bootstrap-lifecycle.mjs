@@ -44,6 +44,7 @@
 
 import { once } from "node:events";
 import { randomBytes } from "node:crypto";
+import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 
 function defaultDelay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -70,6 +71,7 @@ export function createBootstrapLifecycle({
   delayImpl = defaultDelay,
   nowImpl = () => Date.now(),
   createInstanceId = defaultInstanceId,
+  signalProcess = (pid, signal) => process.kill(pid, signal),
 } = {}) {
   if (!policy || typeof policy !== "object") throw new TypeError("createBootstrapLifecycle requires a pinned policy");
   if (typeof probe !== "function") throw new TypeError("createBootstrapLifecycle requires a probe");
@@ -77,6 +79,7 @@ export function createBootstrapLifecycle({
 
   const endpoint = policy.endpoint;
   const timeouts = policy.timeouts;
+  const pidFile = policy.bridgePidFile ?? null;
 
   const state = {
     phase: "offline", // offline | starting | connected | degraded | restarting | stopping | failed
@@ -101,6 +104,62 @@ export function createBootstrapLifecycle({
 
   function childAlive(record) {
     return Boolean(record && record.child && !record.dead);
+  }
+
+  /** True when a PID exists (signal 0 succeeds, or EPERM: alive but owned by
+   *  another user). ESRCH means the process is gone. */
+  function pidAlive(pid) {
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try {
+      signalProcess(pid, 0);
+      return true;
+    } catch (error) {
+      return Boolean(error && typeof error === "object" && error.code === "EPERM");
+    }
+  }
+
+  async function waitPidDead(pid, ms) {
+    const deadline = nowImpl() + ms;
+    for (;;) {
+      if (!pidAlive(pid)) return true;
+      if (nowImpl() >= deadline) return false;
+      await delayImpl(50);
+    }
+  }
+
+  /** Bounded stop of a previously-spawned bridge by PID (SIGTERM then SIGKILL),
+   *  used when this host process is a fresh one and has no in-process child. */
+  async function stopPid(pid) {
+    if (!pidAlive(pid)) return true;
+    try { signalProcess(pid, "SIGTERM"); } catch { /* defensive */ }
+    if (await waitPidDead(pid, timeouts.stopMs)) return true;
+    try { signalProcess(pid, "SIGKILL"); } catch { /* defensive */ }
+    return waitPidDead(pid, timeouts.killEscalationMs);
+  }
+
+  function readOwnedPid() {
+    if (!pidFile) return null;
+    try {
+      const parsed = JSON.parse(readFileSync(pidFile, "utf8"));
+      return Number.isInteger(parsed?.pid) && parsed.pid > 0 ? parsed.pid : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeOwnedPid(pid) {
+    if (!pidFile || !Number.isInteger(pid) || pid <= 0) return;
+    try {
+      writeFileSync(pidFile, JSON.stringify({ pid }), "utf8");
+    } catch {
+      // Ownership record is best-effort: a lost record only makes the next
+      // host treat the bridge as external (fail-closed), never unsafe.
+    }
+  }
+
+  function clearOwnedPid() {
+    if (!pidFile) return;
+    try { unlinkSync(pidFile); } catch { /* best-effort */ }
   }
 
   /** Attach generation-tagged child handlers. Handlers always update the
@@ -206,6 +265,7 @@ export function createBootstrapLifecycle({
     }
     record.child = child;
     state.owned = record;
+    if (Number.isInteger(child.pid)) writeOwnedPid(child.pid);
     state.phase = "starting";
     wireChild(record);
     try {
@@ -337,6 +397,15 @@ export function createBootstrapLifecycle({
       if (!stopped) {
         return failPhase("restart-failed");
       }
+    } else {
+      const pid = readOwnedPid();
+      if (pid != null && pidAlive(pid)) {
+        const stopped = await stopPid(pid);
+        if (!stopped) {
+          return failPhase("restart-failed");
+        }
+      }
+      clearOwnedPid();
     }
 
     const probeResult = await probe({ endpoint, timeoutMs: timeouts.probeMs });
@@ -374,11 +443,24 @@ export function createBootstrapLifecycle({
     const old = state.owned;
     state.owned = null;
     if (!childAlive(old)) {
+      const pid = readOwnedPid();
+      if (pid != null && pidAlive(pid)) {
+        state.phase = "stopping";
+        const stopped = await stopPid(pid);
+        if (!stopped) {
+          return failPhase("stop-failed");
+        }
+        clearOwnedPid();
+        state.phase = "offline";
+        return { ok: true, status: "offline", endpoint };
+      }
+      clearOwnedPid(); // stale record
       state.phase = "offline";
       return { ok: true, status: "offline", endpoint };
     }
     state.phase = "stopping";
     const stopped = await stopOwnedRecord(old);
+    clearOwnedPid();
     if (!stopped) {
       return failPhase("stop-failed");
     }

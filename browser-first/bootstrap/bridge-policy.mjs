@@ -86,6 +86,14 @@ export function nativeHostEntryPath({ baseDir = moduleDir } = {}) {
   return path.resolve(baseDir, "native-host-main.mjs");
 }
 
+/** Absolute path to the bridge ownership PID file. The bootstrap host records
+ *  the bridge child's PID here so a later host process (each connectNative
+ *  spawns a fresh host) can stop/restart the bridge it previously started.
+ *  Derived from the user home directory, never caller-supplied. */
+export function bridgePidFilePath({ homeDir = os.homedir() } = {}) {
+  return path.join(homeDir, ".ros", "bridge.pid");
+}
+
 /**
  * Build the bridge child environment allowlist. Every value is host-pinned
  * or derived from Node/OS user-directory resolution — never from ambient
@@ -157,12 +165,16 @@ export function createBridgePolicy(options = {}) {
   const nodeExecutable = typeof options.nodeExecutable === "string" && options.nodeExecutable.length > 0
     ? options.nodeExecutable
     : process.execPath;
+  const pidFile = typeof options.pidFile === "string" && options.pidFile.length > 0
+    ? options.pidFile
+    : bridgePidFilePath({ homeDir: options.envOverrides?.homeDir });
   const policy = {
     protocol: BOOTSTRAP_PROTOCOL,
     endpoint: BRIDGE_ENDPOINT,
     bridgeEntry: bridgeEntryPath({ baseDir: options.baseDir }),
     bridgeArgv: BRIDGE_ARGV,
     bridgeCwd: repoRootPath({ baseDir: options.baseDir }),
+    bridgePidFile: pidFile,
     nodeExecutable,
     childEnv: buildBridgeChildEnv(options.envOverrides),
     expectedBridgeVersion: typeof options.expectedBridgeVersion === "string" && options.expectedBridgeVersion.length > 0
