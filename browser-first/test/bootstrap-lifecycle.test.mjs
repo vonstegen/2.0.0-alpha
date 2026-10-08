@@ -21,6 +21,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const { createBootstrapLifecycle } = await import("../bootstrap/bootstrap-lifecycle.mjs");
 const { createBridgePolicy, BRIDGE_ENDPOINT, BRIDGE_ARGV } = await import("../bootstrap/bridge-policy.mjs");
@@ -150,6 +153,22 @@ function makeLifecycle({
     createInstanceId: (generation) => `test-gen-${generation}`,
   });
   return { lifecycle, policy: policyWithTestTimeouts, clock };
+}
+
+function makeSignalProcess() {
+  const calls = [];
+  let alive = true;
+  const signalProcess = (pid, signal) => {
+    calls.push({ pid, signal });
+    if (signal === "SIGTERM" || signal === "SIGKILL") {
+      alive = false;
+    } else if (signal === 0 && !alive) {
+      const error = new Error("no such process");
+      error.code = "ESRCH";
+      throw error;
+    }
+  };
+  return { calls, signalProcess };
 }
 
 test("1. offline → start → connected with an owned generation", async () => {
@@ -502,4 +521,45 @@ test("owned child alive but probe failing degrades, and start on degraded does n
   assert.equal(again.status, "degraded");
   assert.equal(spawn.calls.length, 1, "degraded start must not double-spawn");
   assertNoSecretShapedValue(status, "$.degraded");
+});
+
+test("16. cross-process ownership: a fresh host stops the bridge it previously started", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ros-bridge-pid-"));
+  const pidFile = path.join(tmpDir, "bridge.pid");
+  try {
+    const spawn = makeSpawn();
+    const probe = makeProbe([{ ok: false }, { ok: true }]);
+    const { lifecycle: first, policy, clock } = makeLifecycle({
+      probeScript: probe.probe,
+      spawnImpl: spawn.spawnImpl,
+      policyOverrides: { pidFile },
+    });
+    const started = await first.start();
+    assert.equal(started.status, "connected");
+    assert.equal(
+      JSON.parse(fs.readFileSync(pidFile, "utf8")).pid,
+      spawn.children[0].pid,
+      "start records the child PID",
+    );
+
+    // A fresh host process (no in-process child) stops via the recorded PID.
+    const stopSig = makeSignalProcess();
+    const stopper = createBootstrapLifecycle({
+      policy,
+      probe: makeProbe([{ ok: false }]).probe,
+      spawnImpl: makeSpawn().spawnImpl,
+      delayImpl: clock.delayImpl,
+      nowImpl: clock.nowImpl,
+      signalProcess: stopSig.signalProcess,
+    });
+    const stopped = await stopper.stopForShutdown();
+    assert.equal(stopped.status, "offline");
+    assert.ok(
+      stopSig.calls.some((c) => c.pid === spawn.children[0].pid && c.signal === "SIGTERM"),
+      "fresh host signals the recorded PID",
+    );
+    assert.equal(fs.existsSync(pidFile), false, "PID record cleared after stop");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });
