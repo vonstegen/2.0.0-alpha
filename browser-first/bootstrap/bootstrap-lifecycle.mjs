@@ -44,7 +44,8 @@
 
 import { once } from "node:events";
 import { randomBytes } from "node:crypto";
-import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 function defaultDelay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -150,6 +151,7 @@ export function createBootstrapLifecycle({
   function writeOwnedPid(pid) {
     if (!pidFile || !Number.isInteger(pid) || pid <= 0) return;
     try {
+      mkdirSync(dirname(pidFile), { recursive: true });
       writeFileSync(pidFile, JSON.stringify({ pid }), "utf8");
     } catch {
       // Ownership record is best-effort: a lost record only makes the next

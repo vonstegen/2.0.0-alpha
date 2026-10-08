@@ -525,7 +525,7 @@ test("owned child alive but probe failing degrades, and start on degraded does n
 
 test("16. cross-process ownership: a fresh host stops the bridge it previously started", async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ros-bridge-pid-"));
-  const pidFile = path.join(tmpDir, "bridge.pid");
+  const pidFile = path.join(tmpDir, "nested", "sub", "bridge.pid");
   try {
     const spawn = makeSpawn();
     const probe = makeProbe([{ ok: false }, { ok: true }]);
