@@ -558,6 +558,41 @@ test("bridge capability-token bootstrap is scoped and separate from the bridge t
   }
 });
 
+test("loopback /healthz is unauthenticated and returns ok:true", async (t) => {
+  const bridgeToken = "healthz-test-token";
+  let server;
+  try {
+    server = await startBridgeServer({
+      port: 0,
+      bridgeToken,
+      extensionOrigin: "chrome-extension://test",
+      routes: [],
+    });
+  } catch (error) {
+    if (error?.code === "EPERM" && error?.address === "127.0.0.1") {
+      t.skip("localhost bind is denied in this sandbox.");
+      return;
+    }
+    throw error;
+  }
+  const address = server.address();
+  const bridgeUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    // The bootstrap probe (ensureBridgeReachable) hits /healthz with no token.
+    const ok = await fetch(`${bridgeUrl}/healthz`);
+    assert.equal(ok.status, 200);
+    const payload = await ok.json();
+    assert.equal(payload.ok, true);
+    assert.equal(typeof payload.version, "string");
+
+    // A non-GET request is not the health probe; it must fall through to auth.
+    const post = await fetch(`${bridgeUrl}/healthz`, { method: "POST" });
+    assert.equal(post.status, 401);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("bridge privileged routes require a route-scoped capability token", async (t) => {
   const bridgeToken = "general-test-token";
   const capabilityToken = "credential-write-test-token";

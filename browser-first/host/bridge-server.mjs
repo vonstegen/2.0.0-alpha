@@ -1320,6 +1320,21 @@ export function createBridgeRequestHandler({
         writeJson(response, 403, {ok:false,error:"Client IP not allowlisted for browser-first bridge."}, extensionOrigin, request.headers, allowedOrigins);
         return;
       }
+      // Public loopback-only health endpoint for the bootstrap probe
+      // (ensureBridgeReachable in bridge-bootstrap.mjs). Unauthenticated by
+      // design — the probe carries no bridge token — but loopback-only: the
+      // Host header must be loopback and match the bound port, so a
+      // LAN/Tailscale client can never reach it.
+      if (request.method === "GET" && String(request.url ?? "/").split("?")[0] === "/healthz") {
+        if (!validateLoopbackHost(request, {listenerPort: request.socket?.localPort, getPublicPort})) {
+          drainRefusedRequest(request, response);
+          writeJson(response, 403, {ok:false,error:"Host rejected."}, extensionOrigin, request.headers, allowedOrigins);
+          return;
+        }
+        const version = typeof process.env.RESONANTOS_BRIDGE_VERSION === "string" && process.env.RESONANTOS_BRIDGE_VERSION.length > 0 ? process.env.RESONANTOS_BRIDGE_VERSION : "alpha";
+        writeJson(response, 200, {ok:true,version}, extensionOrigin, request.headers, allowedOrigins);
+        return;
+      }
       const proxyPath = (request.url ?? "/").split("?")[0];
       if (!owned && proxyHandler && !reservedInternalPaths.has(proxyPath) && dashboardProxyPathMatches(proxyPath)) {
         proxyHandler(request, response);
