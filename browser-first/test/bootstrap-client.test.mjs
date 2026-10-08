@@ -48,7 +48,6 @@ function makeFakePort({ handler }) {
 
 function successResult(extra = {}) {
   return {
-    ok: true,
     status: "connected",
     version: "1.0.0",
     endpoint: "http://127.0.0.1:47773",
@@ -78,6 +77,7 @@ test("createBootstrapClient: status -> connected resolves with the projected lif
       const reply = {
         protocol: BOOTSTRAP_PROTOCOL,
         requestId: msg.requestId,
+        ok: true,
         result: successResult(),
       };
       p.onMessage.listeners[0]?.(JSON.stringify(reply));
@@ -300,6 +300,7 @@ test("projectBootstrapResponse drops unknown top-level fields and never echoes t
   const good = {
     protocol: BOOTSTRAP_PROTOCOL,
     requestId: "r-1",
+    ok: true,
     result: successResult({ alreadyRunning: true }),
   };
   const projected = projectBootstrapResponse(good);
@@ -317,7 +318,8 @@ test("createBootstrapClient: hostile start command echo in failureMessage is nev
       p.onMessage.listeners[0]?.(JSON.stringify({
         protocol: BOOTSTRAP_PROTOCOL,
         requestId: msg.requestId,
-        result: { ok: false, status: "failed", failureCode: "start-failed", failureMessage: "spawn failed: /usr/bin/node /Users/admin/secrets/bridge-token ABCDEF" },
+        ok: false,
+        result: { status: "failed", failureCode: "start-failed", failureMessage: "spawn failed: /usr/bin/node /Users/admin/secrets/bridge-token ABCDEF" },
       }));
     },
   });

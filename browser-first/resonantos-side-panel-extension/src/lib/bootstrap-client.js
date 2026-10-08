@@ -132,7 +132,7 @@ export function projectBootstrapResponse(response) {
   }
   const failureCode = result.failureCode ?? null;
   return {
-    ok: result.ok === true,
+    ok: response.ok === true,
     requestId: response.requestId,
     status: result.status,
     version: typeof result.version === "string" ? result.version : null,
