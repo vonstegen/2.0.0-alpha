@@ -247,9 +247,19 @@ export function renderSettingsWorkspace({
         if (typeof request !== "function") {
           throw new Error("Bridge request is not configured.");
         }
+        // CP-BR9: POST /addons/enabled is an optimistic-concurrency host
+        // transaction — it requires the current registry revision. Read it
+        // fresh from the host projection immediately before the mutation;
+        // a stale read fails closed with ownership-conflict and the UI
+        // surfaces the error (no silent retry, no local flag).
+        const registryPayload = await request("/addons/registry", { method: "GET" });
+        const revision = registryPayload?.revision;
+        if (!Number.isSafeInteger(revision) || revision < 0) {
+          throw new Error("Host registry revision unavailable.");
+        }
         await request("/addons/enabled", {
           method: "POST",
-          body: { addonId, enabled: Boolean(enabled) },
+          body: { addonId, enabled: Boolean(enabled), expectedRevision: revision },
         });
       };
       sectionContext.supportedActions = {

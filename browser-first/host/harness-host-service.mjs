@@ -12,7 +12,7 @@ import { createOpenAICompatibleAdapter } from './agent-adapters/openai-compatibl
 import { createDshTypertAdapter } from './agent-adapters/dsh-typert.mjs';
 import { createProviderFabricAdapter } from './agent-adapters/provider-fabric.mjs';
 import { createExternalCliTerminalAdapter } from './agent-adapters/external-cli-terminal.mjs';
-import { publicHarnessError } from './harness-adapter-contract.mjs';
+import { publicHarnessError, assertValidHarnessManifest } from './harness-adapter-contract.mjs';
 import { bridgeCorsHeaders, HarnessTransportError, validateLoopbackHost } from './bridge-server.mjs';
 import { attachSessionEnv, buildProjectedSessionEnv, consumeGrant } from './terminal-host-service.mjs';
 import { ensureBridgeReachable, DEFAULT_BRIDGE_ENDPOINT } from './bridge-bootstrap.mjs';
@@ -120,7 +120,7 @@ export function createHarnessStreamSubscription(reader) {
 export async function createHarnessHostService({ userRoot, store = createHarnessRegistryStore({ userRoot }),
   bindings = [], env = process.env, providerHost, hostTerminal, terminalHost, cleanupTimeoutMs = 1000, onReceipt = () => {}, fixtureSigningKey,
   transportFactory = createHarnessTransport, dshAdapterFactory = createDshTypertAdapter, openaiAdapterFactory = createOpenAICompatibleAdapter,
-  promptFilePath } = {}) {
+  promptFilePath, seedInstallations = [] } = {}) {
   if (!Number.isSafeInteger(cleanupTimeoutMs) || cleanupTimeoutMs < 1 || cleanupTimeoutMs > 30000) throw new TypeError('Bounded cleanup required.');
   // Step 5, 5B default for the pi-terminal-v1 adapter. Tests inject
   // their own factory to point at a temp dir. (The grant token file is
@@ -165,6 +165,30 @@ export async function createHarnessHostService({ userRoot, store = createHarness
   };
   const registry = await createHarnessRegistry({ store: trackedStore, reviewedAdapterIds: ['dsh-typert-v1', 'provider-fabric-v1', 'openai-compatible-v1', 'pi-terminal-v1', 'external-cli-terminal-v1'],
     bindings: approvedBindings.map(({ name, addonId, adapterId, authScheme, endpoint }) => ({ name, addonId, adapterId, authScheme, endpoint })) });
+  // CP-BR9: reviewed installation seed. Each entry is a host-owned
+  // `{ manifest, factoryId }` pair (see terminal-addon-seed.mjs). The seed
+  // runs through the same registry path the `/addons/install` route uses —
+  // durable, validated, and idempotent across fresh boots:
+  //   - not installed          -> install disabled with the factory pin;
+  //   - installed, wrong/no pin -> pinFactory repairs the pin and refreshes
+  //     the stored manifest to the reviewed copy (consent preserved);
+  //   - installed, pinned       -> left untouched (operator enable/grant
+  //     state survives restarts).
+  // The seed never enables anything and never grants a capability.
+  for (const seed of seedInstallations) {
+    if (!seed || typeof seed !== 'object' || typeof seed.factoryId !== 'string' || seed.factoryId.length === 0) {
+      throw new TypeError('seedInstallations entries must be { manifest, factoryId } with a non-empty factory id.');
+    }
+    assertValidHarnessManifest(seed.manifest);
+    const existing = registry.snapshot().installations[seed.manifest.id];
+    if (!existing) {
+      await registry.install(seed.manifest, { enabled: false, factoryId: seed.factoryId });
+      manifests.set(seed.manifest.id, structuredClone(seed.manifest));
+    } else if (existing.factoryId !== seed.factoryId) {
+      await registry.pinFactory(seed.manifest.id, seed.factoryId, { manifest: seed.manifest });
+      manifests.set(seed.manifest.id, structuredClone(seed.manifest));
+    }
+  }
   // Only the explicit fixture composition injects a public test key. Production
   // keys are generated anew, remain in this closure, and are never persisted.
   const { privateKey } = fixtureSigningKey ? { privateKey: fixtureSigningKey } : generateKeyPairSync('ed25519');

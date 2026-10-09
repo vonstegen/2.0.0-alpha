@@ -68,6 +68,7 @@ import {
 } from "./runtime-factory-registry.mjs";
 import { createHostRuntimeLifecycle } from "./runtime-lifecycle-host.mjs";
 import { seedTerminalRuntimeFactories } from "./terminal-runtime-factories.mjs";
+import { loadTerminalAddonSeedInstallations } from "./terminal-addon-seed.mjs";
 import { createProviderHostService } from "./provider-host-service.mjs";
 import {
   memorySourceMoveHistoryPath as sourceMoveHistoryPath,
@@ -239,6 +240,15 @@ const terminalHostBridge = await installTerminalHostBridge({ env: process.env })
 const terminalHostService = terminalHostBridge.service;
 const terminalHostStart = terminalHostBridge.started;
 
+// CP-BR9: reviewed seed for the two production terminal add-ons. The
+// manifests come from the canonical bundled catalog
+// (public/addons/terminal-host-{ghostty,iterm2}.json) and are paired with
+// the CP-BR7 reviewed factory ids by terminal-addon-seed.mjs. The harness
+// host service installs them through the same registry path the
+// `/addons/install` route uses — durable, idempotent, never enabled and
+// never granted by default.
+const terminalAddonSeeds = await loadTerminalAddonSeedInstallations();
+
 // for Phase-3 (P6) workspace add-on grant lifecycle handlers.
 const harnessService = await createHarnessHostService({
   userRoot: userRoot(),
@@ -250,6 +260,7 @@ const harnessService = await createHarnessHostService({
       : undefined,
   bindings: JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]"),
   env: process.env,
+  seedInstallations: terminalAddonSeeds,
 });
 
 const addonDelegationService = createAddonDelegationService({

@@ -8,12 +8,31 @@ const empty = () => ({ revision: 0, governanceActivated: false, installations: {
 const counter = n => Number.isSafeInteger(n) && n >= 0 && n < Number.MAX_SAFE_INTEGER;
 const grantShape = grant => ({ capability: grant.capability, scope: grant.scope, revocationBehavior: grant.revocationBehavior, granted: grant.granted });
 const sameRequest = (a, b) => a.capability === b.capability && a.scope === b.scope && a.revocationBehavior === b.revocationBehavior;
+// CP-BR9: a reviewed runtime factory id pinned on an installation. The id
+// shape mirrors the host route identifier rule; the value is host-owned
+// (never read from a manifest or a caller-controlled string).
+const factoryIdShape = value => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(value);
+// Host platform tokens as declared by manifest `compatibility.platforms`.
+const platformTokens = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
 
 // Host-only API. Routes supply explicit consent later; no browser or adapter may
 // write this state. Binding metadata authorizes use, never resolves credentials.
-export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bindings = [] } = {}) {
+export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bindings = [], platformToken } = {}) {
   if (!store?.read || !store?.write) throw new TypeError('Durable registry store required.');
   const reviewed = new Set(reviewedAdapterIds), approvedBindings = structuredClone(bindings);
+  // CP-BR9: the host-owned platform token used by the compatibility
+  // projection. Defaults to the current host; tests inject a fixed token.
+  const hostPlatformToken = typeof platformToken === 'string' && platformToken.length > 0
+    ? platformToken : (platformTokens[process.platform] ?? process.platform);
+  // Host-owned compatibility verdict for lifecycle-managed installations:
+  // an empty/absent platforms list is unconstrained; otherwise the host
+  // platform must be declared. The shell version is not evaluated here —
+  // manifest validation already bounds the declaration.
+  const compatibleWithHost = manifest => {
+    const platforms = manifest?.compatibility?.platforms;
+    if (!Array.isArray(platforms) || platforms.length === 0) return true;
+    return platforms.includes(hostPlatformToken);
+  };
   const bootEpoch = randomUUID(), listeners = new Set(), fenced = new Set(), pendingPolicies = new Map();
   let state = empty(), disabled = false, queue = Promise.resolve();
 
@@ -54,6 +73,10 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
         }
         assertValidHarnessManifest(entry.manifest);
         if (id !== entry.manifest.id || typeof entry.enabled !== 'boolean') throw fail('runtime-unavailable');
+        // CP-BR9: persisted factory pins must carry the host-owned shape;
+        // anything else is unknown persisted authority and fails closed.
+        if (entry.factoryId !== undefined && !factoryIdShape(entry.factoryId)) throw fail('runtime-unavailable');
+        if (entry.runtimeGeneration !== undefined && !counter(entry.runtimeGeneration)) throw fail('runtime-unavailable');
       }
       for (const [slot, owner] of Object.entries(loaded.slots)) {
         if (!Object.hasOwn(slots, slot) || !counter(owner.generation) ||
@@ -103,10 +126,32 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
   }
   /** @returns {import('../../src/core/contracts.ts').HarnessRegistryProjection} */
   function snapshot() {
-    const installations = Object.fromEntries(Object.entries(state.installations).map(([addonId, entry]) => [addonId, {
-      addonId, installed: true, enabled: entry.enabled, grantedCapabilities: structuredClone(entry.grants),
-      ...projectPolicy(addonId, entry),
-    }]));
+    const installations = Object.fromEntries(Object.entries(state.installations).map(([addonId, entry]) => {
+      const base = {
+        addonId, installed: true, enabled: entry.enabled, grantedCapabilities: structuredClone(entry.grants),
+        ...projectPolicy(addonId, entry),
+      };
+      // CP-BR9: an installation pinned to a reviewed factory id is
+      // lifecycle-managed. Only those entries carry the reconciler /
+      // projection fields (manifest, factoryId, compatibility, required
+      // capabilities, per-add-on generation). Slot-managed add-ons keep
+      // the legacy shape and stay invisible to the CP-BR4 reconciler and
+      // the CP-BR5 runtime projection.
+      if (typeof entry.factoryId === 'string') {
+        return [addonId, {
+          ...base,
+          manifest: structuredClone(entry.manifest),
+          factoryId: entry.factoryId,
+          compatible: compatibleWithHost(entry.manifest),
+          requiredCapabilities: entry.manifest.requestedCapabilities
+            .map(grant => grant?.capability)
+            .filter(capability => typeof capability === 'string'),
+          projectionGeneration: entry.runtimeGeneration ?? 0,
+          bootEpoch,
+        }];
+      }
+      return [addonId, base];
+    }));
     const projection = Object.fromEntries(Object.entries(state.slots).map(([slot, owner]) => [slot, { ...owner,
       available: !disabled && !fenced.has(slot) && !!owner.addonId && eligible(state.installations[owner.addonId], slot),
     }]));
@@ -124,6 +169,9 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
       const next = structuredClone(state), changes = prepare(next);
       const changedSlots = Array.isArray(changes) ? changes : changes.changedSlots;
       const effects = Array.isArray(changes) ? [] : changes.effects;
+      // CP-BR9: add-on-level authority changes (install / enable / grants /
+      // remove / factory pin) that the CP-BR4 reconciler must observe.
+      const lifecycleAddons = Array.isArray(changes) || !Array.isArray(changes.addons) ? [] : changes.addons;
       if (!counter(next.revision + 1)) throw fail('runtime-unavailable');
       next.revision++;
       // Withdraw operation authority before any listener or durable write. New
@@ -141,6 +189,18 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
         state = next;
         pendingPolicies.clear();
         for (const slot of changedSlots) fenced.delete(slot);
+        // CP-BR9: post-commit lifecycle notifications. These fire AFTER the
+        // durable commit so consumers (the CP-BR4 reconciler) read committed
+        // state, never a pre-transaction projection. Slot-owning add-ons are
+        // already covered by the slot fence above; only slotless add-ons get
+        // the add-on-level event. Post-commit listeners are observational:
+        // their failures cannot roll back committed consent.
+        for (const changedAddonId of lifecycleAddons) {
+          if (typeof changedAddonId !== 'string' || ownedSlots(next, changedAddonId).length > 0) continue;
+          for (const listener of [...listeners]) {
+            try { listener({ slot: null, addonId: changedAddonId }); } catch { /* observational */ }
+          }
+        }
         return snapshot();
       } catch {
         disabled = true;
@@ -164,20 +224,51 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
   return {
     snapshot, authorize, isCurrent, assertOperation,
     onFence(listener) { listeners.add(listener); return () => listeners.delete(listener); },
-    install(manifest, { enabled } = {}) {
+    install(manifest, { enabled, factoryId } = {}) {
       // Capture input before entering the serialized queue to prevent TOCTOU edits.
       const captured = structuredClone(manifest);
+      const capturedFactoryId = factoryId ?? null;
       return transact(next => {
         assertValidHarnessManifest(captured);
         if (typeof enabled !== 'boolean' || (captured.agentRuntime?.adapterVersion !== undefined && !bindingAllowed(captured))) throw fail('permission-denied');
+        // CP-BR9: an optional reviewed factory pin marks the installation as
+        // lifecycle-managed. The pin is host-owned and shape-checked; it is
+        // never read from the manifest itself.
+        if (capturedFactoryId !== null && !factoryIdShape(capturedFactoryId)) throw fail('invalid-manifest');
         if (Buffer.byteLength(JSON.stringify(captured)) > 262144) throw fail('invalid-manifest');
         if (!Object.hasOwn(next.installations, captured.id) && Object.keys(next.installations).length >= 256) throw fail('runtime-unavailable');
         const changed = ownedSlots(next, captured.id);
         // Replacement of an installed manifest cannot silently mutate an owner.
         if (changed.length) throw fail('ownership-conflict');
         captured.requestedCapabilities = captured.requestedCapabilities.map(grant => ({ ...grantShape(grant), granted: false }));
-        next.installations[captured.id] = { manifest: captured, enabled, grants: structuredClone(captured.requestedCapabilities) };
-        return [];
+        next.installations[captured.id] = { manifest: captured, enabled, grants: structuredClone(captured.requestedCapabilities),
+          ...(capturedFactoryId !== null ? { factoryId: capturedFactoryId, runtimeGeneration: 0 } : {}) };
+        return { changedSlots: [], effects: [], addons: [captured.id] };
+      });
+    },
+    pinFactory(addonId, factoryId, { manifest } = {}) {
+      // CP-BR9: host-owned repair/upgrade path for an existing installation
+      // that must become lifecycle-managed (or have its manifest refreshed
+      // to the reviewed catalog copy). Consent is preserved: every existing
+      // grant must remain declared by the refreshed manifest, and no slot
+      // ownership may be mutated. Never grants anything by itself.
+      const captured = structuredClone(manifest);
+      return transact(next => {
+        const entry = entryFor(addonId);
+        assertValidHarnessManifest(captured);
+        if (captured.id !== addonId || !factoryIdShape(factoryId)) throw fail('invalid-manifest');
+        if (ownedSlots(next, addonId).length) throw fail('ownership-conflict');
+        if (entry.grants.some(grant => !captured.requestedCapabilities.some(request => sameRequest(request, grant)))) throw fail('permission-denied');
+        captured.requestedCapabilities = captured.requestedCapabilities.map(grant => ({ ...grantShape(grant), granted: false }));
+        const mergedGrants = [...entry.grants];
+        for (const request of captured.requestedCapabilities) {
+          if (!mergedGrants.some(grant => sameRequest(grant, request))) mergedGrants.push({ ...grantShape(request), granted: false });
+        }
+        next.installations[addonId].manifest = captured;
+        next.installations[addonId].grants = mergedGrants;
+        next.installations[addonId].factoryId = factoryId;
+        next.installations[addonId].runtimeGeneration = (entry.runtimeGeneration ?? 0) + 1;
+        return { changedSlots: [], effects: [], addons: [addonId] };
       });
     },
     importLegacy(records) {
@@ -207,9 +298,14 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
         const revoked = captured.filter(grant => !grant.granted && entry.grants.some(old => old.capability === grant.capability && old.granted)).map(grant => grant.capability);
         next.installations[addonId].grants = entry.grants.map(old => grantShape(captured.find(grant => sameRequest(old, grant)) ?? old));
         const grants = next.installations[addonId].grants;
+        // CP-BR9: grant changes are lifecycle authority changes; a pinned
+        // installation's generation fences stale reconciler completions.
+        if (typeof next.installations[addonId].factoryId === 'string') {
+          next.installations[addonId].runtimeGeneration = (next.installations[addonId].runtimeGeneration ?? 0) + 1;
+        }
         const changed = ownedSlots(next, addonId).filter(slot => evaluateHarnessPolicy(entry.manifest, grants, { revoked, slot }).hardStop);
         return { changedSlots: advance(next, changed), effects: revoked.length ? [{ addonId,
-          policy: evaluateHarnessPolicy(entry.manifest, grants, { revoked }) }] : [] };
+          policy: evaluateHarnessPolicy(entry.manifest, grants, { revoked }) }] : [], addons: [addonId] };
       });
     },
     setEnabled(addonId, enabled, { expectedRevision } = {}) {
@@ -218,7 +314,10 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
         if (expectedRevision !== state.revision) throw fail('ownership-conflict');
         if (typeof enabled !== 'boolean') throw fail('permission-denied');
         next.installations[addonId].enabled = enabled;
-        return advance(next, ownedSlots(next, addonId));
+        if (typeof next.installations[addonId].factoryId === 'string') {
+          next.installations[addonId].runtimeGeneration = (next.installations[addonId].runtimeGeneration ?? 0) + 1;
+        }
+        return { changedSlots: advance(next, ownedSlots(next, addonId)), effects: [], addons: [addonId] };
       });
     },
     assignSlot(slot, addonId, { expectedGeneration, replace = false } = {}) {
@@ -239,7 +338,7 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
         entryFor(addonId);
         if (ownedSlots(next, addonId).length) throw fail('ownership-conflict');
         delete next.installations[addonId];
-        return [];
+        return { changedSlots: [], effects: [], addons: [addonId] };
       });
     },
   };
