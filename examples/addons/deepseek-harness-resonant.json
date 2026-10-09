@@ -1,0 +1,136 @@
+{
+  "id": "addon.deepseek-harness",
+  "name": "DeepSeek Harness",
+  "version": "0.1.0",
+  "author": "DeepSeek Harness Working Group",
+  "category": "agent",
+  "sdkVersion": "0.1.0",
+  "description": "Sideloaded Cordis-kernel local-service runtime that wraps the DeepSeek OpenAI-compatible API for delegated reasoning. Hosts at http://127.0.0.1:3080 per ADR-056 §9 (deferred; lands via the ADR docs PR). Confirmed by ADR-055 as the canonical external-agent-runtime exemplar once the new runtime type lands.",
+  "runtimeType": "agent-addon",
+  "surfaces": [
+    {
+      "id": "deepseek-harness-status",
+      "type": "panel",
+      "label": "DeepSeek Harness",
+      "description": "Configure and monitor the local DeepSeek Harness service and the wrapped deepseek-chat / deepseek-reasoner models."
+    },
+    {
+      "id": "deepseek-harness-runs",
+      "type": "background-task-monitor",
+      "label": "DeepSeek Harness Runs",
+      "description": "Track delegated DeepSeek reasoning runs and returned artifacts."
+    }
+  ],
+  "archiveIntegration": {
+    "readScopes": ["living-archive/scoped-context"],
+    "intakeWriteScopes": [],
+    "canRequestIngest": false,
+    "canWriteKnowledgePages": false
+  },
+  "requestedCapabilities": [
+    { "capability": "providers", "granted": false, "scope": "system", "revocationBehavior": "hard-stop" },
+    { "capability": "network", "granted": false, "scope": "self", "revocationBehavior": "hard-stop" },
+    { "capability": "agent-delegation", "granted": false, "scope": "workspace", "revocationBehavior": "degrade" },
+    { "capability": "notifications", "granted": false, "scope": "self", "revocationBehavior": "degrade" },
+    { "capability": "filesystem", "granted": false, "scope": "self", "revocationBehavior": "hard-stop" },
+    { "capability": "archive-read", "granted": false, "scope": "workspace", "revocationBehavior": "degrade" }
+  ],
+  "provenance": {
+    "tier": "sideloaded-unverified",
+    "verificationState": "unverified",
+    "signed": false
+  },
+  "runtimeIsolation": {
+    "boundary": "host-mediated-service",
+    "supportsDegradedMode": true,
+    "requiresReviewedGrant": true
+  },
+  "grantPresets": [
+    {
+      "id": "deepseek-harness-experimental-local",
+      "label": "Experimental local DeepSeek Harness",
+      "description": "Expose the local DeepSeek Harness service as an experimental delegated reasoning runtime bound to the user's own DeepSeek API key.",
+      "grants": [
+        { "capability": "providers", "granted": true, "scope": "system", "revocationBehavior": "hard-stop" },
+        { "capability": "network", "granted": true, "scope": "self", "revocationBehavior": "hard-stop" },
+        { "capability": "agent-delegation", "granted": true, "scope": "workspace", "revocationBehavior": "degrade" },
+        { "capability": "notifications", "granted": true, "scope": "self", "revocationBehavior": "degrade" },
+        { "capability": "filesystem", "granted": true, "scope": "self", "revocationBehavior": "hard-stop" },
+        { "capability": "archive-read", "granted": true, "scope": "workspace", "revocationBehavior": "degrade" }
+      ]
+    }
+  ],
+  "providerRequirements": {
+    "sharedProfiles": ["openai-compatible-deepseek"],
+    "supportsPrivateCredentials": true,
+    "preferredRuntimeKinds": ["remote-user-owned"],
+    "fallbackPolicyId": "experimental-deepseek-delegated-reasoning"
+  },
+  "health": {
+    "strategy": "http-json-deepseek-harness-status",
+    "endpoint": "http://127.0.0.1:3080/health"
+  },
+  "service": {
+    "protocol": "http-json",
+    "entrypoint": "http://127.0.0.1:3080",
+    "healthCommand": "deepseek_harness_status",
+    "shutdownCommand": "deepseek_harness_stop_service"
+  },
+  "delegation": {
+    "acceptsTasks": true,
+    "taskTypes": ["research", "design", "knowledge-organization", "verification-report", "log"],
+    "artifactReturnTypes": ["summary", "markdown", "log"],
+    "defaultTargetRuntime": "remote-user-owned",
+    "requiresHumanApprovalBeforeExecution": true,
+    "notes": [
+      "Sideloaded runtime; until verified, every task requires human approval.",
+      "Uses the shared `openai-compatible-deepseek` provider profile when calling DeepSeek.",
+      "Upstream: https://api.deepseek.com/v1 (deepseek-chat, deepseek-reasoner)."
+    ]
+  },
+  "tools": [
+    {
+      "name": "deepseek_harness.status",
+      "description": "Read DeepSeek Harness service health, current model, and queued runs.",
+      "requiredCapabilities": ["network", "providers"],
+      "inputSchema": {},
+      "outputSchema": {},
+      "audit": { "logRequest": true, "logResult": true, "artifactTypes": ["diagnostic-report"] },
+      "requiresHumanApproval": false
+    },
+    {
+      "name": "deepseek_harness.run_task",
+      "description": "Run an approved Delegation Packet through DeepSeek Harness and return artifacts.",
+      "requiredCapabilities": ["network", "providers", "agent-delegation"],
+      "inputSchema": {},
+      "outputSchema": {},
+      "audit": { "logRequest": true, "logResult": true, "artifactTypes": ["summary", "markdown", "log"] },
+      "requiresHumanApproval": true
+    },
+    {
+      "name": "deepseek_harness.cancel",
+      "description": "Cancel a queued or running DeepSeek Harness task by routing decision id.",
+      "requiredCapabilities": ["network", "providers", "agent-delegation"],
+      "inputSchema": {},
+      "outputSchema": {},
+      "audit": { "logRequest": true, "logResult": true, "artifactTypes": ["log"] },
+      "requiresHumanApproval": false
+    }
+  ],
+  "installHooks": {
+    "onInstall": "configure-deepseek-harness-endpoint",
+    "onEnable": "verify-deepseek-harness-service"
+  },
+  "compatibility": {
+    "shellVersion": "^0.1.0",
+    "platforms": ["macOS", "linux"]
+  },
+  "agents": [
+    {
+      "id": "addon.deepseek-harness.specialist",
+      "displayName": "DeepSeek Harness Specialist",
+      "trustTier": "addon",
+      "workspaceBehavior": "delegated"
+    }
+  ]
+}
