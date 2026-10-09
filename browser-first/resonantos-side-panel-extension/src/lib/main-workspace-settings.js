@@ -1,5 +1,6 @@
 import { renderAddonsSection } from "./settings/addons-section.js";
 import { renderAboutSection } from "./settings/about-section.js";
+import { renderAddonToolsSection } from "./settings/addon-tools-section.js";
 import { renderAppearanceSection } from "./settings/appearance-section.js";
 import { renderBridgeBootstrapSection } from "./settings/bridge-bootstrap-section.js";
 import { renderBridgeRuntimesSection } from "./settings/bridge-runtimes-section.js";
@@ -63,6 +64,13 @@ const sections = [
     hint: "Permissions",
     group: "Work",
     render: renderAddonsSection
+  },
+  {
+    id: "addon-tools",
+    label: "Add-on Tools",
+    hint: "Launch or attach terminals",
+    group: "Work",
+    render: renderAddonToolsSection
   },
   {
     id: "routing",
@@ -267,6 +275,66 @@ export function renderSettingsWorkspace({
         retry: false,
         restart: false,
         terminateSession: false,
+      };
+    }
+    if (activeSection.id === "addon-tools") {
+      // CP-BR10: Add-on Tools host seams. Every seam is derived from
+      // the existing `bridgeRequest` callback; no new bridge client is
+      // required and no global state is read.
+      const addonToolsRequest = bridge();
+      const unwrap = (payload) => {
+        if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+          const { ok: _ok, ...rest } = payload;
+          return rest;
+        }
+        return payload;
+      };
+      sectionContext.fetchStatus = async () => {
+        if (typeof addonToolsRequest !== "function") return null;
+        return unwrap(await addonToolsRequest("/terminal-host/status", { method: "GET" }));
+      };
+      sectionContext.fetchPromptPath = async () => {
+        if (typeof addonToolsRequest !== "function") return null;
+        return unwrap(await addonToolsRequest("/terminal-host/prompt-path", { method: "GET" }));
+      };
+      sectionContext.fetchProjection = sectionContext.fetchProjection ?? (async () => null);
+      sectionContext.launchTerminal = async ({ terminalAddonId, promptPath, agentId }) => {
+        if (typeof addonToolsRequest !== "function") {
+          throw new Error("Bridge request is not configured.");
+        }
+        return unwrap(await addonToolsRequest("/terminal-host/launch", {
+          method: "POST",
+          body: {
+            agentId: typeof agentId === "string" && agentId ? agentId : "pi",
+            terminalAddonId,
+            promptPath,
+          },
+        }));
+      };
+      sectionContext.fetchConnectionScript = async ({ terminalAddonId, promptPath, providerProfileId }) => {
+        if (typeof addonToolsRequest !== "function") {
+          throw new Error("Bridge request is not configured.");
+        }
+        // The route uses a GET with a query string (the host route
+        // declares required + optional parameters in a query form).
+        // The shape contract on the host is:
+        //   required: terminalAddonId
+        //   optional: providerProfileId, bridgeEndpoint
+        const search = new URLSearchParams({ terminalAddonId });
+        if (typeof providerProfileId === "string" && providerProfileId) {
+          search.set("providerProfileId", providerProfileId);
+        }
+        // The connection-script route is a GET, not a POST; the
+        // bridgeRequest wrapper used by the renderer is the same one
+        // the status and prompt-path calls use.
+        return unwrap(await addonToolsRequest(`/terminal-host/connection-script?${search.toString()}`, { method: "GET" }));
+      };
+      // Surface-level navigation. The renderer does not know the
+      // section id; the workspace routes to Bridge Target on
+      // bridge-not-running rejection.
+      sectionContext.onOpenBridgeSettings = () => {
+        activeId = "bridge-target";
+        renderActive();
       };
     }
     activeSection.render(panel, sectionContext);
