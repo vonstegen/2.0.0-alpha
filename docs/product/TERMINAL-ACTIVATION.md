@@ -1,6 +1,6 @@
-# Terminal Activation — User Guide (CP-BR7 / CP-BR9)
+# Terminal Activation — User Guide (CP-BR7 / CP-BR9 / CP-BR10)
 
-> Status: **CP-BR7 + CP-BR9 (Complete on `r-and-d/terminal-host-current-dev`)**.
+> Status: **CP-BR7 + CP-BR9 + CP-BR10 (Complete on `r-and-d/terminal-host-current-dev`)**.
 > Source of truth:
 > [`browser-first/host/terminal-runtime-factories.mjs`](../../browser-first/host/terminal-runtime-factories.mjs),
 > [`runtime-factory-registry.mjs`](../../browser-first/host/runtime-factory-registry.mjs),
@@ -8,6 +8,7 @@
 > [`terminal-addon-seed.mjs`](../../browser-first/host/terminal-addon-seed.mjs),
 > [`terminal-host-service-owner.mjs`](../../browser-first/host/terminal-host-service-owner.mjs),
 > [`run-bridge-minimal.mjs`](../../browser-first/host/run-bridge-minimal.mjs),
+> [`resonantos-side-panel-extension/src/lib/settings/addon-tools-section.js`](../../browser-first/resonantos-side-panel-extension/src/lib/settings/addon-tools-section.js),
 > [`docs/architecture/SDK-RUNTIME-LIFECYCLE-CONTRACT.md`](../architecture/SDK-RUNTIME-LIFECYCLE-CONTRACT.md),
 > [`docs/architecture/BRIDGE-RUNTIME-PROJECTION.md`](../architecture/BRIDGE-RUNTIME-PROJECTION.md),
 > [`docs/architecture/ADDON-BRIDGE-RUNTIME-ROADMAP.md`](../architecture/ADDON-BRIDGE-RUNTIME-ROADMAP.md) §13.
@@ -127,6 +128,88 @@ projection re-derives the desired state on the next reconcile tick.
 Removing the add-on from the registry marks the installation
 `installed: false` on the next reconcile. The reconciler stops the
 adapter and closes its sessions.
+
+## Add-on Tools section (CP-BR10)
+
+Settings → **Add-on Tools** is the canonical surface for launching
+the reviewed terminal add-ons and for re-attaching an
+already-running terminal that started before the bridge was up
+(or after the bridge restarted). The section is a thin renderer
+over the same public host data the Bridge & Runtimes surface uses;
+the bridge host owns the process and the credentials.
+
+### Launch (auto-connect)
+
+Each terminal tab carries an **Open in Terminal** button. The
+button is gated on:
+
+- the selected terminal runtime being `ready` in the projection
+  (the same gate `OpenInTerminalButton` uses for the doc tab), and
+- a valid 0600 prompt file (the prompt-path resolver at
+  `GET /terminal-host/prompt-path` reports the file path + the
+  0600 mode; the button is disabled with "Write a prompt first."
+  when no 0600 file exists).
+
+On click, the renderer posts `POST /terminal-host/launch` with the
+documented `{ agentId, terminalAddonId, promptPath }` body. The
+host composes the same `ros-session attach` invocation the
+auto-connect path uses (the CP-BR7 `pi-terminal-v1` policy); the
+terminal window opens, attaches through the bridge, and the TUI
+harness inside it receives the projected project / skills / memory
+/ credential resources. The renderer never sees a token, a
+credential, an env value, or a path the prompt file resolver
+didn't already publish.
+
+The documented rejection vocabulary is the same as
+`OpenInTerminalButton`:
+
+- `bridge-not-running` — the renderer deep-links Settings →
+  Bridge Target.
+- `capability-not-granted` — the renderer surfaces an Authorize
+  action (no auto-grant, no local flag).
+- `executable-unavailable` / `policy-not-reviewed` / `launch-failed` —
+  the renderer surfaces a typed error and a recovery hint.
+
+### Copy connection script (manual re-attach)
+
+The fallback for an already-running terminal is **Copy connection
+script** on the same tab. The button posts to
+`POST /terminal-host/connection-script` (loopback-only,
+addon-runtime-read). The route reuses the same machinery the
+auto-connect launch path uses:
+
+- `mintSessionBootstrapGrant` + `trackSessionBootstrapGrant` —
+  a single-use, audience-bound grant scoped to the requested
+  terminal add-on, with the same 60s TTL.
+- The grant token is written to a 0600 file in the host's temp
+  dir. The host returns the file **path** in the receipt; the
+  token itself never appears in the receipt, the script, the
+  logs, the route response, the bridge-server transport, or the
+  DOM.
+- `composeBootstrapCommand` against the fixed-install-root
+  `ros-session` CLI path. The script the operator pastes is a
+  single `eval "$(node <rosSessionPath> attach --session-id <id>
+  --token-file <path> --provider-profile-id <ppid>)"` line.
+
+The renderer shows the script in a `<pre>` block (textContent
+only, no innerHTML, no event-handler attributes) with a Copy
+button. Copy uses `navigator.clipboard.writeText`; if the
+clipboard API rejects (denied permission, missing API), the
+renderer falls back to manual selection. The shape-walker covers
+the entire receipt; the launch / status / connection-script
+capabilities are declared in `BRIDGE_ROUTE_CAPABILITIES` and the
+route-capability audit fails closed on drift.
+
+### Trackable ownership
+
+The host records the adopted sessionId in
+`connectionScriptAdoptions` so disable / revoke / remove can
+`terminateSession` the running terminal. The grant TTL (60s) is
+the safety net for adoptions the operator never pastes; on
+disable / remove the host iterates the adoption map and calls
+`terminalHost.service.terminateSession` best-effort. The
+zero-leaked-windows invariant therefore covers both auto-connect
+and manual re-attach paths.
 
 ## What you should never do
 

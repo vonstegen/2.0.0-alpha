@@ -224,6 +224,7 @@ the source of truth.
 | CP-BR7 | Terminal add-ons use generic lifecycle | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR8     | UI-only end-to-end acceptance                     | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR9     | Terminal add-ons live in the ROS extension        | **Complete (r-and-d/terminal-host-current-dev)** |
+| CP-BR10    | Add-on Tools settings section (iTerm2 + Ghostty)   | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR9.5   | Packaging, recovery, and release documentation    | Not started |
 
 Every checkpoint ends with `STOP AND REPORT`. Do not start the next checkpoint
@@ -754,6 +755,71 @@ host). The Bridge & Runtimes enable transaction
 (`main-workspace-settings.test.mjs` `CP-BR9` describe block) proves
 the UI posts a registry-revision-aware transaction and the GET
 `/addons/registry` is issued immediately before the POST.
+
+### 15.2 CP-BR10 — Add-on Tools settings section (iTerm2 + Ghostty)
+
+#### Goal
+
+A new Settings → Add-on Tools section that lets the operator
+launch the reviewed terminal add-ons (auto-connect via the same
+`ros-session attach` path) and copy a connection script for an
+already-running terminal (the manual-attach fallback). One
+sub-tab per reviewed terminal add-on; the surface data comes
+from the host, the sub-tab ids come from a closed allowlist.
+
+#### Checklist
+
+- [x] Settings → Add-on Tools renderer in
+      `browser-first/resonantos-side-panel-extension/src/lib/settings/addon-tools-section.js`.
+      Plain DOM, `textContent` only, `aria-live` region, no
+      `innerHTML`; closed allowlist of reviewed terminal addon
+      ids (Ghostty + iTerm2).
+- [x] Launch button (Open in Terminal) routed through
+      `POST /terminal-host/launch`, gated on `ready` + a valid
+      0600 prompt file, with the documented rejection vocabulary
+      (`bridge-not-running`, `capability-not-granted`,
+      `policy-not-reviewed`, `executable-unavailable`,
+      `launch-failed`).
+- [x] Copy connection script affordance. The route is
+      `POST /terminal-host/connection-script` (loopback-only,
+      `addon-runtime-read`); the host mints a single-use,
+      audience-bound `SessionBootstrapGrant` scoped to the
+      requested terminal add-on, writes the token to a 0600 file,
+      and composes the `ros-session attach` shell snippet via the
+      existing `composeBootstrapCommand` / `mintSessionBootstrapGrant`
+      family. The renderer renders the script as text only and
+      copies via `navigator.clipboard.writeText` with a
+      manual-select fallback.
+- [x] Trackable ownership: every adoption is recorded in
+      `connectionScriptAdoptions`; disable / revoke / remove
+      iterate the adoption map and call
+      `terminalHost.service.terminateSession` best-effort. The
+      grant TTL (60s) is the safety net for unconsumed
+      adoptions.
+- [x] Non-leak: the receipt, the script, the renderer DOM, and
+      the clipboard payload all pass the shape-walker / secret
+      pattern checks. The 0600 token rides in a file path only;
+      the renderer never reads the file.
+- [x] Route capability map updated. `BRIDGE_ROUTE_CAPABILITIES`
+      declares `POST /terminal-host/connection-script` (and the
+      pre-existing GET routes) byte-for-byte with the host route
+      definitions; the route-capability audit fails closed on
+      drift.
+
+#### Gate
+
+`browser-first/test/addon-tools-section.test.mjs` (11/11) and
+`browser-first/test/terminal-host-connection-script.test.mjs`
+(11/11). The 0600 token file is verified by `stat()`; the
+renderer copy-path is verified by `assertNoSecretShapedValue`
+walking every string in the receipt. The three
+`/terminal-host/*` route capabilities (`status`, `prompt-path`,
+`connection-script`) are asserted byte-for-byte against
+`BRIDGE_ROUTE_CAPABILITIES`. The Settings → Bridge Target
+deep-link is verified on `bridge-not-running`; the Authorize
+surface is verified on `capability-not-granted`; the existing
+terminal-host / projection / reconciler / bridge-runtimes
+suites remain green.
 
 ### Checklist (packaging — not started)
 

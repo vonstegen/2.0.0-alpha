@@ -83,7 +83,19 @@ owns the single live terminal-host service so `Open in Terminal`
 and `Enable + grant` share one instance; a family lock in the
 factories serializes switching (stop-old-before-start-new);
 the Bridge & Runtimes enable button is a registry-revision-aware
-transaction. See
+transaction. **CP-BR10 adds the Settings → Add-on Tools section**:
+the renderer in
+[`addon-tools-section.js`](../../browser-first/resonantos-side-panel-extension/src/lib/settings/addon-tools-section.js)
+is a plain-DOM, textContent-only surface driven by the host's
+`/terminal-host/status` projection; the new
+`POST /terminal-host/connection-script` route reuses the existing
+`composeBootstrapCommand` / `mintSessionBootstrapGrant` family to
+mint a single-use, audience-bound grant and write the token to a
+0600 file, then return a shell snippet the operator pastes into
+an already-running terminal. The renderer's launch and copy
+affordances share the CP-BR9 single owner; the connection script
+adoption is tracked for `disable` / `revoke` / `remove` cleanup.
+See
 [TERMINAL-ACTIVATION.md](../product/TERMINAL-ACTIVATION.md) for the
 user guide,
 [TERMINAL-SWITCHING-AND-CLEANUP.md](../operations/TERMINAL-SWITCHING-AND-CLEANUP.md)
