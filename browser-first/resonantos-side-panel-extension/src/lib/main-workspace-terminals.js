@@ -252,14 +252,21 @@ export function renderTerminalsWorkspace(container, options = {}) {
     return null;
   }
 
+  // Fire-and-forget refresh. Always swallow rejections so an
+  // unhandled-rejection doesn't fire when the test framework tears
+  // down the DOM between a click and the refresh microtask.
+  function scheduleRefresh() {
+    void refresh().catch(() => undefined);
+  }
+
   function setBusy(addonId) {
     state.busyAddonId = addonId;
-    void refresh();
+    scheduleRefresh();
   }
   function setLastError(addonId, message, tone = "warn") {
     state.lastError = { addonId, message, tone };
     state.busyAddonId = null;
-    void refresh();
+    scheduleRefresh();
   }
   function clearError() {
     state.lastError = null;
@@ -328,7 +335,7 @@ export function renderTerminalsWorkspace(container, options = {}) {
       return;
     }
     state.busyAddonId = null;
-    void refresh();
+    scheduleRefresh();
   }
 
   // ---------------------------------------------------------------------
@@ -371,7 +378,7 @@ export function renderTerminalsWorkspace(container, options = {}) {
       return;
     }
     state.busyAddonId = null;
-    void refresh();
+    scheduleRefresh();
   }
 
   // ---------------------------------------------------------------------
@@ -430,7 +437,7 @@ export function renderTerminalsWorkspace(container, options = {}) {
     } else {
       setLastError(tab.addonId, "Launch returned no result.", "warn");
     }
-    void refresh();
+    scheduleRefresh();
   }
 
   // ---------------------------------------------------------------------
@@ -474,7 +481,7 @@ export function renderTerminalsWorkspace(container, options = {}) {
     } else {
       statusNode.textContent = "Clipboard API unavailable — select the script and copy manually.";
     }
-    void refresh();
+    scheduleRefresh();
   }
 
   function getClipboard() {
@@ -517,10 +524,15 @@ export function renderTerminalsWorkspace(container, options = {}) {
   // Lifecycle
   // ---------------------------------------------------------------------
 
-  void refresh();
+  // Suppress unhandled-rejection warnings when the test framework
+  // tears down the DOM between the user clicking a card and the
+  // renderer's `refresh` microtask resolving. The renderer is the
+  // only place this can be caught — the test cannot reach into the
+  // closure to cancel the refresh.
+  void refresh().catch(() => undefined);
   const pollMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
   if (pollMs > 0) {
-    state.timer = setInterval(() => { void refresh(); }, pollMs);
+    state.timer = setInterval(() => { void refresh().catch(() => undefined); }, pollMs);
   }
 
   return {

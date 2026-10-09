@@ -7,7 +7,6 @@
 //   - `fetchPromptPath`    → GET /terminal-host/prompt-path
 //   - `fetchProjection`    → GET /bridge/runtimes
 //   - `fetchRegistry`      → GET /addons/registry
-//   - `fetchGrants`        → GET /addons/grants
 //   - `enableTransaction`  → POST /addons/enabled (registry-revision-aware)
 //   - `grantTransaction`   → POST /addons/grants   (registry-revision-aware, consent)
 //   - `launchTerminal`     → POST /terminal-host/launch
@@ -54,10 +53,6 @@ export function createTerminalsHostSeams({ bridgeRequest } = {}) {
 
   async function fetchRegistry() {
     return unwrap(await bridgeRequest("/addons/registry", { method: "GET" }));
-  }
-
-  async function fetchGrants() {
-    return unwrap(await bridgeRequest("/addons/grants", { method: "GET" }));
   }
 
   async function readRevision() {
@@ -140,7 +135,6 @@ export function createTerminalsHostSeams({ bridgeRequest } = {}) {
     fetchPromptPath,
     fetchProjection,
     fetchRegistry,
-    fetchGrants,
     enableTransaction,
     grantTransaction,
     launchTerminal,
