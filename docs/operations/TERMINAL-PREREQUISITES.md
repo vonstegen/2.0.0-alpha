@@ -1,13 +1,17 @@
-# Terminal Prerequisites (CP-BR7)
+# Terminal Prerequisites (CP-BR7 / CP-BR9)
 
-> Status: **CP-BR7 (Complete on `r-and-d/terminal-host-current-dev`)**.
+> Status: **CP-BR7 + CP-BR9 (Complete on `r-and-d/terminal-host-current-dev`)**.
 > Companion to
 > [`docs/product/TERMINAL-ACTIVATION.md`](../product/TERMINAL-ACTIVATION.md).
 
 The two reviewed terminal add-ons are `addon.resonant-terminal-ghostty`
 and `addon.resonant-terminal-iterm2`. Each is gated by the
 `terminal-host` capability and ships with its own platform
-prerequisites.
+prerequisites. CP-BR9 installs both add-ons into the host registry
+automatically on every bridge boot (idempotent; see
+[`terminal-addon-seed.mjs`](../../browser-first/host/terminal-addon-seed.mjs)),
+so the operator does not need to install them by hand; the rows
+appear in Bridge & Runtimes on the first bridge boot.
 
 ## Common prerequisites
 
@@ -16,6 +20,14 @@ prerequisites.
 - ResonantOS extension installed in the same Chrome profile.
 - The operator has been granted the `terminal-host` capability for
   the chosen add-on.
+
+**`RESONANT_TERMINAL_HOST_BRIDGE` is no longer a manual operator
+flag.** The bridge composition always boots without the bridge-level
+service in CP-BR9; the live terminal-host service comes from the
+add-on that holds the singleton. Do not set this variable as a
+workaround — it has no effect on the production path and the
+lifecycle surface in Bridge & Runtimes is the only operator
+control.
 
 ## Ghostty
 

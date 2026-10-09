@@ -70,7 +70,20 @@ session cleanup). Connection badges derive from the CP-BR5
 projection; `Open in Terminal` is gated on `projectionRuntimeStatus
 === "ready"`. The Pi grant / resource projection is unchanged; the
 no-confirm Ghostty teardown and zero-leaked-windows invariants are
-preserved. See
+preserved. **CP-BR9 makes the two terminal add-ons live in the ROS
+extension**: the reviewed seed at
+[`terminal-addon-seed.mjs`](../../browser-first/host/terminal-addon-seed.mjs)
+installs the canonical bundled manifests
+([`public/addons/terminal-host-ghostty.json`](../../public/addons/terminal-host-ghostty.json),
+[`public/addons/terminal-host-iterm2.json`](../../public/addons/terminal-host-iterm2.json))
+into the host registry on every bridge boot (idempotent; pinFactory
+repairs legacy unpinned installations without touching consent);
+[`terminal-host-service-owner.mjs`](../../browser-first/host/terminal-host-service-owner.mjs)
+owns the single live terminal-host service so `Open in Terminal`
+and `Enable + grant` share one instance; a family lock in the
+factories serializes switching (stop-old-before-start-new);
+the Bridge & Runtimes enable button is a registry-revision-aware
+transaction. See
 [TERMINAL-ACTIVATION.md](../product/TERMINAL-ACTIVATION.md) for the
 user guide,
 [TERMINAL-SWITCHING-AND-CLEANUP.md](../operations/TERMINAL-SWITCHING-AND-CLEANUP.md)
@@ -207,7 +220,8 @@ integration is CP-BR2 and remains deferred.
 - Rust and Cargo toolchains;
 - custom Chromium distributions or native browser packaging;
 - external Chrome/Brave CDP sidecar profiles as the product browser;
-- terminal workspaces and terminal add-ons;
+- terminal workspaces and additional terminal add-ons beyond the
+  reviewed Ghostty and iTerm2 production pair shipped by CP-BR9;
 - Audio2TOL;
 - Compute Fabric, add-on commerce, native wallet custody, and automated wallet
   signing.

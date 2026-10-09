@@ -110,6 +110,15 @@ tokens or provider credentials.
 - `Open in Terminal` Pi affordance, capability authorization, and auto-retry.
 - Terminal status and launch routes.
 - Real Ghostty + real Pi smoke proof.
+- **CP-BR9**: terminal add-ons installed by default in the host registry
+  (canonical bundled catalog, paired with the CP-BR7 reviewed factory
+  ids), seed is idempotent and pinFactory-repairs unpinned legacy
+  installations without touching consent; the live terminal-host
+  service is bound to a single owner so `Open in Terminal` and
+  `Enable + grant` share one live instance; the family lock serializes
+  switching; the projection reports honest status; the live ghostty
+  and iTerm2 smokes pass (12/12 each); the Bridge & Runtimes enable
+  button posts a registry-revision-aware transaction.
 
 ### Missing
 
@@ -121,6 +130,7 @@ tokens or provider credentials.
 - **Bridge & Runtimes** UI.
 - Terminal enable/disable connected to the generic lifecycle manager.
 - End-to-end operator proof through the ROS UI without a manually started bridge.
+- Packaging, recovery, and release documentation (§15).
 
 ### Superseded direction
 
@@ -213,7 +223,8 @@ the source of truth.
 | CP-BR6 | Bridge & Runtimes UI | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR7 | Terminal add-ons use generic lifecycle | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR8     | UI-only end-to-end acceptance                     | **Complete (r-and-d/terminal-host-current-dev)** |
-| CP-BR9     | Packaging, recovery, and documentation complete   | Not started |
+| CP-BR9     | Terminal add-ons live in the ROS extension        | **Complete (r-and-d/terminal-host-current-dev)** |
+| CP-BR9.5   | Packaging, recovery, and release documentation    | Not started |
 
 Every checkpoint ends with `STOP AND REPORT`. Do not start the next checkpoint
 until its code, tests, docs, and non-leak evidence are recorded.
@@ -696,7 +707,55 @@ in their own environment.
 
 ## 15. Phase 9 — Packaging, recovery, and release documentation · CP-BR9
 
-### Checklist
+### 15.1 CP-BR9 — Terminal add-ons live in the ROS extension
+
+#### Goal
+
+Make Ghostty and iTerm2 appear as real, enableable/disableable add-ons
+in the ROS extension and make enable → real adapter spawn →
+`Open in Terminal` launch Pi into the live terminal, with no manual
+bridge command and no leaked secret.
+
+#### Checklist
+
+- [x] Install the two terminal add-ons into the host registry with
+      reviewed manifests so they appear in Bridge & Runtimes and the
+      reconciler drives them.
+      [`browser-first/host/terminal-addon-seed.mjs`](../../browser-first/host/terminal-addon-seed.mjs),
+      [`public/addons/terminal-host-ghostty.json`](../../public/addons/terminal-host-ghostty.json),
+      [`public/addons/terminal-host-iterm2.json`](../../public/addons/terminal-host-iterm2.json).
+- [x] Unify the terminal-host service so "enable Ghostty/iTerm2" and
+      `Open in Terminal` share one live instance.
+      [`browser-first/host/terminal-host-service-owner.mjs`](../../browser-first/host/terminal-host-service-owner.mjs).
+- [x] Switch is deterministic: stop-old-before-start-new under
+      parallel reconcile ticks; the refused second start is reported
+      `failed` (not a registry-derived `ready`).
+- [x] `Open in Terminal` route gates on enabled + grant + alive and
+      reaches the same live service instance the enable produced.
+- [x] Projection surfaces both add-ons with `runtimeType=local-service`
+      and honest status (`ready` / `inactive` / `failed`).
+- [x] Factory never executes caller-supplied command / argv / env;
+      the driver is pinned by the reviewed factory.
+- [x] Reboot restore: a fresh bridge boot re-starts the enabled +
+      granted add-on exactly once through the same registry path.
+- [x] Non-leak: no token / credential / full private path / PID /
+      `RESONANT_TERMINAL_HOST_BRIDGE` value crosses the boundary on
+      the projection, lifecycle events, route receipts, or logs.
+
+#### Gate
+
+`browser-first/test/terminal-addon-seed.test.mjs` (6/6),
+`browser-first/test/terminal-host-service-owner.test.mjs` (5/5),
+`browser-first/test/terminal-addon-lifecycle.test.mjs` (13/13), and
+the live smoke
+`examples/sdk-demo/terminal-host/cp-br9-live-terminal-smoke.mjs`
+(12/12 PASS for ghostty; 12/12 PASS for iterm2 on the acceptance
+host). The Bridge & Runtimes enable transaction
+(`main-workspace-settings.test.mjs` `CP-BR9` describe block) proves
+the UI posts a registry-revision-aware transaction and the GET
+`/addons/registry` is issued immediately before the POST.
+
+### Checklist (packaging — not started)
 
 - [ ] Package/install bootstrap owner.
 - [ ] Uninstall removes bootstrap configuration safely.
