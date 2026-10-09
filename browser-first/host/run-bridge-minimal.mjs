@@ -69,6 +69,7 @@ import {
 import { createHostRuntimeLifecycle } from "./runtime-lifecycle-host.mjs";
 import { seedTerminalRuntimeFactories } from "./terminal-runtime-factories.mjs";
 import { loadTerminalAddonSeedInstallations } from "./terminal-addon-seed.mjs";
+import { createTerminalHostServiceOwner } from "./terminal-host-service-owner.mjs";
 import { createProviderHostService } from "./provider-host-service.mjs";
 import {
   memorySourceMoveHistoryPath as sourceMoveHistoryPath,
@@ -240,6 +241,22 @@ const terminalHostBridge = await installTerminalHostBridge({ env: process.env })
 const terminalHostService = terminalHostBridge.service;
 const terminalHostStart = terminalHostBridge.started;
 
+// CP-BR9: single owner of the live terminal-host service. The CP-BR7
+// factories attach the service they start (the real Ghostty/iTerm2
+// adapter, driver pinned per add-on); the facade below is the ONLY
+// terminal-host service the harness routes see, so "enable a terminal
+// add-on" and "Open in Terminal" share one live instance. When no
+// terminal add-on holds the singleton, the facade falls back to the
+// bridge-level boot composition (in-memory in the default ROS-started
+// bridge) and every route fails closed.
+const terminalServiceOwner = createTerminalHostServiceOwner();
+const terminalHostFacade = terminalServiceOwner.facade({
+  fallback:
+    terminalHostService && terminalHostStart
+      ? { service: terminalHostService, started: terminalHostStart }
+      : null,
+});
+
 // CP-BR9: reviewed seed for the two production terminal add-ons. The
 // manifests come from the canonical bundled catalog
 // (public/addons/terminal-host-{ghostty,iterm2}.json) and are paired with
@@ -254,10 +271,7 @@ const harnessService = await createHarnessHostService({
   userRoot: userRoot(),
   providerHost: providerHostService,
   hostTerminal,
-  terminalHost:
-    terminalHostService && terminalHostStart
-      ? { service: terminalHostService, start: terminalHostStart }
-      : undefined,
+  terminalHost: terminalHostFacade,
   bindings: JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]"),
   env: process.env,
   seedInstallations: terminalAddonSeeds,
@@ -542,16 +556,28 @@ seedTerminalRuntimeFactories(terminalFactoryRegistry, {
   serviceFactory: undefined,
   baseEnv: process.env,
   terminalHostService,
+  // CP-BR9: factories attach their started service to the single live
+  // owner so the launch route and the reconciler share one instance.
+  serviceOwner: terminalServiceOwner,
 });
+
+// CP-BR9: reconciler lifecycle events refresh the cached CP-BR5
+// projection. The sink is assigned after the projection service exists
+// (below); events emitted before that point carry no subscriber and are
+// dropped, which the initial reconcile already tolerates.
+let runtimeProjectionEventSink = null;
 
 const hostRuntimeLifecycle = createHostRuntimeLifecycle({
   factoryRegistry: terminalFactoryRegistry,
   hostRegistry: harnessService.registry,
   emit: (event) => {
     // Non-secret lifecycle event sink. The CP-BR4 reconciler emits
-    // public identifiers only; this sink is a no-op in production
-    // (future CP-BR6 push subscribers will consume it).
-    void event;
+    // public identifiers only.
+    try {
+      runtimeProjectionEventSink?.(event);
+    } catch {
+      /* the projection sink is observational; it never breaks a reconcile */
+    }
   },
 });
 
@@ -585,15 +611,20 @@ const bootInstanceId =
 
 function getBridgeHealth() {
   // The projection is served by the bridge itself, so a reachable bridge is
-  // connected. The one in-process degradation signal is the optional
-  // terminal-host bridge: when a real driver (ghostty/iterm2) is selected and
-  // its adapter child has since exited, the bridge is degraded. The in-memory
-  // driver has no child and is always treated as healthy.
-  if (terminalHostBridge.enabled && terminalHostService) {
-    const terminal = terminalHostService.status();
-    if (terminal && terminal.driveId !== "in-memory" && terminal.alive === false) {
-      return { status: "degraded" };
-    }
+  // connected. The one in-process degradation signal is the live terminal
+  // service: when a real driver (ghostty/iterm2) is selected and its
+  // adapter child has since exited, the bridge is degraded. CP-BR9 reads
+  // this through the single-owner facade so the factory-active service and
+  // the bridge-level boot composition share one health source. The
+  // in-memory driver has no child and is always treated as healthy.
+  const terminal = terminalHostFacade.service.status();
+  if (
+    terminal &&
+    typeof terminal.driveId === "string" &&
+    terminal.driveId !== "in-memory" &&
+    terminal.alive === false
+  ) {
+    return { status: "degraded" };
   }
   return { status: "connected" };
 }
@@ -627,6 +658,10 @@ const runtimeProjection = createRuntimeProjectionService({
   },
   sessionCounts: { getSessionsByRuntime: () => ({ activeSessionCount: 0 }) },
 });
+// CP-BR9: from here on, reconciler lifecycle events (start_requested,
+// ready, stopped, …) refresh the cached projection so GET
+// /bridge/runtimes never serves a stale runtime list.
+runtimeProjectionEventSink = (event) => runtimeProjection.recordEvent(event);
 const bridgeRuntimesRoute = [];
 createBridgeRuntimesHostService({
   runtimeProjection,
@@ -747,6 +782,10 @@ const shutdown = async () => {
     /* noop */
   }
   await openCodeBoundary.dispose().catch(() => undefined);
+  // CP-BR9: stop every reconciler-owned runtime (the factory-active
+  // terminal adapters) before closing the harness service, preserving the
+  // zero-leaked-windows invariant across bridge shutdown.
+  await hostRuntimeReconciler.stopAll().catch(() => undefined);
   await harnessService.close();
   await uninstallTerminalHostBridge({ service: terminalHostService });
   await new Promise((resolve) => bridgeInfo.server.close(resolve));

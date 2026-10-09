@@ -261,8 +261,19 @@ export function createRuntimeReconciler(options) {
           // add-on as stopped. The reconciler surfaces the failure.
           throw error;
         }
-        emitEvent("stopped", { addonId, factoryId: previous.factoryId, generation: previous.generation });
+        // Delete the active record BEFORE emitting so projection
+        // subscribers (recordEvent → refresh) observe the post-stop state;
+        // nothing refreshes after the event.
         active.delete(addonId);
+        emitEvent("stopped", { addonId, factoryId: previous.factoryId, generation: previous.generation });
+        return { transition: "stopped" };
+      }
+      // A record without a live handle (e.g. a failed start) still gets a
+      // deterministic clear + event so projection subscribers observe the
+      // stop (and a removed add-on drops out of the runtime list).
+      if (previous) {
+        active.delete(addonId);
+        emitEvent("stopped", { addonId, factoryId: previous.factoryId, generation: previous.generation });
         return { transition: "stopped" };
       }
       // No previous runtime; nothing to stop.
@@ -321,9 +332,15 @@ export function createRuntimeReconciler(options) {
     }
 
     // If we are already on the same factory and same generation, this is
-    // an idempotent re-reconcile. Skip the start.
+    // an idempotent re-reconcile. Skip the start. A failed record at the
+    // same generation is NOT skipped: the desired state is still running
+    // and a failed record holds no live process, so the start is retried
+    // (this is what lets a singleton-refused start succeed once the
+    // sibling stops, without requiring a new authority transaction).
     if (previous && previous.factoryId === factoryId && previous.generation === projectionGeneration) {
-      return { transition: "noop" };
+      if (previous.status !== "failed" || previous.handle) {
+        return { transition: "noop" };
+      }
     }
 
     // Generation replacement: stop the previous owned runtime (if any)
@@ -363,12 +380,17 @@ export function createRuntimeReconciler(options) {
         { timeoutMs: timeouts.startTimeoutMs, label: "start", addonId },
       );
     } catch (error) {
+      // CP-BR9: keep a failed record (handle null) so the projection
+      // surfaces `failed` instead of deriving a registry-only "ready".
+      // The record carries no process internals. A same-generation
+      // re-reconcile no-ops on it; the next authority change (new
+      // generation) retries the start.
+      active.set(addonId, { factoryId, generation: projectionGeneration, handle: null, status: "failed" });
       emitEvent("start_failed", {
         addonId, factoryId, generation: projectionGeneration,
         publicFailureCode: error && typeof error.publicFailureCode === "string" ? error.publicFailureCode : "addon-factory-missing",
         publicReason: error && error.message ? String(error.message) : "start failed",
       });
-      active.delete(addonId);
       throw error;
     }
 
@@ -381,7 +403,7 @@ export function createRuntimeReconciler(options) {
       if (!health || health.ok !== true) {
         await factory.stop(handle, { addonId, now, timeoutMs: timeouts.stopTimeoutMs });
         await factory.closeSessions(handle, { addonId, now });
-        active.delete(addonId);
+        active.set(addonId, { factoryId, generation: projectionGeneration, handle: null, status: "failed" });
         emitEvent("start_failed", {
           addonId, factoryId, generation: projectionGeneration,
           publicFailureCode: "addon-factory-missing",
@@ -394,7 +416,7 @@ export function createRuntimeReconciler(options) {
         await factory.stop(handle, { addonId, now, timeoutMs: timeouts.stopTimeoutMs });
         await factory.closeSessions(handle, { addonId, now });
       } catch { /* best effort */ }
-      active.delete(addonId);
+      active.set(addonId, { factoryId, generation: projectionGeneration, handle: null, status: "failed" });
       emitEvent("start_failed", {
         addonId, factoryId, generation: projectionGeneration,
         publicFailureCode: "addon-factory-missing",
@@ -453,9 +475,37 @@ export function createRuntimeReconciler(options) {
    * Reconcile a single add-on against the host projection entry.
    * Returns the transition outcome.
    */
-  async function reconcileOne(addonId, installation) {
+  async function reconcileOne(addonId, installation, bootEpoch = "") {
     if (!installation || typeof installation !== "object") {
-      return { transition: "noop" };
+      // CP-BR9: the installation vanished from the host projection (the
+      // add-on was removed from the registry). The desired-state rule
+      // fails closed: not installed => stopped. Without this branch the
+      // reconciler would never see the removal (reconcile() iterates the
+      // projection's keys) and the owned runtime would leak.
+      const previous = active.get(addonId);
+      if (!previous) return { transition: "noop" };
+      const decision = {
+        addonId,
+        desiredState: "stopped",
+        publicReason: "Add-on is not installed.",
+        publicFailureCode: "addon-not-installed",
+      };
+      const projectionEntry = {
+        addonId,
+        manifest: null,
+        factoryId: previous.factoryId,
+        bootEpoch,
+        projectionGeneration: previous.generation,
+      };
+      return serialize(addonId, () =>
+        transitionFor(addonId, null, decision, projectionEntry)
+          .then((result) => ({
+            addonId,
+            factoryId: previous.factoryId,
+            decision,
+            ...result,
+          })),
+      ).then((value) => value ?? { addonId, factoryId: previous.factoryId, decision, transition: "noop" });
     }
     const manifest = installation.manifest;
     if (!manifest || typeof manifest !== "object") {
@@ -521,10 +571,13 @@ export function createRuntimeReconciler(options) {
     const installations = projection?.installations ?? {};
     const bootEpoch = projection?.bootEpoch ?? "";
 
-    // Build a per-add-on list of work items; serialize each.
-    const addons = Object.keys(installations);
+    // Build a per-add-on list of work items; serialize each. The union
+    // with the active set ensures an add-on whose installation vanished
+    // from the projection (removed) is still stopped deterministically.
+    const addons = new Set(Object.keys(installations));
+    for (const addonId of active.keys()) addons.add(addonId);
     const results = await Promise.all(
-      addons.map((addonId) => reconcileOne(addonId, installations[addonId])),
+      [...addons].map((addonId) => reconcileOne(addonId, installations[addonId], bootEpoch)),
     );
     const transitioned = [];
     const noop = [];

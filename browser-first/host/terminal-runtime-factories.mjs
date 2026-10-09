@@ -127,6 +127,32 @@ async function closeServiceSessions(service, { addonId, now, terminalHostService
 }
 
 // ---------------------------------------------------------------------------
+// Terminal family lock
+// ---------------------------------------------------------------------------
+
+/**
+ * A tiny cross-factory promise queue. The two terminal factories share one
+ * lock (created by `seedTerminalRuntimeFactories`) so a start never spawns
+ * while a sibling factory's stop is mid-teardown: switching Ghostty ↔
+ * iTerm2 stops the old adapter BEFORE the new one starts, even when the
+ * reconciler drives both transitions in one parallel `reconcile()` tick.
+ * Without the lock, per-add-on parallelism could overlap the old adapter's
+ * closeSessions/stop with the new adapter's spawn.
+ */
+export function createTerminalFamilyLock() {
+  let tail = Promise.resolve();
+  return {
+    enqueue(work) {
+      const run = tail.then(work, work);
+      // The queue never stalls on a failed transition; the failure still
+      // propagates to the caller of enqueue.
+      tail = run.catch(() => undefined);
+      return run;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Factory builder
 // ---------------------------------------------------------------------------
 
@@ -146,6 +172,11 @@ async function closeServiceSessions(service, { addonId, now, terminalHostService
  *     listSessions: () => Promise<ReadonlyArray<{ sessionId: string, ownedByRos?: boolean }>>,
  *     closeSession: (sessionId: string) => Promise<void>,
  *   },
+ *   serviceOwner?: {
+ *     attach: (entry: { addonId: string, service: object, started: object }) => { ok: boolean, reason?: string },
+ *     detach: (entry: { addonId: string, service: object }) => boolean,
+ *     ownerAddonId: () => string | null,
+ *   },
  *   now?: () => number,
  *   closeTimeoutMs?: number,
  * }} options
@@ -161,9 +192,14 @@ export function createTerminalRuntimeFactory(options) {
   const serviceFactory = options.serviceFactory ?? createTerminalHostService;
   const baseEnv = options.baseEnv ?? {};
   const terminalHostService = options.terminalHostService ?? null;
+  const serviceOwner = options.serviceOwner ?? null;
+  const familyLock = options.familyLock ?? null;
   const now = options.now ?? (() => Date.now());
   const closeTimeoutMs = options.closeTimeoutMs ?? 2_000;
   const factoryId = factoryIdForDriver(driver);
+  // Serialize start/stop across the terminal family when a shared lock was
+  // seeded. No lock (unit tests constructing a lone factory) runs inline.
+  const enqueue = (work) => (familyLock && typeof familyLock.enqueue === "function" ? familyLock.enqueue(work) : work());
 
   /**
    * Per-add-on service instance. The factory owns the lifecycle of one
@@ -185,40 +221,69 @@ export function createTerminalRuntimeFactory(options) {
       if (!driverForAddon || driverForAddon !== driver) {
         throw new Error(`Terminal factory ${factoryId} cannot start addon ${JSON.stringify(addonId)} (driver mismatch)`);
       }
-      const pinnedEnv = buildPinnedEnv({ driver, baseEnv });
-      const service = serviceFactory({ env: pinnedEnv, addonId });
-      const started = await service.start();
-      const handle = {
-        factoryId,
-        addonId,
-        driveId: started.driveId,
-        adapterId: started.adapterId,
-        bus: started.bus,
-        service,
-        startedAt: now(),
-        ownedByRos: true,
-      };
-      perAddon.set(addonId, handle);
-      return handle;
+      // The family lock makes check-then-spawn-then-attach atomic across
+      // the two terminal factories: a sibling's stop always finishes
+      // before this start runs.
+      return enqueue(async () => {
+        // CP-BR9: the live terminal service is a singleton. Refuse to spawn
+        // when another add-on holds it; the reconciler surfaces the failure
+        // as a bounded start error (no adapter is spawned in that case).
+        const currentOwner = serviceOwner?.ownerAddonId?.() ?? null;
+        if (serviceOwner && currentOwner !== null && currentOwner !== addonId) {
+          throw new Error(`Terminal factory ${factoryId} cannot start addon ${JSON.stringify(addonId)} (terminal-service-owned)`);
+        }
+        const pinnedEnv = buildPinnedEnv({ driver, baseEnv });
+        // createTerminalHostService takes `addonId` as a nullary function;
+        // the factory pins it to the reconciler-supplied add-on id.
+        const service = serviceFactory({ env: pinnedEnv, addonId: () => addonId });
+        const started = await service.start();
+        if (serviceOwner) {
+          const attached = serviceOwner.attach({ addonId, service, started });
+          if (!attached.ok) {
+            // Lost the singleton race after spawning: stop the adapter we
+            // just started so no window or process is leaked, then fail.
+            await service.stop().catch(() => undefined);
+            throw new Error(`Terminal factory ${factoryId} cannot start addon ${JSON.stringify(addonId)} (${attached.reason ?? "terminal-service-owned"})`);
+          }
+        }
+        const handle = {
+          factoryId,
+          addonId,
+          driveId: started.driveId,
+          adapterId: started.adapterId,
+          bus: started.bus,
+          service,
+          startedAt: now(),
+          ownedByRos: true,
+        };
+        perAddon.set(addonId, handle);
+        return handle;
+      });
     },
     async stop(handle, { addonId, timeoutMs = closeTimeoutMs }) {
       const instance = perAddon.get(addonId) ?? handle;
       if (!instance || !instance.service) return;
-      // CP-BR7 §5.3 / §5.7: close ROS-owned sessions before stopping.
-      // The no-confirm Ghostty teardown is preserved (close never throws).
-      await closeServiceSessions(instance.service, {
-        addonId,
-        now,
-        terminalHostService,
-      }).catch(() => undefined);
-      try {
-        await Promise.race([
-          instance.service.stop(),
-          new Promise((resolve) => setTimeout(resolve, timeoutMs).unref?.()),
-        ]);
-      } finally {
-        perAddon.delete(addonId);
-      }
+      return enqueue(async () => {
+        // CP-BR9: release the live-service singleton BEFORE teardown so no
+        // launch can race a stopping adapter. Detach only evicts the exact
+        // pair this factory attached.
+        serviceOwner?.detach?.({ addonId, service: instance.service });
+        // CP-BR7 §5.3 / §5.7: close ROS-owned sessions before stopping.
+        // The no-confirm Ghostty teardown is preserved (close never throws).
+        await closeServiceSessions(instance.service, {
+          addonId,
+          now,
+          terminalHostService,
+        }).catch(() => undefined);
+        try {
+          await Promise.race([
+            instance.service.stop(),
+            new Promise((resolve) => setTimeout(resolve, timeoutMs).unref?.()),
+          ]);
+        } finally {
+          perAddon.delete(addonId);
+        }
+      });
     },
     async health(handle, { addonId, timeoutMs = 1_500 }) {
       const instance = perAddon.get(addonId) ?? handle;
@@ -280,6 +345,10 @@ export function seedTerminalRuntimeFactories(registry, options = {}) {
   const serviceFactory = options.serviceFactory ?? null;
   const baseEnv = options.baseEnv ?? {};
   const terminalHostService = options.terminalHostService ?? null;
+  const serviceOwner = options.serviceOwner ?? null;
+  // CP-BR9: one shared lock per seed so a start never overlaps a sibling
+  // factory's stop (stop-old-before-start-new under parallel reconciles).
+  const familyLock = options.familyLock ?? createTerminalFamilyLock();
   const now = options.now ?? undefined;
 
   registry.register(
@@ -288,6 +357,8 @@ export function seedTerminalRuntimeFactories(registry, options = {}) {
       serviceFactory: serviceFactory ?? undefined,
       baseEnv,
       terminalHostService,
+      serviceOwner: serviceOwner ?? undefined,
+      familyLock,
       now,
     }),
     { replace: true },
@@ -298,6 +369,8 @@ export function seedTerminalRuntimeFactories(registry, options = {}) {
       serviceFactory: serviceFactory ?? undefined,
       baseEnv,
       terminalHostService,
+      serviceOwner: serviceOwner ?? undefined,
+      familyLock,
       now,
     }),
     { replace: true },
