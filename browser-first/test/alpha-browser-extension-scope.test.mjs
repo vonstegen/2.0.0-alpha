@@ -20,7 +20,10 @@ test("2.0.0 alpha release scope is Chrome extension and bridge only", async () =
     "src-tauri",
     "electron-host",
     "addons/resonant-browser-native",
-    "src/modules/terminal",
+    // `src/modules/terminal` is intentionally kept: it was re-introduced by
+    // the terminal-host project (CP-BR7) as the React app's managed terminal
+    // surface (imported by src/App.tsx) and is actively maintained — not a
+    // descoped alpha artifact.
     "src/modules/audio2tol",
     "rust-toolchain.toml",
     "public/addons/camofox-browser.json",
@@ -50,7 +53,7 @@ test("2.0.0 alpha release scope is Chrome extension and bridge only", async () =
   }
 
   assert.deepEqual(
-    addonIndex.filter((entry) => /camofox|terminal|audio2tol/i.test(entry)),
+    addonIndex.filter((entry) => /camofox|terminal\.json|audio2tol/i.test(entry)),
     [],
   );
   assert.equal(manifest.manifest_version, 3);
