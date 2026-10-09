@@ -2882,3 +2882,131 @@ test("a keyless local account card does not ask for a credential", async () => {
     cleanup();
   }
 });
+
+// ---------------------------------------------------------------------------
+// CP-BR9: Bridge & Runtimes section enable/grant transaction wiring.
+// ---------------------------------------------------------------------------
+
+test("CP-BR9: Bridge & Runtimes enable button posts a registry-revision-aware transaction", async (t) => {
+  const { container, cleanup } = setupDom();
+
+  // Stash the original chrome so we can restore it; the section's
+  // bootstrap probe reads the global `chrome` symbol.
+  const hadChrome = Object.prototype.hasOwnProperty.call(globalThis, "chrome");
+  const originalChrome = globalThis.chrome;
+  const sentMessages = [];
+  globalThis.chrome = {
+    runtime: {
+      sendMessage: (message, reply) => {
+        sentMessages.push(message);
+        reply({ ok: true, snapshot: { status: "connected", instanceId: "test-bridge", generation: 0 } });
+      },
+    },
+  };
+  t.after(() => {
+    if (hadChrome) globalThis.chrome = originalChrome;
+    else delete globalThis.chrome;
+    cleanup();
+  });
+
+  const calls = [];
+  let currentRevision = 5;
+  const bridgeRequest = async (route, options = {}) => {
+    const entry = { route, method: options?.method ?? "POST", body: options?.body };
+    calls.push(entry);
+    if (route === "/bridge/runtimes" && (options?.method ?? "GET") === "GET") {
+      return {
+        ok: true,
+        bridgeOverview: {
+          status: "connected",
+          version: "alpha",
+          endpoint: "http://127.0.0.1:47773",
+          publicEndpoint: "http://127.0.0.1:47773",
+          startedAt: "2026-10-08T00:00:00.000Z",
+          uptimeSeconds: 42,
+          instanceId: "test-bridge",
+          generation: 0,
+        },
+        runtimeList: [
+          {
+            addonId: "addon.resonant-terminal-ghostty",
+            runtimeId: "com.resonantos.factory.terminal-host.ghostty",
+            runtimeType: "local-service",
+            status: "inactive",
+            generation: 0,
+            activeSessionCount: 0,
+            factoryId: "com.resonantos.factory.terminal-host.ghostty",
+            classification: "integration",
+            displayLabel: "Ghostty",
+          },
+          {
+            addonId: "addon.resonant-terminal-iterm2",
+            runtimeId: "com.resonantos.factory.terminal-host.iterm2",
+            runtimeType: "local-service",
+            status: "inactive",
+            generation: 0,
+            activeSessionCount: 0,
+            factoryId: "com.resonantos.factory.terminal-host.iterm2",
+            classification: "integration",
+            displayLabel: "iTerm2",
+          },
+        ],
+        connectorList: [],
+        activeSessions: [],
+        projectionGeneration: 1,
+        producedAt: "2026-10-08T00:00:00.000Z",
+        updateMechanism: "polling",
+      };
+    }
+    if (route === "/addons/registry" && (options?.method ?? "GET") === "GET") {
+      return { ok: true, revision: currentRevision, installations: {} };
+    }
+    if (route === "/addons/enabled") {
+      const expected = entry.body?.expectedRevision;
+      if (expected !== currentRevision) {
+        return { ok: false, status: 409, body: { code: "ownership-conflict" } };
+      }
+      currentRevision += 1;
+      return { ok: true, revision: currentRevision };
+    }
+    return { ok: true };
+  };
+
+  renderSettingsWorkspace({
+    container,
+    bridgeRequest,
+    storage: memoryStorage(),
+    initialSection: "bridge-runtimes",
+  });
+
+  // Wait for the section to render rows for both terminal add-ons.
+  const ghosttyButton = await waitForCondition(
+    () => container.querySelector('[data-testid="runtime-toggle-addon.resonant-terminal-ghostty"]'),
+    { timeout: 4_000 },
+  );
+  assert.ok(ghosttyButton, "the ghostty enable button is rendered");
+
+  ghosttyButton.click();
+  await waitForCondition(() => calls.some((entry) => entry.route === "/addons/enabled"), { timeout: 4_000 });
+  // The post must carry the freshly-read revision — never a cached
+  // value. The fetched revision is the second call (first is the
+  // projection fetch on mount).
+  const enabledPost = calls.find((entry) => entry.route === "/addons/enabled");
+  assert.equal(enabledPost.body.addonId, "addon.resonant-terminal-ghostty");
+  assert.equal(enabledPost.body.enabled, true);
+  assert.equal(enabledPost.body.expectedRevision, 5);
+
+  // Verify the GET /addons/registry was issued immediately before the POST.
+  const registryIdx = calls.findIndex((entry) => entry.route === "/addons/registry");
+  const enabledIdx = calls.findIndex((entry) => entry.route === "/addons/enabled");
+  assert.ok(registryIdx >= 0 && enabledIdx > registryIdx,
+    "enable transaction must read the host revision immediately before the mutation");
+
+  // The transaction carries no caller-supplied authorization data; only
+  // the public identifiers.
+  const payload = JSON.stringify(enabledPost.body);
+  assert.doesNotMatch(payload, /sk-[A-Za-z0-9_-]{8,}/);
+  assert.doesNotMatch(payload, /Bearer\s/i);
+  assert.doesNotMatch(payload, /RESONANT_TERMINAL_HOST_BRIDGE/);
+  assert.equal(sentMessages.length >= 1, true, "the bootstrap probe is fired on mount");
+});

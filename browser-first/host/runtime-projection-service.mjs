@@ -204,10 +204,17 @@ export function createRuntimeProjectionService(options) {
           .map((grant) => grant.capability),
       );
       for (const cap of required) {
-        if (typeof cap === "string" && !granted.has(cap)) return "failed";
+        if (typeof cap === "string" && !granted.has(cap)) {
+          // A missing required grant is a stopped state, not a failure:
+          // the operator withdrew (or never granted) authority, the
+          // reconciler already stopped the runtime, and the
+          // `failed` status is reserved for real adapter failures
+          // (singleton refusal, health failure, factory missing).
+          return "inactive";
+        }
       }
     } else if (grants.length === 0) {
-      return "failed";
+      return "inactive";
     }
     return "ready";
   }
