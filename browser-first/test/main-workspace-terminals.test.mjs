@@ -523,6 +523,54 @@ test("CP-BR11 #4: Grant posts POST /addons/grants with terminal-host granted + c
   );
 });
 
+test("CP-BR11 #4b: capabilityGranted reflects the registry's grantedCapabilities", async (t) => {
+  const { container, cleanup } = setupDom();
+  t.after(cleanup);
+  const registry = {
+    ok: true,
+    revision: 5,
+    installations: {
+      "addon.resonant-terminal-ghostty": {
+        addonId: "addon.resonant-terminal-ghostty",
+        installed: true,
+        enabled: true,
+        grantedCapabilities: [
+          { capability: "terminal-host", granted: true, scope: "system", revocationBehavior: "degrade" },
+        ],
+      },
+      "addon.resonant-terminal-iterm2": {
+        addonId: "addon.resonant-terminal-iterm2",
+        installed: true,
+        enabled: true,
+        grantedCapabilities: [
+          { capability: "terminal-host", granted: false, scope: "system", revocationBehavior: "degrade" },
+        ],
+      },
+    },
+  };
+  const { bridgeRequest } = makeBridgeRequest({
+    status: makeStatus(),
+    projection: makeProjectionRuntime([
+      { addonId: "addon.resonant-terminal-ghostty", status: "ready", generation: 1, displayLabel: "resonant-terminal-ghostty" },
+      { addonId: "addon.resonant-terminal-iterm2", status: "inactive", generation: 1, displayLabel: "resonant-terminal-iterm2" },
+    ]),
+    registry,
+  });
+  const seams = makeSeams(bridgeRequest);
+  const handle = renderTerminalsWorkspace(container, { bridgeRequest, ...seams, pollIntervalMs: 0 });
+  t.after(() => handle.stop());
+  await waitFor(() => container.querySelector('[data-testid="terminals-enable-addon.resonant-terminal-ghostty"]'));
+  assert.equal(
+    container.querySelector('[data-testid="terminals-grant-addon.resonant-terminal-ghostty"]'),
+    null,
+    "Grant button must be absent when terminal-host is already granted (Ghostty)",
+  );
+  assert.ok(
+    container.querySelector('[data-testid="terminals-grant-addon.resonant-terminal-iterm2"]'),
+    "Grant button must be present when terminal-host is not granted (iTerm2)",
+  );
+});
+
 test("CP-BR11 #4: cancelled Grant does not post /addons/grants", async (t) => {
   const { container, cleanup } = setupDom();
   t.after(cleanup);

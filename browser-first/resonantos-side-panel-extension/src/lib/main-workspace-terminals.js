@@ -247,6 +247,10 @@ export function renderTerminalsWorkspace(container, options = {}) {
     if (typeof options.fetchProjection === "function") return options.fetchProjection();
     return null;
   }
+  async function readRegistry() {
+    if (typeof options.fetchRegistry === "function") return options.fetchRegistry();
+    return null;
+  }
   async function readPrompt() {
     if (typeof options.fetchPromptPath === "function") return options.fetchPromptPath();
     return null;
@@ -275,16 +279,17 @@ export function renderTerminalsWorkspace(container, options = {}) {
   let currentView = { promptPath: null, promptValid: false, tabs: [], bridgeConnected: false };
 
   async function refresh() {
-    const [status, projection, prompt] = await Promise.all([
+    const [status, projection, registry, prompt] = await Promise.all([
       readStatus().catch(() => null),
       readProjection().catch(() => null),
+      readRegistry().catch(() => null),
       readPrompt().catch(() => null),
     ]);
     const projectionRuntime = Array.isArray(projection?.runtimeList) ? projection.runtimeList : [];
     const view = buildTerminalsViewModel({
       status: status ?? null,
       projectionRuntime,
-      grants: projection?.grants ?? null,
+      registry: registry ?? null,
       prompt: prompt ?? null,
     });
     currentView = view;

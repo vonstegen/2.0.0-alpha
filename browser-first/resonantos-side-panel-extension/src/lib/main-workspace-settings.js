@@ -274,6 +274,7 @@ export function renderSettingsWorkspace({
       sectionContext.fetchStatus = terminalsSeams ? terminalsSeams.fetchStatus : (async () => null);
       sectionContext.fetchPromptPath = terminalsSeams ? terminalsSeams.fetchPromptPath : (async () => null);
       sectionContext.fetchProjection = terminalsSeams ? terminalsSeams.fetchProjection : (async () => null);
+      sectionContext.fetchRegistry = terminalsSeams ? terminalsSeams.fetchRegistry : (async () => null);
       sectionContext.launchTerminal = terminalsSeams
         ? terminalsSeams.launchTerminal
         : (async () => { throw new Error("Bridge request is not configured."); });

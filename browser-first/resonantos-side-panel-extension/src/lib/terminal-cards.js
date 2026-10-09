@@ -129,14 +129,14 @@ export function notInstalledBadge() {
  * Merge the three host data sources the card needs:
  *   - `/terminal-host/status` (live surfaces with `connected`)
  *   - `/bridge/runtimes` projection (runtimeList with `status`)
- *   - `/addons/registry` (registry row with `enabled` + `grants`)
+ *   - `/addons/registry` (`installations` with `grantedCapabilities`)
  *   - `/terminal-host/prompt-path` (prompt file path + valid)
  *
  * The card view model is a closed shape: callers see only the
  * public fields the renderer is allowed to display. Secret-shaped
  * fields are intentionally absent from the view model.
  */
-export function buildTerminalsViewModel({ status, projectionRuntime, grants, prompt }) {
+export function buildTerminalsViewModel({ status, projectionRuntime, registry, prompt }) {
   const surfacesByAddon = new Map();
   if (status && Array.isArray(status.surfaces)) {
     for (const surface of status.surfaces) {
@@ -153,18 +153,13 @@ export function buildTerminalsViewModel({ status, projectionRuntime, grants, pro
       }
     }
   }
-  const grantsByAddon = new Map();
-  if (grants && typeof grants === "object" && Array.isArray(grants.addons)) {
-    for (const entry of grants.addons) {
-      if (entry && typeof entry.addonId === "string") {
-        grantsByAddon.set(entry.addonId, entry);
-      }
-    }
-  }
+  const installations = (registry && typeof registry === "object" && registry.installations && typeof registry.installations === "object")
+    ? registry.installations
+    : {};
   const tabs = TERMINAL_ADDON_IDS.map((addonId) => {
     const surface = surfacesByAddon.get(addonId);
     const projection = projectionByAddon.get(addonId);
-    const grant = grantsByAddon.get(addonId);
+    const installation = installations[addonId];
     const installed = Boolean(projection) || Boolean(surface);
     const label = surface?.label
       ?? (projection?.displayLabel
@@ -175,9 +170,12 @@ export function buildTerminalsViewModel({ status, projectionRuntime, grants, pro
     const connected = surface ? Boolean(surface.connected) : false;
     const compatible = surface ? Boolean(surface.compatible) : installed;
     const projectionStatus = projection?.status ?? "inactive";
-    const capabilityGranted = Array.isArray(grant?.grants)
-      ? grant.grants.some((g) => g && g.capability === "terminal-host" && g.granted === true)
-      : false;
+    const grantedCapabilities = Array.isArray(installation?.grantedCapabilities)
+      ? installation.grantedCapabilities
+      : [];
+    const capabilityGranted = grantedCapabilities.some(
+      (g) => g && g.capability === "terminal-host" && g.granted === true,
+    );
     return {
       addonId,
       label,
