@@ -1,6 +1,6 @@
-# Terminal Activation — User Guide (CP-BR7 / CP-BR9 / CP-BR10)
+# Terminal Activation — User Guide (CP-BR7 / CP-BR9 / CP-BR10 / CP-BR11)
 
-> Status: **CP-BR7 + CP-BR9 + CP-BR10 (Complete on `r-and-d/terminal-host-current-dev`)**.
+> Status: **CP-BR7 + CP-BR9 + CP-BR10 + CP-BR11 (Complete on `r-and-d/terminal-host-current-dev`)**.
 > Source of truth:
 > [`browser-first/host/terminal-runtime-factories.mjs`](../../browser-first/host/terminal-runtime-factories.mjs),
 > [`runtime-factory-registry.mjs`](../../browser-first/host/runtime-factory-registry.mjs),
@@ -9,9 +9,12 @@
 > [`terminal-host-service-owner.mjs`](../../browser-first/host/terminal-host-service-owner.mjs),
 > [`run-bridge-minimal.mjs`](../../browser-first/host/run-bridge-minimal.mjs),
 > [`resonantos-side-panel-extension/src/lib/settings/addon-tools-section.js`](../../browser-first/resonantos-side-panel-extension/src/lib/settings/addon-tools-section.js),
+> [`resonantos-side-panel-extension/src/lib/main-workspace-terminals.js`](../../browser-first/resonantos-side-panel-extension/src/lib/main-workspace-terminals.js),
+> [`resonantos-side-panel-extension/src/lib/terminal-cards.js`](../../browser-first/resonantos-side-panel-extension/src/lib/terminal-cards.js),
+> [`resonantos-side-panel-extension/src/lib/terminals-host-seams.js`](../../browser-first/resonantos-side-panel-extension/src/lib/terminals-host-seams.js),
 > [`docs/architecture/SDK-RUNTIME-LIFECYCLE-CONTRACT.md`](../architecture/SDK-RUNTIME-LIFECYCLE-CONTRACT.md),
 > [`docs/architecture/BRIDGE-RUNTIME-PROJECTION.md`](../architecture/BRIDGE-RUNTIME-PROJECTION.md),
-> [`docs/architecture/ADDON-BRIDGE-RUNTIME-ROADMAP.md`](../architecture/ADDON-BRIDGE-RUNTIME-ROADMAP.md) §13.
+> [`docs/architecture/ADDON-BRIDGE-RUNTIME-ROADMAP.md`](../architecture/ADDON-BRIDGE-RUNTIME-ROADMAP.md) §1, §13, §14, §15.
 
 Ghostty and iTerm2 are the first two production add-on runtimes wired
 onto the generic lifecycle. The lifecycle is owned by the bridge
@@ -224,3 +227,85 @@ and manual re-attach paths.
 - **Do not interpret `starting` as `ready`.** `Open in Terminal` is
   gated on `ready` for a reason: launching against a half-started
   adapter is a race the host does not support.
+
+## Terminals rail (CP-BR11)
+
+The **Terminals** workspace in the main workspace's left rail is
+the operator's everyday surface for the reviewed terminal
+add-ons. It is the same public state the Settings → Add-on Tools
+section renders, exposed where the operator is most likely to look
+— next to Living Archive, Hermes, and OpenCode. The renderer is a
+thin view of the host's harness registry + projection; the host
+still owns process state.
+
+### The closed flow on the rail
+
+A terminal add-on goes through the same closed desired-state rule
+from CP-BR3, but the rail exposes every step as a direct action
+the operator can take from one card. The full Enable → Grant →
+Launch path is reachable from the rail in three clicks, with no
+manual bridge command and no auto-grant.
+
+| Step | What the operator does on the rail                       | What the host does                                           |
+| ---- | ----------------------------------------------------- | ------------------------------------------------------------ |
+| 1    | Open the **Terminals** workspace (left rail)          | Renderer reads `/terminal-host/status` + `/bridge/runtimes` |
+| 2    | See one card per reviewed add-on (Ghostty + iTerm2)   | The card merges the live surface with the projection row    |
+| 3    | Click **Enable** on an inactive card                  | `POST /addons/enabled` with the registry revision read immediately before; a stale read fails closed with `ownership-conflict` |
+| 4    | Click **Grant terminal-host** on a missing-grant card | `window.confirm` dialog; on consent, `POST /addons/grants` with `terminal-host` granted, `scope: "system"`, `revocationBehavior: "degrade"`, `consent: true`, and the registry revision |
+| 5    | Watch the status transition `Inactive → Grant Approved → Connected` | The reconciler starts the reviewed factory; the bridge owns the service |
+| 6    | Click **Open in Terminal** (or **Copy connection script** for an already-running terminal) | Same host routes the Settings section uses (`/terminal-host/launch` or `/terminal-host/connection-script`); the rail re-uses the seam factory |
+
+Disable / Revoke / Remove are still controlled from
+**Settings → Bridge & Runtimes** and the add-on catalog. The
+rail's Enable / Disable button only toggles `enabled` — it never
+removes the installation.
+
+### Why two surfaces, not one
+
+The Settings → Add-on Tools section and the Terminals rail render
+the same host data through the same shared primitives
+([`terminal-cards.js`](../../browser-first/resonantos-side-panel-extension/src/lib/terminal-cards.js)):
+the same DOM helpers, the same `buildTerminalsViewModel`
+(status + projection + grants merge), the same
+`TERMINAL_ADDON_IDS`, the same `DEFAULT_AGENT_ID`. They cannot
+drift: both renderers import from the shared module, both
+read their host seams from the same
+[`createTerminalsHostSeams`](../../browser-first/resonantos-side-panel-extension/src/lib/terminals-host-seams.js)
+factory, and both reuse the existing `bridgeRequest` callback
+the workspace already provides — no new bridge client, no new
+global state, no parallel registry.
+
+The Settings section carries Launch + Copy; the rail carries
+Enable + Grant + Launch + Copy. The two-registry split the
+left-rail **Add-ons** workspace reads is exactly the root cause
+the rail fixes: that workspace reads `/addons/status` (the
+addon-delegation service), which does not include the
+harness-side terminal add-ons. The rail reads the harness
+registry and the projection, where the terminals live.
+
+### The non-leak guarantee on the rail
+
+The rail renderer follows the same closure-only contract the
+Settings section follows:
+
+- text nodes only (`textContent`, `createElement`, `append`); no
+  `innerHTML`, no script injection, no event-handler attributes;
+- the closed-shape view-model carries no token / credential /
+  path / PID / env / prompt field; the shape-walker covers every
+  payload the rail renders;
+- the connection script rides a 0600 token file only; the host
+  mints the grant, the renderer copies the script as text with
+  `navigator.clipboard.writeText` and falls back to manual
+  selection when the API is denied;
+- bridge-not-running rejection deep-links the operator to
+  **Settings → Bridge Target** via the injected
+  `onOpenBridgeSettings` callback;
+- enable / grant / disable / launch / copy all flow through the
+  injected host transactions; the renderer never invents a new
+  authority path and never auto-grants.
+
+The shared primitives + the shared seam factory are the reason
+the rail and the Settings section can both stay green under the
+same shape-walker, the same route-capability audit, and the same
+ownership / secret-detection pipeline — the architecture
+implemented in CP-BR1…CP-BR10 is the rail's only dependency.

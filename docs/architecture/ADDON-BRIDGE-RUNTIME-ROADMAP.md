@@ -1,7 +1,7 @@
 # ROS Bridge + SDK Add-on Runtime Lifecycle Roadmap
 
-**Date:** 2026-10-06  
-**Status:** Planned; terminal-host functional seam complete, SDK lifecycle integration not started  
+**Date:** 2026-10-09
+**Status:** CP-BR11 complete; the reviewed terminal add-ons are wired to the left rail with Enable / Grant / Launch / Copy. CP-BR12+ (packaging, recovery, release documentation) per §15.
 **Owner:** Core bridge + Add-on SDK + Extension UI  
 **Branch:** `r-and-d/terminal-host-current-dev`  
 **Decision scope:** Browser-first ROS extension + authenticated loopback Node bridge
@@ -18,15 +18,18 @@ first complete implementation:
 1. Start ROS.
 2. ROS reports the core bridge as `Connected`.
 3. Open **Bridge & Runtimes** to see active add-ons, connectors, and sessions.
-4. Open **Add-on Surfaces → Terminal**.
-5. Enable and authorize Ghostty or iTerm2.
+4. Open the **Terminals** workspace in the left rail (or **Settings → Add-on Tools**).
+5. Enable and authorize Ghostty or iTerm2 directly from the rail — Enable
+   toggles `enabled`, Grant terminal-host posts the `terminal-host` grant
+   with `consent: true` (operator-consented, never auto-granted).
 6. The SDK lifecycle manager starts the selected terminal-host adapter.
-7. The selected terminal tab changes to `Connected`.
-8. Select Pi → **Open in Terminal**.
+7. The selected terminal card transitions `Inactive → Grant Approved →
+   Connected` in the rail projection.
+8. Select Pi → **Open in Terminal** on the rail (or the Settings surface).
 9. Pi opens in the selected terminal with only the ROS-granted credential,
    project, skills, and memory projection.
-10. Disable the terminal add-on; ROS closes ROS-owned sessions and reports the
-    runtime as `Inactive`.
+10. Disable the terminal add-on; ROS closes ROS-owned sessions and reports
+    the runtime as `Inactive`.
 11. Stop ROS; ROS stops add-on runtimes and the core bridge.
 
 The user never runs `node run-bridge-minimal.mjs` manually.
@@ -225,6 +228,7 @@ the source of truth.
 | CP-BR8     | UI-only end-to-end acceptance                     | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR9     | Terminal add-ons live in the ROS extension        | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR10    | Add-on Tools settings section (iTerm2 + Ghostty)   | **Complete (r-and-d/terminal-host-current-dev)** |
+| CP-BR11    | Terminals on the left rail (Enable / Grant / Launch / Copy) | **Complete (r-and-d/terminal-host-current-dev)** |
 | CP-BR9.5   | Packaging, recovery, and release documentation    | Not started |
 
 Every checkpoint ends with `STOP AND REPORT`. Do not start the next checkpoint
@@ -820,6 +824,81 @@ deep-link is verified on `bridge-not-running`; the Authorize
 surface is verified on `capability-not-granted`; the existing
 terminal-host / projection / reconciler / bridge-runtimes
 suites remain green.
+
+### 15.3 CP-BR11 — Terminals on the left rail
+
+#### Goal
+
+Surface the reviewed terminal add-ons (Ghostty + iTerm2) on the
+main workspace's left rail — one obvious place to see them,
+enable + grant + launch + copy them — instead of burying them
+inside **Settings → Add-on Tools**. The rail reads from the
+harness registry + projection, NOT from the addon-delegation
+service's `/addons/status` (which is why the terminals were
+absent from the rail's `Add-ons` workspace).
+
+#### Required behavior
+
+- [x] A "Terminals" rail button (`data-workspace="terminals"`)
+      in the main workspace's Tools section, alongside Living
+      Archive / Hermes / OpenCode. The button is wired through
+      the existing `workspaceButtons` /
+      `setActiveWorkspace` / `renderMessages` switch handler.
+      [main-workspace.html](../../browser-first/resonantos-side-panel-extension/src/main-workspace.html),
+      [main-workspace.js](../../browser-first/resonantos-side-panel-extension/src/main-workspace.js).
+- [x] One card per reviewed terminal add-on (iTerm2 + Ghostty)
+      driven by `/terminal-host/status` + `/bridge/runtimes` +
+      grants from the host projection. Each card carries the
+      closed badge vocabulary (`Connected` / `Disconnected` /
+      `Not installed`), the Enable / Disable action
+      (`POST /addons/enabled`), the Grant terminal-host action
+      (`POST /addons/grants`, operator-consented), the Open in
+      Terminal action (`POST /terminal-host/launch`, gated on
+      `ready` + a valid 0600 prompt file), and the Copy
+      connection script action
+      (`POST /terminal-host/connection-script`).
+      [main-workspace-terminals.js](../../browser-first/resonantos-side-panel-extension/src/lib/main-workspace-terminals.js).
+- [x] The Settings → Add-on Tools section and the new rail
+      workspace render through the same shared primitives
+      (`terminal-cards.js`) and the same host-seam factory
+      (`terminals-host-seams.js`). No forked renderer.
+      [terminal-cards.js](../../browser-first/resonantos-side-panel-extension/src/lib/terminal-cards.js),
+      [terminals-host-seams.js](../../browser-first/resonantos-side-panel-extension/src/lib/terminals-host-seams.js).
+- [x] Enable and Grant transactions are registry-revision-aware:
+      the seam reads the registry revision immediately before the
+      POST and includes it as `expectedRevision`. A stale read
+      fails closed with `ownership-conflict` and the UI surfaces
+      the error. Grant requires `consent: true`; the rail's
+      Grant button is gated on a `window.confirm` dialog and
+      never auto-grants.
+- [x] The rendered DOM is text-only (`textContent`,
+      `createElement`, `append`); no `innerHTML`, no script
+      injection, no event-handler attributes. The closed-shape
+      view-model carries no token / credential / path / PID /
+      env / prompt field; the shape-walker covers every payload
+      the rail renders. The connection script rides a 0600
+      token file only; the script is rendered as text and
+      copied via `navigator.clipboard.writeText` with a
+      manual-select fallback.
+
+#### Gate
+
+`browser-first/test/main-workspace-terminals.test.mjs` (16/16)
+covers the nine acceptance rows: rail button + workspace switch,
+per-id card with the three badge states, Enable with
+`expectedRevision`, Grant with `consent: true` (never auto-grant,
+never posts without operator confirmation), Launch gated on
+`ready` + 0600 + typed rejections (`bridge-not-running`,
+`capability-not-granted`, `executable-unavailable`,
+`policy-not-reviewed`, `launch-failed`), Copy text-only +
+clipboard fallback, reads from the harness registry/projection
+(NOT `/addons/status`), and the shape-walker over every payload
+the rail renders. The 11 CP-BR10 addon-tools-section tests
+remain green. The full CP-BR1...CP-BR11 targeted suite
+(browser-first + addon-sdk) runs 232/232 green. `tsc --noEmit`
+is clean. No existing behavior changes: the rail re-uses the
+same `bridgeRequest` callback the workspace already provides; no
+new bridge client, no new global state, no parallel registry.
 
 ### Checklist (packaging — not started)
 
