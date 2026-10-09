@@ -160,6 +160,12 @@ async function withBridgeRoutes(callback) {
     // merely named in a list.
     const { createHarnessHostService } = await import('../host/harness-host-service.mjs');
     const harness = await createHarnessHostService({ userRoot: root, providerHost: provider, env: {} });
+    const { createBridgeRuntimesHostService } = await import('../host/bridge-runtimes-host-service.mjs');
+    const bridgeRuntimesRoute = [];
+    createBridgeRuntimesHostService({
+      runtimeProjection: { snapshot: () => ({}) },
+      attachRoute: (route) => bridgeRuntimesRoute.push(route),
+    });
     const routeArrays = {
       harnessRoutes: harness.harnessRoutes,
       browserDiagnosticsRoutes: diagnostics.browserDiagnosticsRoutes,
@@ -169,6 +175,7 @@ async function withBridgeRoutes(callback) {
       addonDelegationRoutes: addon.addonDelegationRoutes,
       opencodeSessionRoutes: opencodeSession.opencodeSessionRoutes,
       extensionPrefsRoutes: prefs.extensionPrefsRoutes,
+      bridgeRuntimesRoute,
     };
     const routes = Object.values(routeArrays).flat();
 
