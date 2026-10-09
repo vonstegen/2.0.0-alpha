@@ -1,5 +1,5 @@
 // Composition owns routes, never grants inferred from bridge authentication.
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, createPublicKey, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { tmpdir as osTmpdir } from 'node:os';
@@ -14,7 +14,7 @@ import { createProviderFabricAdapter } from './agent-adapters/provider-fabric.mj
 import { createExternalCliTerminalAdapter } from './agent-adapters/external-cli-terminal.mjs';
 import { publicHarnessError, assertValidHarnessManifest } from './harness-adapter-contract.mjs';
 import { bridgeCorsHeaders, HarnessTransportError, validateLoopbackHost } from './bridge-server.mjs';
-import { attachSessionEnv, buildProjectedSessionEnv, consumeGrant } from './terminal-host-service.mjs';
+import { attachSessionEnv, buildProjectedSessionEnv, composeBootstrapCommand, consumeGrant, mintSessionBootstrapGrant, trackSessionBootstrapGrant } from './terminal-host-service.mjs';
 import { ensureBridgeReachable, DEFAULT_BRIDGE_ENDPOINT } from './bridge-bootstrap.mjs';
 import { getHarnessPolicy } from './harness-policy-registry.mjs';
 import { piCommand } from './pi-runtime.mjs';
@@ -120,7 +120,13 @@ export function createHarnessStreamSubscription(reader) {
 export async function createHarnessHostService({ userRoot, store = createHarnessRegistryStore({ userRoot }),
   bindings = [], env = process.env, providerHost, hostTerminal, terminalHost, cleanupTimeoutMs = 1000, onReceipt = () => {}, fixtureSigningKey,
   transportFactory = createHarnessTransport, dshAdapterFactory = createDshTypertAdapter, openaiAdapterFactory = createOpenAICompatibleAdapter,
-  promptFilePath, seedInstallations = [] } = {}) {
+  promptFilePath, seedInstallations = [],
+  // CP-BR10: fixed install root for the `ros-session` CLI the
+  // `GET /terminal-host/connection-script` route embeds in the
+  // returned script. The host never sources this from caller argv or
+  // the ambient PATH; the operator may override at composition time
+  // (tests do).
+  rosSessionPath } = {}) {
   if (!Number.isSafeInteger(cleanupTimeoutMs) || cleanupTimeoutMs < 1 || cleanupTimeoutMs > 30000) throw new TypeError('Bounded cleanup required.');
   // Step 5, 5B default for the pi-terminal-v1 adapter. Tests inject
   // their own factory to point at a temp dir. (The grant token file is
@@ -138,6 +144,32 @@ export async function createHarnessHostService({ userRoot, store = createHarness
   // No token, credential, env value, memory content, or arbitrary
   // path lives here — only the documented fields.
   const launchPersistence = new Map();
+  // CP-BR10: connection-script adoptions. The host mints a single-use
+  // grant for the operator to paste into an already-running terminal;
+  // while the script is unconsumed, the adopted sessionId is tracked
+  // here so disable / revoke / remove can close it. Consumed (the
+  // operator pasted the script and the bridge claimed the grant) or
+  // expired (TTL 60s — see SESSION_BOOTSTRAP_GRANT_TTL_MS in
+  // terminal-host-service.mjs) adoptions are dropped from the map.
+  const connectionScriptAdoptions = new Map();
+
+  // CP-BR10: best-effort cleanup of all unconsumed adoptions for
+  // the given add-on. Iterates the tracked map, asks the live
+  // terminal-host service to terminate each session, and drops the
+  // adoption. Each call is bounded; the grant TTL is the safety
+  // net for adoptions that fail to terminate.
+  async function closeConnectionScriptAdoptions(addonId) {
+    const owned = [...connectionScriptAdoptions.values()].filter((entry) => entry.terminalAddonId === addonId);
+    for (const entry of owned) {
+      connectionScriptAdoptions.delete(entry.sessionId);
+      if (!terminalHost?.service || typeof terminalHost.service.terminateSession !== 'function') continue;
+      try {
+        await terminalHost.service.terminateSession({ sessionId: entry.sessionId });
+      } catch {
+        /* best effort */
+      }
+    }
+  }
   // CP-XH5b: prompt-path resolver. The UI asks the host what path
   // the operator should write their prompt to, and whether a valid
   // 0600 file currently exists there. The host owns this seam so
@@ -744,13 +776,133 @@ export async function createHarnessHostService({ userRoot, store = createHarness
         launchAccepted: launchResult && typeof launchResult === 'object' ? true : false,
       };
     }),
+    // CP-BR10: GET /terminal-host/connection-script
+    //
+    // The "Add-on Tools" section's copy-connection-script affordance.
+    // Loopback-only (loopbackHostOnly is set by route()), requires
+    // addon-runtime-read. The route mints a single-use, audience-
+    // bound `SessionBootstrapGrant` for the requested terminal
+    // add-on, writes the grant token to a 0600 file in the host's
+    // temp dir, and returns a non-secret shell snippet the operator
+    // pastes into an already-running terminal.
+    //
+    // Hard rules (CP-BR10 §5.4 + §7):
+    //   - The script is composed via the existing
+    //     `composeBootstrapCommand` / `ros-session attach` family; the
+    //     grant token rides ONLY in a 0600 file path.
+    //   - The returned `command` is the only field the renderer may
+    //     copy to the clipboard; the other fields are non-secret
+    //     metadata (sessionId, tokenFilePath, rosSessionPath,
+    //     expiresAt, startedAt).
+    //   - The route enforces the same gates as `/terminal-host/launch`:
+    //     add-on installed + enabled + terminal-host grant + bridge
+    //     reachable. A failed gate returns the SAME typed reasons
+    //     the launch route uses (`capability-not-granted`,
+    //     `bridge-not-running`).
+    //   - Trackable: the adopted sessionId is registered in
+    //     `connectionScriptAdoptions` so disable / revoke / remove
+    //     can `terminateSession` the running terminal. Adoption is
+    //     dropped on grant consumption (operator pasted the script)
+    //     or after the grant TTL (60s, see
+    //     SESSION_BOOTSTRAP_GRANT_TTL_MS).
+    //   - The script's `--provider-profile-id` is left empty for
+    //     the operator to fill at paste time (the auto-connect
+    //     launch path already wires this in code). The
+    //     `providerProfileId` query param, when present, is forwarded
+    //     so the operator does not have to remember the id.
+    route('GET', '/terminal-host/connection-script', read, ['terminalAddonId'], ['providerProfileId', 'bridgeEndpoint'], async p => {
+      const requestedAddonId = typeof p.terminalAddonId === 'string' ? p.terminalAddonId.trim() : '';
+      if (!id(requestedAddonId)) throw fail('invalid-event');
+      const providerProfileId = typeof p.providerProfileId === 'string' ? p.providerProfileId.trim() : '';
+      const bridgeEndpointOverride = typeof p.bridgeEndpoint === 'string' && p.bridgeEndpoint.length > 0
+        ? p.bridgeEndpoint
+        : null;
+
+      // Bridge probe first — same gate as /terminal-host/launch.
+      const probe = await ensureBridgeReachable({
+        endpoint: bridgeEndpointOverride ?? DEFAULT_BRIDGE_ENDPOINT,
+        timeoutMs: 1500,
+      });
+      if (!probe.ok) return probe;
+
+      // Add-on installed + enabled + terminal-host grant.
+      const projection = snapshot();
+      const installation = projection.installations[requestedAddonId];
+      if (!installation || installation.enabled !== true) return { ok: false, reason: 'capability-not-granted' };
+      const manifest = manifests.get(requestedAddonId);
+      if (!manifest) return { ok: false, reason: 'capability-not-granted' };
+      const hasTerminalHostGrant = installation.grantedCapabilities.some((grant) => grant.capability === 'terminal-host' && grant.granted === true);
+      if (!hasTerminalHostGrant) return { ok: false, reason: 'capability-not-granted' };
+
+      // Mint + track a single-use attach grant for the adoption. The
+      // same broker the auto-connect launch path uses, so the
+      // `consumeGrant` claim in `/terminal-host/session/attach` is
+      // symmetric.
+      const sessionId = `attach-${randomUUID().slice(0, 8)}`;
+      const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId, purpose: "attach" }));
+      const tokenFilePath = `${osTmpdir()}/ros-session-${sessionId}-${randomUUID()}.token`;
+      await writeFile(tokenFilePath, grant.token, { mode: 0o600 });
+
+      // The ros-session CLI ships at the same fixed install root the
+      // auto-connect path uses. The host never sources this from
+      // caller argv or the ambient PATH. The CLI lives in the repo
+      // today (browser-first/bin); the production install root is the
+      // bridge's per-user prefix. The host composes a non-secret
+      // metadata field (path only — no token, credential, env).
+      const resolvedRosSessionPath = rosSessionPath
+        ?? `${import.meta.dirname}/../bin/ros-session.mjs`;
+
+      const command = composeBootstrapCommand({
+        sessionId,
+        tokenFilePath,
+        providerProfileId,
+        rosSessionPath: resolvedRosSessionPath,
+      });
+
+      // Register the adoption for the zero-leaked-windows invariant.
+      // The host will `terminateSession` (best-effort) on disable /
+      // revoke / remove if the grant is still unconsumed; the adopt
+      // record is removed on grant consumption or TTL expiry.
+      connectionScriptAdoptions.set(sessionId, {
+        sessionId,
+        terminalAddonId: requestedAddonId,
+        tokenFilePath,
+        grant,
+        startedAt: new Date().toISOString(),
+      });
+
+      // Non-secret receipt. The `command` field is the only one the
+      // renderer may copy verbatim to the clipboard; the rest are
+      // fixed metadata (paths + timing).
+      return {
+        ok: true,
+        command,
+        sessionId,
+        terminalAddonId: requestedAddonId,
+        tokenFilePath,
+        rosSessionPath: resolvedRosSessionPath,
+        providerProfileId: providerProfileId || null,
+        startedAt: grant.issuedAt,
+        expiresAt: grant.expiresAt,
+        bridgeVersion: probe.version,
+      };
+    }),
     route('POST', '/addons/enabled', control, ['addonId', 'enabled', 'expectedRevision'], [], async p => {
       if (!id(p.addonId) || typeof p.enabled !== 'boolean' || !revision(p.expectedRevision)) throw fail('invalid-event');
-      await registry.setEnabled(p.addonId, p.enabled, p); return snapshot();
+      await registry.setEnabled(p.addonId, p.enabled, p);
+      // CP-BR10: best-effort cleanup of any unconsumed connection-
+      // script adoptions for this add-on when the operator disables
+      // it. The grant TTL (60s) is the safety net.
+      if (p.enabled === false) await closeConnectionScriptAdoptions(p.addonId);
+      return snapshot();
     }),
     route('POST', '/addons/remove', control, ['addonId'], [], async p => {
       if (!id(p.addonId)) throw fail('invalid-event');
-      await registry.remove(p.addonId); manifests.delete(p.addonId); return snapshot();
+      await registry.remove(p.addonId);
+      manifests.delete(p.addonId);
+      // CP-BR10: same cleanup as disable; remove is final.
+      await closeConnectionScriptAdoptions(p.addonId);
+      return snapshot();
     }),
     route('POST', '/addons/slots/assign', control, ['slot', 'addonId', 'expectedGeneration'], ['replace'], async p => {
       if (!id(p.slot) || (p.addonId !== null && !id(p.addonId)) || !revision(p.expectedGeneration) || (p.replace !== undefined && typeof p.replace !== 'boolean')) throw fail('invalid-event');
