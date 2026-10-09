@@ -399,7 +399,20 @@ export function renderAddonToolsSection(container, options = {}) {
     promptHost.replaceChildren(renderPromptCard(view));
     tabsHost.replaceChildren(tabsHeading);
     if (view.tabs.every((tab) => !tab.installed)) {
-      tabsHost.append(renderEmptyState(view));
+      // No reviewed add-on is installed yet; still render the per-id
+      // tabs so the operator can see "Not installed" for each known
+      // id. The empty-state note is dropped — it would duplicate the
+      // same information.
+      for (const tab of view.tabs) {
+        tabsHost.append(
+          renderTerminalTab(view, tab, {
+            onLaunch,
+            onCopyScript,
+            busyAddonId: state.busyAddonId,
+            lastError: state.lastError,
+          }),
+        );
+      }
     } else {
       for (const tab of view.tabs) {
         if (!tab.installed) continue;

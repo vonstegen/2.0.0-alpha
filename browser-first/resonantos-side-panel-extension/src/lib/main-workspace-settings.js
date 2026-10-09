@@ -315,19 +315,18 @@ export function renderSettingsWorkspace({
         if (typeof addonToolsRequest !== "function") {
           throw new Error("Bridge request is not configured.");
         }
-        // The route uses a GET with a query string (the host route
-        // declares required + optional parameters in a query form).
-        // The shape contract on the host is:
+        // The host route is POST /terminal-host/connection-script with
         //   required: terminalAddonId
-        //   optional: providerProfileId, bridgeEndpoint
-        const search = new URLSearchParams({ terminalAddonId });
-        if (typeof providerProfileId === "string" && providerProfileId) {
-          search.set("providerProfileId", providerProfileId);
-        }
-        // The connection-script route is a GET, not a POST; the
-        // bridgeRequest wrapper used by the renderer is the same one
-        // the status and prompt-path calls use.
-        return unwrap(await addonToolsRequest(`/terminal-host/connection-script?${search.toString()}`, { method: "GET" }));
+        //   optional: providerProfileId
+        // (bridgeEndpoint is read from the host's default; the renderer
+        // never injects it).
+        return unwrap(await addonToolsRequest("/terminal-host/connection-script", {
+          method: "POST",
+          body: {
+            terminalAddonId,
+            ...(typeof providerProfileId === "string" && providerProfileId ? { providerProfileId } : {}),
+          },
+        }));
       };
       // Surface-level navigation. The renderer does not know the
       // section id; the workspace routes to Bridge Target on

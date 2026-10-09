@@ -810,7 +810,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     //     launch path already wires this in code). The
     //     `providerProfileId` query param, when present, is forwarded
     //     so the operator does not have to remember the id.
-    route('GET', '/terminal-host/connection-script', read, ['terminalAddonId'], ['providerProfileId', 'bridgeEndpoint'], async p => {
+    route('POST', '/terminal-host/connection-script', read, ['terminalAddonId'], ['providerProfileId', 'bridgeEndpoint'], async p => {
       const requestedAddonId = typeof p.terminalAddonId === 'string' ? p.terminalAddonId.trim() : '';
       if (!id(requestedAddonId)) throw fail('invalid-event');
       const providerProfileId = typeof p.providerProfileId === 'string' ? p.providerProfileId.trim() : '';
