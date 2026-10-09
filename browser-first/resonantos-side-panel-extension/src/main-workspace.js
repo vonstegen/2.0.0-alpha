@@ -205,7 +205,7 @@ let contextCompactNotice = "";
 let personalizationSettings = null;
 let initialSettingsSection = "overview";
 let messageActions = null;
-const allowedWorkspaces = new Set(["answer", "artifacts", "addons", "memory", "hermes", "opencode", "settings", "workspace-iframe"]);
+const allowedWorkspaces = new Set(["answer", "artifacts", "addons", "memory", "hermes", "opencode", "terminals", "settings", "workspace-iframe"]);
 
 function normalizeRegenerationMode(value) {
   return value === "overwrite" ? "overwrite" : "branch";
