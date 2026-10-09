@@ -122,7 +122,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
   transportFactory = createHarnessTransport, dshAdapterFactory = createDshTypertAdapter, openaiAdapterFactory = createOpenAICompatibleAdapter,
   promptFilePath, seedInstallations = [],
   // CP-BR10: fixed install root for the `ros-session` CLI the
-  // `GET /terminal-host/connection-script` route embeds in the
+  // `POST /terminal-host/connection-script` route embeds in the
   // returned script. The host never sources this from caller argv or
   // the ambient PATH; the operator may override at composition time
   // (tests do).
@@ -776,7 +776,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
         launchAccepted: launchResult && typeof launchResult === 'object' ? true : false,
       };
     }),
-    // CP-BR10: GET /terminal-host/connection-script
+    // CP-BR10: POST /terminal-host/connection-script
     //
     // The "Add-on Tools" section's copy-connection-script affordance.
     // Loopback-only (loopbackHostOnly is set by route()), requires
@@ -808,7 +808,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     //   - The script's `--provider-profile-id` is left empty for
     //     the operator to fill at paste time (the auto-connect
     //     launch path already wires this in code). The
-    //     `providerProfileId` query param, when present, is forwarded
+    //     `providerProfileId` body param, when present, is forwarded
     //     so the operator does not have to remember the id.
     route('POST', '/terminal-host/connection-script', read, ['terminalAddonId'], ['providerProfileId', 'bridgeEndpoint'], async p => {
       const requestedAddonId = typeof p.terminalAddonId === 'string' ? p.terminalAddonId.trim() : '';

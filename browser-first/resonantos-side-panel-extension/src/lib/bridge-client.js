@@ -83,13 +83,14 @@ const BRIDGE_ROUTE_CAPABILITIES = Object.freeze({
   "GET /bridge/runtimes": "addon-runtime-read",
   // CP-BR10: terminal-host add-on tools (Settings → Add-on Tools section
   // + the already-running `Open in Terminal` launch affordance). The
-  // status and prompt-path reads are addon-runtime-read; the launch is
-  // addon-runtime-control. Capability strings must match the route
+  // session/status/prompt-path/launch routes are addon-runtime-control;
+  // the connection-script mint is addon-runtime-read. Capability strings
+  // must match the route
   // definitions in harness-host-service.mjs exactly; the route-capability
   // audit (`bridge-route-capability-audit.test.mjs`) fails closed on drift.
-  "GET /terminal-host/status": "addon-runtime-read",
-  "GET /terminal-host/prompt-path": "addon-runtime-read",
-  "GET /terminal-host/connection-script": "addon-runtime-read",
+  "POST /terminal-host/session/attach": "addon-runtime-control",
+  "GET /terminal-host/status": "addon-runtime-control",
+  "GET /terminal-host/prompt-path": "addon-runtime-control",
   "POST /terminal-host/connection-script": "addon-runtime-read",
   "POST /terminal-host/launch": "addon-runtime-control",
   "POST /addons/install": "addon-runtime-control",

@@ -496,10 +496,11 @@ test("CP-BR10: copy clipboard falls back to manual select when navigator.clipboa
   assert.match(container.textContent, /Clipboard API unavailable/);
 });
 
-test("CP-BR10: the three /terminal-host/* route capabilities are declared and match the host", () => {
-  assert.equal(capabilityForBridgeRoute("/terminal-host/status", "GET"), "addon-runtime-read");
-  assert.equal(capabilityForBridgeRoute("/terminal-host/prompt-path", "GET"), "addon-runtime-read");
-  assert.equal(capabilityForBridgeRoute("/terminal-host/connection-script", "GET"), "addon-runtime-read");
+test("CP-BR10: the /terminal-host/* route capabilities are declared and match the host", () => {
+  assert.equal(capabilityForBridgeRoute("/terminal-host/session/attach", "POST"), "addon-runtime-control");
+  assert.equal(capabilityForBridgeRoute("/terminal-host/status", "GET"), "addon-runtime-control");
+  assert.equal(capabilityForBridgeRoute("/terminal-host/prompt-path", "GET"), "addon-runtime-control");
+  assert.equal(capabilityForBridgeRoute("/terminal-host/connection-script", "POST"), "addon-runtime-read");
   assert.equal(capabilityForBridgeRoute("/terminal-host/launch", "POST"), "addon-runtime-control");
 });
 
