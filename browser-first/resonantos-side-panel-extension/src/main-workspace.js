@@ -36,6 +36,8 @@ import { hasBlockingBrowserJob } from "./lib/browser-job-store.js";
 import { renderDockControl, renderDockPermissions } from "./lib/main-workspace-dock-panels.js";
 import { isRailVisibleChatSession, railSearchMatchesProject, railSearchMatchesSession } from "./lib/main-workspace-rail.js";
 import { renderSettingsWorkspace } from "./lib/main-workspace-settings.js";
+import { renderTerminalsWorkspace as renderTerminalsWorkspaceRenderer } from "./lib/main-workspace-terminals.js";
+import { createTerminalsHostSeams } from "./lib/terminals-host-seams.js";
 import { createMessageActionController } from "./lib/message-action-controller.js";
 import { createSitePermissionStore } from "./lib/site-permission-store.js";
 import { createSidePanelRenderers } from "./lib/side-panel-renderers.js";
@@ -890,6 +892,10 @@ function renderMessages() {
     renderOpenCodeWorkspace({ container: transcript, bridgeRequest: currentBridgeRequest, getBridgeRequest, initialMission });
     return;
   }
+  if (activeWorkspace === "terminals") {
+    renderTerminalsWorkspace();
+    return;
+  }
   if (activeWorkspace === "settings") {
     renderSettingsWorkspace({
       container: transcript,
@@ -1098,6 +1104,37 @@ async function renderHermesWorkspace() {
     bridgeUrl: effective.bridgeUrl ?? "http://127.0.0.1:47773",
     bridgeToken: effective.bridgeToken ?? "",
     statusForAddon,
+  });
+}
+
+// CP-BR11: Terminals workspace renderer lives in
+// `lib/main-workspace-terminals.js`; this is a thin seam that hands
+// the existing `bridgeRequest` callback to the renderer and provides
+// the only workspace-level callback it needs (open Bridge Target on a
+// `bridge-not-running` rejection). The host seams (enableTransaction,
+// grantTransaction, launchTerminal, fetchConnectionScript, …) are
+// derived from the same `bridgeRequest` callback via the shared
+// `createTerminalsHostSeams` factory — no global state and no new
+// bridge client.
+function renderTerminalsWorkspace() {
+  let seams = null;
+  if (typeof currentBridgeRequest === "function") {
+    try {
+      seams = createTerminalsHostSeams({ bridgeRequest: currentBridgeRequest });
+    } catch {
+      seams = null;
+    }
+  }
+  renderTerminalsWorkspaceRenderer({
+    container: transcript,
+    bridgeRequest: currentBridgeRequest,
+    getBridgeRequest,
+    onOpenBridgeSettings: () => {
+      initialSettingsSection = "bridge-target";
+      setActiveWorkspace("settings", { persist: true });
+      renderAll();
+    },
+    ...(seams ?? {}),
   });
 }
 

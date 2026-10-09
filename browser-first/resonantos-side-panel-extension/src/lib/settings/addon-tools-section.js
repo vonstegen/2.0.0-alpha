@@ -27,6 +27,16 @@ import {
   setStatus,
   settingsHeader,
 } from "./settings-common.js";
+import {
+  element,
+  actionButton,
+  statusBadgeForSurface,
+  notInstalledBadge,
+  buildTerminalsViewModel,
+  TERMINAL_CARD_FIELD,
+  TERMINAL_ADDON_IDS as SHARED_TERMINAL_ADDON_IDS,
+  DEFAULT_AGENT_ID as SHARED_DEFAULT_AGENT_ID,
+} from "../terminal-cards.js";
 
 const POLL_INTERVAL_MS = 4000;
 const TEST_POLL_INTERVAL_MS = 0;
@@ -34,120 +44,25 @@ const TEST_POLL_INTERVAL_MS = 0;
 const ADDON_TOOLS_FIELD = "addon-tools";
 const TERMINAL_TAB_FIELD = "terminal-tab";
 
-const TERMINAL_ADDON_IDS = Object.freeze([
-  "addon.resonant-terminal-ghostty",
-  "addon.resonant-terminal-iterm2",
-]);
-
-const DEFAULT_AGENT_ID = "pi";
+// CP-BR11: re-use the shared constants from `terminal-cards.js` so
+// the rail workspace and the Settings section cannot drift.
+const TERMINAL_ADDON_IDS = SHARED_TERMINAL_ADDON_IDS;
+const DEFAULT_AGENT_ID = SHARED_DEFAULT_AGENT_ID;
 
 // ---------------------------------------------------------------------------
-// DOM helpers (text-only)
+// DOM helpers (text-only) — re-imported from `../terminal-cards.js`
+// (CP-BR11). The Settings section and the new Terminals rail
+// workspace share these helpers so the two surfaces cannot drift.
 // ---------------------------------------------------------------------------
 
-function element(tag, props = {}, children = []) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(props ?? {})) {
-    if (key === "className") node.className = value;
-    else if (key === "dataset" && value && typeof value === "object") {
-      for (const [dataKey, dataValue] of Object.entries(value)) {
-        if (dataValue === null || dataValue === undefined) continue;
-        node.dataset[dataKey] = dataValue;
-      }
-    } else if (key === "ariaLabel") node.setAttribute("aria-label", String(value));
-    else if (key === "ariaLive") node.setAttribute("aria-live", String(value));
-    else if (key === "disabled") {
-      if (value) node.disabled = true;
-    } else if (key === "text") {
-      node.textContent = value;
-    } else {
-      node.setAttribute(key, String(value));
-    }
-  }
-  for (const child of children) {
-    if (child === null || child === undefined) continue;
-    node.append(child);
-  }
-  return node;
-}
-
-function actionButton({ label, onClick, disabled = false, ariaLabel, testid }) {
-  const button = element("button", { type: "button", className: "settings-action", disabled });
-  if (ariaLabel) button.setAttribute("aria-label", ariaLabel);
-  if (testid) button.dataset.testid = testid;
-  button.textContent = label;
-  if (!disabled && typeof onClick === "function") {
-    button.addEventListener("click", onClick);
-  }
-  return button;
-}
-
-function statusBadgeForSurface(surface) {
-  if (!surface || surface.compatible !== true) {
-    return { label: "Not installed", tone: "info" };
-  }
-  if (surface.connected) return { label: "Connected", tone: "ok" };
-  return { label: "Disconnected", tone: "warn" };
-}
-
-function notInstalledBadge() {
-  return { label: "Not installed", tone: "info" };
-}
-
 // ---------------------------------------------------------------------------
-// Status payload -> section view model
+// Status payload -> section view model (CP-BR11: delegates to the
+// shared `buildTerminalsViewModel` so the Settings section and the
+// new rail workspace cannot drift).
 // ---------------------------------------------------------------------------
 
-function buildAddonToolsViewModel({ status, projectionRuntime, prompt }) {
-  // Merge: prefer the /terminal-host/status surface (it carries
-  // the host's `connected` verdict); fall back to the projection
-  // runtimeList row for installations not yet reported.
-  const surfacesByAddon = new Map();
-  if (status && Array.isArray(status.surfaces)) {
-    for (const surface of status.surfaces) {
-      if (surface && typeof surface.adapterId === "string") {
-        surfacesByAddon.set(surface.adapterId, surface);
-      }
-    }
-  }
-  const projectionByAddon = new Map();
-  if (Array.isArray(projectionRuntime)) {
-    for (const entry of projectionRuntime) {
-      if (entry && typeof entry.addonId === "string") {
-        projectionByAddon.set(entry.addonId, entry);
-      }
-    }
-  }
-  const tabs = TERMINAL_ADDON_IDS.map((addonId) => {
-    const surface = surfacesByAddon.get(addonId);
-    const projection = projectionByAddon.get(addonId);
-    const installed = Boolean(projection) || Boolean(surface);
-    const label = surface?.label
-      ?? (projection?.displayLabel
-        ? (projection.displayLabel.startsWith("resonant-")
-            ? projection.displayLabel.slice("resonant-".length)
-            : projection.displayLabel)
-        : addonId.replace(/^addon\.resonant-terminal-/, ""));
-    const connected = surface ? surface.connected : false;
-    const compatible = surface ? surface.compatible : installed;
-    const projectionStatus = projection?.status ?? "inactive";
-    return {
-      addonId,
-      label,
-      installed,
-      connected,
-      compatible,
-      projectionStatus,
-      projectionGeneration: projection?.generation ?? 0,
-    };
-  });
-  return {
-    bridgeConnected: Boolean(status?.connected),
-    driveId: status?.driveId ?? null,
-    promptPath: prompt?.promptPath ?? null,
-    promptValid: Boolean(prompt?.valid),
-    tabs,
-  };
+function buildAddonToolsViewModel({ status, projectionRuntime, grants, prompt }) {
+  return buildTerminalsViewModel({ status, projectionRuntime, grants, prompt });
 }
 
 // ---------------------------------------------------------------------------

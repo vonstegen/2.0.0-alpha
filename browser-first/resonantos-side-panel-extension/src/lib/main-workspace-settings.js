@@ -14,6 +14,7 @@ import { renderPrivacySection } from "./settings/privacy-section.js";
 import { renderProvidersSection } from "./settings/providers-section.js";
 import { renderRoutingSection } from "./settings/routing-section.js";
 import { renderWorkSection } from "./settings/work-section.js";
+import { createTerminalsHostSeams } from "./terminals-host-seams.js";
 
 const sections = [
   {
@@ -217,23 +218,23 @@ export function renderSettingsWorkspace({
       renderActive();
     }));
     const sectionContext = { ...context, sectionId: activeSection.id };
+    // CP-BR10/CP-BR11: derive the terminal-host host seams from the
+    // existing `bridgeRequest` callback so the Settings sections and
+    // the new Terminals rail workspace cannot drift. The shared
+    // module also returns `enableTransaction` (registry-revision-aware)
+    // for the Bridge & Runtimes section.
+    let terminalsSeams = null;
+    if (typeof bridge === "function") {
+      const request = bridge();
+      if (typeof request === "function") {
+        terminalsSeams = createTerminalsHostSeams({ bridgeRequest: request });
+      }
+    }
     if (activeSection.id === "bridge-runtimes") {
       // Inject host seams for the Bridge & Runtimes surface. Every
       // seam is derived from the existing `bridgeRequest` callback;
       // no new bridge client is required and no global state is read.
-      sectionContext.fetchProjection = async () => {
-        const request = bridge();
-        if (typeof request !== "function") return null;
-        const payload = await request("/bridge/runtimes", { method: "GET" });
-        // The bridge wraps every route result in { ok: true, ... }. The
-        // projection is the unwrapped payload; drop the envelope field so
-        // the view's closed-shape coercion does not reject "ok".
-        if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-          const { ok: _ok, ...projection } = payload;
-          return projection;
-        }
-        return payload;
-      };
+      sectionContext.fetchProjection = terminalsSeams ? terminalsSeams.fetchProjection : (async () => null);
       sectionContext.getBootstrapSnapshot = async () => {
         if (typeof chrome === "undefined" || !chrome?.runtime?.sendMessage) {
           return null;
@@ -250,26 +251,14 @@ export function renderSettingsWorkspace({
         if (response && response.ok === true && response.snapshot) return response.snapshot;
         return null;
       };
-      sectionContext.enableTransaction = async (addonId, enabled) => {
-        const request = bridge();
-        if (typeof request !== "function") {
-          throw new Error("Bridge request is not configured.");
-        }
-        // CP-BR9: POST /addons/enabled is an optimistic-concurrency host
-        // transaction — it requires the current registry revision. Read it
-        // fresh from the host projection immediately before the mutation;
-        // a stale read fails closed with ownership-conflict and the UI
-        // surfaces the error (no silent retry, no local flag).
-        const registryPayload = await request("/addons/registry", { method: "GET" });
-        const revision = registryPayload?.revision;
-        if (!Number.isSafeInteger(revision) || revision < 0) {
-          throw new Error("Host registry revision unavailable.");
-        }
-        await request("/addons/enabled", {
-          method: "POST",
-          body: { addonId, enabled: Boolean(enabled), expectedRevision: revision },
-        });
-      };
+      // CP-BR9: POST /addons/enabled is an optimistic-concurrency host
+      // transaction — the shared `enableTransaction` reads the
+      // registry revision immediately before the POST; a stale read
+      // fails closed with ownership-conflict and the UI surfaces the
+      // error (no silent retry, no local flag).
+      sectionContext.enableTransaction = terminalsSeams
+        ? terminalsSeams.enableTransaction
+        : (async () => { throw new Error("Bridge request is not configured."); });
       sectionContext.supportedActions = {
         enableDisable: true,
         retry: false,
@@ -279,55 +268,23 @@ export function renderSettingsWorkspace({
     }
     if (activeSection.id === "addon-tools") {
       // CP-BR10: Add-on Tools host seams. Every seam is derived from
-      // the existing `bridgeRequest` callback; no new bridge client is
+      // the existing `bridgeRequest` callback via the shared
+      // `createTerminalsHostSeams` helper; no new bridge client is
       // required and no global state is read.
-      const addonToolsRequest = bridge();
-      const unwrap = (payload) => {
-        if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-          const { ok: _ok, ...rest } = payload;
-          return rest;
-        }
-        return payload;
-      };
-      sectionContext.fetchStatus = async () => {
-        if (typeof addonToolsRequest !== "function") return null;
-        return unwrap(await addonToolsRequest("/terminal-host/status", { method: "GET" }));
-      };
-      sectionContext.fetchPromptPath = async () => {
-        if (typeof addonToolsRequest !== "function") return null;
-        return unwrap(await addonToolsRequest("/terminal-host/prompt-path", { method: "GET" }));
-      };
-      sectionContext.fetchProjection = sectionContext.fetchProjection ?? (async () => null);
-      sectionContext.launchTerminal = async ({ terminalAddonId, promptPath, agentId }) => {
-        if (typeof addonToolsRequest !== "function") {
-          throw new Error("Bridge request is not configured.");
-        }
-        return unwrap(await addonToolsRequest("/terminal-host/launch", {
-          method: "POST",
-          body: {
-            agentId: typeof agentId === "string" && agentId ? agentId : "pi",
-            terminalAddonId,
-            promptPath,
-          },
-        }));
-      };
-      sectionContext.fetchConnectionScript = async ({ terminalAddonId, promptPath, providerProfileId }) => {
-        if (typeof addonToolsRequest !== "function") {
-          throw new Error("Bridge request is not configured.");
-        }
-        // The host route is POST /terminal-host/connection-script with
-        //   required: terminalAddonId
-        //   optional: providerProfileId
-        // (bridgeEndpoint is read from the host's default; the renderer
-        // never injects it).
-        return unwrap(await addonToolsRequest("/terminal-host/connection-script", {
-          method: "POST",
-          body: {
-            terminalAddonId,
-            ...(typeof providerProfileId === "string" && providerProfileId ? { providerProfileId } : {}),
-          },
-        }));
-      };
+      sectionContext.fetchStatus = terminalsSeams ? terminalsSeams.fetchStatus : (async () => null);
+      sectionContext.fetchPromptPath = terminalsSeams ? terminalsSeams.fetchPromptPath : (async () => null);
+      sectionContext.fetchProjection = terminalsSeams ? terminalsSeams.fetchProjection : (async () => null);
+      sectionContext.launchTerminal = terminalsSeams
+        ? terminalsSeams.launchTerminal
+        : (async () => { throw new Error("Bridge request is not configured."); });
+      // The host route is POST /terminal-host/connection-script with
+      //   required: terminalAddonId
+      //   optional: providerProfileId
+      // (bridgeEndpoint is read from the host's default; the renderer
+      // never injects it).
+      sectionContext.fetchConnectionScript = terminalsSeams
+        ? terminalsSeams.fetchConnectionScript
+        : (async () => { throw new Error("Bridge request is not configured."); });
       // Surface-level navigation. The renderer does not know the
       // section id; the workspace routes to Bridge Target on
       // bridge-not-running rejection.

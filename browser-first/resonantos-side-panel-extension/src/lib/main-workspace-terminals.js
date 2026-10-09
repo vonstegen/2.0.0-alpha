@@ -1,0 +1,545 @@
+// ResonantOS Terminals workspace renderer (CP-BR11).
+//
+// Renders the reviewed terminal-host add-ons (Ghostty + iTerm2) on the
+// main-workspace left rail. This is a renderer of the host's
+// terminal-host surface projection. The host owns process state; the
+// renderer only:
+//
+//   - reads the public /terminal-host/status payload + the harness
+//     registry projection (NOT /addons/status — that registry does
+//     not include the harness-side terminal add-ons);
+//   - renders text nodes only (`textContent`, `createElement`,
+//     `append`). No innerHTML, no script injection, no raw fields;
+//   - drives every action through an injected host transaction
+//     (`enableTransaction` + `grantTransaction` + `launchTerminal` +
+//     `fetchConnectionScript`);
+//   - copies the connection script as text only (`navigator.clipboard
+//     .writeText`, plus a manual-select fallback when the clipboard
+//     API is unavailable);
+//   - re-fetches the status on mount and after every completed
+//     transaction.
+//
+// Intent citation:
+//   docs/architecture/ADDON-BRIDGE-RUNTIME-ROADMAP.md §1
+//   (Add-on Surfaces → Terminal) and §13 (CP-BR7), §14 (CP-BR8),
+//   TERMINAL-ACTIVATION.md, ADR-047.
+
+import {
+  element,
+  actionButton,
+  statusBadgeForSurface,
+  notInstalledBadge,
+  buildTerminalsViewModel,
+  TERMINAL_CARD_FIELD,
+  DEFAULT_AGENT_ID,
+} from "./terminal-cards.js";
+
+const POLL_INTERVAL_MS = 4000;
+const TEST_POLL_INTERVAL_MS = 0;
+
+const TERMINALS_HEADER_TITLE = "Terminals";
+const TERMINALS_HEADER_BODY =
+  "Enable, grant, launch, and copy a connection script for the reviewed terminal-host add-ons (iTerm2, Ghostty). The host owns the bridge and the credentials; the renderer never reads secrets.";
+
+// ---------------------------------------------------------------------------
+// Per-id card actions row
+// ---------------------------------------------------------------------------
+
+function renderCardActions(view, tab, options) {
+  const {
+    onEnable,
+    onGrant,
+    onLaunch,
+    onCopyScript,
+    busyAddonId,
+    lastError,
+  } = options;
+  const actions = element("div", {
+    className: "terminals-action-row",
+    dataset: { addonId: tab.addonId, field: TERMINAL_CARD_FIELD },
+  });
+
+  const isBusy = busyAddonId === tab.addonId;
+
+  // Enable / Disable — visible whenever the add-on is installed; the
+  // host owns the install state, not the renderer. The transaction
+  // is optimistic-concurrency; the seam is responsible for reading
+  // the registry revision immediately before the POST.
+  if (typeof onEnable === "function") {
+    const enableLabel = tab.projectionStatus === "inactive"
+      ? (isBusy ? "Working..." : "Enable")
+      : (isBusy ? "Working..." : "Disable");
+    actions.append(actionButton({
+      label: enableLabel,
+      onClick: () => onEnable(tab),
+      disabled: isBusy || !tab.installed,
+      ariaLabel: tab.projectionStatus === "inactive"
+        ? `Enable ${tab.label}`
+        : `Disable ${tab.label}`,
+      testid: `terminals-enable-${tab.addonId}`,
+    }));
+  }
+
+  // Grant terminal-host — visible only when the capability is
+  // missing. Operator-consented (window.confirm); never auto-grants.
+  if (typeof onGrant === "function" && !tab.capabilityGranted && tab.installed) {
+    actions.append(actionButton({
+      label: isBusy ? "Working..." : "Grant terminal-host",
+      onClick: () => onGrant(tab),
+      disabled: isBusy,
+      ariaLabel: `Grant the terminal-host capability to ${tab.label}`,
+      testid: `terminals-grant-${tab.addonId}`,
+    }));
+  }
+
+  // Open in Terminal — gated on connected: true + a valid 0600
+  // prompt file. The launch is host-side, the renderer only invokes
+  // the injected transaction.
+  const launchDisabled = isBusy
+    || !tab.installed
+    || !tab.compatible
+    || !tab.connected
+    || !view.promptValid
+    || !view.promptPath;
+  actions.append(actionButton({
+    label: isBusy ? "Working..." : "Open in Terminal",
+    onClick: () => onLaunch?.(tab),
+    disabled: launchDisabled,
+    ariaLabel: `Launch ${tab.label} and attach the harness`,
+    testid: `terminals-launch-${tab.addonId}`,
+  }));
+
+  // Copy connection script — non-secret; 0600 token-file only.
+  const copyDisabled = isBusy || !tab.installed || !tab.compatible;
+  actions.append(actionButton({
+    label: isBusy ? "Working..." : "Copy connection script",
+    onClick: () => onCopyScript?.(tab),
+    disabled: copyDisabled,
+    ariaLabel: `Copy the connection script for ${tab.label}`,
+    testid: `terminals-copy-${tab.addonId}`,
+  }));
+
+  if (lastError && lastError.addonId === tab.addonId && lastError.message) {
+    const errNode = element("p", {
+      className: "terminals-card-error",
+      dataset: { tone: lastError.tone ?? "warn" },
+      ariaLive: "polite",
+    });
+    errNode.textContent = lastError.message;
+    actions.append(errNode);
+  }
+
+  return actions;
+}
+
+function renderTerminalCard(view, tab, options) {
+  const badge = tab.installed ? statusBadgeForSurface(tab) : notInstalledBadge();
+  const card = element("article", {
+    className: "terminals-card",
+    dataset: {
+      addonId: tab.addonId,
+      tone: badge.tone,
+      field: TERMINAL_CARD_FIELD,
+    },
+  });
+  const header = element("header", { className: "terminals-card-header" });
+  const title = element("strong");
+  title.textContent = tab.label;
+  const badgeNode = element("span", {
+    className: "terminals-card-badge",
+    dataset: { tone: badge.tone },
+    ariaLabel: `${tab.label} status: ${badge.label}`,
+  });
+  badgeNode.textContent = badge.label;
+  header.append(title, badgeNode);
+  card.append(header);
+
+  const detail = element("p", { className: "terminals-card-detail" });
+  detail.textContent = tab.installed
+    ? tab.connected
+      ? `${tab.label} is auto-connecting to the bridge; Open in Terminal launches a new session.`
+      : tab.compatible
+        ? tab.capabilityGranted
+          ? `Grant approved. Waiting for ${tab.label} to attach.`
+          : `Grant the terminal-host capability to auto-connect. The copy script below attaches an already-running terminal.`
+        : `${tab.label} is installed but not yet authorized.`
+    : `${tab.label} is not installed on this bridge. Enable it from the Add-on catalog.`;
+  card.append(detail);
+
+  card.append(renderCardActions(view, tab, options));
+  return card;
+}
+
+// ---------------------------------------------------------------------------
+// Header
+// ---------------------------------------------------------------------------
+
+function renderHeader() {
+  return element("section", {
+    className: "terminals-header",
+    dataset: { field: "terminals-header" },
+  }, [
+    element("h2", { text: TERMINALS_HEADER_TITLE, className: "terminals-header-title" }),
+    element("p", { className: "terminals-header-body", text: TERMINALS_HEADER_BODY }),
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// Public entry point
+// ---------------------------------------------------------------------------
+
+/**
+ * Render the Terminals workspace into a container.
+ *
+ * @param {HTMLElement} container
+ * @param {{
+ *   fetchStatus?: () => Promise<unknown>,
+ *   fetchPromptPath?: () => Promise<unknown>,
+ *   fetchProjection?: () => Promise<unknown>,
+ *   fetchRegistry?: () => Promise<unknown>,
+ *   launchTerminal?: (args: { terminalAddonId: string, promptPath: string, agentId: string }) => Promise<unknown>,
+ *   fetchConnectionScript?: (args: { terminalAddonId: string, promptPath: string | null, providerProfileId?: string }) => Promise<unknown>,
+ *   enableTransaction?: (addonId: string, enabled: boolean) => Promise<unknown>,
+ *   grantTransaction?: (addonId: string, capability: string) => Promise<unknown>,
+ *   onOpenBridgeSettings?: () => void,
+ *   pollIntervalMs?: number,
+ *   windowRef?: { confirm?: (message?: string) => boolean },
+ *   navigatorRef?: { clipboard?: { writeText?: (text: string) => Promise<void> } },
+ * }} options
+ */
+export function renderTerminalsWorkspace(container, options = {}) {
+  container.replaceChildren();
+  container.append(renderHeader());
+
+  const statusNode = element("p", {
+    className: "terminals-status",
+    ariaLive: "polite",
+  });
+  statusNode.textContent = "Reading terminal surfaces...";
+  container.append(statusNode);
+
+  const cardsHost = element("section", {
+    className: "terminals-cards",
+    dataset: { field: "terminals-cards" },
+  });
+  container.append(cardsHost);
+
+  const promptCard = renderPromptFileCard({ promptPath: null, promptValid: false });
+  const promptHost = element("section", { className: "terminals-prompt-host" });
+  promptHost.append(promptCard);
+  container.append(promptHost);
+
+  const state = {
+    busyAddonId: null,
+    lastError: null,
+    timer: null,
+  };
+
+  // ---------------------------------------------------------------------
+  // Host seams
+  // ---------------------------------------------------------------------
+
+  async function readStatus() {
+    if (typeof options.fetchStatus === "function") return options.fetchStatus();
+    return null;
+  }
+  async function readProjection() {
+    if (typeof options.fetchProjection === "function") return options.fetchProjection();
+    return null;
+  }
+  async function readPrompt() {
+    if (typeof options.fetchPromptPath === "function") return options.fetchPromptPath();
+    return null;
+  }
+
+  function setBusy(addonId) {
+    state.busyAddonId = addonId;
+    void refresh();
+  }
+  function setLastError(addonId, message, tone = "warn") {
+    state.lastError = { addonId, message, tone };
+    state.busyAddonId = null;
+    void refresh();
+  }
+  function clearError() {
+    state.lastError = null;
+  }
+
+  let currentView = { promptPath: null, promptValid: false, tabs: [], bridgeConnected: false };
+
+  async function refresh() {
+    const [status, projection, prompt] = await Promise.all([
+      readStatus().catch(() => null),
+      readProjection().catch(() => null),
+      readPrompt().catch(() => null),
+    ]);
+    const projectionRuntime = Array.isArray(projection?.runtimeList) ? projection.runtimeList : [];
+    const view = buildTerminalsViewModel({
+      status: status ?? null,
+      projectionRuntime,
+      grants: projection?.grants ?? null,
+      prompt: prompt ?? null,
+    });
+    currentView = view;
+    promptHost.replaceChildren(renderPromptFileCard(view));
+    cardsHost.replaceChildren();
+    for (const tab of view.tabs) {
+      cardsHost.append(
+        renderTerminalCard(view, tab, {
+          onEnable: onEnable,
+          onGrant: onGrant,
+          onLaunch: onLaunch,
+          onCopyScript: onCopyScript,
+          busyAddonId: state.busyAddonId,
+          lastError: state.lastError,
+        }),
+      );
+    }
+    if (!view.bridgeConnected) {
+      statusNode.textContent = "Bridge not connected — open Settings → Bridge Target to start it.";
+    } else if (view.tabs.some((tab) => tab.connected)) {
+      statusNode.textContent = `${view.tabs.find((tab) => tab.connected)?.label} is connected to the bridge.`;
+    } else if (view.tabs.some((tab) => tab.installed && tab.capabilityGranted)) {
+      statusNode.textContent = "Bridge connected. Waiting for terminal adapters to attach.";
+    } else {
+      statusNode.textContent = "Bridge connected. Enable a reviewed add-on, then grant the terminal-host capability.";
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Enable / Disable
+  // ---------------------------------------------------------------------
+
+  async function onEnable(tab) {
+    if (typeof options.enableTransaction !== "function") {
+      setLastError(tab.addonId, "Enable is not available in this environment.", "warn");
+      return;
+    }
+    const nextEnabled = tab.projectionStatus === "inactive";
+    clearError();
+    setBusy(tab.addonId);
+    try {
+      await options.enableTransaction(tab.addonId, nextEnabled);
+    } catch (error) {
+      const message = error && typeof error.message === "string"
+        ? error.message
+        : "Enable failed.";
+      setLastError(tab.addonId, message, "warn");
+      return;
+    }
+    state.busyAddonId = null;
+    void refresh();
+  }
+
+  // ---------------------------------------------------------------------
+  // Grant terminal-host (operator-consented; never auto-grants)
+  // ---------------------------------------------------------------------
+
+  function getConfirm() {
+    if (options.windowRef && typeof options.windowRef.confirm === "function") {
+      return options.windowRef.confirm;
+    }
+    if (typeof globalThis.confirm === "function") return globalThis.confirm;
+    return null;
+  }
+
+  async function onGrant(tab) {
+    if (typeof options.grantTransaction !== "function") {
+      setLastError(tab.addonId, "Grant is not available in this environment.", "warn");
+      return;
+    }
+    const confirm = getConfirm();
+    if (confirm) {
+      const ok = confirm(
+        `Authorize ${tab.label} to use the terminal-host capability? ` +
+        "This grants the system-scope, degradable terminal-host privilege.",
+      );
+      if (!ok) {
+        setLastError(tab.addonId, "Grant cancelled — terminal-host not authorized.", "info");
+        return;
+      }
+    }
+    clearError();
+    setBusy(tab.addonId);
+    try {
+      await options.grantTransaction(tab.addonId, "terminal-host");
+    } catch (error) {
+      const message = error && typeof error.message === "string"
+        ? error.message
+        : "Grant failed.";
+      setLastError(tab.addonId, message, "warn");
+      return;
+    }
+    state.busyAddonId = null;
+    void refresh();
+  }
+
+  // ---------------------------------------------------------------------
+  // Launch (Open in Terminal)
+  // ---------------------------------------------------------------------
+
+  async function onLaunch(tab) {
+    if (typeof options.launchTerminal !== "function") {
+      setLastError(tab.addonId, "Launch is not available in this environment.", "warn");
+      return;
+    }
+    if (!currentView.promptPath || !currentView.promptValid) {
+      setLastError(tab.addonId, "Write a prompt first.", "warn");
+      return;
+    }
+    clearError();
+    setBusy(tab.addonId);
+    let result;
+    try {
+      result = await options.launchTerminal({
+        terminalAddonId: tab.addonId,
+        promptPath: currentView.promptPath,
+        agentId: DEFAULT_AGENT_ID,
+      });
+    } catch (error) {
+      setLastError(tab.addonId, safeError(error), "warn");
+      return;
+    }
+    state.busyAddonId = null;
+    if (result && result.reason === "bridge-not-running") {
+      setLastError(tab.addonId, "Bridge not running — open Settings → Bridge Target.", "warn");
+      if (typeof options.onOpenBridgeSettings === "function") options.onOpenBridgeSettings();
+      return;
+    }
+    if (result && result.reason === "capability-not-granted") {
+      setLastError(tab.addonId, "Authorize the terminal-host capability to use Open in Terminal.", "warn");
+      return;
+    }
+    if (result && result.reason === "executable-unavailable") {
+      setLastError(tab.addonId, "The reviewed harness binary is not available on PATH.", "warn");
+      return;
+    }
+    if (result && result.reason === "policy-not-reviewed") {
+      setLastError(tab.addonId, "The harness policy is not yet reviewed.", "warn");
+      return;
+    }
+    if (result && result.reason === "launch-failed") {
+      setLastError(tab.addonId, "The terminal adapter rejected the launch. Try the copy-connection-script fallback.", "warn");
+      return;
+    }
+    if (result && result.ok) {
+      clearError();
+      statusNode.textContent = `Launched ${tab.label}.`;
+    } else if (result && result.reason) {
+      setLastError(tab.addonId, `Launch failed: ${result.reason}.`, "warn");
+    } else {
+      setLastError(tab.addonId, "Launch returned no result.", "warn");
+    }
+    void refresh();
+  }
+
+  // ---------------------------------------------------------------------
+  // Copy connection script
+  // ---------------------------------------------------------------------
+
+  async function onCopyScript(tab) {
+    if (typeof options.fetchConnectionScript !== "function") {
+      setLastError(tab.addonId, "Copy is not available in this environment.", "warn");
+      return;
+    }
+    clearError();
+    setBusy(tab.addonId);
+    let result;
+    try {
+      result = await options.fetchConnectionScript({
+        terminalAddonId: tab.addonId,
+        promptPath: currentView.promptPath,
+      });
+    } catch (error) {
+      setLastError(tab.addonId, safeError(error), "warn");
+      return;
+    }
+    state.busyAddonId = null;
+    if (result && result.reason === "bridge-not-running") {
+      setLastError(tab.addonId, "Bridge not running — open Settings → Bridge Target.", "warn");
+      if (typeof options.onOpenBridgeSettings === "function") options.onOpenBridgeSettings();
+      return;
+    }
+    if (result && result.reason === "capability-not-granted") {
+      setLastError(tab.addonId, "Authorize the terminal-host capability to copy a connection script.", "warn");
+      return;
+    }
+    if (!result || !result.ok || typeof result.command !== "string") {
+      setLastError(tab.addonId, "Copy failed: the host did not return a connection script.", "warn");
+      return;
+    }
+    const ok = await copyToClipboard(result.command);
+    if (ok) {
+      statusNode.textContent = "Connection script copied to the clipboard.";
+    } else {
+      statusNode.textContent = "Clipboard API unavailable — select the script and copy manually.";
+    }
+    void refresh();
+  }
+
+  function getClipboard() {
+    if (options.navigatorRef && options.navigatorRef.clipboard) return options.navigatorRef.clipboard;
+    if (typeof navigator !== "undefined" && navigator && navigator.clipboard) return navigator.clipboard;
+    return null;
+  }
+  async function copyToClipboard(text) {
+    const cb = getClipboard();
+    if (!cb || typeof cb.writeText !== "function") return false;
+    try {
+      await cb.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Prompt file card
+  // ---------------------------------------------------------------------
+
+  function renderPromptFileCard(view) {
+    const card = element("section", {
+      className: "terminals-prompt-card",
+      dataset: { tone: view.promptValid ? "info" : "warn" },
+    });
+    const label = element("strong", { text: "Prompt file" });
+    const value = element("div", { className: "terminals-prompt-card-value" });
+    value.textContent = view.promptPath ?? "—";
+    const detail = element("p", { className: "terminals-prompt-card-detail" });
+    detail.textContent = view.promptValid
+      ? "A 0600 prompt file is in place. Open in Terminal is enabled for connected terminals."
+      : "No 0600 prompt file yet. Write a prompt, then return here — the launch button stays disabled until a valid 0600 file exists.";
+    card.append(label, value, detail);
+    return card;
+  }
+
+  // ---------------------------------------------------------------------
+  // Lifecycle
+  // ---------------------------------------------------------------------
+
+  void refresh();
+  const pollMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
+  if (pollMs > 0) {
+    state.timer = setInterval(() => { void refresh(); }, pollMs);
+  }
+
+  return {
+    refresh,
+    stop() {
+      if (state.timer) clearInterval(state.timer);
+      state.timer = null;
+    },
+    getCurrentView() {
+      return currentView;
+    },
+  };
+}
+
+function safeError(error) {
+  if (!error) return "Unknown error.";
+  if (typeof error === "string") return error;
+  if (typeof error.message === "string") return error.message;
+  return "Unknown error.";
+}
+
+export { DEFAULT_AGENT_ID };
