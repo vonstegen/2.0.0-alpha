@@ -40,6 +40,8 @@ import { renderTerminalsWorkspace } from "../resonantos-side-panel-extension/src
 import { createTerminalsHostSeams } from "../resonantos-side-panel-extension/src/lib/terminals-host-seams.js";
 import { capabilityForBridgeRoute } from "../resonantos-side-panel-extension/src/lib/bridge-client.js";
 import { installDialogLifecycle } from "./dialog-dom-fixture.mjs";
+import { PI_NATIVE_PROVIDER_FAMILIES } from "../resonantos-side-panel-extension/src/lib/terminal-cards.js";
+import { PI_NATIVE_PROVIDER_MAP } from "../host/pi-native-provider-map.mjs";
 
 // ---------------------------------------------------------------------------
 // Source-of-truth surfaces
@@ -71,10 +73,27 @@ const SECRET_PATTERNS = [
 ];
 
 const SECRET_FIELD_NAMES = new Set([
-  "token", "tokens", "password", "passwd", "apiKey", "api_key", "apikey",
-  "secret", "secrets", "credential", "credentials", "privateKey",
-  "private_key", "sessionToken", "session_token", "bearer", "bearerToken",
-  "bearer_token", "authorization", "auth", "cookie",
+  "token",
+  "tokens",
+  "password",
+  "passwd",
+  "apiKey",
+  "api_key",
+  "apikey",
+  "secret",
+  "secrets",
+  "credential",
+  "credentials",
+  "privateKey",
+  "private_key",
+  "sessionToken",
+  "session_token",
+  "bearer",
+  "bearerToken",
+  "bearer_token",
+  "authorization",
+  "auth",
+  "cookie",
 ]);
 
 function assertNoSecretShapedValue(value, path = "$") {
@@ -101,10 +120,9 @@ function assertNoSecretShapedValue(value, path = "$") {
 // ---------------------------------------------------------------------------
 
 function setupDom() {
-  const dom = new JSDOM(
-    "<!doctype html><main id=\"root\"></main>",
-    { url: "https://resonantos.local/" },
-  );
+  const dom = new JSDOM('<!doctype html><main id="root"></main>', {
+    url: "https://resonantos.local/",
+  });
   dom.window.confirm = () => true;
   dom.window.prompt = () => "";
   installDialogLifecycle(dom.window);
@@ -130,7 +148,12 @@ function waitFor(predicate, { timeout = 5_000, interval = 10, label = "predicate
     const started = Date.now();
     function tick() {
       let value;
-      try { value = predicate(); } catch (error) { reject(error); return; }
+      try {
+        value = predicate();
+      } catch (error) {
+        reject(error);
+        return;
+      }
       if (value) return resolve(value);
       if (Date.now() - started >= timeout) return reject(new Error(`waitFor: timeout (${label})`));
       setTimeout(tick, interval);
@@ -168,7 +191,16 @@ function makeValidPromptFile(t) {
 function makeProjectionRuntime(runtimes) {
   return {
     ok: true,
-    bridgeOverview: { status: "connected", version: "alpha", endpoint: "http://127.0.0.1:47773", publicEndpoint: "http://127.0.0.1:47773", startedAt: "2026-10-09T00:00:00.000Z", uptimeSeconds: 0, instanceId: "bridge-test", generation: 0 },
+    bridgeOverview: {
+      status: "connected",
+      version: "alpha",
+      endpoint: "http://127.0.0.1:47773",
+      publicEndpoint: "http://127.0.0.1:47773",
+      startedAt: "2026-10-09T00:00:00.000Z",
+      uptimeSeconds: 0,
+      instanceId: "bridge-test",
+      generation: 0,
+    },
     runtimeList: runtimes,
     connectorList: [],
     activeSessions: [],
@@ -178,10 +210,24 @@ function makeProjectionRuntime(runtimes) {
   };
 }
 
-function makeStatus({ connected = true, driveId = "ghostty", surfaces = [
-  { adapterId: "addon.resonant-terminal-ghostty", label: "Ghostty Terminal Host", compatible: true, connected: true },
-  { adapterId: "addon.resonant-terminal-iterm2", label: "iTerm2 Terminal Host", compatible: true, connected: false },
-] } = {}) {
+function makeStatus({
+  connected = true,
+  driveId = "ghostty",
+  surfaces = [
+    {
+      adapterId: "addon.resonant-terminal-ghostty",
+      label: "Ghostty Terminal Host",
+      compatible: true,
+      connected: true,
+    },
+    {
+      adapterId: "addon.resonant-terminal-iterm2",
+      label: "iTerm2 Terminal Host",
+      compatible: true,
+      connected: false,
+    },
+  ],
+} = {}) {
   return {
     ok: true,
     connected,
@@ -198,7 +244,15 @@ function makeGrants(addons) {
 
 // Bridge request stub. Records every call and returns canned payloads.
 // `addons/status` is intentionally absent — the rail must never read it.
-function makeBridgeRequest({ status, projection, prompt, grants, registry, launch, connectionScript }) {
+function makeBridgeRequest({
+  status,
+  projection,
+  prompt,
+  grants,
+  registry,
+  launch,
+  connectionScript,
+}) {
   const calls = [];
   const registryRevisionRef = { value: 0 };
   async function bridgeRequest(route, options = {}) {
@@ -235,9 +289,12 @@ function makeBridgeRequest({ status, projection, prompt, grants, registry, launc
       return { ok: true, revision: registryRevisionRef.value };
     }
     if (route === "/addons/status" || route.startsWith("/addons/status")) {
-      throw new Error(`/addons/status must not be read by the Terminals rail (call #${calls.length})`);
+      throw new Error(
+        `/addons/status must not be read by the Terminals rail (call #${calls.length})`,
+      );
     }
-    if (route.startsWith("/terminal-host/connection-script")) return connectionScript ?? { ok: false };
+    if (route.startsWith("/terminal-host/connection-script"))
+      return connectionScript ?? { ok: false };
     if (route === "/terminal-host/launch") return launch ?? { ok: true };
     return { ok: true };
   }
@@ -252,7 +309,7 @@ function makeSeams(bridgeRequest) {
 // 1. Rail surface: allowedWorkspaces + button
 // ---------------------------------------------------------------------------
 
-test("CP-BR11 #1: main-workspace.html exposes a Terminals rail button with data-workspace=\"terminals\"", () => {
+test('CP-BR11 #1: main-workspace.html exposes a Terminals rail button with data-workspace="terminals"', () => {
   assert.match(
     MAIN_WORKSPACE_HTML,
     /<button[^>]+data-workspace="terminals"[^>]*>[\s\S]*?Terminals[\s\S]*?<\/button>/,
@@ -283,6 +340,24 @@ test("CP-BR11 #1: main-workspace.js registers 'terminals' in allowedWorkspaces",
   );
 });
 
+test("CP-BR11 #1: main-workspace.js passes the transcript element positionally to the renderer", () => {
+  // The rail renderer is renderTerminalsWorkspace(container, options). The
+  // wrapper must pass `transcript` as the FIRST positional argument — not as
+  // a `container:` property inside a single options object. The object form
+  // made `container.replaceChildren` throw ("not a function") at runtime and
+  // left the Terminals workspace blank.
+  assert.match(
+    MAIN_WORKSPACE_JS,
+    /renderTerminalsWorkspaceRenderer\(\s*transcript\s*,/,
+    "the wrapper must call renderTerminalsWorkspaceRenderer(transcript, {...})",
+  );
+  assert.doesNotMatch(
+    MAIN_WORKSPACE_JS,
+    /renderTerminalsWorkspaceRenderer\(\s*\{/,
+    "the wrapper must not call the renderer with an object literal as the first argument",
+  );
+});
+
 // ---------------------------------------------------------------------------
 // 2. Workspace renders one card per reviewed terminal add-on, with the
 //    three documented badge states.
@@ -294,8 +369,28 @@ test("CP-BR11 #2: rail renders one card per reviewed terminal add-on (iTerm2 + G
   const { bridgeRequest } = makeBridgeRequest({
     status: makeStatus(),
     projection: makeProjectionRuntime([
-      { addonId: "addon.resonant-terminal-ghostty", runtimeId: "com.resonantos.factory.terminal-host.ghostty", runtimeType: "local-service", status: "ready", generation: 1, activeSessionCount: 0, factoryId: "com.resonantos.factory.terminal-host.ghostty", classification: "integration", displayLabel: "resonant-terminal-ghostty" },
-      { addonId: "addon.resonant-terminal-iterm2", runtimeId: "com.resonantos.factory.terminal-host.iterm2", runtimeType: "local-service", status: "inactive", generation: 1, activeSessionCount: 0, factoryId: "com.resonantos.factory.terminal-host.iterm2", classification: "integration", displayLabel: "resonant-terminal-iterm2" },
+      {
+        addonId: "addon.resonant-terminal-ghostty",
+        runtimeId: "com.resonantos.factory.terminal-host.ghostty",
+        runtimeType: "local-service",
+        status: "ready",
+        generation: 1,
+        activeSessionCount: 0,
+        factoryId: "com.resonantos.factory.terminal-host.ghostty",
+        classification: "integration",
+        displayLabel: "resonant-terminal-ghostty",
+      },
+      {
+        addonId: "addon.resonant-terminal-iterm2",
+        runtimeId: "com.resonantos.factory.terminal-host.iterm2",
+        runtimeType: "local-service",
+        status: "inactive",
+        generation: 1,
+        activeSessionCount: 0,
+        factoryId: "com.resonantos.factory.terminal-host.iterm2",
+        classification: "integration",
+        displayLabel: "resonant-terminal-iterm2",
+      },
     ]),
     grants: makeGrants([]),
   });
@@ -307,17 +402,26 @@ test("CP-BR11 #2: rail renders one card per reviewed terminal add-on (iTerm2 + G
   });
   t.after(() => handle.stop());
   await waitFor(() => container.querySelector('[data-addon-id="addon.resonant-terminal-ghostty"]'));
-  for (const addonId of [
-    "addon.resonant-terminal-ghostty",
-    "addon.resonant-terminal-iterm2",
-  ]) {
+  for (const addonId of ["addon.resonant-terminal-ghostty", "addon.resonant-terminal-iterm2"]) {
     const card = container.querySelector(`[data-addon-id="${addonId}"]`);
     assert.ok(card, `card for ${addonId} is rendered`);
     // Each card has the four affordances the prompt requires.
-    assert.ok(card.querySelector(`[data-testid="terminals-enable-${addonId}"]`), `Enable button for ${addonId}`);
-    assert.ok(card.querySelector(`[data-testid="terminals-grant-${addonId}"]`), `Grant button for ${addonId}`);
-    assert.ok(card.querySelector(`[data-testid="terminals-launch-${addonId}"]`), `Launch button for ${addonId}`);
-    assert.ok(card.querySelector(`[data-testid="terminals-copy-${addonId}"]`), `Copy button for ${addonId}`);
+    assert.ok(
+      card.querySelector(`[data-testid="terminals-enable-${addonId}"]`),
+      `Enable button for ${addonId}`,
+    );
+    assert.ok(
+      card.querySelector(`[data-testid="terminals-grant-${addonId}"]`),
+      `Grant button for ${addonId}`,
+    );
+    assert.ok(
+      card.querySelector(`[data-testid="terminals-launch-${addonId}"]`),
+      `Launch button for ${addonId}`,
+    );
+    assert.ok(
+      card.querySelector(`[data-testid="terminals-copy-${addonId}"]`),
+      `Copy button for ${addonId}`,
+    );
   }
 });
 
@@ -328,18 +432,42 @@ test("CP-BR11 #2: badge states — Connected / Disconnected / Not installed", as
     // ghostty connected, iterm2 disconnected. No third surface.
     status: makeStatus({
       surfaces: [
-        { adapterId: "addon.resonant-terminal-ghostty", label: "Ghostty Terminal Host", compatible: true, connected: true },
-        { adapterId: "addon.resonant-terminal-iterm2", label: "iTerm2 Terminal Host", compatible: true, connected: false },
+        {
+          adapterId: "addon.resonant-terminal-ghostty",
+          label: "Ghostty Terminal Host",
+          compatible: true,
+          connected: true,
+        },
+        {
+          adapterId: "addon.resonant-terminal-iterm2",
+          label: "iTerm2 Terminal Host",
+          compatible: true,
+          connected: false,
+        },
       ],
     }),
     projection: makeProjectionRuntime([
-      { addonId: "addon.resonant-terminal-ghostty", status: "ready", generation: 1, displayLabel: "resonant-terminal-ghostty" },
-      { addonId: "addon.resonant-terminal-iterm2", status: "inactive", generation: 1, displayLabel: "resonant-terminal-iterm2" },
+      {
+        addonId: "addon.resonant-terminal-ghostty",
+        status: "ready",
+        generation: 1,
+        displayLabel: "resonant-terminal-ghostty",
+      },
+      {
+        addonId: "addon.resonant-terminal-iterm2",
+        status: "inactive",
+        generation: 1,
+        displayLabel: "resonant-terminal-iterm2",
+      },
     ]),
     grants: makeGrants([]),
   });
   const seams = makeSeams(bridgeRequest);
-  const handle = renderTerminalsWorkspace(container, { bridgeRequest, ...seams, pollIntervalMs: 0 });
+  const handle = renderTerminalsWorkspace(container, {
+    bridgeRequest,
+    ...seams,
+    pollIntervalMs: 0,
+  });
   t.after(() => handle.stop());
   await waitFor(() => container.querySelector('[data-addon-id="addon.resonant-terminal-ghostty"]'));
   const ghostty = container.querySelector('[data-addon-id="addon.resonant-terminal-ghostty"]');
@@ -358,11 +486,21 @@ test("CP-BR11 #2: badge states — Connected / Disconnected / Not installed", as
   const seams2 = makeSeams(br2);
   const setup2 = setupDom();
   t.after(setup2.cleanup);
-  const handle2 = renderTerminalsWorkspace(setup2.container, { bridgeRequest: br2, ...seams2, pollIntervalMs: 0 });
+  const handle2 = renderTerminalsWorkspace(setup2.container, {
+    bridgeRequest: br2,
+    ...seams2,
+    pollIntervalMs: 0,
+  });
   t.after(() => handle2.stop());
-  await waitFor(() => setup2.container.querySelector('[data-addon-id="addon.resonant-terminal-ghostty"]'));
-  const ghostty2 = setup2.container.querySelector('[data-addon-id="addon.resonant-terminal-ghostty"]');
-  const iterm22 = setup2.container.querySelector('[data-addon-id="addon.resonant-terminal-iterm2"]');
+  await waitFor(() =>
+    setup2.container.querySelector('[data-addon-id="addon.resonant-terminal-ghostty"]'),
+  );
+  const ghostty2 = setup2.container.querySelector(
+    '[data-addon-id="addon.resonant-terminal-ghostty"]',
+  );
+  const iterm22 = setup2.container.querySelector(
+    '[data-addon-id="addon.resonant-terminal-iterm2"]',
+  );
   assert.equal(ghostty2.dataset.tone, "info");
   assert.equal(iterm22.dataset.tone, "info");
   assert.match(ghostty2.textContent, /Not installed/);
@@ -385,7 +523,12 @@ test("CP-BR11 #3: Enable posts POST /addons/enabled with expectedRevision read i
     if (route === "/terminal-host/status") return makeStatus();
     if (route === "/bridge/runtimes") {
       return makeProjectionRuntime([
-        { addonId: "addon.resonant-terminal-ghostty", status: "inactive", generation: 1, displayLabel: "resonant-terminal-ghostty" },
+        {
+          addonId: "addon.resonant-terminal-ghostty",
+          status: "inactive",
+          generation: 1,
+          displayLabel: "resonant-terminal-ghostty",
+        },
       ]);
     }
     if (route === "/addons/enabled") {
@@ -402,16 +545,25 @@ test("CP-BR11 #3: Enable posts POST /addons/enabled with expectedRevision read i
     return { ok: true };
   };
   const seams = makeSeams(bridgeRequest);
-  const handle = renderTerminalsWorkspace(container, { bridgeRequest, ...seams, pollIntervalMs: 0 });
+  const handle = renderTerminalsWorkspace(container, {
+    bridgeRequest,
+    ...seams,
+    pollIntervalMs: 0,
+  });
   t.after(() => handle.stop());
-  await waitFor(() => container.querySelector('[data-testid="terminals-enable-addon.resonant-terminal-ghostty"]'));
-  const enableBtn = container.querySelector('[data-testid="terminals-enable-addon.resonant-terminal-ghostty"]');
+  await waitFor(() =>
+    container.querySelector('[data-testid="terminals-enable-addon.resonant-terminal-ghostty"]'),
+  );
+  const enableBtn = container.querySelector(
+    '[data-testid="terminals-enable-addon.resonant-terminal-ghostty"]',
+  );
   enableBtn.click();
   await waitFor(() => calls.some((c) => c.route === "/addons/enabled" && c.method === "POST"));
   // The Enable call must have been preceded by an /addons/registry read
   // carrying the same revision.
   const enableIdx = calls.findIndex((c) => c.route === "/addons/enabled" && c.method === "POST");
-  const registryIdx = calls.slice(0, enableIdx).findLastIndex?.((c) => c.route === "/addons/registry") ?? -1;
+  const registryIdx =
+    calls.slice(0, enableIdx).findLastIndex?.((c) => c.route === "/addons/registry") ?? -1;
   // The previous-read requirement: there must be at least one
   // /addons/registry read before the enable POST.
   assert.ok(
@@ -433,7 +585,12 @@ test("CP-BR11 #3: Enable surfaces registry-revision errors and never posts /addo
     if (route === "/terminal-host/status") return makeStatus();
     if (route === "/bridge/runtimes") {
       return makeProjectionRuntime([
-        { addonId: "addon.resonant-terminal-ghostty", status: "inactive", generation: 1, displayLabel: "resonant-terminal-ghostty" },
+        {
+          addonId: "addon.resonant-terminal-ghostty",
+          status: "inactive",
+          generation: 1,
+          displayLabel: "resonant-terminal-ghostty",
+        },
       ]);
     }
     if (route === "/addons/enabled") {
@@ -443,10 +600,18 @@ test("CP-BR11 #3: Enable surfaces registry-revision errors and never posts /addo
     return { ok: true, addons: [] };
   };
   const seams = makeSeams(bridgeRequest);
-  const handle = renderTerminalsWorkspace(container, { bridgeRequest, ...seams, pollIntervalMs: 0 });
+  const handle = renderTerminalsWorkspace(container, {
+    bridgeRequest,
+    ...seams,
+    pollIntervalMs: 0,
+  });
   t.after(() => handle.stop());
-  await waitFor(() => container.querySelector('[data-testid="terminals-enable-addon.resonant-terminal-ghostty"]'));
-  const enableBtn = container.querySelector('[data-testid="terminals-enable-addon.resonant-terminal-ghostty"]');
+  await waitFor(() =>
+    container.querySelector('[data-testid="terminals-enable-addon.resonant-terminal-ghostty"]'),
+  );
+  const enableBtn = container.querySelector(
+    '[data-testid="terminals-enable-addon.resonant-terminal-ghostty"]',
+  );
   enableBtn.click();
   // Wait for the renderer to surface the error.
   await waitFor(() => container.querySelector(".terminals-card-error"));
@@ -460,6 +625,86 @@ test("CP-BR11 #3: Enable surfaces registry-revision errors and never posts /addo
   );
 });
 
+test("CP-BR11 #3: Enable/Disable label reflects the registry enabled flag, not projection status", async (t) => {
+  const { container, cleanup } = setupDom();
+  t.after(cleanup);
+  const bridgeRequest = async (route) => {
+    if (route === "/addons/registry") {
+      return {
+        ok: true,
+        revision: 1,
+        installations: {
+          "addon.resonant-terminal-ghostty": {
+            addonId: "addon.resonant-terminal-ghostty",
+            installed: true,
+            enabled: true,
+            grantedCapabilities: [
+              {
+                capability: "terminal-host",
+                granted: false,
+                scope: "system",
+                revocationBehavior: "degrade",
+              },
+            ],
+          },
+          "addon.resonant-terminal-iterm2": {
+            addonId: "addon.resonant-terminal-iterm2",
+            installed: true,
+            enabled: false,
+            grantedCapabilities: [
+              {
+                capability: "terminal-host",
+                granted: false,
+                scope: "system",
+                revocationBehavior: "degrade",
+              },
+            ],
+          },
+        },
+      };
+    }
+    if (route === "/terminal-host/status") return makeStatus();
+    if (route === "/bridge/runtimes") {
+      return makeProjectionRuntime([
+        {
+          addonId: "addon.resonant-terminal-ghostty",
+          status: "inactive",
+          generation: 1,
+          displayLabel: "resonant-terminal-ghostty",
+        },
+        {
+          addonId: "addon.resonant-terminal-iterm2",
+          status: "inactive",
+          generation: 1,
+          displayLabel: "resonant-terminal-iterm2",
+        },
+      ]);
+    }
+    return { ok: true };
+  };
+  const seams = makeSeams(bridgeRequest);
+  const handle = renderTerminalsWorkspace(container, {
+    bridgeRequest,
+    ...seams,
+    pollIntervalMs: 0,
+  });
+  t.after(() => handle.stop());
+  await waitFor(() =>
+    container.querySelector('[data-testid="terminals-enable-addon.resonant-terminal-ghostty"]'),
+  );
+
+  const ghosttyBtn = container.querySelector(
+    '[data-testid="terminals-enable-addon.resonant-terminal-ghostty"]',
+  );
+  const iterm2Btn = container.querySelector(
+    '[data-testid="terminals-enable-addon.resonant-terminal-iterm2"]',
+  );
+  // enabled:true (projection still "inactive") -> "Disable".
+  assert.equal(ghosttyBtn.textContent, "Disable");
+  // enabled:false -> "Enable".
+  assert.equal(iterm2Btn.textContent, "Enable");
+});
+
 // ---------------------------------------------------------------------------
 // 4. Grant: posts /addons/grants with terminal-host granted and
 //    consent:true; never auto-grants.
@@ -471,24 +716,36 @@ test("CP-BR11 #4: Grant posts POST /addons/grants with terminal-host granted + c
   const calls = [];
   let confirmCount = 0;
   let confirmReturn = true;
-  const windowRef = { confirm: () => { confirmCount += 1; return confirmReturn; } };
+  const windowRef = {
+    confirm: () => {
+      confirmCount += 1;
+      return confirmReturn;
+    },
+  };
   const bridgeRequest = async (route, options = {}) => {
     calls.push({ route, method: options?.method ?? "GET", body: options?.body });
     if (route === "/addons/registry") return { ok: true, revision: 3, addons: [] };
     if (route === "/terminal-host/status") return makeStatus();
     if (route === "/bridge/runtimes") {
       return makeProjectionRuntime([
-        { addonId: "addon.resonant-terminal-ghostty", status: "ready", generation: 1, displayLabel: "resonant-terminal-ghostty" },
+        {
+          addonId: "addon.resonant-terminal-ghostty",
+          status: "ready",
+          generation: 1,
+          displayLabel: "resonant-terminal-ghostty",
+        },
       ]);
     }
     if (route === "/addons/grants" && (options?.method ?? "GET").toUpperCase() === "POST") {
       assert.equal(options.body?.consent, true, "Grant must set consent: true");
-      assert.deepEqual(options.body?.grants, [{
-        capability: "terminal-host",
-        granted: true,
-        scope: "system",
-        revocationBehavior: "degrade",
-      }]);
+      assert.deepEqual(options.body?.grants, [
+        {
+          capability: "terminal-host",
+          granted: true,
+          scope: "system",
+          revocationBehavior: "degrade",
+        },
+      ]);
       assert.equal(options.body?.addonId, "addon.resonant-terminal-ghostty");
       return { ok: true, revision: 4 };
     }
@@ -503,7 +760,9 @@ test("CP-BR11 #4: Grant posts POST /addons/grants with terminal-host granted + c
     pollIntervalMs: 0,
   });
   t.after(() => handle.stop());
-  await waitFor(() => container.querySelector('[data-testid="terminals-grant-addon.resonant-terminal-ghostty"]'));
+  await waitFor(() =>
+    container.querySelector('[data-testid="terminals-grant-addon.resonant-terminal-ghostty"]'),
+  );
   // No grant POST should have been sent on initial mount.
   assert.equal(
     calls.find((c) => c.route === "/addons/grants" && c.method === "POST"),
@@ -511,7 +770,9 @@ test("CP-BR11 #4: Grant posts POST /addons/grants with terminal-host granted + c
     "rendering alone must never auto-grant",
   );
   // Click the Grant button (windowRef.confirm returns true).
-  const grantBtn = container.querySelector('[data-testid="terminals-grant-addon.resonant-terminal-ghostty"]');
+  const grantBtn = container.querySelector(
+    '[data-testid="terminals-grant-addon.resonant-terminal-ghostty"]',
+  );
   grantBtn.click();
   await waitFor(() => calls.some((c) => c.route === "/addons/grants" && c.method === "POST"));
   assert.ok(confirmCount >= 1, "Grant must require operator confirmation");
@@ -535,7 +796,12 @@ test("CP-BR11 #4b: capabilityGranted reflects the registry's grantedCapabilities
         installed: true,
         enabled: true,
         grantedCapabilities: [
-          { capability: "terminal-host", granted: true, scope: "system", revocationBehavior: "degrade" },
+          {
+            capability: "terminal-host",
+            granted: true,
+            scope: "system",
+            revocationBehavior: "degrade",
+          },
         ],
       },
       "addon.resonant-terminal-iterm2": {
@@ -543,7 +809,12 @@ test("CP-BR11 #4b: capabilityGranted reflects the registry's grantedCapabilities
         installed: true,
         enabled: true,
         grantedCapabilities: [
-          { capability: "terminal-host", granted: false, scope: "system", revocationBehavior: "degrade" },
+          {
+            capability: "terminal-host",
+            granted: false,
+            scope: "system",
+            revocationBehavior: "degrade",
+          },
         ],
       },
     },
@@ -551,15 +822,31 @@ test("CP-BR11 #4b: capabilityGranted reflects the registry's grantedCapabilities
   const { bridgeRequest } = makeBridgeRequest({
     status: makeStatus(),
     projection: makeProjectionRuntime([
-      { addonId: "addon.resonant-terminal-ghostty", status: "ready", generation: 1, displayLabel: "resonant-terminal-ghostty" },
-      { addonId: "addon.resonant-terminal-iterm2", status: "inactive", generation: 1, displayLabel: "resonant-terminal-iterm2" },
+      {
+        addonId: "addon.resonant-terminal-ghostty",
+        status: "ready",
+        generation: 1,
+        displayLabel: "resonant-terminal-ghostty",
+      },
+      {
+        addonId: "addon.resonant-terminal-iterm2",
+        status: "inactive",
+        generation: 1,
+        displayLabel: "resonant-terminal-iterm2",
+      },
     ]),
     registry,
   });
   const seams = makeSeams(bridgeRequest);
-  const handle = renderTerminalsWorkspace(container, { bridgeRequest, ...seams, pollIntervalMs: 0 });
+  const handle = renderTerminalsWorkspace(container, {
+    bridgeRequest,
+    ...seams,
+    pollIntervalMs: 0,
+  });
   t.after(() => handle.stop());
-  await waitFor(() => container.querySelector('[data-testid="terminals-enable-addon.resonant-terminal-ghostty"]'));
+  await waitFor(() =>
+    container.querySelector('[data-testid="terminals-enable-addon.resonant-terminal-ghostty"]'),
+  );
   assert.equal(
     container.querySelector('[data-testid="terminals-grant-addon.resonant-terminal-ghostty"]'),
     null,
@@ -582,7 +869,12 @@ test("CP-BR11 #4: cancelled Grant does not post /addons/grants", async (t) => {
     if (route === "/terminal-host/status") return makeStatus();
     if (route === "/bridge/runtimes") {
       return makeProjectionRuntime([
-        { addonId: "addon.resonant-terminal-ghostty", status: "ready", generation: 1, displayLabel: "resonant-terminal-ghostty" },
+        {
+          addonId: "addon.resonant-terminal-ghostty",
+          status: "ready",
+          generation: 1,
+          displayLabel: "resonant-terminal-ghostty",
+        },
       ]);
     }
     if (route === "/addons/grants" && (options?.method ?? "GET").toUpperCase() === "POST") {
@@ -593,11 +885,18 @@ test("CP-BR11 #4: cancelled Grant does not post /addons/grants", async (t) => {
   };
   const seams = makeSeams(bridgeRequest);
   const handle = renderTerminalsWorkspace(container, {
-    bridgeRequest, ...seams, windowRef, pollIntervalMs: 0,
+    bridgeRequest,
+    ...seams,
+    windowRef,
+    pollIntervalMs: 0,
   });
   t.after(() => handle.stop());
-  await waitFor(() => container.querySelector('[data-testid="terminals-grant-addon.resonant-terminal-ghostty"]'));
-  const grantBtn = container.querySelector('[data-testid="terminals-grant-addon.resonant-terminal-ghostty"]');
+  await waitFor(() =>
+    container.querySelector('[data-testid="terminals-grant-addon.resonant-terminal-ghostty"]'),
+  );
+  const grantBtn = container.querySelector(
+    '[data-testid="terminals-grant-addon.resonant-terminal-ghostty"]',
+  );
   grantBtn.click();
   // Wait a tick for any (forbidden) POST to land.
   await new Promise((r) => setTimeout(r, 50));
@@ -623,13 +922,14 @@ test("CP-BR11 #5: Launch is disabled until the runtime is connected AND a 0600 p
     prompt: { ok: true, valid: false, promptPath: null },
   });
   const seams = makeSeams(bridgeRequest);
-  const handle = renderTerminalsWorkspace(container, { bridgeRequest, ...seams, pollIntervalMs: 0 });
+  const handle = renderTerminalsWorkspace(container, {
+    bridgeRequest,
+    ...seams,
+    pollIntervalMs: 0,
+  });
   t.after(() => handle.stop());
   await waitFor(() => container.querySelector('[data-addon-id="addon.resonant-terminal-ghostty"]'));
-  for (const addonId of [
-    "addon.resonant-terminal-ghostty",
-    "addon.resonant-terminal-iterm2",
-  ]) {
+  for (const addonId of ["addon.resonant-terminal-ghostty", "addon.resonant-terminal-iterm2"]) {
     const launch = container.querySelector(`[data-testid="terminals-launch-${addonId}"]`);
     assert.ok(launch?.disabled, `${addonId} launch is disabled without connected + 0600 prompt`);
   }
@@ -646,26 +946,57 @@ test("CP-BR11 #5: Launch click routes through POST /terminal-host/launch and bra
     if (route === "/terminal-host/status") return makeStatus();
     if (route === "/bridge/runtimes") {
       return makeProjectionRuntime([
-        { addonId: "addon.resonant-terminal-ghostty", status: "ready", generation: 1, displayLabel: "resonant-terminal-ghostty" },
+        {
+          addonId: "addon.resonant-terminal-ghostty",
+          status: "ready",
+          generation: 1,
+          displayLabel: "resonant-terminal-ghostty",
+        },
       ]);
     }
-    if (route === "/addons/grants") return { ok: true, addons: [
-      { addonId: "addon.resonant-terminal-ghostty", grants: [{ capability: "terminal-host", granted: true, scope: "system", revocationBehavior: "degrade" }] },
-    ] };
-    if (route === "/terminal-host/prompt-path") return { ok: true, valid: true, promptPath: promptFile };
+    if (route === "/addons/grants")
+      return {
+        ok: true,
+        addons: [
+          {
+            addonId: "addon.resonant-terminal-ghostty",
+            grants: [
+              {
+                capability: "terminal-host",
+                granted: true,
+                scope: "system",
+                revocationBehavior: "degrade",
+              },
+            ],
+          },
+        ],
+      };
+    if (route === "/terminal-host/prompt-path")
+      return { ok: true, valid: true, promptPath: promptFile };
     if (route === "/terminal-host/launch") {
       return { ok: true };
     }
     return { ok: true, addons: [] };
   };
   const seams = makeSeams(bridgeRequest);
-  const handle = renderTerminalsWorkspace(container, { bridgeRequest, ...seams, pollIntervalMs: 0 });
+  const handle = renderTerminalsWorkspace(container, {
+    bridgeRequest,
+    ...seams,
+    pollIntervalMs: 0,
+  });
   t.after(() => handle.stop());
   await waitFor(() => container.querySelector('[data-addon-id="addon.resonant-terminal-ghostty"]'));
-  await waitForEnabled(container, '[data-testid="terminals-launch-addon.resonant-terminal-ghostty"]');
-  const launch = container.querySelector('[data-testid="terminals-launch-addon.resonant-terminal-ghostty"]');
+  await waitForEnabled(
+    container,
+    '[data-testid="terminals-launch-addon.resonant-terminal-ghostty"]',
+  );
+  const launch = container.querySelector(
+    '[data-testid="terminals-launch-addon.resonant-terminal-ghostty"]',
+  );
   launch.click();
-  await waitFor(() => calls.some((c) => c.route === "/terminal-host/launch" && c.method === "POST"));
+  await waitFor(() =>
+    calls.some((c) => c.route === "/terminal-host/launch" && c.method === "POST"),
+  );
   const launchCall = calls.find((c) => c.route === "/terminal-host/launch" && c.method === "POST");
   assert.equal(launchCall.body.terminalAddonId, "addon.resonant-terminal-ghostty");
   assert.equal(launchCall.body.promptPath, promptFile);
@@ -683,22 +1014,37 @@ test("CP-BR11 #5: capability-not-granted rejection is surfaced without auto-gran
     if (route === "/terminal-host/status") return makeStatus();
     if (route === "/bridge/runtimes") {
       return makeProjectionRuntime([
-        { addonId: "addon.resonant-terminal-ghostty", status: "ready", generation: 1, displayLabel: "resonant-terminal-ghostty" },
+        {
+          addonId: "addon.resonant-terminal-ghostty",
+          status: "ready",
+          generation: 1,
+          displayLabel: "resonant-terminal-ghostty",
+        },
       ]);
     }
     if (route === "/addons/grants") return { ok: true, addons: [] };
-    if (route === "/terminal-host/prompt-path") return { ok: true, valid: true, promptPath: promptFile };
+    if (route === "/terminal-host/prompt-path")
+      return { ok: true, valid: true, promptPath: promptFile };
     if (route === "/terminal-host/launch") {
       return { ok: false, reason: "capability-not-granted" };
     }
     return { ok: true };
   };
   const seams = makeSeams(bridgeRequest);
-  const handle = renderTerminalsWorkspace(container, { bridgeRequest, ...seams, pollIntervalMs: 0 });
+  const handle = renderTerminalsWorkspace(container, {
+    bridgeRequest,
+    ...seams,
+    pollIntervalMs: 0,
+  });
   t.after(() => handle.stop());
   await waitFor(() => container.querySelector('[data-addon-id="addon.resonant-terminal-ghostty"]'));
-  await waitForEnabled(container, '[data-testid="terminals-launch-addon.resonant-terminal-ghostty"]');
-  container.querySelector('[data-testid="terminals-launch-addon.resonant-terminal-ghostty"]').click();
+  await waitForEnabled(
+    container,
+    '[data-testid="terminals-launch-addon.resonant-terminal-ghostty"]',
+  );
+  container
+    .querySelector('[data-testid="terminals-launch-addon.resonant-terminal-ghostty"]')
+    .click();
   await waitFor(() => container.querySelector(".terminals-card-error"));
   const err = container.querySelector(".terminals-card-error");
   assert.match(err.textContent, /terminal-host capability/i);
@@ -720,26 +1066,115 @@ test("CP-BR11 #5: bridge-not-running rejection routes to onOpenBridgeSettings", 
     if (route === "/terminal-host/status") return makeStatus();
     if (route === "/bridge/runtimes") {
       return makeProjectionRuntime([
-        { addonId: "addon.resonant-terminal-ghostty", status: "ready", generation: 1, displayLabel: "resonant-terminal-ghostty" },
+        {
+          addonId: "addon.resonant-terminal-ghostty",
+          status: "ready",
+          generation: 1,
+          displayLabel: "resonant-terminal-ghostty",
+        },
       ]);
     }
-    if (route === "/addons/grants") return { ok: true, addons: [
-      { addonId: "addon.resonant-terminal-ghostty", grants: [{ capability: "terminal-host", granted: true, scope: "system", revocationBehavior: "degrade" }] },
-    ] };
-    if (route === "/terminal-host/prompt-path") return { ok: true, valid: true, promptPath: promptFile };
+    if (route === "/addons/grants")
+      return {
+        ok: true,
+        addons: [
+          {
+            addonId: "addon.resonant-terminal-ghostty",
+            grants: [
+              {
+                capability: "terminal-host",
+                granted: true,
+                scope: "system",
+                revocationBehavior: "degrade",
+              },
+            ],
+          },
+        ],
+      };
+    if (route === "/terminal-host/prompt-path")
+      return { ok: true, valid: true, promptPath: promptFile };
     if (route === "/terminal-host/launch") return { ok: false, reason: "bridge-not-running" };
     return { ok: true };
   };
   const seams = makeSeams(bridgeRequest);
   const handle = renderTerminalsWorkspace(container, {
-    bridgeRequest, ...seams, onOpenBridgeSettings: () => { opened += 1; }, pollIntervalMs: 0,
+    bridgeRequest,
+    ...seams,
+    onOpenBridgeSettings: () => {
+      opened += 1;
+    },
+    pollIntervalMs: 0,
   });
   t.after(() => handle.stop());
   await waitFor(() => container.querySelector('[data-addon-id="addon.resonant-terminal-ghostty"]'));
-  await waitForEnabled(container, '[data-testid="terminals-launch-addon.resonant-terminal-ghostty"]');
-  container.querySelector('[data-testid="terminals-launch-addon.resonant-terminal-ghostty"]').click();
+  await waitForEnabled(
+    container,
+    '[data-testid="terminals-launch-addon.resonant-terminal-ghostty"]',
+  );
+  container
+    .querySelector('[data-testid="terminals-launch-addon.resonant-terminal-ghostty"]')
+    .click();
   await waitFor(() => opened > 0);
   assert.ok(opened >= 1, "bridge-not-running rejection must call onOpenBridgeSettings");
+});
+
+test("CP-BR11 #5: missing-credential rejection is surfaced with a clear message", async (t) => {
+  const { container, cleanup } = setupDom();
+  t.after(cleanup);
+  const promptFile = makeValidPromptFile(t);
+  const bridgeRequest = async (route) => {
+    if (route === "/addons/registry") return { ok: true, revision: 0, addons: [] };
+    if (route === "/terminal-host/status") return makeStatus();
+    if (route === "/bridge/runtimes") {
+      return makeProjectionRuntime([
+        {
+          addonId: "addon.resonant-terminal-ghostty",
+          status: "ready",
+          generation: 1,
+          displayLabel: "resonant-terminal-ghostty",
+        },
+      ]);
+    }
+    if (route === "/addons/grants")
+      return {
+        ok: true,
+        addons: [
+          {
+            addonId: "addon.resonant-terminal-ghostty",
+            grants: [
+              {
+                capability: "terminal-host",
+                granted: true,
+                scope: "system",
+                revocationBehavior: "degrade",
+              },
+            ],
+          },
+        ],
+      };
+    if (route === "/terminal-host/prompt-path")
+      return { ok: true, valid: true, promptPath: promptFile };
+    if (route === "/terminal-host/launch") return { ok: false, reason: "missing-credential" };
+    return { ok: true };
+  };
+  const seams = makeSeams(bridgeRequest);
+  const handle = renderTerminalsWorkspace(container, {
+    bridgeRequest,
+    ...seams,
+    pollIntervalMs: 0,
+  });
+  t.after(() => handle.stop());
+  await waitFor(() => container.querySelector('[data-addon-id="addon.resonant-terminal-ghostty"]'));
+  await waitForEnabled(
+    container,
+    '[data-testid="terminals-launch-addon.resonant-terminal-ghostty"]',
+  );
+  container
+    .querySelector('[data-testid="terminals-launch-addon.resonant-terminal-ghostty"]')
+    .click();
+  await waitFor(() => container.querySelector(".terminals-card-error"));
+  const err = container.querySelector(".terminals-card-error");
+  assert.match(err.textContent, /provider credential/i);
 });
 
 // ---------------------------------------------------------------------------
@@ -761,28 +1196,43 @@ test("CP-BR11 #6: rail exposes a per-id Copy button and the fetchConnectionScrip
   const { bridgeRequest } = makeBridgeRequest({
     status: makeStatus(),
     projection: makeProjectionRuntime([
-      { addonId: "addon.resonant-terminal-ghostty", status: "ready", generation: 1, displayLabel: "resonant-terminal-ghostty" },
-      { addonId: "addon.resonant-terminal-iterm2", status: "ready", generation: 1, displayLabel: "resonant-terminal-iterm2" },
+      {
+        addonId: "addon.resonant-terminal-ghostty",
+        status: "ready",
+        generation: 1,
+        displayLabel: "resonant-terminal-ghostty",
+      },
+      {
+        addonId: "addon.resonant-terminal-iterm2",
+        status: "ready",
+        generation: 1,
+        displayLabel: "resonant-terminal-iterm2",
+      },
     ]),
     grants: makeGrants([]),
   });
   const seams = makeSeams(bridgeRequest);
-  const handle = renderTerminalsWorkspace(container, { bridgeRequest, ...seams, pollIntervalMs: 0 });
+  const handle = renderTerminalsWorkspace(container, {
+    bridgeRequest,
+    ...seams,
+    pollIntervalMs: 0,
+  });
   t.after(() => handle.stop());
   await waitFor(() => container.querySelector('[data-addon-id="addon.resonant-terminal-ghostty"]'));
   // The rail's Copy button must exist for every reviewed terminal
   // add-on — that is the new affordance introduced by CP-BR11.
-  for (const addonId of [
-    "addon.resonant-terminal-ghostty",
-    "addon.resonant-terminal-iterm2",
-  ]) {
+  for (const addonId of ["addon.resonant-terminal-ghostty", "addon.resonant-terminal-iterm2"]) {
     const btn = container.querySelector(`[data-testid="terminals-copy-${addonId}"]`);
     assert.ok(btn, `rail Copy button for ${addonId} exists`);
   }
   // The shared host seam must route to POST /terminal-host/connection-script
   // when invoked; that is the affordance the CP-BR10 test already
   // exercises end-to-end.
-  assert.equal(typeof seams.fetchConnectionScript, "function", "rail seam fetchConnectionScript is wired");
+  assert.equal(
+    typeof seams.fetchConnectionScript,
+    "function",
+    "rail seam fetchConnectionScript is wired",
+  );
   const calls = [];
   const fakeBridge = async (route, options = {}) => {
     calls.push({ route, method: options?.method ?? "GET", body: options?.body });
@@ -799,7 +1249,9 @@ test("CP-BR11 #6: rail exposes a per-id Copy button and the fetchConnectionScrip
     return { ok: true };
   };
   const fakeSeams = createTerminalsHostSeams({ bridgeRequest: fakeBridge });
-  const result = await fakeSeams.fetchConnectionScript({ terminalAddonId: "addon.resonant-terminal-ghostty" });
+  const result = await fakeSeams.fetchConnectionScript({
+    terminalAddonId: "addon.resonant-terminal-ghostty",
+  });
   assert.match(result.command, /ros-session attach/);
   assert.equal(calls[0].method, "POST");
   assert.equal(calls[0].route, "/terminal-host/connection-script");
@@ -821,29 +1273,39 @@ test("CP-BR11 #7: the rail never reads /addons/status", async (t) => {
   const { bridgeRequest, calls } = makeBridgeRequest({
     status: makeStatus(),
     projection: makeProjectionRuntime([
-      { addonId: "addon.resonant-terminal-ghostty", status: "ready", generation: 1, displayLabel: "resonant-terminal-ghostty" },
+      {
+        addonId: "addon.resonant-terminal-ghostty",
+        status: "ready",
+        generation: 1,
+        displayLabel: "resonant-terminal-ghostty",
+      },
     ]),
     grants: makeGrants([]),
   });
   const seams = makeSeams(bridgeRequest);
-  const handle = renderTerminalsWorkspace(container, { bridgeRequest, ...seams, pollIntervalMs: 50 });
+  const handle = renderTerminalsWorkspace(container, {
+    bridgeRequest,
+    ...seams,
+    pollIntervalMs: 50,
+  });
   t.after(() => handle.stop());
   await waitFor(() => container.querySelector('[data-addon-id="addon.resonant-terminal-ghostty"]'));
   // Trigger an enable, a launch attempt (will fail without prompt),
   // and a copy attempt.
-  const enable = container.querySelector('[data-testid="terminals-enable-addon.resonant-terminal-ghostty"]');
+  const enable = container.querySelector(
+    '[data-testid="terminals-enable-addon.resonant-terminal-ghostty"]',
+  );
   enable?.click();
   await new Promise((r) => setTimeout(r, 20));
   // No /addons/status call should have happened.
-  const offenders = calls.filter((c) => c.route === "/addons/status" || c.route.startsWith("/addons/status"));
+  const offenders = calls.filter(
+    (c) => c.route === "/addons/status" || c.route.startsWith("/addons/status"),
+  );
   assert.equal(offenders.length, 0, "the rail must not read /addons/status");
   // The expected set of routes is the harness registry + projection +
   // terminal-host routes, not the addon-delegation routes.
   for (const c of calls) {
-    assert.ok(
-      !c.route.startsWith("/addons/status"),
-      `unexpected /addons/status read: ${c.route}`,
-    );
+    assert.ok(!c.route.startsWith("/addons/status"), `unexpected /addons/status read: ${c.route}`);
   }
 });
 
@@ -856,11 +1318,26 @@ test("CP-BR11 #8: the shape-walker over a representative status / projection / r
   const sample = {
     status: makeStatus(),
     projection: makeProjectionRuntime([
-      { addonId: "addon.resonant-terminal-ghostty", status: "ready", generation: 1, displayLabel: "resonant-terminal-ghostty" },
+      {
+        addonId: "addon.resonant-terminal-ghostty",
+        status: "ready",
+        generation: 1,
+        displayLabel: "resonant-terminal-ghostty",
+      },
     ]),
     registry: { ok: true, revision: 0, addons: [] },
     grants: makeGrants([
-      { addonId: "addon.resonant-terminal-ghostty", grants: [{ capability: "terminal-host", granted: true, scope: "system", revocationBehavior: "degrade" }] },
+      {
+        addonId: "addon.resonant-terminal-ghostty",
+        grants: [
+          {
+            capability: "terminal-host",
+            granted: true,
+            scope: "system",
+            revocationBehavior: "degrade",
+          },
+        ],
+      },
     ]),
   };
   assertNoSecretShapedValue(sample, "$.sample");
@@ -881,6 +1358,151 @@ test("CP-BR11 #8: the route capabilities are declared in bridge-client.js", () =
     ["POST", "/terminal-host/connection-script"],
   ]) {
     const cap = capabilityForBridgeRoute(route, method);
-    assert.ok(typeof cap === "string" && cap.length > 0, `${method} ${route} must have a declared capability`);
+    assert.ok(
+      typeof cap === "string" && cap.length > 0,
+      `${method} ${route} must have a declared capability`,
+    );
   }
+});
+
+// ---------------------------------------------------------------------------
+// 9. Provider credential selector (inject a ROS credential into the session).
+// ---------------------------------------------------------------------------
+
+test("CP-BR11 #9: the pi-native family allowlist matches the host map", () => {
+  const hostFamilies = Object.fromEntries(
+    Object.entries(PI_NATIVE_PROVIDER_MAP).map(([identity, mapping]) => [identity, mapping.envVar]),
+  );
+  assert.deepEqual(PI_NATIVE_PROVIDER_FAMILIES, hostFamilies);
+});
+
+test("CP-BR11 #9: provider selector renders pi-compatible profiles and the launch passes the selected id", async (t) => {
+  const { container, cleanup } = setupDom();
+  t.after(cleanup);
+  const promptFile = makeValidPromptFile(t);
+  const calls = [];
+  const bridgeRequest = async (route, options = {}) => {
+    calls.push({ route, method: options?.method ?? "GET", body: options?.body });
+    if (route === "/terminal-host/status" || route.startsWith("/terminal-host/status"))
+      return makeStatus();
+    if (route.startsWith("/terminal-host/prompt-path"))
+      return { ok: true, promptPath: promptFile, valid: true };
+    if (route.startsWith("/bridge/runtimes"))
+      return makeProjectionRuntime([
+        {
+          addonId: "addon.resonant-terminal-ghostty",
+          status: "ready",
+          generation: 1,
+          displayLabel: "resonant-terminal-ghostty",
+        },
+        {
+          addonId: "addon.resonant-terminal-iterm2",
+          status: "inactive",
+          generation: 1,
+          displayLabel: "resonant-terminal-iterm2",
+        },
+      ]);
+    if (route === "/addons/registry") return { ok: true, revision: 0, addons: [] };
+    if (route === "/providers/status")
+      return {
+        ok: true,
+        providers: [
+          {
+            id: "shared-minimax",
+            label: "MiniMax (shared)",
+            providerType: "minimax",
+            configured: true,
+          },
+          { id: "anthropic-acct", label: "Anthropic", providerType: "anthropic", configured: true },
+        ],
+      };
+    if (route === "/terminal-host/launch") return { ok: true, launchAccepted: true };
+    return { ok: true };
+  };
+  const seams = makeSeams(bridgeRequest);
+  const handle = renderTerminalsWorkspace(container, { ...seams, pollIntervalMs: 0 });
+  t.after(() => handle.stop());
+
+  await waitFor(() =>
+    container.querySelector(
+      "[data-testid='terminals-provider-select'] option[value='shared-minimax']",
+    ),
+  );
+  const select = container.querySelector("[data-testid='terminals-provider-select']");
+  // Single configured pi-compatible profile is auto-selected.
+  assert.equal(select.value, "shared-minimax");
+  // anthropic is not a pi-native family → filtered out of the selector.
+  assert.equal(select.querySelector("option[value='anthropic-acct']"), null);
+
+  const launchBtn = await waitForEnabled(
+    container,
+    "[data-testid='terminals-launch-addon.resonant-terminal-ghostty']",
+  );
+  launchBtn.click();
+  await waitFor(() =>
+    calls.some((c) => c.route === "/terminal-host/launch" && c.method === "POST"),
+  );
+  const launchCall = calls.find((c) => c.route === "/terminal-host/launch" && c.method === "POST");
+  assert.equal(launchCall.body.providerProfileId, "shared-minimax");
+});
+
+// ---------------------------------------------------------------------------
+// CP-BR11.1: prompt editor (textarea + Save prompt) writes via
+// POST /terminal-host/prompt and unlocks Open in Terminal.
+// ---------------------------------------------------------------------------
+
+test("CP-BR11.1: prompt editor writes the prompt via POST /terminal-host/prompt", async (t) => {
+  const { container, cleanup } = setupDom();
+  t.after(cleanup);
+  const { bridgeRequest, calls } = makeBridgeRequest({
+    status: makeStatus(),
+    projection: makeProjectionRuntime([]),
+    prompt: { ok: true, promptPath: "/tmp/prompt.txt", valid: false },
+    grants: makeGrants([]),
+  });
+  const seams = makeSeams(bridgeRequest);
+  const handle = renderTerminalsWorkspace(container, {
+    bridgeRequest,
+    ...seams,
+    pollIntervalMs: 0,
+  });
+  t.after(() => handle.stop());
+
+  await waitFor(() => container.querySelector("[data-testid='terminals-prompt-save']"));
+  const textarea = container.querySelector(".terminals-prompt-textarea");
+  assert.ok(textarea, "prompt textarea is rendered");
+  textarea.value = "Summarize the repository.";
+  container.querySelector("[data-testid='terminals-prompt-save']").click();
+  await waitFor(() =>
+    calls.some((c) => c.route === "/terminal-host/prompt" && c.method === "POST"),
+  );
+  const writeCall = calls.find((c) => c.route === "/terminal-host/prompt" && c.method === "POST");
+  assert.equal(writeCall.body.text, "Summarize the repository.");
+});
+
+test("CP-BR11.1: prompt editor does not POST when the text is empty", async (t) => {
+  const { container, cleanup } = setupDom();
+  t.after(cleanup);
+  const { bridgeRequest, calls } = makeBridgeRequest({
+    status: makeStatus(),
+    projection: makeProjectionRuntime([]),
+    prompt: { ok: true, promptPath: "/tmp/prompt.txt", valid: false },
+    grants: makeGrants([]),
+  });
+  const seams = makeSeams(bridgeRequest);
+  const handle = renderTerminalsWorkspace(container, {
+    bridgeRequest,
+    ...seams,
+    pollIntervalMs: 0,
+  });
+  t.after(() => handle.stop());
+
+  await waitFor(() => container.querySelector("[data-testid='terminals-prompt-save']"));
+  const textarea = container.querySelector(".terminals-prompt-textarea");
+  textarea.value = "   ";
+  container.querySelector("[data-testid='terminals-prompt-save']").click();
+  await waitFor(() =>
+    container.querySelector(".terminals-status")?.textContent?.includes("Write a prompt first"),
+  );
+  assert.ok(!calls.some((c) => c.route === "/terminal-host/prompt"), "empty prompt must not POST");
 });

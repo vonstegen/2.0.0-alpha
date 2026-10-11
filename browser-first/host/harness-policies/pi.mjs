@@ -103,9 +103,17 @@ export function composePiInvocationFromFile(input) {
   if (!executable.startsWith("/")) {
     throw new TypeError("pi policy: composeInvocationFromFile requires an absolute executable path");
   }
+  // Optional pi-native provider id (host-owned, from resolvePiNativeProvider).
+  // Emitted as `--provider <id>` so pi selects that provider instead of its
+  // own default. The id is validated to a safe token; the secret still rides
+  // env only and never appears here.
+  const provider = typeof input.provider === "string" && /^[a-z][a-z0-9-]{0,31}$/.test(input.provider)
+    ? input.provider
+    : null;
+  const providerFlags = provider ? `--provider ${provider} ` : "";
   return {
-    commandSuffix: `${shellQuote(executable)} ${shellQuote(`@${input.promptPath}`)}`,
-    auditSummary: `pi @<file> (${input.promptBytes} bytes)`,
+    commandSuffix: `${shellQuote(executable)} ${providerFlags}${shellQuote(`@${input.promptPath}`)}`,
+    auditSummary: `pi${provider ? ` --provider ${provider}` : ""} @<file> (${input.promptBytes} bytes)`,
   };
 }
 

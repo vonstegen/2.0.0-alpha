@@ -181,8 +181,23 @@ export function createTerminalHostHostWiring(options = {}) {
     return { name: mapping.envVar, value };
   }
 
+  // Resolve the pi-native provider identity for a profile id. The
+  // terminal-host launch route uses this to select the provider in the
+  // composed `pi` invocation (otherwise `pi` falls back to its own
+  // default — e.g. a local Ollama model — and the injected credential is
+  // never consumed). Fails closed on shared-* / anthropic / unknown.
+  async function resolvePiProvider(profileId) {
+    if (!isNonEmptyString(profileId)) return null;
+    const profile = await validatedProfile(profileId);
+    if (!profile) return null;
+    const mapping = resolvePiNativeProvider(profile);
+    if (!mapping || typeof mapping.piProvider !== "string" || !mapping.piProvider) return null;
+    return { piProvider: mapping.piProvider, envVar: mapping.envVar };
+  }
+
   return Object.freeze({
     resolveCredential,
+    resolvePiProvider,
     resolveProjectIdentity,
     resolveSkillCatalog,
     skillSourceRoot,

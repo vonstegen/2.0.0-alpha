@@ -427,6 +427,48 @@ test("POST /terminal-host/launch returns documented receipt on success", async (
   assertNoSecretShapedValue(launches[0], "$.launches");
 });
 
+test("POST /terminal-host/launch forwards providerProfileId to launchBootstrap", async (t) => {
+  const f = await fixture(t, {
+    hostTerminal: { resolveCredential: async () => ({ name: "MINIMAX_API_KEY", value: "sk-test" }) },
+  });
+  const ghostty = JSON.parse(
+    await readFile(new URL("../../public/addons/terminal-host-ghostty.json", import.meta.url), "utf8"),
+  );
+  await f.install(ghostty);
+  const result = await f.callLaunch({ providerProfileId: "shared-minimax" });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(f.launchBootstrapCalls.length, 1);
+  assert.equal(f.launchBootstrapCalls[0].providerProfileId, "shared-minimax");
+});
+
+test("POST /terminal-host/launch returns missing-credential when the provider profile has no credential", async (t) => {
+  const f = await fixture(t, {
+    hostTerminal: { resolveCredential: async () => null },
+  });
+  const ghostty = JSON.parse(
+    await readFile(new URL("../../public/addons/terminal-host-ghostty.json", import.meta.url), "utf8"),
+  );
+  await f.install(ghostty);
+  const result = await f.callLaunch({ providerProfileId: "shared-minimax" });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, false);
+  assert.equal(result.payload.reason, "missing-credential");
+  assert.equal(f.launchBootstrapCalls.length, 0, "must not spawn a terminal when the credential is missing");
+});
+
+test("POST /terminal-host/launch omits providerProfileId when absent (no credential)", async (t) => {
+  const f = await fixture(t);
+  const ghostty = JSON.parse(
+    await readFile(new URL("../../public/addons/terminal-host-ghostty.json", import.meta.url), "utf8"),
+  );
+  await f.install(ghostty);
+  const result = await f.callLaunch();
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(f.launchBootstrapCalls[0].providerProfileId, undefined);
+});
+
 test("POST /terminal-host/launch emits terminal.launch.receipt telemetry on success", async (t) => {
   const f = await fixture(t);
   const ghostty = JSON.parse(
@@ -563,6 +605,46 @@ test("pi policy composeInvocationFromFile refuses a non-absolute executable", as
   );
 });
 
+test("pi policy composeInvocationFromFile emits --provider <id> when a provider is supplied", async () => {
+  const { composePiInvocationFromFile } = await import("../host/harness-policies/pi.mjs");
+  const invocation = composePiInvocationFromFile({
+    executable: { command: "/usr/local/bin/pi", source: "fixed-install-root" },
+    promptPath: "/tmp/prompt.txt",
+    promptBytes: 1234,
+    credentialEnvVarName: null,
+    provider: "minimax",
+  });
+  assert.match(invocation.commandSuffix, /--provider minimax/);
+  assert.match(invocation.auditSummary, /--provider minimax/);
+});
+
+test("pi policy composeInvocationFromFile drops a non-token provider", async () => {
+  const { composePiInvocationFromFile } = await import("../host/harness-policies/pi.mjs");
+  const invocation = composePiInvocationFromFile({
+    executable: { command: "/usr/local/bin/pi", source: "fixed-install-root" },
+    promptPath: "/tmp/prompt.txt",
+    promptBytes: 1234,
+    provider: "bad; rm -rf /",
+  });
+  assert.doesNotMatch(invocation.commandSuffix, /--provider/);
+});
+
+test("POST /terminal-host/launch selects the pi-native provider via --provider", async (t) => {
+  const f = await fixture(t, {
+    hostTerminal: {
+      resolveCredential: async () => ({ name: "MINIMAX_API_KEY", value: "sk-test-value" }),
+      resolvePiProvider: async () => ({ piProvider: "minimax", envVar: "MINIMAX_API_KEY" }),
+    },
+  });
+  const ghostty = JSON.parse(await readFile(new URL("../../public/addons/terminal-host-ghostty.json", import.meta.url), "utf8"));
+  await f.install(ghostty);
+  const result = await f.callLaunch({ providerProfileId: "shared-minimax" });
+  assert.equal(result.status, 200);
+  const commandSuffix = f.launchBootstrapCalls[0]?.commandSuffix;
+  assert.ok(commandSuffix, "launchBootstrap received a commandSuffix");
+  assert.match(commandSuffix, /--provider minimax/);
+});
+
 // ---------------------------------------------------------------------------
 // CP-XH5b: GET /terminal-host/prompt-path
 // ---------------------------------------------------------------------------
@@ -583,6 +665,26 @@ test("GET /terminal-host/prompt-path returns the host factory's path + valid=fal
   assert.equal(typeof result.payload.promptPath, "string");
   assert.ok(result.payload.promptPath.startsWith("/"));
   assert.equal(result.payload.valid, false);
+});
+
+test("GET /terminal-host/prompt-path returns a STABLE path across polls, so a written 0600 file flips valid=true (regression)", async (t) => {
+  const f = await fixture(t);
+  const first = await f.call("/terminal-host/prompt-path");
+  const second = await f.call("/terminal-host/prompt-path");
+  assert.equal(
+    first.payload.promptPath,
+    second.payload.promptPath,
+    "prompt-path must be identical across polls; a fresh UUID per call would make the operator write a prompt to one path while the next poll stats a different (absent) path",
+  );
+  await writeFile(first.payload.promptPath, "operator prompt", { mode: 0o600 });
+  t.after(() => rm(first.payload.promptPath, { force: true }).catch(() => {}));
+  const third = await f.call("/terminal-host/prompt-path");
+  assert.equal(third.payload.promptPath, first.payload.promptPath);
+  assert.equal(
+    third.payload.valid,
+    true,
+    "once the operator writes a 0600 file at the stable path, the route must report valid=true",
+  );
 });
 
 test("GET /terminal-host/prompt-path returns valid=true when a 0600 file exists at the configured path", async (t) => {

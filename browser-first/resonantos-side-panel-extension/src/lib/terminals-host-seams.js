@@ -11,6 +11,7 @@
 //   - `grantTransaction`   → POST /addons/grants   (registry-revision-aware, consent)
 //   - `launchTerminal`     → POST /terminal-host/launch
 //   - `fetchConnectionScript` → POST /terminal-host/connection-script
+//   - `writePrompt`        → POST /terminal-host/prompt (writes the 0600 prompt)
 //
 // `createTerminalsHostSeams({ bridgeRequest })` returns an object
 // with these functions. Each is a thin closure over the shared
@@ -55,6 +56,16 @@ export function createTerminalsHostSeams({ bridgeRequest } = {}) {
     return unwrap(await bridgeRequest("/addons/registry", { method: "GET" }));
   }
 
+  // Pi-compatible provider profiles for the credential selector. Reads the
+  // existing GET /providers/status surface (same data the Settings →
+  // Providers section renders); the renderer filters to the pi-native family
+  // allowlist in terminal-cards.js. Returns the raw provider records (id,
+  // label, templateId/providerType, configured) — never a secret value.
+  async function fetchProviderProfiles() {
+    const payload = unwrap(await bridgeRequest("/providers/status", { method: "GET" }));
+    return Array.isArray(payload?.providers) ? payload.providers : [];
+  }
+
   async function readRevision() {
     const registry = await fetchRegistry();
     const revision = registry?.revision;
@@ -97,37 +108,60 @@ export function createTerminalsHostSeams({ bridgeRequest } = {}) {
     const expectedRevision = await readRevision();
     const body = {
       addonId,
-      grants: [{
-        capability,
-        granted: true,
-        scope: options.scope ?? "system",
-        revocationBehavior: options.revocationBehavior ?? "degrade",
-      }],
+      grants: [
+        {
+          capability,
+          granted: true,
+          scope: options.scope ?? "system",
+          revocationBehavior: options.revocationBehavior ?? "degrade",
+        },
+      ],
       consent: true,
       expectedRevision,
     };
     return unwrap(await bridgeRequest("/addons/grants", { method: "POST", body }));
   }
 
-  async function launchTerminal({ terminalAddonId, promptPath, agentId }) {
-    return unwrap(await bridgeRequest("/terminal-host/launch", {
-      method: "POST",
-      body: {
-        agentId: typeof agentId === "string" && agentId ? agentId : "pi",
-        terminalAddonId,
-        promptPath,
-      },
-    }));
+  async function launchTerminal({ terminalAddonId, promptPath, agentId, providerProfileId }) {
+    return unwrap(
+      await bridgeRequest("/terminal-host/launch", {
+        method: "POST",
+        body: {
+          agentId: typeof agentId === "string" && agentId ? agentId : "pi",
+          terminalAddonId,
+          promptPath,
+          ...(typeof providerProfileId === "string" && providerProfileId
+            ? { providerProfileId }
+            : {}),
+        },
+      }),
+    );
   }
 
   async function fetchConnectionScript({ terminalAddonId, promptPath, providerProfileId }) {
-    return unwrap(await bridgeRequest("/terminal-host/connection-script", {
-      method: "POST",
-      body: {
-        terminalAddonId,
-        ...(typeof providerProfileId === "string" && providerProfileId ? { providerProfileId } : {}),
-      },
-    }));
+    return unwrap(
+      await bridgeRequest("/terminal-host/connection-script", {
+        method: "POST",
+        body: {
+          terminalAddonId,
+          ...(typeof providerProfileId === "string" && providerProfileId
+            ? { providerProfileId }
+            : {}),
+        },
+      }),
+    );
+  }
+
+  async function writePrompt({ text }) {
+    if (typeof text !== "string" || text.length === 0 || text.length > 65536) {
+      throw new Error("writePrompt requires a bounded, non-empty prompt.");
+    }
+    return unwrap(
+      await bridgeRequest("/terminal-host/prompt", {
+        method: "POST",
+        body: { text },
+      }),
+    );
   }
 
   return {
@@ -135,9 +169,11 @@ export function createTerminalsHostSeams({ bridgeRequest } = {}) {
     fetchPromptPath,
     fetchProjection,
     fetchRegistry,
+    fetchProviderProfiles,
     enableTransaction,
     grantTransaction,
     launchTerminal,
     fetchConnectionScript,
+    writePrompt,
   };
 }

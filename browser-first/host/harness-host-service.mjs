@@ -19,6 +19,17 @@ import { ensureBridgeReachable, DEFAULT_BRIDGE_ENDPOINT } from './bridge-bootstr
 import { getHarnessPolicy } from './harness-policy-registry.mjs';
 import { piCommand } from './pi-runtime.mjs';
 
+// Host platform token for the terminal-surface compatibility verdict.
+// Mirrors harness-registry's `compatibleWithHost` (the same map and
+// fallback) so `/terminal-host/status` reports the same verdict the
+// registry projection already exposes as `entry.compatible`. The route
+// computes it from the manifest because `entry.compatible` is only
+// present for factoryId-pinned (lifecycle-managed) installations.
+const HOST_PLATFORM_TOKEN = (() => {
+  const tokens = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
+  return tokens[process.platform] ?? process.platform;
+})();
+
 // JSON data only: recursively sort object keys, preserve array order, no whitespace.
 export function canonicalReceipt(value) {
   return JSON.stringify(value, (_, item) => record(item)
@@ -131,7 +142,19 @@ export async function createHarnessHostService({ userRoot, store = createHarness
   // Step 5, 5B default for the pi-terminal-v1 adapter. Tests inject
   // their own factory to point at a temp dir. (The grant token file is
   // owned by terminal-host-service.launchBootstrap, not by this wiring.)
-  const defaultPromptFilePath = promptFilePath ?? (() => `${osTmpdir()}/pi-prompt-${randomUUID().slice(0, 8)}.txt`);
+  // CP-XH5b: the prompt-file path must be STABLE per host instance.
+  // The `/terminal-host/prompt-path` route and the launcher both call
+  // this factory, and the renderer polls the route; if each call
+  // minted a fresh random name, the operator would write a 0600 prompt
+  // to one path and the next poll would stat a different (absent) path,
+  // so `valid` never flips true and "Run session" stays disabled.
+  let resolvedDefaultPromptPath = null;
+  const defaultPromptFilePath = promptFilePath ?? (() => {
+    if (resolvedDefaultPromptPath === null) {
+      resolvedDefaultPromptPath = `${osTmpdir()}/pi-prompt-${randomUUID().slice(0, 8)}.txt`;
+    }
+    return resolvedDefaultPromptPath;
+  });
   const approvedBindings = structuredClone(bindings);
   const credentials = createHarnessCredentials({ bindings: approvedBindings, env });
   const manifests = new Map(), resources = new Set();
@@ -537,12 +560,17 @@ export async function createHarnessHostService({ userRoot, store = createHarness
         const terminalSurface = manifest.surfaces.find((surface) => surface.embeddedWorkspace?.mode === 'terminal'
           || surface.shellNavigation?.sectionId === 'terminal');
         if (!terminalSurface) continue;
-        const grantedCapabilitySet = new Set(
-          entry.grantedCapabilities
-            .filter((grant) => grant.granted)
-            .map((grant) => grant.capability),
-        );
-        const compatible = grantedCapabilitySet.has('terminal-host');
+        // "compatible" is the host's compatibility verdict — whether the
+        // surface's declared platform matches this host — NOT the grant
+        // state. The terminal-host grant is operator-consented and lives
+        // separately in `entry.grantedCapabilities`; conflating the two
+        // made pre-grant surfaces render as "Not installed" with launch
+        // and copy disabled.
+        const platforms = manifest?.compatibility?.platforms;
+        const compatible =
+          !Array.isArray(platforms) ||
+          platforms.length === 0 ||
+          platforms.includes(HOST_PLATFORM_TOKEN);
         const connected = Boolean(serviceStatus.alive && compatible
           && activeDriveId !== null
           && serviceStatus.adapterId === addonId);
@@ -588,6 +616,23 @@ export async function createHarnessHostService({ userRoot, store = createHarness
       const mode = fileStat.mode & 0o777;
       return { promptPath, valid: mode === 0o600 };
     }),
+    // CP-BR11.1: POST /terminal-host/prompt
+    //
+    // The "Write a prompt" affordance. Writes the operator's prompt to the
+    // host-authoritative 0600 path (the same path the prompt-path and
+    // launch routes use). Loopback-only, addon-runtime-control. The route
+    // writes the bytes and never reads them back or logs the content; the
+    // text is bounded so a chatty renderer cannot grow the file without
+    // bound.
+    route('POST', '/terminal-host/prompt', control, ['text'], [], async p => {
+      if (typeof p.text !== 'string' || p.text.length === 0 || p.text.length > 65536) throw fail('invalid-event');
+      const promptPath = resolvePromptPath();
+      if (!promptPath || typeof promptPath !== 'string' || !promptPath.startsWith('/')) {
+        return { promptPath: null, valid: false };
+      }
+      await writeFile(promptPath, p.text, { mode: 0o600 });
+      return { promptPath, valid: true };
+    }),
     // CP-XH5a: POST /terminal-host/launch
     //
     // The "Open in Terminal" launch affordance. Loopback-only
@@ -626,10 +671,11 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     // Returns a non-secret receipt
     //   { launchId, agentId, terminalAddonId, executablePath,
     //     promptPath, startedAt }
-    route('POST', '/terminal-host/launch', control, ['agentId', 'terminalAddonId', 'promptPath'], ['options'], async p => {
+    route('POST', '/terminal-host/launch', control, ['agentId', 'terminalAddonId', 'promptPath'], ['options', 'providerProfileId'], async p => {
       const requestedAgentId = typeof p.agentId === 'string' ? p.agentId.trim() : '';
       const requestedAddonId = typeof p.terminalAddonId === 'string' ? p.terminalAddonId.trim() : '';
       const promptPath = typeof p.promptPath === 'string' ? p.promptPath.trim() : '';
+      const providerProfileId = typeof p.providerProfileId === 'string' ? p.providerProfileId.trim() : '';
       const options = (p.options && typeof p.options === 'object' && !Array.isArray(p.options)) ? p.options : {};
       if (requestedAgentId !== 'pi' && requestedAgentId !== 'opencode' && requestedAgentId !== 'codex' && requestedAgentId !== 'hermes') {
         throw fail('invalid-event');
@@ -704,6 +750,17 @@ export async function createHarnessHostService({ userRoot, store = createHarness
 
       // d. Compose the reviewed commandSuffix from the prompt file.
       //    promptBytes is the only metadata passed alongside the path.
+      //    The resolved pi-native provider id is passed through so `pi`
+      //    selects that provider instead of falling back to its own
+      //    default (e.g. a local Ollama model) and never consuming the
+      //    injected credential.
+      let piProvider = null;
+      if (providerProfileId && typeof hostTerminal?.resolvePiProvider === 'function') {
+        const target = await hostTerminal.resolvePiProvider(providerProfileId);
+        if (target && typeof target.piProvider === 'string' && target.piProvider) {
+          piProvider = target.piProvider;
+        }
+      }
       let invocation;
       try {
         invocation = composeInvocationFromFile({
@@ -711,12 +768,31 @@ export async function createHarnessHostService({ userRoot, store = createHarness
           promptPath,
           promptBytes: promptStat.size,
           credentialEnvVarName: null,
+          ...(piProvider ? { provider: piProvider } : {}),
         });
       } catch {
         return { ok: false, reason: 'policy-not-reviewed' };
       }
       if (!invocation || typeof invocation.commandSuffix !== 'string' || invocation.commandSuffix.length === 0) {
         return { ok: false, reason: 'policy-not-reviewed' };
+      }
+
+      // d2. Pre-validate the operator-selected provider credential BEFORE
+      //     composing + launching, so a missing/unknown credential surfaces
+      //     as a typed error instead of a terminal that launches and then
+      //     fails with a confusing provider "Connection error". An empty
+      //     profile id means "no credential" (the harness uses its own
+      //     config) and skips the check. `hostTerminal.resolveCredential` is
+      //     the same host boundary the attach route uses, so this is exactly
+      //     the credential the composed `ros-session attach` would resolve
+      //     moments later in the terminal.
+      if (providerProfileId) {
+        const credential = typeof hostTerminal?.resolveCredential === 'function'
+          ? await hostTerminal.resolveCredential(providerProfileId)
+          : null;
+        if (!credential || typeof credential.name !== 'string' || typeof credential.value !== 'string') {
+          return { ok: false, reason: 'missing-credential' };
+        }
       }
 
       // e. Wire launchBootstrap with the projected env seam.
@@ -726,6 +802,14 @@ export async function createHarnessHostService({ userRoot, store = createHarness
         launchResult = await terminalHost.service.launchBootstrap({
           sessionId: launchSessionId,
           commandSuffix: invocation.commandSuffix,
+          // Forward the operator-selected provider profile so the composed
+          // `ros-session attach --provider-profile-id <id>` resolves and
+          // injects the credential under its host-owned env-var name. An
+          // absent/empty profile means "no credential" (the harness uses its
+          // own config); a named but unresolvable profile fails closed in
+          // /terminal-host/session/attach (missing-credential) and surfaces
+          // as launch-failed.
+          ...(providerProfileId ? { providerProfileId } : {}),
           ...(options.memoryAccess ? { memoryAccess: options.memoryAccess } : {}),
           ...(options.commandSuffix ? { /* caller override is the same policy-authored tail; keep for compat */ } : {}),
         });

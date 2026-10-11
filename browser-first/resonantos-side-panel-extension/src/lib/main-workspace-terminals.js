@@ -46,14 +46,7 @@ const TERMINALS_HEADER_BODY =
 // ---------------------------------------------------------------------------
 
 function renderCardActions(view, tab, options) {
-  const {
-    onEnable,
-    onGrant,
-    onLaunch,
-    onCopyScript,
-    busyAddonId,
-    lastError,
-  } = options;
+  const { onEnable, onGrant, onLaunch, onCopyScript, busyAddonId, lastError } = options;
   const actions = element("div", {
     className: "terminals-action-row",
     dataset: { addonId: tab.addonId, field: TERMINAL_CARD_FIELD },
@@ -66,58 +59,63 @@ function renderCardActions(view, tab, options) {
   // is optimistic-concurrency; the seam is responsible for reading
   // the registry revision immediately before the POST.
   if (typeof onEnable === "function") {
-    const enableLabel = tab.projectionStatus === "inactive"
-      ? (isBusy ? "Working..." : "Enable")
-      : (isBusy ? "Working..." : "Disable");
-    actions.append(actionButton({
-      label: enableLabel,
-      onClick: () => onEnable(tab),
-      disabled: isBusy || !tab.installed,
-      ariaLabel: tab.projectionStatus === "inactive"
-        ? `Enable ${tab.label}`
-        : `Disable ${tab.label}`,
-      testid: `terminals-enable-${tab.addonId}`,
-    }));
+    const enableLabel = isBusy ? "Working..." : tab.enabled ? "Disable" : "Enable";
+    actions.append(
+      actionButton({
+        label: enableLabel,
+        onClick: () => onEnable(tab),
+        disabled: isBusy || !tab.installed,
+        ariaLabel: tab.enabled ? `Disable ${tab.label}` : `Enable ${tab.label}`,
+        testid: `terminals-enable-${tab.addonId}`,
+      }),
+    );
   }
 
   // Grant terminal-host — visible only when the capability is
   // missing. Operator-consented (window.confirm); never auto-grants.
   if (typeof onGrant === "function" && !tab.capabilityGranted && tab.installed) {
-    actions.append(actionButton({
-      label: isBusy ? "Working..." : "Grant terminal-host",
-      onClick: () => onGrant(tab),
-      disabled: isBusy,
-      ariaLabel: `Grant the terminal-host capability to ${tab.label}`,
-      testid: `terminals-grant-${tab.addonId}`,
-    }));
+    actions.append(
+      actionButton({
+        label: isBusy ? "Working..." : "Launch & connect",
+        onClick: () => onGrant(tab),
+        disabled: isBusy,
+        ariaLabel: `Launch ${tab.label} and connect it to the bridge`,
+        testid: `terminals-grant-${tab.addonId}`,
+      }),
+    );
   }
 
   // Open in Terminal — gated on connected: true + a valid 0600
   // prompt file. The launch is host-side, the renderer only invokes
   // the injected transaction.
-  const launchDisabled = isBusy
-    || !tab.installed
-    || !tab.compatible
-    || !tab.connected
-    || !view.promptValid
-    || !view.promptPath;
-  actions.append(actionButton({
-    label: isBusy ? "Working..." : "Open in Terminal",
-    onClick: () => onLaunch?.(tab),
-    disabled: launchDisabled,
-    ariaLabel: `Launch ${tab.label} and attach the harness`,
-    testid: `terminals-launch-${tab.addonId}`,
-  }));
+  const launchDisabled =
+    isBusy ||
+    !tab.installed ||
+    !tab.compatible ||
+    !tab.connected ||
+    !view.promptValid ||
+    !view.promptPath;
+  actions.append(
+    actionButton({
+      label: isBusy ? "Working..." : "Open in Terminal",
+      onClick: () => onLaunch?.(tab),
+      disabled: launchDisabled,
+      ariaLabel: `Launch ${tab.label} and attach the harness`,
+      testid: `terminals-launch-${tab.addonId}`,
+    }),
+  );
 
   // Copy connection script — non-secret; 0600 token-file only.
   const copyDisabled = isBusy || !tab.installed || !tab.compatible;
-  actions.append(actionButton({
-    label: isBusy ? "Working..." : "Copy connection script",
-    onClick: () => onCopyScript?.(tab),
-    disabled: copyDisabled,
-    ariaLabel: `Copy the connection script for ${tab.label}`,
-    testid: `terminals-copy-${tab.addonId}`,
-  }));
+  actions.append(
+    actionButton({
+      label: isBusy ? "Working..." : "Copy connection script",
+      onClick: () => onCopyScript?.(tab),
+      disabled: copyDisabled,
+      ariaLabel: `Copy the connection script for ${tab.label}`,
+      testid: `terminals-copy-${tab.addonId}`,
+    }),
+  );
 
   if (lastError && lastError.addonId === tab.addonId && lastError.message) {
     const errNode = element("p", {
@@ -171,17 +169,77 @@ function renderTerminalCard(view, tab, options) {
 }
 
 // ---------------------------------------------------------------------------
+// Provider credential selector
+// ---------------------------------------------------------------------------
+
+function renderProviderSelectorShell() {
+  const section = element("section", {
+    className: "terminals-provider",
+    dataset: { field: "terminals-provider" },
+  });
+  const label = element("label", {
+    className: "terminals-provider-label",
+    text: "Provider credential",
+  });
+  const select = element("select", { className: "terminals-provider-select" });
+  select.dataset.testid = "terminals-provider-select";
+  const hint = element("p", { className: "terminals-provider-hint" });
+  section.append(label, select, hint);
+  return { section, select, hint };
+}
+
+function syncProviderSelect(select, hint, providerOptions, selectedId) {
+  const configured = providerOptions.filter((option) => option.configured);
+  const hasSelected = providerOptions.some((option) => option.id === selectedId);
+  const options = [
+    { id: "", label: "No credential (use the harness's own config)", configured: true },
+    ...providerOptions,
+  ];
+  select.replaceChildren(
+    ...options.map((option) => {
+      const label =
+        option.id === ""
+          ? option.label
+          : option.configured
+            ? option.label
+            : `${option.label} (no credential)`;
+      const node = element("option", { value: option.id, text: label });
+      if (option.id !== "" && !option.configured) node.disabled = true;
+      return node;
+    }),
+  );
+  select.value = hasSelected ? selectedId : "";
+  if (providerOptions.length === 0) {
+    hint.textContent =
+      "No pi-compatible provider profiles found. Add one in Settings → Providers to inject a credential.";
+  } else if (configured.length === 0) {
+    hint.textContent =
+      "No configured provider credential. Add a credential in Settings → Providers to inject it into the session.";
+  } else if (hasSelected) {
+    hint.textContent =
+      "The selected credential is injected under its host-owned env var when you run a session.";
+  } else {
+    hint.textContent =
+      "Choose a provider credential, or leave unset to use the harness's own config.";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Header
 // ---------------------------------------------------------------------------
 
 function renderHeader() {
-  return element("section", {
-    className: "terminals-header",
-    dataset: { field: "terminals-header" },
-  }, [
-    element("h2", { text: TERMINALS_HEADER_TITLE, className: "terminals-header-title" }),
-    element("p", { className: "terminals-header-body", text: TERMINALS_HEADER_BODY }),
-  ]);
+  return element(
+    "section",
+    {
+      className: "terminals-header",
+      dataset: { field: "terminals-header" },
+    },
+    [
+      element("h2", { text: TERMINALS_HEADER_TITLE, className: "terminals-header-title" }),
+      element("p", { className: "terminals-header-body", text: TERMINALS_HEADER_BODY }),
+    ],
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -197,8 +255,10 @@ function renderHeader() {
  *   fetchPromptPath?: () => Promise<unknown>,
  *   fetchProjection?: () => Promise<unknown>,
  *   fetchRegistry?: () => Promise<unknown>,
- *   launchTerminal?: (args: { terminalAddonId: string, promptPath: string, agentId: string }) => Promise<unknown>,
+ *   launchTerminal?: (args: { terminalAddonId: string, promptPath: string, agentId: string, providerProfileId?: string }) => Promise<unknown>,
  *   fetchConnectionScript?: (args: { terminalAddonId: string, promptPath: string | null, providerProfileId?: string }) => Promise<unknown>,
+ *   writePrompt?: (args: { text: string }) => Promise<unknown>,
+ *   fetchProviderProfiles?: () => Promise<unknown>,
  *   enableTransaction?: (addonId: string, enabled: boolean) => Promise<unknown>,
  *   grantTransaction?: (addonId: string, capability: string) => Promise<unknown>,
  *   onOpenBridgeSettings?: () => void,
@@ -218,6 +278,11 @@ export function renderTerminalsWorkspace(container, options = {}) {
   statusNode.textContent = "Reading terminal surfaces...";
   container.append(statusNode);
 
+  const providerShell = renderProviderSelectorShell();
+  container.append(providerShell.section);
+  const providerSelect = providerShell.select;
+  const providerHint = providerShell.hint;
+
   const cardsHost = element("section", {
     className: "terminals-cards",
     dataset: { field: "terminals-cards" },
@@ -229,11 +294,36 @@ export function renderTerminalsWorkspace(container, options = {}) {
   promptHost.append(promptCard);
   container.append(promptHost);
 
+  // Prompt editor — rendered once so the operator's draft survives the
+  // refresh loop. The save button writes the text to the host's 0600
+  // prompt path (the host owns the path; the renderer never invents it
+  // and never reads the file content back).
+  const promptEditorHost = element("section", { className: "terminals-prompt-editor" });
+  const promptTextarea = element("textarea", {
+    className: "terminals-prompt-textarea",
+    ariaLabel: "Prompt text",
+    placeholder: "Write the task prompt for the harness to run...",
+    rows: "4",
+  });
+  const savePromptButton = actionButton({
+    label: "Save prompt",
+    onClick: onSavePrompt,
+    ariaLabel: "Write the prompt to the host's 0600 prompt file",
+    testid: "terminals-prompt-save",
+  });
+  promptEditorHost.append(promptTextarea, savePromptButton);
+  container.append(promptEditorHost);
+
   const state = {
     busyAddonId: null,
     lastError: null,
     timer: null,
+    selectedProviderProfileId: "",
+    providerInitialized: false,
   };
+  providerSelect.addEventListener("change", () => {
+    state.selectedProviderProfileId = providerSelect.value;
+  });
 
   // ---------------------------------------------------------------------
   // Host seams
@@ -249,6 +339,10 @@ export function renderTerminalsWorkspace(container, options = {}) {
   }
   async function readRegistry() {
     if (typeof options.fetchRegistry === "function") return options.fetchRegistry();
+    return null;
+  }
+  async function readProviderProfiles() {
+    if (typeof options.fetchProviderProfiles === "function") return options.fetchProviderProfiles();
     return null;
   }
   async function readPrompt() {
@@ -276,14 +370,21 @@ export function renderTerminalsWorkspace(container, options = {}) {
     state.lastError = null;
   }
 
-  let currentView = { promptPath: null, promptValid: false, tabs: [], bridgeConnected: false };
+  let currentView = {
+    promptPath: null,
+    promptValid: false,
+    tabs: [],
+    providerOptions: [],
+    bridgeConnected: false,
+  };
 
   async function refresh() {
-    const [status, projection, registry, prompt] = await Promise.all([
+    const [status, projection, registry, prompt, providerProfiles] = await Promise.all([
       readStatus().catch(() => null),
       readProjection().catch(() => null),
       readRegistry().catch(() => null),
       readPrompt().catch(() => null),
+      readProviderProfiles().catch(() => null),
     ]);
     const projectionRuntime = Array.isArray(projection?.runtimeList) ? projection.runtimeList : [];
     const view = buildTerminalsViewModel({
@@ -291,8 +392,20 @@ export function renderTerminalsWorkspace(container, options = {}) {
       projectionRuntime,
       registry: registry ?? null,
       prompt: prompt ?? null,
+      providerProfiles: providerProfiles ?? [],
     });
     currentView = view;
+    if (!state.providerInitialized) {
+      const configured = view.providerOptions.filter((option) => option.configured);
+      if (configured.length === 1) state.selectedProviderProfileId = configured[0].id;
+      state.providerInitialized = true;
+    }
+    syncProviderSelect(
+      providerSelect,
+      providerHint,
+      view.providerOptions,
+      state.selectedProviderProfileId,
+    );
     promptHost.replaceChildren(renderPromptFileCard(view));
     cardsHost.replaceChildren();
     for (const tab of view.tabs) {
@@ -314,7 +427,8 @@ export function renderTerminalsWorkspace(container, options = {}) {
     } else if (view.tabs.some((tab) => tab.installed && tab.capabilityGranted)) {
       statusNode.textContent = "Bridge connected. Waiting for terminal adapters to attach.";
     } else {
-      statusNode.textContent = "Bridge connected. Enable a reviewed add-on, then grant the terminal-host capability.";
+      statusNode.textContent =
+        "Bridge connected. Enable a reviewed add-on, then grant the terminal-host capability.";
     }
   }
 
@@ -327,15 +441,13 @@ export function renderTerminalsWorkspace(container, options = {}) {
       setLastError(tab.addonId, "Enable is not available in this environment.", "warn");
       return;
     }
-    const nextEnabled = tab.projectionStatus === "inactive";
+    const nextEnabled = !tab.enabled;
     clearError();
     setBusy(tab.addonId);
     try {
       await options.enableTransaction(tab.addonId, nextEnabled);
     } catch (error) {
-      const message = error && typeof error.message === "string"
-        ? error.message
-        : "Enable failed.";
+      const message = error && typeof error.message === "string" ? error.message : "Enable failed.";
       setLastError(tab.addonId, message, "warn");
       return;
     }
@@ -364,7 +476,7 @@ export function renderTerminalsWorkspace(container, options = {}) {
     if (confirm) {
       const ok = confirm(
         `Authorize ${tab.label} to use the terminal-host capability? ` +
-        "This grants the system-scope, degradable terminal-host privilege.",
+          "This grants the system-scope, degradable terminal-host privilege.",
       );
       if (!ok) {
         setLastError(tab.addonId, "Grant cancelled — terminal-host not authorized.", "info");
@@ -376,9 +488,7 @@ export function renderTerminalsWorkspace(container, options = {}) {
     try {
       await options.grantTransaction(tab.addonId, "terminal-host");
     } catch (error) {
-      const message = error && typeof error.message === "string"
-        ? error.message
-        : "Grant failed.";
+      const message = error && typeof error.message === "string" ? error.message : "Grant failed.";
       setLastError(tab.addonId, message, "warn");
       return;
     }
@@ -407,6 +517,7 @@ export function renderTerminalsWorkspace(container, options = {}) {
         terminalAddonId: tab.addonId,
         promptPath: currentView.promptPath,
         agentId: DEFAULT_AGENT_ID,
+        providerProfileId: state.selectedProviderProfileId,
       });
     } catch (error) {
       setLastError(tab.addonId, safeError(error), "warn");
@@ -419,7 +530,19 @@ export function renderTerminalsWorkspace(container, options = {}) {
       return;
     }
     if (result && result.reason === "capability-not-granted") {
-      setLastError(tab.addonId, "Authorize the terminal-host capability to use Open in Terminal.", "warn");
+      setLastError(
+        tab.addonId,
+        "Authorize the terminal-host capability to use Open in Terminal.",
+        "warn",
+      );
+      return;
+    }
+    if (result && result.reason === "missing-credential") {
+      setLastError(
+        tab.addonId,
+        "No provider credential is configured for the selected profile — add one in Settings → Providers.",
+        "warn",
+      );
       return;
     }
     if (result && result.reason === "executable-unavailable") {
@@ -431,7 +554,11 @@ export function renderTerminalsWorkspace(container, options = {}) {
       return;
     }
     if (result && result.reason === "launch-failed") {
-      setLastError(tab.addonId, "The terminal adapter rejected the launch. Try the copy-connection-script fallback.", "warn");
+      setLastError(
+        tab.addonId,
+        "The terminal adapter rejected the launch. Try the copy-connection-script fallback.",
+        "warn",
+      );
       return;
     }
     if (result && result.ok) {
@@ -473,11 +600,19 @@ export function renderTerminalsWorkspace(container, options = {}) {
       return;
     }
     if (result && result.reason === "capability-not-granted") {
-      setLastError(tab.addonId, "Authorize the terminal-host capability to copy a connection script.", "warn");
+      setLastError(
+        tab.addonId,
+        "Authorize the terminal-host capability to copy a connection script.",
+        "warn",
+      );
       return;
     }
     if (!result || !result.ok || typeof result.command !== "string") {
-      setLastError(tab.addonId, "Copy failed: the host did not return a connection script.", "warn");
+      setLastError(
+        tab.addonId,
+        "Copy failed: the host did not return a connection script.",
+        "warn",
+      );
       return;
     }
     const ok = await copyToClipboard(result.command);
@@ -490,8 +625,10 @@ export function renderTerminalsWorkspace(container, options = {}) {
   }
 
   function getClipboard() {
-    if (options.navigatorRef && options.navigatorRef.clipboard) return options.navigatorRef.clipboard;
-    if (typeof navigator !== "undefined" && navigator && navigator.clipboard) return navigator.clipboard;
+    if (options.navigatorRef && options.navigatorRef.clipboard)
+      return options.navigatorRef.clipboard;
+    if (typeof navigator !== "undefined" && navigator && navigator.clipboard)
+      return navigator.clipboard;
     return null;
   }
   async function copyToClipboard(text) {
@@ -503,6 +640,31 @@ export function renderTerminalsWorkspace(container, options = {}) {
     } catch {
       return false;
     }
+  }
+
+  async function onSavePrompt() {
+    if (typeof options.writePrompt !== "function") {
+      statusNode.textContent = "Prompt writing is not available in this environment.";
+      return;
+    }
+    const text = promptTextarea.value ?? "";
+    if (text.trim().length === 0) {
+      statusNode.textContent = "Write a prompt first.";
+      return;
+    }
+    if (text.length > 65536) {
+      statusNode.textContent = "Prompt is too long (max 65536 characters).";
+      return;
+    }
+    try {
+      await options.writePrompt({ text });
+      statusNode.textContent =
+        "Prompt saved. Open in Terminal is now enabled for connected terminals.";
+    } catch (error) {
+      statusNode.textContent = `Prompt save failed: ${safeError(error)}`;
+      return;
+    }
+    scheduleRefresh();
   }
 
   // ---------------------------------------------------------------------
@@ -520,7 +682,7 @@ export function renderTerminalsWorkspace(container, options = {}) {
     const detail = element("p", { className: "terminals-prompt-card-detail" });
     detail.textContent = view.promptValid
       ? "A 0600 prompt file is in place. Open in Terminal is enabled for connected terminals."
-      : "No 0600 prompt file yet. Write a prompt, then return here — the launch button stays disabled until a valid 0600 file exists.";
+      : "No 0600 prompt file yet. Write a prompt below and save it — the launch button stays disabled until a valid 0600 file exists.";
     card.append(label, value, detail);
     return card;
   }
@@ -537,7 +699,9 @@ export function renderTerminalsWorkspace(container, options = {}) {
   void refresh().catch(() => undefined);
   const pollMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
   if (pollMs > 0) {
-    state.timer = setInterval(() => { void refresh().catch(() => undefined); }, pollMs);
+    state.timer = setInterval(() => {
+      void refresh().catch(() => undefined);
+    }, pollMs);
   }
 
   return {
