@@ -30,6 +30,7 @@ import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, resolve
 import { createRebindCoordinator } from "./lib/rebind-coordinator.js";
 import { createBootstrapClient } from "./lib/bootstrap-client.js";
 import { createBootstrapStartup } from "./lib/bootstrap-startup.js";
+import { KEEPALIVE_PORT_NAME } from "./lib/sw-keepalive.js";
 import { isTopFrameSender, sanitizeInlineAssistantBody, sanitizeResonantContextSnapshot } from "./lib/background-message-policy.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 
@@ -157,6 +158,25 @@ const bootstrapStartup = createBootstrapStartup({
 // Fire-and-forget; the SW stays responsive while the orchestrator
 // runs the bounded status/start/health sequence.
 void bootstrapStartup.boot().catch(() => undefined);
+
+// MV3 service-worker keepalive: an open chrome.runtime.connect() port
+// from any extension page pins this SW alive even while the page is
+// hidden, preventing Chromium's idle-kill from tearing down the
+// CP-BR2 orchestrator state (the "Bridge offline" false negative).
+// The port carries NO payload — both ends ignore messages and no
+// tokens/credentials cross it. The page-side factory
+// (`createSwKeepalive`) handles reconnect/backoff; the SW just
+// retains the port references so the open channel keeps the worker
+// warm. If the extension is updated or unloaded, the channels close
+// on their own; the next page mount reconnects.
+const keepalivePorts = new Set();
+chrome?.runtime?.onConnect?.addListener?.((port) => {
+  if (!port || port.name !== KEEPALIVE_PORT_NAME) return;
+  keepalivePorts.add(port);
+  port.onDisconnect?.addListener?.(() => {
+    keepalivePorts.delete(port);
+  });
+});
 
 async function currentBridgeRequest(route, options = {}) {
   const req = typeof bridgeRequest === "function"
@@ -386,9 +406,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // the side panel use this to ask the SW to query/stop/retry the bridge
   // bootstrap lifecycle. The SW is the only owner of the orchestrator;
   // the renderer never talks to chrome.runtime.connectNative directly.
+  //
+  // MV3 SW recovery: the in-memory snapshot is "offline" until the
+  // orchestrator's first `boot()` resolves. If the renderer's first
+  // poll lands during that window — common right after a SW revival —
+  // the answer would be a false "offline". Awaiting `whenBootSettled`
+  // closes the window: the renderer sees the post-boot snapshot
+  // (typically "connected" when the bridge is healthy).
   if (message.type === "bootstrap:get-status") {
-    Promise.resolve(bootstrapStartup.getSnapshot())
-      .then((snapshot) => sendResponse({ ok: true, snapshot }))
+    void bootstrapStartup.whenBootSettled()
+      .then(() => sendResponse({ ok: true, snapshot: bootstrapStartup.getSnapshot() }))
       .catch((error) => sendResponse({ ok: false, error: error?.message ?? String(error) }));
     return true;
   }

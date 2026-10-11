@@ -382,6 +382,21 @@ export function createBootstrapStartup(options = {}) {
     return boot();
   }
 
+  /**
+   * Resolve when any in-flight boot attempt settles; resolve immediately
+   * when the orchestrator is idle. The MV3 service-worker recovery path
+   * uses this to avoid reporting the pre-boot "starting" / "offline"
+   * placeholder after a SW revival while a healthy bridge is reachable.
+   *
+   * Always resolves (never rejects) so the caller can chain `then(snapshot)`
+   * without a catch. Both the happy and the failed paths of `boot()` end
+   * with a settled snapshot, which is the public post-condition.
+   */
+  function whenBootSettled() {
+    if (!bootInFlight) return Promise.resolve();
+    return bootInFlight.then(() => undefined, () => undefined);
+  }
+
   return Object.freeze({
     boot,
     restart,
@@ -391,6 +406,7 @@ export function createBootstrapStartup(options = {}) {
     getSnapshot: snapshot,
     onLifecycleEvent,
     onHealthyAfterStart,
+    whenBootSettled,
   });
 }
 

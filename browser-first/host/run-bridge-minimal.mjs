@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -796,3 +796,70 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
     void shutdown().finally(() => process.exit(0));
   });
 }
+
+// CP-BR11 bridge-death log. The bridge is spawned with `stdio: "ignore"`
+// (see host/bridge-launcher.mjs), so an unexpected bridge exit leaves no
+// stderr trail. The CP-BR2 orchestrator only sees the host's status
+// envelope, which surfaces `unexpected-exit`; a redacted append-only log
+// here gives the operator a breadcrumb on the bridge host without leaking
+// the bridge token, capability tokens, paths, PIDs, or env. The log is
+// bounded by simple size-based rotation (≤ 256 KiB) so a chatty host
+// cannot grow it without bound.
+//
+// The `exit` event handler below is the single sink for every exit
+// path — normal return, uncaught exception, or graceful shutdown after
+// SIGINT/SIGTERM (the SIGINT/SIGTERM handlers above call
+// `process.exit(0)`, which fires the `exit` event). The signal field is
+// always null because the runtime's `exit` event does not surface the
+// terminating signal; that detail is recoverable from the operator's
+// own signal handling / shell history if needed.
+const BRIDGE_EXIT_LOG_BASENAME = "bridge-exit.log";
+const BRIDGE_EXIT_LOG_MAX_BYTES = 256 * 1024;
+const BRIDGE_EXIT_LOG_KEEP_BYTES = 128 * 1024;
+
+function bridgeExitLogPath() {
+  return path.join(os.homedir(), ".ros", BRIDGE_EXIT_LOG_BASENAME);
+}
+
+function recordBridgeExit({ code }) {
+  // The record carries exactly the three documented fields: code (number
+  // or null), signal (always null at the `exit` event), at (ISO
+  // timestamp). No env, path, PID, argv, or token value is ever
+  // appended.
+  const record = JSON.stringify({
+    event: "bridge.exit",
+    code: typeof code === "number" ? code : null,
+    signal: null,
+    at: new Date().toISOString(),
+  });
+  const logPath = bridgeExitLogPath();
+  try {
+    const dir = path.dirname(logPath);
+    if (!existsSync(dir)) {
+      // The directory is normally created by the installer. If it is
+      // missing we skip silently to keep the bridge's shutdown path
+      // clean (this log is operator breadcrumb, not a contract).
+      return;
+    }
+    appendFileSync(logPath, record + "\n");
+    const { size } = statSync(logPath);
+    if (size > BRIDGE_EXIT_LOG_MAX_BYTES) {
+      // Simple rotation: keep the trailing half and drop the rest.
+      // Avoiding a full re-architecture (winston/pino) for a 4-field log.
+      const buf = readFileSync(logPath);
+      const trimmed = buf.subarray(Math.max(0, buf.length - BRIDGE_EXIT_LOG_KEEP_BYTES));
+      // Drop everything up to and including the first newline so the
+      // surviving file is a sequence of complete JSON lines.
+      const firstNewline = trimmed.indexOf(0x0a);
+      const writeBuf = firstNewline >= 0 ? trimmed.subarray(firstNewline + 1) : trimmed;
+      writeFileSync(logPath, writeBuf);
+    }
+  } catch {
+    // Best-effort logging; never throw from a shutdown path.
+  }
+}
+
+process.on("exit", (code) => {
+  // The `exit` event only allows synchronous work; appendFileSync is.
+  recordBridgeExit({ code });
+});

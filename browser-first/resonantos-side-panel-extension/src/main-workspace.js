@@ -3,6 +3,7 @@ import { normalizeBrowserUrl } from "./lib/browser-command-parser.js";
 import { isControllableTabUrl } from "./lib/control-target-classification.js";
 import { createBridgeClient, createRawBridgeFetch, detectLoopbackBridge, initCapabilityTokens, isUnauthorizedBridgeError, resolveBridgeConfig } from "./lib/bridge-client.js";
 import { createBootstrapRenderer } from "./lib/bootstrap-renderer.js";
+import { createSwKeepalive } from "./lib/sw-keepalive.js";
 import { createPrefsSync } from "./lib/prefs-sync.js";
 import { createChatSessionStore } from "./lib/chat-session-store.js";
 import { shouldSyncChatChange } from "./lib/chat-sync.js";
@@ -188,6 +189,17 @@ void hydrateAfterRebind();
 // chrome.runtime.connectNative.
 const bootstrapRenderer = createBootstrapRenderer({});
 bootstrapRenderer.start();
+
+// MV3 SW keepalive: holds an open chrome.runtime.connect() port to
+// the SW so Chromium's ~30s idle kill does not tear down the
+// CP-BR2 orchestrator state. The port carries no payload and no
+// tokens/credentials cross it. Reconnect/backoff is internal to
+// the factory. The page is the natural pin — when the workspace
+// is closed, the port closes and the SW is allowed to idle.
+const swKeepalive = createSwKeepalive();
+swKeepalive.start();
+globalThis.addEventListener?.("pagehide", () => swKeepalive.stop());
+globalThis.addEventListener?.("beforeunload", () => swKeepalive.stop());
 
 chrome?.storage?.onChanged?.addListener?.((changes, area) => {
   if (area !== "local") return;
@@ -1125,8 +1137,7 @@ function renderTerminalsWorkspace() {
       seams = null;
     }
   }
-  renderTerminalsWorkspaceRenderer({
-    container: transcript,
+  renderTerminalsWorkspaceRenderer(transcript, {
     bridgeRequest: currentBridgeRequest,
     getBridgeRequest,
     onOpenBridgeSettings: () => {
