@@ -38,7 +38,14 @@ import { resolvePiNativeProvider } from "./pi-native-provider-map.mjs";
 import { createHarnessResourceProjection } from "./harness-resource-projection.mjs";
 import { createHarnessSkillsProjection } from "./harness-skills-projection.mjs";
 
-const TERMINAL_HOST_ADDON_ID = "addon.resonant-terminal-iterm2";
+// The default addon id is determined by RESONANT_TERMINAL_DRIVER.
+// When the driver is 'ghostty', the addon id is 'addon.resonant-terminal-ghostty'.
+// When the driver is 'iterm2' or 'in-memory', the addon id is 'addon.resonant-terminal-iterm2'.
+const TERMINAL_HOST_ADDON_ID_BY_DRIVER = {
+  ghostty: "addon.resonant-terminal-ghostty",
+  iterm2: "addon.resonant-terminal-iterm2",
+  "in-memory": "addon.resonant-terminal-iterm2",
+};
 const JSON_RPC_VERSION = "2.0";
 
 /**
@@ -77,20 +84,43 @@ function shellQuote(value) {
  * @param {string} [args.memoryRoot]     Living Archive root; path only, never content
  * @returns {string}
  */
-export function composeBootstrapCommand({ sessionId, tokenFilePath, providerProfileId, rosSessionPath, harness, project, authFilePath, errorFilePath, memoryMode, memoryRoot } = {}) {
-  if (typeof sessionId !== "string" || !sessionId) throw new TypeError("composeBootstrapCommand: sessionId required");
-  if (typeof tokenFilePath !== "string" || !tokenFilePath) throw new TypeError("composeBootstrapCommand: tokenFilePath required");
-  if (typeof rosSessionPath !== "string" || !rosSessionPath) throw new TypeError("composeBootstrapCommand: rosSessionPath required");
+export function composeBootstrapCommand({
+  sessionId,
+  tokenFilePath,
+  providerProfileId,
+  rosSessionPath,
+  harness,
+  project,
+  authFilePath,
+  errorFilePath,
+  memoryMode,
+  memoryRoot,
+  terminalTitle = "ROS: connected",
+} = {}) {
+  if (typeof sessionId !== "string" || !sessionId)
+    throw new TypeError("composeBootstrapCommand: sessionId required");
+  if (typeof tokenFilePath !== "string" || !tokenFilePath)
+    throw new TypeError("composeBootstrapCommand: tokenFilePath required");
+  if (typeof rosSessionPath !== "string" || !rosSessionPath)
+    throw new TypeError("composeBootstrapCommand: rosSessionPath required");
   const projectFlag = project ? ` --project ${shellQuote(JSON.stringify(project))}` : "";
   const harnessFlag = harness ? ` --harness ${shellQuote(harness)}` : "";
   const authFileFlag = authFilePath ? ` --auth-file ${shellQuote(authFilePath)}` : "";
   const errorFileFlag = errorFilePath ? ` --error-file ${shellQuote(errorFilePath)}` : "";
   const memoryModeFlag = memoryMode ? ` --memory-mode ${shellQuote(memoryMode)}` : "";
   const memoryRootFlag = memoryRoot ? ` --memory-root ${shellQuote(memoryRoot)}` : "";
-  return `eval "$(node ${shellQuote(rosSessionPath)} attach --session-id ${shellQuote(sessionId)}` +
+  // Terminal "connected" indicator: set the window/tab title via an OSC
+  // escape so the operator sees "ROS: connected" in the terminal chrome
+  // without editing their shell rc. Appended AFTER the eval so the title is
+  // set once the session env is sourced; non-secret, single quotes stripped.
+  const title = String(terminalTitle ?? "ROS: connected").replace(/'/g, "");
+  const titleFlag = `; printf '\\033]2;${title}\\007'`;
+  return (
+    `eval "$(node ${shellQuote(rosSessionPath)} attach --session-id ${shellQuote(sessionId)}` +
     ` --token-file ${shellQuote(tokenFilePath)}` +
     ` --provider-profile-id ${shellQuote(providerProfileId ?? "")}` +
-    `${harnessFlag}${projectFlag}${authFileFlag}${errorFileFlag}${memoryModeFlag}${memoryRootFlag})"`;
+    `${harnessFlag}${projectFlag}${authFileFlag}${errorFileFlag}${memoryModeFlag}${memoryRootFlag})"${titleFlag}`
+  );
 }
 
 // Adapter spawn env allowlist. ADR-039/040 require no `process.env`
@@ -164,7 +194,7 @@ const GRANT_RECORDS = new Map();
 export const GRANT_PUBLIC_REJECTION_REASONS = Object.freeze({
   "unknown-session": "Unknown session.",
   "wrong-session": "Token does not match this session.",
-  "expired": "Grant expired.",
+  expired: "Grant expired.",
   "already-consumed": "Grant already consumed.",
 });
 
@@ -233,6 +263,26 @@ export function consumeGrant({ sessionId, token, now = () => new Date() }) {
  * @param {AttachSessionEnvRequest} args
  * @returns {{ ok: true, env: Record<string,string> } | { ok: false, reason: keyof typeof GRANT_PUBLIC_REJECTION_REASONS | "missing-credential" }}
  */
+/**
+ * Connection marker env names (the "connected to ROS" terminal indicator).
+ *
+ * `ros-session attach` sources these into the attached shell, so a prompt
+ * or script can render a human-visible "connected" indicator. Non-secret
+ * public identifiers only — never a credential, token, or path. Names satisfy
+ * SESSION_ENV_NAME_PATTERN (`/^[A-Z_][A-Z0-9_]*$/`).
+ */
+export const SESSION_CONNECTION_MARKER = Object.freeze({
+  connected: "ROS_CONNECTED",
+  sessionId: "ROS_SESSION_ID",
+});
+
+function connectionMarkerEnv(sessionId) {
+  return {
+    [SESSION_CONNECTION_MARKER.connected]: "1",
+    [SESSION_CONNECTION_MARKER.sessionId]: sessionId,
+  };
+}
+
 export function attachSessionEnv({
   sessionId,
   token,
@@ -271,7 +321,19 @@ export function attachSessionEnv({
   });
   // Harness + project roots are returned as opaque metadata for the
   // attaching shell; the env object itself is the only credential path.
-  return { ok: true, env: { ...env, _meta: JSON.stringify({ sessionId, harness: harness ?? null, project: project ?? null, providerProfileId: providerProfileId ?? null }) } };
+  return {
+    ok: true,
+    env: {
+      ...env,
+      ...connectionMarkerEnv(sessionId),
+      _meta: JSON.stringify({
+        sessionId,
+        harness: harness ?? null,
+        project: project ?? null,
+        providerProfileId: providerProfileId ?? null,
+      }),
+    },
+  };
 }
 
 /**
@@ -302,8 +364,10 @@ export function attachSessionEnv({
  * @returns {(profileId: string) => { name: string, value: string } | null}
  */
 export function createTerminalHostCredentialResolver({ getProfile, resolveSecret } = {}) {
-  if (typeof getProfile !== "function") throw new TypeError("createTerminalHostCredentialResolver: getProfile must be a function");
-  if (typeof resolveSecret !== "function") throw new TypeError("createTerminalHostCredentialResolver: resolveSecret must be a function");
+  if (typeof getProfile !== "function")
+    throw new TypeError("createTerminalHostCredentialResolver: getProfile must be a function");
+  if (typeof resolveSecret !== "function")
+    throw new TypeError("createTerminalHostCredentialResolver: resolveSecret must be a function");
   return function resolveCredential(profileId) {
     if (typeof profileId !== "string" || !profileId) return null;
     const profile = getProfile(profileId);
@@ -424,9 +488,15 @@ export async function buildProjectedSessionEnv(args) {
       authorizedProject,
       ...(resourceHooks ?? {}),
     });
-    const outcome = await projection.project({ addonId: TERMINAL_HOST_ADDON_ID, sessionId, request, grantedCapabilities });
+    const outcome = await projection.project({
+      addonId: TERMINAL_HOST_ADDON_ID,
+      sessionId,
+      request,
+      grantedCapabilities,
+    });
     if (!outcome.ok) {
-      resourceRejection = outcome.view?.state === "denied" ? outcome.code ?? "resource-denied" : "resource-denied";
+      resourceRejection =
+        outcome.view?.state === "denied" ? (outcome.code ?? "resource-denied") : "resource-denied";
     } else {
       resourceView = outcome.view;
     }
@@ -436,25 +506,34 @@ export async function buildProjectedSessionEnv(args) {
   let skillsView = null;
   let skillsRejection = null;
   let skillsStagingRoot = null;
-  if (authorizedProject && request && Array.isArray(skillCatalog) && skillSourceRoot && stagingBase) {
+  if (
+    authorizedProject &&
+    request &&
+    Array.isArray(skillCatalog) &&
+    skillSourceRoot &&
+    stagingBase
+  ) {
     const projection = createHarnessSkillsProjection({
       authorizedProject: { id: authorizedProject.id, label: authorizedProject.label },
       skillCatalog,
       skillSourceRoot,
       stagingBase,
     });
-    const outcome = projection.project({ addonId: TERMINAL_HOST_ADDON_ID, sessionId, request, grantedCapabilities });
+    const outcome = projection.project({
+      addonId: TERMINAL_HOST_ADDON_ID,
+      sessionId,
+      request,
+      grantedCapabilities,
+    });
     if (outcome.ok) {
       skillsView = outcome.view;
       // Derive the SAME opaque owned staging root from THIS projection binding.
       // We replicate the projection's identity derivation so the env name
       // matches what consume() would later validate. The path is host-derived
       // (never caller-supplied).
-      const stagingIdentity = (await import("./harness-skills-projection.mjs")).deriveStagingIdentity(
-        TERMINAL_HOST_ADDON_ID,
-        sessionId,
-        authorizedProject.id,
-      );
+      const stagingIdentity = (
+        await import("./harness-skills-projection.mjs")
+      ).deriveStagingIdentity(TERMINAL_HOST_ADDON_ID, sessionId, authorizedProject.id);
       skillsStagingRoot = `${stagingBase.replace(/\/$/, "")}/skills/${stagingIdentity}`;
     } else {
       skillsRejection = outcome.code ?? "skills-denied";
@@ -468,9 +547,8 @@ export async function buildProjectedSessionEnv(args) {
   // marker recorded in meta (deferred endpoint).
   let memoryProjection = null;
   let memoryRejection = null;
-  const memoryMode = (memoryAccess && typeof memoryAccess === "object")
-    ? memoryAccess.archiveReadMode
-    : "none";
+  const memoryMode =
+    memoryAccess && typeof memoryAccess === "object" ? memoryAccess.archiveReadMode : "none";
   if (memoryMode === "read-only-context") {
     if (!stagingBase) {
       memoryRejection = "memory-staging-base-missing";
@@ -544,11 +622,20 @@ export async function buildProjectedSessionEnv(args) {
     // Note: the projection object holds root internally; we re-derive via
     // resourceView + authorizedProject.root after consume to keep the env
     // value identical to what consume would validate.
-    const projection = createHarnessResourceProjection({ authorizedProject, ...(resourceHooks ?? {}) });
-    const projected = await projection.project({ addonId: TERMINAL_HOST_ADDON_ID, sessionId, request, grantedCapabilities });
+    const projection = createHarnessResourceProjection({
+      authorizedProject,
+      ...(resourceHooks ?? {}),
+    });
+    const projected = await projection.project({
+      addonId: TERMINAL_HOST_ADDON_ID,
+      sessionId,
+      request,
+      grantedCapabilities,
+    });
     if (projected.ok && projected.projection?.root) {
       baseWithProjections[PROJECTED_SESSION_ENV_NAMES.projectRoot] = projected.projection.root;
-      baseWithProjections[PROJECTED_SESSION_ENV_NAMES.projectCwd] = projected.projection.cwd ?? projected.projection.root;
+      baseWithProjections[PROJECTED_SESSION_ENV_NAMES.projectCwd] =
+        projected.projection.cwd ?? projected.projection.root;
     }
   }
   if (skillsStagingRoot) {
@@ -588,7 +675,9 @@ export async function buildProjectedSessionEnv(args) {
       archiveReadMode: memoryProjection.archiveReadMode,
       domains: [...memoryProjection.domains],
       expiresAt: memoryProjection.expiresAt,
-      ...(memoryProjection.notImplemented ? { notImplemented: memoryProjection.notImplemented } : {}),
+      ...(memoryProjection.notImplemented
+        ? { notImplemented: memoryProjection.notImplemented }
+        : {}),
     });
   }
   if (memoryRejection) {
@@ -597,7 +686,7 @@ export async function buildProjectedSessionEnv(args) {
 
   return {
     ok: true,
-    env: { ...env, _meta: JSON.stringify(meta) },
+    env: { ...env, ...connectionMarkerEnv(sessionId), _meta: JSON.stringify(meta) },
     meta,
   };
 }
@@ -741,10 +830,15 @@ export function envelopeToHarnessEvent(envelope, provenance) {
  */
 export function createTerminalHostService(options = {}) {
   const env = options.env ?? process.env;
-  const addonId = options.addonId ?? (() => TERMINAL_HOST_ADDON_ID);
-  const bootEpoch = options.bootEpoch ?? (() => env.RESONANTOS_HARNESS_BOOTEPOCH ?? `boot-${randomUUID().slice(0, 8)}`);
-  const stagingBase = typeof options.stagingBase === "string" ? options.stagingBase : null;
   const driveId = env.RESONANT_TERMINAL_DRIVER ?? "in-memory";
+  const addonId =
+    options.addonId ??
+    (() =>
+      TERMINAL_HOST_ADDON_ID_BY_DRIVER[driveId] ?? TERMINAL_HOST_ADDON_ID_BY_DRIVER["in-memory"]);
+  const bootEpoch =
+    options.bootEpoch ??
+    (() => env.RESONANTOS_HARNESS_BOOTEPOCH ?? `boot-${randomUUID().slice(0, 8)}`);
+  const stagingBase = typeof options.stagingBase === "string" ? options.stagingBase : null;
   // Driver-specific spawn plan. The iTerm2 driver is a Python script
   // (iterm2's control API is Python; the bridge is the stdio JSON-RPC
   // peer). The Ghostty driver is a Node script (Ghostty's only automation
@@ -759,15 +853,20 @@ export function createTerminalHostService(options = {}) {
       `RESONANT_TERMINAL_DRIVER must be 'in-memory', 'iterm2', or 'ghostty'. Got: ${JSON.stringify(driveId)}`,
     );
   }
-  const cwd = options.cwd ?? (
-    driveId === "ghostty" ? "examples/sdk-demo/terminal-host/ghostty"
-    : "examples/sdk-demo/terminal-host/iterm2"
-  );
-  const spawnFn = options.spawn ?? ((cmd, args, envArg) => spawn(cmd, args, { cwd, env: envArg, stdio: ["pipe", "pipe", "pipe"] }));
+  const cwd =
+    options.cwd ??
+    (driveId === "ghostty"
+      ? "examples/sdk-demo/terminal-host/ghostty"
+      : "examples/sdk-demo/terminal-host/iterm2");
+  const spawnFn =
+    options.spawn ??
+    ((cmd, args, envArg) =>
+      spawn(cmd, args, { cwd, env: envArg, stdio: ["pipe", "pipe", "pipe"] }));
   // Path to the ros-session CLI used to compose the bootstrap command. By
   // default it is the absolute path to browser-first/bin/ros-session.mjs
   // resolved relative to this module. Tests inject a stub path.
-  const rosSessionPath = options.rosSessionPath ?? new URL("../bin/ros-session.mjs", import.meta.url).pathname;
+  const rosSessionPath =
+    options.rosSessionPath ?? new URL("../bin/ros-session.mjs", import.meta.url).pathname;
   const spawnPlan = SPAWN_PLANS[driveId] ?? { command: "node", args: ["adapter.mjs"] };
   const entrypoint = options.entrypoint ?? spawnPlan.command;
   const script = options.script ?? spawnPlan.args[0];
@@ -807,13 +906,17 @@ export function createTerminalHostService(options = {}) {
     if (msg.method !== "terminal.event") return;
     const validation = validateRosTerminalEventEnvelope(msg.params);
     if (!validation.ok) {
-      console.error(JSON.stringify({ event: "terminal_host.invalid_envelope", reason: validation.reason }));
+      console.error(
+        JSON.stringify({ event: "terminal_host.invalid_envelope", reason: validation.reason }),
+      );
       return;
     }
     const provenance = nextProvenance(validation.value.sessionId);
     const harnessEvent = envelopeToHarnessEvent(validation.value, provenance);
     if (!validateHarnessEvent(harnessEvent)) {
-      console.error(JSON.stringify({ event: "terminal_host.bus_rejected", type: harnessEvent.type }));
+      console.error(
+        JSON.stringify({ event: "terminal_host.bus_rejected", type: harnessEvent.type }),
+      );
       return;
     }
     bus?.publish({
@@ -830,15 +933,28 @@ export function createTerminalHostService(options = {}) {
     if (!waiter) return;
     pending.delete(msg.id);
     clearTimeout(waiter.timer);
-    if (msg.error) waiter.reject(Object.assign(new Error(msg.error.message), { code: msg.error.code, data: msg.error.data }));
+    if (msg.error)
+      waiter.reject(
+        Object.assign(new Error(msg.error.message), { code: msg.error.code, data: msg.error.data }),
+      );
     else waiter.resolve(msg.result);
   }
 
   function handleLine(/** @type {string} */ line) {
     if (line.length === 0) return;
     let msg;
-    try { msg = JSON.parse(line); }
-    catch (error) { console.error(JSON.stringify({ event: "terminal_host.bad_json", error: String(error), line: line.slice(0, 200) })); return; }
+    try {
+      msg = JSON.parse(line);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          event: "terminal_host.bad_json",
+          error: String(error),
+          line: line.slice(0, 200),
+        }),
+      );
+      return;
+    }
     if (msg.jsonrpc !== JSON_RPC_VERSION) {
       console.error(JSON.stringify({ event: "terminal_host.bad_version", version: msg.jsonrpc }));
       return;
@@ -860,7 +976,11 @@ export function createTerminalHostService(options = {}) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         pending.delete(id);
-        reject(Object.assign(new Error(`${method} timed out after ${timeoutMs}ms`), { code: "deadline-exceeded" }));
+        reject(
+          Object.assign(new Error(`${method} timed out after ${timeoutMs}ms`), {
+            code: "deadline-exceeded",
+          }),
+        );
       }, timeoutMs);
       pending.set(id, { resolve, reject, timer, startedAt: performance.now() });
       send({ jsonrpc: JSON_RPC_VERSION, id, method, params });
@@ -874,7 +994,13 @@ export function createTerminalHostService(options = {}) {
       // but produces no bus events of its own. Tests in this mode drive
       // the in-memory host directly.
       bus = createHarnessEventBus({
-        provenance: { addonId: addonId(), sessionId: "terminal-host-bus", turnId: "terminal", bootEpoch: bootEpoch(), generation: 0 },
+        provenance: {
+          addonId: addonId(),
+          sessionId: "terminal-host-bus",
+          turnId: "terminal",
+          bootEpoch: bootEpoch(),
+          generation: 0,
+        },
         isCurrent: () => alive,
         maxReaders: 8,
       });
@@ -883,7 +1009,13 @@ export function createTerminalHostService(options = {}) {
     }
     // iterm2: spawn the operator-provided adapter as a stdio JSON-RPC peer.
     bus = createHarnessEventBus({
-      provenance: { addonId: addonId(), sessionId: "terminal-host-bus", turnId: "terminal", bootEpoch: bootEpoch(), generation: 0 },
+      provenance: {
+        addonId: addonId(),
+        sessionId: "terminal-host-bus",
+        turnId: "terminal",
+        bootEpoch: bootEpoch(),
+        generation: 0,
+      },
       isCurrent: () => alive,
       maxReaders: 8,
     });
@@ -923,41 +1055,48 @@ export function createTerminalHostService(options = {}) {
     let closedSessions = 0;
     if (trackedIds.length > 0 && child && !child.killed) {
       const closeAll = (async () => {
-        await Promise.all(trackedIds.map(async (id) => {
-          try {
-            await request(
-              "terminateSession",
-              { sessionId: id },
-              { timeoutMs: TERMINATE_SESSION_TIMEOUT_MS },
-            );
-            closedSessions += 1;
-          } catch (error) {
-            // Tolerate session-not-found (already closed), deadline-exceeded
-            // (adapter unresponsive), and runtime-unavailable (peer gone).
-            // No other code path can throw here.
-          }
-        }));
+        await Promise.all(
+          trackedIds.map(async (id) => {
+            try {
+              await request(
+                "terminateSession",
+                { sessionId: id },
+                { timeoutMs: TERMINATE_SESSION_TIMEOUT_MS },
+              );
+              closedSessions += 1;
+            } catch (error) {
+              // Tolerate session-not-found (already closed), deadline-exceeded
+              // (adapter unresponsive), and runtime-unavailable (peer gone).
+              // No other code path can throw here.
+            }
+          }),
+        );
       })();
-      await Promise.race([
-        closeAll,
-        delay(CLOSE_ALL_TIMEOUT_MS).then(() => undefined),
-      ]);
+      await Promise.race([closeAll, delay(CLOSE_ALL_TIMEOUT_MS).then(() => undefined)]);
     }
     // CP-M3: best-effort memory-context cleanup for every tracked
     // session. The staging identity is deterministic from sessionId,
     // so we don't need to keep a side-table.
     if (stagingBase) {
-      await Promise.all(trackedIds.map(async (id) => {
-        try {
-          const { cleanupHarnessMemoryProjection } = await import("./harness-memory-projection.mjs");
-          await cleanupHarnessMemoryProjection({ stagingBase, sessionId: id });
-        } catch { /* best-effort */ }
-      }));
+      await Promise.all(
+        trackedIds.map(async (id) => {
+          try {
+            const { cleanupHarnessMemoryProjection } =
+              await import("./harness-memory-projection.mjs");
+            await cleanupHarnessMemoryProjection({ stagingBase, sessionId: id });
+          } catch {
+            /* best-effort */
+          }
+        }),
+      );
     }
     if (child && !child.killed) {
       child.kill("SIGTERM");
-      try { await Promise.race([once(child, "exit"), delay(2000)]); }
-      catch { child.kill("SIGKILL"); }
+      try {
+        await Promise.race([once(child, "exit"), delay(2000)]);
+      } catch {
+        child.kill("SIGKILL");
+      }
     }
     child = null;
     // Now that the adapter is dead we can mark the service as stopped
@@ -1011,7 +1150,9 @@ export function createTerminalHostService(options = {}) {
     // composition, so it cannot be combined with commandSuffix.
     if (commandSuffix !== undefined) {
       if (bootstrapCommand) {
-        throw new TypeError("launchBootstrap: commandSuffix requires host composition (no bootstrapCommand)");
+        throw new TypeError(
+          "launchBootstrap: commandSuffix requires host composition (no bootstrapCommand)",
+        );
       }
       if (typeof commandSuffix !== "string" || commandSuffix.trim().length === 0) {
         throw new TypeError("launchBootstrap: commandSuffix must be a non-empty string");
@@ -1029,14 +1170,17 @@ export function createTerminalHostService(options = {}) {
     if (!composedCommand) {
       // Mint + track the grant so the eventual attachSessionEnv claim is
       // authorized (single-use, audience-bound, expiration-aware).
-      grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId, purpose: "attach" }));
+      grant = trackSessionBootstrapGrant(
+        mintSessionBootstrapGrant({ sessionId, purpose: "attach" }),
+      );
       // Write the token to a 0600 temp file. Default tmp dir; can be injected
       // for tests. Cleanup is best-effort: the CLI's readTokenFile already
       // renames-then-unlinks on success. If the adapter fails before the
       // CLI runs, the host will unlink on the next launchBootstrap invocation
       // for the same sessionId (single-session overwrite policy of the
       // grant broker).
-      tokenFilePath = options.tokenFilePath?.() ?? `${osTmpdir()}/ros-session-${sessionId}-${randomUUID()}.token`;
+      tokenFilePath =
+        options.tokenFilePath?.() ?? `${osTmpdir()}/ros-session-${sessionId}-${randomUUID()}.token`;
       await writeFile(tokenFilePath, grant.token, { mode: 0o600 });
       // CP-S5H3: when the host wires an attach-auth source (bridge base URL
       // + bridge/capability tokens for the authenticated loopback route),
@@ -1046,12 +1190,24 @@ export function createTerminalHostService(options = {}) {
       if (typeof options.attachAuth === "function") {
         const auth = await options.attachAuth();
         if (auth && typeof auth === "object") {
-          authFilePath = options.authFilePath?.() ?? `${osTmpdir()}/ros-session-${sessionId}-${randomUUID()}.auth.json`;
-          await writeFile(authFilePath, JSON.stringify({
-            ...(typeof auth.baseUrl === "string" && auth.baseUrl ? { baseUrl: auth.baseUrl } : {}),
-            ...(typeof auth.bridgeToken === "string" && auth.bridgeToken ? { bridgeToken: auth.bridgeToken } : {}),
-            ...(typeof auth.controlCapabilityToken === "string" && auth.controlCapabilityToken ? { controlCapabilityToken: auth.controlCapabilityToken } : {}),
-          }), { mode: 0o600 });
+          authFilePath =
+            options.authFilePath?.() ??
+            `${osTmpdir()}/ros-session-${sessionId}-${randomUUID()}.auth.json`;
+          await writeFile(
+            authFilePath,
+            JSON.stringify({
+              ...(typeof auth.baseUrl === "string" && auth.baseUrl
+                ? { baseUrl: auth.baseUrl }
+                : {}),
+              ...(typeof auth.bridgeToken === "string" && auth.bridgeToken
+                ? { bridgeToken: auth.bridgeToken }
+                : {}),
+              ...(typeof auth.controlCapabilityToken === "string" && auth.controlCapabilityToken
+                ? { controlCapabilityToken: auth.controlCapabilityToken }
+                : {}),
+            }),
+            { mode: 0o600 },
+          );
         }
       }
       composedCommand = composeBootstrapCommand({
@@ -1063,7 +1219,10 @@ export function createTerminalHostService(options = {}) {
         ...(project ? { project } : {}),
         ...(authFilePath ? { authFilePath } : {}),
         ...(errorFile ? { errorFilePath: errorFile } : {}),
-        ...(memoryAccess && typeof memoryAccess === "object" && typeof memoryAccess.archiveReadMode === "string" && memoryAccess.archiveReadMode
+        ...(memoryAccess &&
+        typeof memoryAccess === "object" &&
+        typeof memoryAccess.archiveReadMode === "string" &&
+        memoryAccess.archiveReadMode
           ? { memoryMode: memoryAccess.archiveReadMode }
           : {}),
         ...(typeof memoryRoot === "string" && memoryRoot ? { memoryRoot } : {}),
@@ -1092,10 +1251,18 @@ export function createTerminalHostService(options = {}) {
     } catch (error) {
       // Best-effort cleanup if the adapter call fails before the CLI runs.
       if (tokenFilePath) {
-        try { await unlink(tokenFilePath); } catch { /* already gone */ }
+        try {
+          await unlink(tokenFilePath);
+        } catch {
+          /* already gone */
+        }
       }
       if (authFilePath) {
-        try { await unlink(authFilePath); } catch { /* already gone */ }
+        try {
+          await unlink(authFilePath);
+        } catch {
+          /* already gone */
+        }
       }
       throw error;
     }
@@ -1105,11 +1272,7 @@ export function createTerminalHostService(options = {}) {
     if (driveId === "in-memory") {
       throw new Error("sendInput unavailable: in-memory driver has no stdio surface");
     }
-    const result = await request(
-      "sendInput",
-      { sessionId, text },
-      { timeoutMs },
-    );
+    const result = await request("sendInput", { sessionId, text }, { timeoutMs });
     return /** @type {any} */ (result);
   }
 
@@ -1117,11 +1280,7 @@ export function createTerminalHostService(options = {}) {
     if (driveId === "in-memory") {
       throw new Error("terminateSession unavailable: in-memory driver has no stdio surface");
     }
-    const result = await request(
-      "terminateSession",
-      { sessionId },
-      { timeoutMs },
-    );
+    const result = await request("terminateSession", { sessionId }, { timeoutMs });
     // CP-SW1: explicit close removes the session from the tracked set
     // so stop() does not re-issue a terminateSession RPC for it.
     trackedSessions.delete(sessionId);
@@ -1132,7 +1291,9 @@ export function createTerminalHostService(options = {}) {
       try {
         const { cleanupHarnessMemoryProjection } = await import("./harness-memory-projection.mjs");
         await cleanupHarnessMemoryProjection({ stagingBase, sessionId });
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
     }
     return /** @type {any} */ (result);
   }
@@ -1141,11 +1302,7 @@ export function createTerminalHostService(options = {}) {
     if (driveId === "in-memory") {
       throw new Error("createSession unavailable: in-memory driver has no stdio surface");
     }
-    const result = await request(
-      "createSession",
-      { sessionId, entryMode },
-      { timeoutMs },
-    );
+    const result = await request("createSession", { sessionId, entryMode }, { timeoutMs });
     // CP-SW1: the adapter accepted the create — track the session id.
     trackedSessions.add(sessionId);
     return /** @type {any} */ (result);
@@ -1174,5 +1331,13 @@ export function createTerminalHostService(options = {}) {
     };
   }
 
-  return { start, stop, launchBootstrap, sendInput, terminateSession, createSession: createSessionRpc, status };
+  return {
+    start,
+    stop,
+    launchBootstrap,
+    sendInput,
+    terminateSession,
+    createSession: createSessionRpc,
+    status,
+  };
 }

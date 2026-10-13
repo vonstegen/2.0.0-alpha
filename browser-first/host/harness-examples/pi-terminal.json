@@ -111,6 +111,6 @@
   "installHooks": {},
   "compatibility": {
     "shellVersion": "0.1.0",
-    "platforms": ["darwin", "linux"]
+    "platforms": ["macOS", "linux"]
   }
 }

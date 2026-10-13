@@ -29,7 +29,7 @@
 //   - never holds credentials: grant tokens live only in the in-memory
 //     `grantTokens` set.
 
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import { mkdir, writeFile, unlink, stat, readdir, chmod } from "node:fs/promises";
@@ -126,19 +126,30 @@ function rejectKnownTokens(text, field) {
   }
 }
 
+/** Hard ceiling for any single osascript round-trip. Healthy Ghostty
+ *  answers in <200ms; the AppleEvent server-side timeout is 60s, which is
+ *  far too long to park the (now serialized) poller. On expiry we SIGKILL
+ *  the child and reject so the next poll tick proceeds. */
+const OSASCRIPT_TIMEOUT_MS = 15000;
+
 function runOsa(script) {
   return new Promise((resolve, reject) => {
     const child = spawn("/usr/bin/osascript", ["-e", script], {
       stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "";
-    let err = "";
-    child.stdout.on("data", (chunk) => { out += chunk.toString(); });
-    child.stderr.on("data", (chunk) => { err += chunk.toString(); });
-    child.on("error", reject);
-    child.on("exit", (code) => {
+    let errBuf = "";
+    const watchdog = setTimeout(() => {
+      try { child.kill("SIGKILL"); } catch { /* already gone */ }
+      reject(Object.assign(new Error(`osascript killed after ${OSASCRIPT_TIMEOUT_MS}ms`), { code: "deadline-exceeded" }));
+    }, OSASCRIPT_TIMEOUT_MS);
+    child.stdout.on("data", (d) => { out += d; });
+    child.stderr.on("data", (d) => { errBuf += d; });
+    child.on("error", (e) => { clearTimeout(watchdog); reject(e); });
+    child.on("close", (code) => {
+      clearTimeout(watchdog);
       if (code === 0) resolve(out.trim());
-      else reject(new Error(`osascript exit ${code}: ${err.trim() || out.trim()}`));
+      else reject(new Error(`osascript exit ${code}: ${errBuf.trim() || out.trim()}`));
     });
   });
 }
@@ -163,16 +174,20 @@ function shellSingleQuoteEscape(value) {
  * cleanup (best-effort unlink is a no-op while bash is still forking
  * into it; the reaper in startPoller() bounds the lifetime).
  *
- * CP-SW2: `waitAfterCommand` controls whether Ghostty holds the window
- * open AFTER the command exits. The default (true) keeps the window
- * open — appropriate for the smoke's one-shot proof window (no shell
- * runs after the proof, but the window must stay open for the smoke
- * to see it; a non-running surface is the prerequisite for a clean
- * programmatic close with no "Close Window?" confirm prompt). Set
- * `false` for the production pi-terminal path: pi is a long-lived
- * process and the window should close after pi exits.
+ * CP-SG3 delivery fix: Ghostty 1.3.1 SILENTLY IGNORES the `command:`
+ * configuration field — the window opens as a plain shell and the
+ * bootstrap never runs (observed: script/auth/token files staged but
+ * never consumed, window title stuck at the default). `initial input:`
+ * DOES work: Ghostty types the text into the new window's shell, and
+ * the trailing `\n` submits it. Two consequences:
+ *   1. The window runs a LOGIN shell, so the operator's PATH (nvm,
+ *      homebrew) is fully sourced before `bash '<scriptFile>'` runs.
+ *   2. When the bootstrap command exits, the shell stays alive — the
+ *      window never becomes a dead wait-after-command surface, so
+ *      `wait after command` is always false (it only governs the
+ *      ignored `command:` field anyway).
  *
- * @param {{ bootstrapCommand: string, sessionId: string, waitAfterCommand?: boolean }} args
+ * @param {{ bootstrapCommand: string, sessionId: string }} args
  * @returns {{
  *   osa: string,
  *   scriptFilePath: string,
@@ -181,7 +196,7 @@ function shellSingleQuoteEscape(value) {
  *   appleScriptBytes: number,
  * }}
  */
-export async function composeGhosttyNewWindowOsa({ bootstrapCommand, sessionId, waitAfterCommand = true }) {
+export async function composeGhosttyNewWindowOsa({ bootstrapCommand, sessionId }) {
   if (typeof bootstrapCommand !== "string") {
     throw new TypeError("composeGhosttyNewWindowOsa: bootstrapCommand must be a string");
   }
@@ -196,14 +211,18 @@ export async function composeGhosttyNewWindowOsa({ bootstrapCommand, sessionId, 
   // use. No secrets ride the file (only paths + shell syntax).
   await writeFile(scriptFilePath, bootstrapCommand, { encoding: "utf8" });
   await chmod(scriptFilePath, 0o600);
-  // The bash invocation inside Ghostty reads the script. POSIX
+  // The bash invocation is TYPED into the new window's shell. POSIX
   // single-quote-escape the path; the outer AppleScript literal wraps
-  // it in double quotes.
+  // it in double quotes. The trailing newline submits the line — it is
+  // appended AFTER osaEscape because osaEscape doubles backslashes;
+  // `\n` must reach AppleScript as the two-character escape, not as
+  // literal backslash-n (verified: `initial input:"touch /tmp/x\n"`
+  // executes in Ghostty 1.3.1).
   const shellPath = `'${shellSingleQuoteEscape(scriptFilePath)}'`;
-  const inner = `bash ${shellPath}`;
+  const inner = `${osaEscape(`bash ${shellPath}`)}\\n`;
   const fields = [];
-  fields.push(`command:"${osaEscape(inner)}"`);
-  fields.push(`wait after command:${waitAfterCommand ? "true" : "false"}`);
+  fields.push(`initial input:"${inner}"`);
+  fields.push(`wait after command:false`);
   const osa = `tell application "Ghostty" to return id of (new window with configuration {${fields.join(", ")}})`;
   return {
     osa,
@@ -232,8 +251,46 @@ async function reapScriptFiles() {
   }
 }
 
-async function ghosttyNewWindow({ command, initialInput, workingDirectory, sessionId, deps }) {
+// Surface-readiness hardening (2026-10-12): Ghostty cannot initialize a
+// surface while the WindowServer reports zero displays (display asleep or
+// locked) — CVDisplayLinkCreateWithCGDisplays fails with -6661 "invalid
+// display count (0)" and the window opens as a dead 👻 surface; any typed
+// `initial input` is silently dropped. This presented as "1-in-6 flaky"
+// delivery throughout the day: every failure correlated with the display
+// being off. Assert user activity (caffeinate -u) before creating the
+// window, verify the surface actually spawned (the window title leaves
+// the 👻 no-surface default), and retry the whole window on a dead
+// surface, bounded.
+const NEW_WINDOW_ATTEMPTS = 3;
+const SURFACE_READY_TIMEOUT_MS = 6000;
+const SURFACE_POLL_MS = 400;
+const DEAD_SURFACE_TITLE = "👻";
+
+function defaultWakeDisplay() {
+  try {
+    spawn("/usr/bin/caffeinate", ["-u", "-t", "1"], { stdio: "ignore", detached: true }).unref();
+  } catch {
+    /* best-effort: delivery proceeds either way */
+  }
+}
+
+async function waitForSurfaceReady(windowId, { windowTitle, sleep, timeoutMs }) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const title = String(await windowTitle(windowId)).trim();
+    if (title && title !== DEAD_SURFACE_TITLE) return true;
+    await sleep(SURFACE_POLL_MS);
+  }
+  return false;
+}
+
+export async function ghosttyNewWindow({ command, initialInput, workingDirectory, sessionId, deps }) {
   const executeOsa = deps?.executeOsa ?? runOsa;
+  const wakeDisplay = deps?.wakeDisplay ?? defaultWakeDisplay;
+  const windowTitle = deps?.windowTitle ?? ghosttyWindowTitle;
+  const closeWindow = deps?.closeWindow ?? ghosttyCloseTerminal;
+  const sleep = deps?.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const surfaceReadyTimeoutMs = deps?.surfaceReadyTimeoutMs ?? SURFACE_READY_TIMEOUT_MS;
   // Long composed commands are walked via a 0600 script file.
   // CP-SG1: the long form is NEVER embedded in an AppleScript literal.
   let composed;
@@ -250,7 +307,25 @@ async function ghosttyNewWindow({ command, initialInput, workingDirectory, sessi
     fields.push(`wait after command:false`);
     osa = `tell application "Ghostty" to return id of (new window with configuration {${fields.join(", ")}})`;
   }
-  const result = await executeOsa(osa);
+  let windowId = "";
+  for (let attempt = 1; attempt <= NEW_WINDOW_ATTEMPTS; attempt += 1) {
+    wakeDisplay();
+    const result = await executeOsa(osa);
+    windowId = String(result).replace(/^window id /, "").trim();
+    if (await waitForSurfaceReady(windowId, { windowTitle, sleep, timeoutMs: surfaceReadyTimeoutMs })) {
+      break;
+    }
+    // Dead surface: the typed bootstrap line can never execute in it.
+    // Close the corpse before retrying so failed attempts do not leak
+    // windows (zero-leaked-windows invariant).
+    await closeWindow(windowId).catch(() => undefined);
+    if (attempt === NEW_WINDOW_ATTEMPTS) {
+      // Every attempt produced a dead surface: return the last window id
+      // so the host observes the same failure shape as before this
+      // hardening (session registered, title never flips).
+      break;
+    }
+  }
   // Unlink-on-next-launch: any prior script for this session is now
   // dead — bash will not race because the osascript call returned
   // before bash forked into the file (macOS Apple Events are
@@ -261,8 +336,20 @@ async function ghosttyNewWindow({ command, initialInput, workingDirectory, sessi
     try { await unlink(prior); } catch { /* */ }
     scriptFiles.delete(sessionId);
   }
-  const windowId = String(result).replace(/^window id /, "").trim();
   return composed ? { windowId, scriptFilePath: composed.scriptFilePath } : { windowId };
+}
+
+/** App-presence check that NEVER sends an AppleEvent. AppleEvents
+ * launch their target on macOS — polling a quit Ghostty resurrected it,
+ * which made the app un-quittable while the add-on was enabled (the
+ * iTerm2 adapter has no such issue: a dead websocket peer just fails).
+ * pgrep queries the process table instead. */
+function isGhosttyRunning() {
+  return new Promise((resolve) => {
+    execFile("/usr/bin/pgrep", ["-xiq", "ghostty"], { timeout: 2000 }, (error) => {
+      resolve(!error);
+    });
+  });
 }
 
 async function ghosttyCloseTerminal(windowId) {
@@ -439,8 +526,22 @@ function request(method, params, { timeoutMs = 5000 } = {}) {
   });
 }
 
-async function pollOnce() {
+export async function pollOnce({ isAppRunning = isGhosttyRunning } = {}) {
   if (!alive) return;
+  if (!(await isAppRunning())) {
+    // Ghostty quit: every tracked window died with it. Drain sessions as
+    // terminated WITHOUT any AppleScript — an AppleEvent to a quit app
+    // relaunches it (observed: the 250ms poller resurrected Ghostty on
+    // every quit attempt while the add-on was enabled). The app may
+    // return at any time; the next present tick reseeds from scratch.
+    for (const [sessionId, entry] of [...sessions.entries()]) {
+      sessions.delete(sessionId);
+      lastTitles.delete(entry.windowId);
+      emit(sessionId, { type: "terminal.session.terminated", sessionId, at: nowIso() });
+    }
+    lastWindowIds = new Set();
+    return;
+  }
   let currentWindowIds;
   try {
     currentWindowIds = new Set(await ghosttyListWindows());
@@ -494,21 +595,42 @@ async function pollOnce() {
   lastWindowIds = currentWindowIds;
 }
 
+/** Test-only handle over the poller's module state (owner precedent:
+ * `_activeForTests`). lastWindowIds is a getter because the poller
+ * reseeds the binding. */
+export const _pollerStateForTests = {
+  sessions,
+  lastTitles,
+  lastWindowIds: () => lastWindowIds,
+};
+
 function startPoller() {
   if (pollTimer) return;
-  // Seed the initial state so we don't spuriously emit on first poll
-  ghosttyListWindows()
+  // Seed the initial state so we don't spuriously emit on first poll.
+  // Gated on presence like the tick: seeding a quit app with an
+  // AppleEvent would relaunch it before the first poll even runs.
+  isGhosttyRunning()
+    .then((running) => (running ? ghosttyListWindows() : []))
     .then((ids) => { lastWindowIds = new Set(ids); })
     .catch(() => {})
     .finally(() => {
-      pollTimer = setInterval(() => {
-        Promise.all([
+      // Self-scheduling chain, NOT setInterval: a slow/hung osascript call
+      // must delay the next tick, never overlap it. setInterval fires
+      // regardless of prior completion, which accumulated hundreds of
+      // stuck osascript processes when AppleEvents wedged (each hung 60s
+      // at the AppleEvent timeout while 4 more spawned every second).
+      const tick = async () => {
+        if (!alive) return;
+        await Promise.all([
           pollOnce(),
           // CP-SG1: reap stale 0600 bootstrap script files. Best-effort,
           // never throws into the polling loop.
           reapScriptFiles(),
         ]).catch(() => {});
-      }, POLL_INTERVAL_MS);
+        if (!alive) return;
+        pollTimer = setTimeout(tick, POLL_INTERVAL_MS);
+      };
+      pollTimer = setTimeout(tick, POLL_INTERVAL_MS);
     });
 }
 
@@ -534,6 +656,13 @@ if (process.env.ROS_GHOSTTY_ADAPTER_AUTOSTART === "0") {
 } else if (process.env.ROS_GHOSTTY_ADAPTER_AUTOSTART === "1" || __entry === __here) {
   const rl = createInterface({ input: process.stdin });
   rl.on("line", handleLine);
+  // Parent-death watchdog: the bridge owns our stdin pipe. When the bridge
+  // exits (clean stop OR SIGKILL/crash), the pipe closes and readline emits
+  // "close". Without this the adapter orphans to launchd and its poller
+  // keeps spawning osascript every POLL_INTERVAL_MS forever (observed: 8
+  // leaked adapters from prior bridge runs flooding Ghostty with ~32
+  // AppleEvents/sec, wedging its event queue with -1712 timeouts).
+  rl.on("close", () => { alive = false; stopPoller(); process.exit(0); });
 
   process.on("SIGTERM", () => { alive = false; stopPoller(); process.exit(0); });
   process.on("SIGINT", () => { alive = false; stopPoller(); process.exit(0); });

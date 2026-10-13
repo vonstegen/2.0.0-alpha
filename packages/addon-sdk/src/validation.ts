@@ -15,7 +15,11 @@ import type {
 import {
   ADDON_CAPABILITIES,
   ADDON_SERVICE_PROTOCOLS,
+  HARNESS_CREDENTIAL_DELIVERY_MECHANISMS,
   HARNESS_OPERATIONS,
+  HARNESS_PROVIDER_PROTOCOLS,
+  HARNESS_RESOURCE_FAMILIES,
+  HARNESS_RESOURCE_OPERATIONS,
   type AddOnManifestSource,
   type AddOnManifestValidationResult,
   type AddOnValidationIssue,
@@ -40,6 +44,8 @@ const surfaceTypes: readonly AddOnSurfaceType[] = [
   "embedded-pane",
   "modal",
   "tool-action",
+  "tool-panel",
+  "workspace",
   "background-task-monitor",
   "channel",
 ];
@@ -133,8 +139,10 @@ const adapterFields = [
 const legacyRuntimeFields = [
   "invocationTool", "chatAuthorLabel", "displayNameSource", "supportsStreaming",
   "supportsCancellation", "supportsModelSelection", "modelSelection",
-  "outputFiltering", "requiredCapabilities",
+  "outputFiltering", "requiredCapabilities", "credentialSource",
 ];
+
+const harnessCredentialSources = ["provider-profile", "self", "none"] as const;
 const bindingNamePattern = /^[a-zA-Z][a-zA-Z0-9_-]*(?:\.[a-zA-Z0-9_-]+)*$/;
 
 const validateRuntimeAdapter = (issues: AddOnValidationIssue[], runtime: Record<string, unknown>) => {
@@ -194,6 +202,9 @@ const validateRuntimeAdapter = (issues: AddOnValidationIssue[], runtime: Record<
     reject("context-fidelity", "contextRoleFidelity", "Declare the adapter's context role fidelity.");
   }
   if (runtime.toolCallbacks !== false) reject("tool-callbacks", "toolCallbacks", "Tool callbacks are unavailable in adapter version 1.");
+  if (runtime.credentialSource !== undefined && !harnessCredentialSources.includes(runtime.credentialSource as (typeof harnessCredentialSources)[number])) {
+    reject("credential-source", "credentialSource", "Credential source must be provider-profile, self, or none.");
+  }
   if (!Array.isArray(runtime.requiredCapabilities) || !runtime.requiredCapabilities.includes("agent-runtime")) {
     reject("capability-required", "requiredCapabilities", "Bound runtimes must require agent-runtime.");
   }
@@ -320,7 +331,7 @@ export const validateAddOnManifest = (
     };
   }
 
-  for (const field of ["id", "name", "version", "author", "category", "description", "runtimeType"]) {
+  for (const field of ["id", "name", "version", "author", "description", "runtimeType"]) {
     validateString(issues, candidate, field);
   }
 
@@ -331,7 +342,15 @@ export const validateAddOnManifest = (
   if (isString(candidate.version) && !semanticVersionPattern.test(candidate.version)) {
     pushIssue(issues, "error", "invalid-version", "version", "Add-on version must be semantic version-like, for example 0.1.0.");
   }
-  validateEnum(issues, candidate.category, categories, "category");
+  // category is either the legacy top-level field, or classification.category
+  // (the additive parallel record harness manifests use). Harness manifests
+  // describe identity via classification.category (an open string); non-harness
+  // manifests keep the closed legacy category enum.
+  if (isString(candidate.category)) {
+    validateEnum(issues, candidate.category, categories, "category");
+  } else if (!(isRecord(candidate.classification) && isString(candidate.classification.category))) {
+    pushIssue(issues, "error", "required-string", "category", "Add-on manifest requires a category (or classification.category).");
+  }
   validateEnum(issues, candidate.runtimeType, runtimeTypes, "runtimeType");
 
   const manifestSurfaceTypes = new Set<AddOnSurfaceType>();
@@ -1164,6 +1183,74 @@ export const validateAddOnManifest = (
         "agentRuntime.outputFiltering",
         "Agent chat integrations should normally filter terminal/TUI output and return assistant-visible reply text.",
       );
+    }
+  }
+
+  // Harness provider connection (generic Harness Provider Connection contract).
+  // Descriptive: declares what a harness can consume and how; grants nothing.
+  if (candidate.harnessProviderConnection !== undefined) {
+    const hpc = candidate.harnessProviderConnection;
+    if (!isRecord(hpc)) {
+      pushIssue(issues, "error", "harness-provider-connection-object", "harnessProviderConnection", "harnessProviderConnection must be an object.");
+    } else {
+      if (typeof hpc.consumesProviderProfiles !== "boolean") {
+        pushIssue(issues, "error", "harness-provider-connection-consumes", "harnessProviderConnection.consumesProviderProfiles", "consumesProviderProfiles must be a boolean.");
+      }
+      if (typeof hpc.modelSelection !== "boolean") {
+        pushIssue(issues, "error", "harness-provider-connection-model-selection", "harnessProviderConnection.modelSelection", "modelSelection must be a boolean.");
+      }
+      if (!Array.isArray(hpc.providerProtocols)) {
+        pushIssue(issues, "error", "harness-provider-connection-protocols-array", "harnessProviderConnection.providerProtocols", "providerProtocols must be an array.");
+      } else {
+        hpc.providerProtocols.forEach((protocol, index) => {
+          validateEnum(issues, protocol, HARNESS_PROVIDER_PROTOCOLS, `harnessProviderConnection.providerProtocols[${index}]`);
+        });
+      }
+      if (!Array.isArray(hpc.credentialDelivery)) {
+        pushIssue(issues, "error", "harness-provider-connection-delivery-array", "harnessProviderConnection.credentialDelivery", "credentialDelivery must be an array.");
+      } else {
+        hpc.credentialDelivery.forEach((mechanism, index) => {
+          validateEnum(issues, mechanism, HARNESS_CREDENTIAL_DELIVERY_MECHANISMS, `harnessProviderConnection.credentialDelivery[${index}]`);
+        });
+      }
+    }
+  }
+
+  // Harness resource request (Phase 2A). Names allowlisted operations only;
+  // never paths, credentials, commands, providers, or models.
+  if (candidate.harnessResources !== undefined) {
+    const resources = candidate.harnessResources;
+    if (!isRecord(resources) || !isRecord(resources.requests)) {
+      pushIssue(issues, "error", "harness-resources-requests-object", "harnessResources.requests", "harnessResources.requests must be an object.");
+    } else {
+      for (const family of HARNESS_RESOURCE_FAMILIES) {
+        const operations = resources.requests[family];
+        if (operations === undefined) continue;
+        if (!Array.isArray(operations)) {
+          pushIssue(issues, "error", "harness-resources-operations-array", `harnessResources.requests.${family}`, `${family} must be an array of operations.`);
+          continue;
+        }
+        operations.forEach((operation, index) => {
+          validateEnum(issues, operation, HARNESS_RESOURCE_OPERATIONS[family], `harnessResources.requests.${family}[${index}]`);
+        });
+      }
+      for (const family of Object.keys(resources.requests)) {
+        if (!(HARNESS_RESOURCE_FAMILIES as readonly string[]).includes(family)) {
+          pushIssue(issues, "error", "harness-resources-unknown-family", `harnessResources.requests.${family}`, `Unknown harness resource family "${family}".`);
+        }
+      }
+    }
+  }
+
+  // Classification (additive parallel record): describes WHAT an add-on is.
+  if (candidate.classification !== undefined) {
+    if (!isRecord(candidate.classification)) {
+      pushIssue(issues, "error", "classification-object", "classification", "classification must be an object.");
+    } else {
+      validateStringValue(issues, candidate.classification.category, "classification.category");
+      if (candidate.classification.subtype !== undefined) {
+        validateStringValue(issues, candidate.classification.subtype, "classification.subtype");
+      }
     }
   }
 

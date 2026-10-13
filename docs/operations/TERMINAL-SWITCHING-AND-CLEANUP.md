@@ -4,12 +4,18 @@
 > Companion to
 > [`docs/product/TERMINAL-ACTIVATION.md`](../product/TERMINAL-ACTIVATION.md).
 
-The terminal add-on runtime is a singleton per bridge: at most one
-terminal adapter is `ready` at a time. The singleton is enforced by
-[`browser-first/host/terminal-host-service-owner.mjs`](../../browser-first/host/terminal-host-service-owner.mjs)
-— the second terminal's start is refused by the factory's
-singleton gate before any spawn. Switching terminals is deterministic
-and bounded.
+The terminal add-on runtime is **multi-live** per bridge: every
+enabled+granted terminal add-on gets its own adapter and may be
+`ready` concurrently (Ghostty AND iTerm2 at the same time). The
+per-add-on services are tracked by
+[`browser-first/host/terminal-host-service-owner.mjs`](../../browser-first/host/terminal-host-service-owner.mjs),
+whose facade dispatches each launch / session RPC to the addressed
+terminal (add-on hint first, then the session→service index learned
+from launches). Switching terminals (disable one, enable the other)
+is still deterministic and bounded; running both is equally
+supported. All terminals share the same host credential vault — a
+launch resolves its provider profile (e.g. `shared-minimax`)
+per-launch, independent of which terminal carries it.
 
 ## Switching semantics
 
@@ -70,9 +76,9 @@ invariants:
   continues.
 - **Zero leaked windows.** `stop` calls `closeSessions` first, then
   the adapter's `stop`. The `closeTimeoutMs` bound (default 2000ms)
-  caps the total cleanup time. If the singleton is contended, the
-  second factory's start throws before any spawn and the refused
-  adapter's `stop` runs synchronously to keep the invariant.
+  caps the total cleanup time. Detach only evicts the exact
+  `{ addonId, service }` pair that attached, so a stale stop cannot
+  evict a newer (replaced) service for the same add-on.
 - **Bounded waits.** `start`, `stop`, and `health` are all bounded.
   The reconciler surfaces a public failure code on timeout.
 

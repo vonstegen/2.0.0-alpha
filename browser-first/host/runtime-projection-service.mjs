@@ -209,7 +209,7 @@ export function createRuntimeProjectionService(options) {
           // the operator withdrew (or never granted) authority, the
           // reconciler already stopped the runtime, and the
           // `failed` status is reserved for real adapter failures
-          // (singleton refusal, health failure, factory missing).
+          // (health failure, factory missing, spawn error).
           return "inactive";
         }
       }

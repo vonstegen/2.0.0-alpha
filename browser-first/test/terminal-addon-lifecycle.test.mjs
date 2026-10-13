@@ -203,7 +203,7 @@ async function makeWorld(t, { store = memoryStore(), aliveAfterStart = true } = 
     reconciler: lifecycle.reconciler,
     bridgeStatus: {
       snapshot: () => ({
-        status: facade.service.status().alive || !owner.ownerAddonId() ? "connected" : "degraded",
+        status: facade.service.status().alive || owner.ownerAddonIds().length === 0 ? "connected" : "degraded",
         version: "alpha",
         endpoint: "http://127.0.0.1:47773",
         publicEndpoint: "http://127.0.0.1:47773",
@@ -307,12 +307,12 @@ test("CP-BR9 req #2: enable alone starts nothing; the terminal-host grant starts
   assert.equal(world.facade.service.status().alive, false);
 
   await world.setEnabled(GHOSTTY, true);
-  assert.equal(world.owner.ownerAddonId(), null, "no grant -> no runtime");
+  assert.deepEqual(world.owner.ownerAddonIds(), [], "no grant -> no runtime");
   assert.equal(world.statusOf(GHOSTTY), "inactive");
   assert.equal(world.services.size, 0, "the factory is never called without authority");
 
   await world.setGrant(GHOSTTY, true);
-  assert.equal(world.owner.ownerAddonId(), GHOSTTY);
+  assert.deepEqual(world.owner.ownerAddonIds(), [GHOSTTY]);
   assert.equal(world.statusOf(GHOSTTY), "ready");
   const service = world.services.get(GHOSTTY);
   assert.equal(service.startCalls, 1);
@@ -356,7 +356,7 @@ test("CP-BR9 req #3: disable stops the adapter and closes only ROS-owned session
   ];
 
   await world.setEnabled(GHOSTTY, false);
-  assert.equal(world.owner.ownerAddonId(), null);
+  assert.deepEqual(world.owner.ownerAddonIds(), []);
   assert.equal(world.statusOf(GHOSTTY), "inactive");
   assert.equal(service.stopCalls, 1);
   assert.deepEqual([...service.closeSessionCalls].sort(), ["s1", "s2"]);
@@ -369,7 +369,7 @@ test("CP-BR9 req #4: revoking the terminal-host grant stops the adapter", async 
   const service = world.services.get(GHOSTTY);
 
   await world.setGrant(GHOSTTY, false);
-  assert.equal(world.owner.ownerAddonId(), null);
+  assert.deepEqual(world.owner.ownerAddonIds(), []);
   assert.equal(service.stopCalls, 1);
   assert.equal(world.statusOf(GHOSTTY), "inactive");
   // The add-on stays installed and enabled; only authority was withdrawn.
@@ -385,14 +385,15 @@ test("CP-BR9 req #4: removing a running add-on stops it and drops it from the pr
 
   await world.remove(GHOSTTY);
   assert.equal(service.stopCalls, 1, "a removed installation is stopped, never leaked");
-  assert.equal(world.owner.ownerAddonId(), null);
+  assert.deepEqual(world.owner.ownerAddonIds(), []);
   assert.equal(world.svc.registry.snapshot().installations[GHOSTTY], undefined);
   assert.equal(world.statusOf(GHOSTTY), null, "removed add-on leaves the runtime list");
   assert.equal(world.lifecycle.reconciler.listActive().length, 0);
 });
 
 // ---------------------------------------------------------------------------
-// Switching: one terminal at a time, stop-old-before-start-new
+// Switching and multi-live: stop-old-before-start-new for planned switches;
+// two terminals may also run concurrently
 // ---------------------------------------------------------------------------
 
 test("CP-BR9 req #5: the documented switch (disable, then enable) stops the old adapter first", async (t) => {
@@ -401,7 +402,7 @@ test("CP-BR9 req #5: the documented switch (disable, then enable) stops the old 
   await world.setEnabled(GHOSTTY, false);
   await world.activate(ITERM2);
 
-  assert.equal(world.owner.ownerAddonId(), ITERM2);
+  assert.deepEqual(world.owner.ownerAddonIds(), [ITERM2]);
   assert.equal(world.facade.service.status().driveId, "iterm2");
   assert.equal(world.statusOf(GHOSTTY), "inactive");
   assert.equal(world.statusOf(ITERM2), "ready");
@@ -413,47 +414,27 @@ test("CP-BR9 req #5: the documented switch (disable, then enable) stops the old 
   assert.ok(ghosttyStop < iterm2Construct, `stop-old-before-start-new: ${phases.join(" | ")}`);
 });
 
-test("CP-BR9 req #5: a second terminal enabled while one is live is refused, then retried on release", async (t) => {
+test("CP-BR9 multi-live: a second terminal enabled while one is live runs concurrently", async (t) => {
   const world = await makeWorld(t);
   await world.activate(GHOSTTY);
-  // Operator error: enable the sibling without disabling the incumbent.
+  // Multi-live: enable the sibling WITHOUT disabling the incumbent.
   await world.activate(ITERM2);
-  assert.equal(world.owner.ownerAddonId(), GHOSTTY, "the incumbent keeps the singleton");
+  assert.deepEqual(world.owner.ownerAddonIds(), [GHOSTTY, ITERM2]);
   assert.equal(world.statusOf(GHOSTTY), "ready");
-  assert.equal(
-    world.statusOf(ITERM2),
-    "failed",
-    "the refused start reports failed, never a registry-derived ready",
-  );
-  // The factory refuses the spawn before the service is even constructed:
-  // the singleton gate fires at the top of `start()`. No process is
-  // created and the reconciler records a failed result with no handle.
-  assert.equal(
-    world.factoryCalls.filter((c) => c.addonId === ITERM2).length,
-    0,
-    "refused start never spawns the adapter",
-  );
-  assert.equal(world.lifecycle.reconciler._peek(ITERM2)?.handle ?? null, null);
+  assert.equal(world.statusOf(ITERM2), "ready", "the sibling starts its own adapter");
+  assert.equal(world.services.get(ITERM2).startCalls, 1);
+  // Each terminal answers for its own add-on; the merged view stays live.
+  assert.equal(world.facade.service.status(GHOSTTY).driveId, "ghostty");
+  assert.equal(world.facade.service.status(ITERM2).driveId, "iterm2");
+  assert.equal(world.facade.service.status().alive, true);
 
-  // Releasing the incumbent lets the pending add-on retry without a new
-  // authority transaction.
+  // Disabling one terminal stops only its adapter; the sibling is untouched.
   await world.setEnabled(GHOSTTY, false);
-  assert.equal(world.owner.ownerAddonId(), ITERM2);
+  assert.deepEqual(world.owner.ownerAddonIds(), [ITERM2]);
   assert.equal(world.statusOf(GHOSTTY), "inactive");
   assert.equal(world.statusOf(ITERM2), "ready");
-  // The retry constructed a fresh service and started it.
-  const iterm2Constructs = world.factoryCalls.filter((c) => c.phase === "construct" && c.addonId === ITERM2);
-  const iterm2Starts = world.factoryCalls.filter((c) => c.phase === "start" && c.addonId === ITERM2);
-  assert.equal(iterm2Constructs.length, 1);
-  assert.equal(iterm2Starts.length, 1);
-  assert.equal(world.services.get(ITERM2).startCalls, 1, "the retry produced a fresh service");
+  assert.equal(world.services.get(GHOSTTY).stopCalls, 1);
   assert.equal(world.services.get(ITERM2).stopCalls, 0);
-
-  const phases = world.factoryCalls.map((entry) => `${entry.phase}:${entry.addonId}`);
-  const ghosttyStop = phases.indexOf(`stop:${GHOSTTY}`);
-  const iterm2Start = phases.lastIndexOf(`start:${ITERM2}`);
-  assert.ok(ghosttyStop >= 0 && iterm2Start >= 0, phases.join(" | "));
-  assert.ok(ghosttyStop < iterm2Start, `family lock ordering: ${phases.join(" | ")}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -567,7 +548,7 @@ test("CP-BR9 req #6: a dead adapter fails the launch closed instead of launching
   // The start reports not-alive, so the reconciler never leaves a ready
   // record and the owner holds nothing.
   assert.equal(world.statusOf(GHOSTTY), "failed");
-  assert.equal(world.owner.ownerAddonId(), null);
+  assert.deepEqual(world.owner.ownerAddonIds(), []);
 
   const result = await world.call("/terminal-host/launch", {
     agentId: "pi",
@@ -594,7 +575,7 @@ test("CP-BR9 req #8: /terminal-host/status reports the live adapter through the 
   assert.equal(surface.compatible, true);
   assert.equal(surface.connected, true);
   const sibling = status.payload.surfaces.find((entry) => entry.adapterId === ITERM2);
-  assert.equal(sibling.connected, false, "only one terminal is live at a time");
+  assert.equal(sibling.connected, false, "the sibling is not live (only ghostty was activated)");
 });
 
 // ---------------------------------------------------------------------------
@@ -605,12 +586,12 @@ test("CP-BR9 req #9: a restart re-starts the enabled+granted add-on exactly once
   const store = memoryStore();
   const first = await makeWorld(t, { store });
   await first.activate(GHOSTTY);
-  assert.equal(first.owner.ownerAddonId(), GHOSTTY);
+  assert.deepEqual(first.owner.ownerAddonIds(), [GHOSTTY]);
   await first.lifecycle.reconciler.stopAll();
   await first.svc.close();
 
   const second = await makeWorld(t, { store });
-  assert.equal(second.owner.ownerAddonId(), GHOSTTY, "restore starts the add-on on boot");
+  assert.deepEqual(second.owner.ownerAddonIds(), [GHOSTTY], "restore starts the add-on on boot");
   assert.equal(second.services.get(GHOSTTY).startCalls, 1, "exactly one spawn on restore");
   assert.equal(second.statusOf(GHOSTTY), "ready");
   assert.equal(second.statusOf(ITERM2), "inactive");

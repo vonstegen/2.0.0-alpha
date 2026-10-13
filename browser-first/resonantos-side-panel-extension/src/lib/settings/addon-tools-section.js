@@ -93,9 +93,9 @@ function renderTerminalTab(view, tab, options) {
   const detail = element("p", { className: "settings-runtime-row-detail" });
   detail.textContent = tab.installed
     ? tab.connected
-      ? `${tab.label} is auto-connecting to the bridge; Open in Terminal launches a new session.`
+      ? `${tab.label} is connected to the bridge. Run session starts a harness inside it.`
       : tab.compatible
-        ? `Grant the terminal-host capability to auto-connect. The copy script below attaches an already-running terminal.`
+        ? `Launch & connect opens ${tab.label} and links it to the bridge. Connect existing terminal attaches a terminal you already have open.`
         : `${tab.label} is installed but not yet authorized.`
     : `${tab.label} is not installed on this bridge.`;
   card.append(detail);
@@ -123,17 +123,17 @@ function renderTerminalTab(view, tab, options) {
     || !tab.compatible;
   actions.append(
     actionButton({
-      label: isBusy ? "Working..." : "Open in Terminal",
+      label: isBusy ? "Working..." : "Run session",
       onClick: () => onLaunch(tab),
       disabled: launchDisabled,
-      ariaLabel: `Launch ${tab.label} and attach the harness`,
+      ariaLabel: `Run a harness session in ${tab.label}`,
       testid: `addon-tools-launch-${tab.addonId}`,
     }),
     actionButton({
-      label: isBusy ? "Working..." : "Copy connection script",
+      label: isBusy ? "Working..." : "Connect existing terminal",
       onClick: () => onCopyScript(tab),
       disabled: copyDisabled,
-      ariaLabel: `Copy the connection script for ${tab.label}`,
+      ariaLabel: `Copy a script to connect an already-open ${tab.label}`,
       testid: `addon-tools-copy-${tab.addonId}`,
     }),
   );
@@ -264,6 +264,7 @@ export function renderAddonToolsSection(container, options = {}) {
   const state = {
     busyAddonId: null,
     lastError: null,
+    actionStatus: null,
     script: null,
     timer: null,
   };
@@ -291,11 +292,20 @@ export function renderAddonToolsSection(container, options = {}) {
   }
   function setLastError(addonId, message, tone = "warn") {
     state.lastError = { addonId, message, tone };
+    state.actionStatus = null;
     state.busyAddonId = null;
     void refresh();
   }
   function clearError() {
     state.lastError = null;
+    state.actionStatus = null;
+  }
+  // Action feedback (launch / copy) must survive the refresh loop: the
+  // refresh's generic status summary would otherwise overwrite the
+  // confirmation within microseconds of the click.
+  function setActionStatus(text, tone = "ok") {
+    state.actionStatus = { text, tone };
+    setStatus(statusNode, text, tone);
   }
 
   // The current view is held on the closure so handlers can read
@@ -347,7 +357,9 @@ export function renderAddonToolsSection(container, options = {}) {
         );
       }
     }
-    if (!view.bridgeConnected) {
+    if (state.actionStatus) {
+      setStatus(statusNode, state.actionStatus.text, state.actionStatus.tone);
+    } else if (!view.bridgeConnected) {
       setStatus(statusNode, "Bridge not connected — open Settings → Bridge Target to start it.", "warn");
     } else if (view.tabs.some((tab) => tab.connected)) {
       setStatus(statusNode, `${view.tabs.find((tab) => tab.connected)?.label} is connected to the bridge.`, "ok");
@@ -400,9 +412,9 @@ export function renderAddonToolsSection(container, options = {}) {
       setLastError(tab.addonId, "The terminal adapter rejected the launch. Try the copy-connection-script fallback.", "warn");
       return;
     }
-    if (result && result.ok) {
+    if (result && typeof result.launchId === "string") {
       clearError();
-      setStatus(statusNode, `Launched ${tab.label}.`, "ok");
+      setActionStatus(`Launched ${tab.label}.`, "ok");
     } else if (result && result.reason) {
       setLastError(tab.addonId, `Launch failed: ${result.reason}.`, "warn");
     } else {
@@ -438,7 +450,7 @@ export function renderAddonToolsSection(container, options = {}) {
       setLastError(tab.addonId, "Authorize the terminal-host capability to copy a connection script.", "warn");
       return;
     }
-    if (!result || !result.ok || typeof result.command !== "string") {
+    if (!result || typeof result.command !== "string") {
       setLastError(tab.addonId, "Copy failed: the host did not return a connection script.", "warn");
       return;
     }
@@ -473,9 +485,9 @@ export function renderAddonToolsSection(container, options = {}) {
         onClick: async () => {
           const ok = await copyScriptToClipboard();
           if (ok) {
-            setStatus(statusNode, "Connection script copied to the clipboard.", "ok");
+            setActionStatus("Connection script copied to the clipboard.", "ok");
           } else {
-            setStatus(statusNode, "Clipboard API unavailable — select the script and copy manually.", "warn");
+            setActionStatus("Clipboard API unavailable — select the script and copy manually.", "warn");
           }
         },
         ariaLabel: "Copy the connection script to the clipboard",

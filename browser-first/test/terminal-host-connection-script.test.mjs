@@ -134,6 +134,7 @@ async function fixture(t, options = {}) {
     },
     ...(options.seedInstallations !== undefined ? { seedInstallations: options.seedInstallations } : {}),
     ...(options.rosSessionPath ? { rosSessionPath: options.rosSessionPath } : {}),
+    ...(options.attachAuth ? { attachAuth: options.attachAuth } : {}),
   });
   t.after(() => host.close());
   const call = (url, body = {}, overrides = {}) => {
@@ -291,6 +292,39 @@ test("CP-BR10: a second connection-script call mints a fresh grant (single-use a
     const fileStat = await stat(receipt.tokenFilePath);
     assert.equal(fileStat.mode & 0o777, 0o600);
   }
+});
+
+test("CP-S5H3: a wired attachAuth mints a 0600 --auth-file; the script carries only its path", async (t) => {
+  const seeds = await loadTerminalAddonSeedInstallations();
+  const stub = await scriptDir();
+  t.after(stub.cleanup);
+  const f = await fixture(t, {
+    seedInstallations: seeds,
+    rosSessionPath: stub.file,
+    attachAuth: async () => ({
+      baseUrl: "http://127.0.0.1:47773",
+      bridgeToken: "bridge-token-under-test",
+      controlCapabilityToken: "control-token-under-test",
+    }),
+  });
+  await f.install(seeds.find((entry) => entry.manifest.id === "addon.resonant-terminal-ghostty").manifest);
+  const result = await f.call("/terminal-host/connection-script", { terminalAddonId: "addon.resonant-terminal-ghostty", providerProfileId: "openai" });
+  assert.equal(result.status, 200);
+  const receipt = result.payload;
+  const match = receipt.command.match(/--auth-file ['"]?(\/[^\s'"]+\.auth\.json)/);
+  assert.ok(match, `command references an auth file: ${receipt.command}`);
+  const authPath = match[1];
+  const fileStat = await stat(authPath);
+  assert.equal(fileStat.mode & 0o777, 0o600, "auth file is mode 0600");
+  const parsed = JSON.parse(await readFile(authPath, "utf8"));
+  assert.deepEqual(parsed, {
+    baseUrl: "http://127.0.0.1:47773",
+    bridgeToken: "bridge-token-under-test",
+    controlCapabilityToken: "control-token-under-test",
+  });
+  // The token VALUES ride in the 0600 file only — never in the clipboard text.
+  assert.ok(!receipt.command.includes("bridge-token-under-test"), "bridge token is not in the script");
+  assert.ok(!receipt.command.includes("control-token-under-test"), "control token is not in the script");
 });
 
 test("CP-BR10: adoption is dropped on disable; terminateSession is called best-effort", async (t) => {

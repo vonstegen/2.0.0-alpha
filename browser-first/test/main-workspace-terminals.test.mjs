@@ -974,7 +974,14 @@ test("CP-BR11 #5: Launch click routes through POST /terminal-host/launch and bra
     if (route === "/terminal-host/prompt-path")
       return { ok: true, valid: true, promptPath: promptFile };
     if (route === "/terminal-host/launch") {
-      return { ok: true };
+      // Faithful host envelope: the handler keys success on `launchId`
+      // (the seam's unwrap strips `ok`).
+      return {
+        ok: true,
+        launchId: "test-launch-1",
+        agentId: "pi",
+        terminalAddonId: "addon.resonant-terminal-ghostty",
+      };
     }
     return { ok: true, addons: [] };
   };
@@ -1001,6 +1008,10 @@ test("CP-BR11 #5: Launch click routes through POST /terminal-host/launch and bra
   assert.equal(launchCall.body.terminalAddonId, "addon.resonant-terminal-ghostty");
   assert.equal(launchCall.body.promptPath, promptFile);
   assert.equal(launchCall.body.agentId, "pi");
+  await waitFor(
+    () => container.querySelector(".terminals-status")?.textContent.includes("Launched"),
+    { label: "launch success status" },
+  );
 });
 
 test("CP-BR11 #5: capability-not-granted rejection is surfaced without auto-granting", async (t) => {
@@ -1505,4 +1516,80 @@ test("CP-BR11.1: prompt editor does not POST when the text is empty", async (t) 
     container.querySelector(".terminals-status")?.textContent?.includes("Write a prompt first"),
   );
   assert.ok(!calls.some((c) => c.route === "/terminal-host/prompt"), "empty prompt must not POST");
+});
+
+test("CP-BR11 #7: Copy click through the real seam reports success and copies the command", async (t) => {
+  // Regression: the seam's unwrap strips `ok` from the host envelope, so
+  // handlers must key success on payload fields (`command`), not `ok`.
+  // The host returns `{ ok: true, command, ... }`; the pre-fix handler
+  // checked `!result.ok` post-unwrap and failed every successful mint.
+  const { container, cleanup } = setupDom();
+  t.after(cleanup);
+  const promptFile = makeValidPromptFile(t);
+  const written = [];
+  const bridgeRequest = async (route, options = {}) => {
+    if (route === "/addons/registry") return { ok: true, revision: 0, addons: [] };
+    if (route === "/terminal-host/status") return makeStatus();
+    if (route === "/bridge/runtimes") {
+      return makeProjectionRuntime([
+        {
+          addonId: "addon.resonant-terminal-ghostty",
+          status: "ready",
+          generation: 1,
+          displayLabel: "resonant-terminal-ghostty",
+        },
+      ]);
+    }
+    if (route === "/addons/grants") return { ok: true, addons: [] };
+    if (route === "/terminal-host/prompt-path")
+      return { ok: true, valid: true, promptPath: promptFile };
+    if (route === "/terminal-host/connection-script") {
+      // Faithful host envelope: ok:true wrapper, command string inside.
+      return {
+        ok: true,
+        command: "bash '/tmp/ros-session-attach.sh'",
+        scriptPath: "/tmp/ros-session-attach.sh",
+        tokenFilePath: "/tmp/ros-token",
+      };
+    }
+    return { ok: true };
+  };
+  const seams = makeSeams(bridgeRequest);
+  const handle = renderTerminalsWorkspace(container, {
+    bridgeRequest,
+    ...seams,
+    pollIntervalMs: 0,
+    navigatorRef: {
+      clipboard: {
+        writeText: async (text) => {
+          written.push(text);
+        },
+      },
+    },
+  });
+  t.after(() => handle.stop());
+  await waitFor(() => container.querySelector('[data-addon-id="addon.resonant-terminal-ghostty"]'));
+  await waitForEnabled(
+    container,
+    '[data-testid="terminals-copy-addon.resonant-terminal-ghostty"]',
+  );
+  container
+    .querySelector('[data-testid="terminals-copy-addon.resonant-terminal-ghostty"]')
+    .click();
+  await waitFor(() => written.length > 0, { label: "clipboard write" });
+  assert.match(written[0], /ros-session-attach\.sh/, "the minted command reaches the clipboard");
+  assert.equal(
+    container.querySelector(".terminals-card-error"),
+    null,
+    "no error is shown for a successful mint",
+  );
+  // The confirmation must survive the post-action refresh: the refresh's
+  // generic status summary used to overwrite it within microseconds.
+  await waitFor(
+    () =>
+      container
+        .querySelector(".terminals-status")
+        ?.textContent.includes("copied to the clipboard"),
+    { label: "copy confirmation status" },
+  );
 });

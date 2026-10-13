@@ -592,11 +592,12 @@ test("renderer: section is registered in the Settings navigation", async (t) => 
     "../resonantos-side-panel-extension/src/lib/main-workspace-settings.js"
   );
   const root = document.querySelector("main");
-  renderSettingsWorkspace({
+  const workspace = renderSettingsWorkspace({
     container: root,
     bridgeRequest: null,
     initialSection: "bridge-runtimes",
   });
+  t.after(() => workspace.stop());
   const navButton = root.querySelector('[data-section="bridge-runtimes"]');
   assert.ok(navButton, "settings navigation has the bridge-runtimes button");
   assert.equal(navButton.dataset.active, "true");

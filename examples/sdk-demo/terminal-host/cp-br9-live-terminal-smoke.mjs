@@ -214,8 +214,8 @@ async function main() {
   // --- 3. The live terminal service is bound through the single owner. ---
   record(
     "owner-binds-terminal-addon",
-    owner.ownerAddonId() === addonId,
-    `owner=${owner.ownerAddonId()}`,
+    owner.ownerAddonIds().includes(addonId),
+    `owner=${owner.ownerAddonIds()}`,
   );
   const liveStatus = facade.service.status();
   record(
@@ -284,8 +284,8 @@ async function main() {
   await lifecycle.reconciler.reconcile();
   record(
     "disable-stops-runtime",
-    owner.ownerAddonId() === null,
-    `owner=${owner.ownerAddonId()}`,
+    owner.ownerAddonIds().length === 0,
+    `owner=${owner.ownerAddonIds()}`,
   );
   const afterStop = projection.snapshot().runtimeList.find((entry) => entry.addonId === addonId);
   record(

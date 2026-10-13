@@ -104,6 +104,24 @@ test("CP-BR7 req #5: factory pins the driver and refuses to start a foreign addo
   );
 });
 
+test("CP-BR9: start is idempotent per addon id — a generation-bumped re-start never spawns a second adapter", async () => {
+  const { serviceFactory, calls } = makeFakeServiceFactory();
+  const factory = createTerminalRuntimeFactory({ driver: "ghostty", serviceFactory });
+  const first = await factory.start({ addonId: "addon.resonant-terminal-ghostty" });
+  // Reconciler re-entry after an enable/grant generation bump: same add-on,
+  // live service. Must return the existing handle without a new spawn —
+  // otherwise the overwritten map entry leaks the old adapter process.
+  const second = await factory.start({ addonId: "addon.resonant-terminal-ghostty" });
+  assert.equal(calls.length, 1, "serviceFactory ran once");
+  assert.equal(first.service.startCalls, 1, "service.start ran once");
+  assert.equal(second, first, "same live handle is returned");
+  // A dead instance is replaced: no live adapter to leak, fresh start allowed.
+  first.service.status = () => ({ alive: false, driveId: "ghostty" });
+  const third = await factory.start({ addonId: "addon.resonant-terminal-ghostty" });
+  assert.equal(calls.length, 2, "serviceFactory ran again for the dead instance");
+  assert.notEqual(third, first);
+});
+
 test("CP-BR7 req #5: factory never spreads process.env into the adapter", async () => {
   const baseEnv = {
     PATH: "/usr/bin",

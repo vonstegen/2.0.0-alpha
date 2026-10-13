@@ -688,6 +688,31 @@ test('POST /terminal-host/session/attach composes env on a valid grant and never
   assert.ok(result.payload.meta);
 });
 
+test('POST /terminal-host/session/attach exports the ROS_CONNECTED + ROS_SESSION_ID connection markers', async t => {
+  const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
+    await import('../host/terminal-host-service.mjs');
+  __resetSessionBootstrapGrantBroker();
+  const f = await fixture(t);
+  const grant = trackSessionBootstrapGrant(mintSessionBootstrapGrant({ sessionId: 's-marker', purpose: 'attach' }));
+  const result = await f.call('/terminal-host/session/attach', {
+    sessionId: 's-marker',
+    token: grant.token,
+    providerProfileId: 'openai',
+    resolveCredential: () => ({ name: 'OPENAI_API_KEY', value: 'sk-marker-secret' }),
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.env.ROS_CONNECTED, '1');
+  assert.equal(result.payload.env.ROS_SESSION_ID, 's-marker');
+  // The markers are non-secret public identifiers.
+  assert.doesNotMatch(result.payload.env.ROS_CONNECTED, /token|secret|credential|\//i);
+  assert.doesNotMatch(result.payload.env.ROS_SESSION_ID, /token|secret|credential|\//i);
+  // The secret still lives only under the credential env-var name.
+  assert.equal(result.payload.env.OPENAI_API_KEY, 'sk-marker-secret');
+  assert.equal(JSON.stringify(result.payload).includes('sk-marker-secret'), true);
+  assert.equal(JSON.stringify(result.payload.meta).includes('sk-marker-secret'), false);
+});
+
 test('POST /terminal-host/session/attach maps each public rejection reason', async t => {
   const { __resetSessionBootstrapGrantBroker, mintSessionBootstrapGrant, trackSessionBootstrapGrant } =
     await import('../host/terminal-host-service.mjs');

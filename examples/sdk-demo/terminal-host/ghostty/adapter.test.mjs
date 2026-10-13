@@ -16,6 +16,9 @@ import { join } from "node:path";
 
 import {
   composeGhosttyNewWindowOsa,
+  ghosttyNewWindow,
+  pollOnce,
+  _pollerStateForTests,
 } from "./adapter.mjs";
 
 // We import the adapter file to read the `ghosttyNewWindow` function.
@@ -89,8 +92,11 @@ describe("CP-SG1 — long composed commands are delivered via a 0600 script file
       bootstrapCommand: cmd,
       sessionId: "ghostty-sg1-test-2",
     });
-    assert.ok(osa.startsWith(`tell application "Ghostty" to return id of (new window with configuration {command:"`), "OSA literal begins with the standard record");
-    assert.ok(osa.includes(`, wait after command:true`), "OSA carries wait-after-command:true (default; keeps window open after the one-shot for clean close)");
+    assert.ok(osa.startsWith(`tell application "Ghostty" to return id of (new window with configuration {initial input:"bash '/`), "OSA literal begins with the initial-input delivery record");
+    assert.ok(osa.includes(`\\n", wait after command:false}`), "typed line ends with the AppleScript newline escape (submits the line) and wait-after-command:false");
+    // CP-SG3: Ghostty 1.3.1 ignores the command: field entirely; it
+    // must never be emitted.
+    assert.ok(!osa.includes(`command:"`), "no command: field (Ghostty 1.3.1 silently ignores it)");
     // The composed command itself must NOT appear verbatim in the OSA.
     assert.ok(!osa.includes(`--token-file`), "token-file flag is NOT in the AppleScript literal");
     assert.ok(!osa.includes(`--auth-file`), "auth-file flag is NOT in the AppleScript literal");
@@ -153,12 +159,15 @@ describe("CP-SG1 — long composed commands are delivered via a 0600 script file
     await assert.rejects(composeGhosttyNewWindowOsa({ bootstrapCommand: "ok", sessionId: "" }), TypeError);
   });
 
-  it("waitAfterCommand:false emits the legacy close-on-exit OSA form (production pi path)", async () => {
+  it("always emits wait after command:false (delivery is via initial input; command: is unused)", async () => {
     const cmd = "echo MARKER";
     const { osa } = await composeGhosttyNewWindowOsa({
-      bootstrapCommand: cmd, sessionId: "ghostty-sg1-false", waitAfterCommand: false,
+      bootstrapCommand: cmd, sessionId: "ghostty-sg1-false",
     });
-    assert.ok(osa.includes(`, wait after command:false`), "OSA carries wait-after-command:false when explicitly disabled");
+    assert.ok(osa.includes(`, wait after command:false}`), "OSA carries wait-after-command:false");
+    assert.ok(!osa.includes(`command:"`), "no command: field (Ghostty 1.3.1 ignores it)");
+    assert.ok(osa.includes(`initial input:"bash '/`), "typed line runs bash '<0600-script-path>'");
+    assert.ok(osa.includes(`\\n"`), "typed line ends with the AppleScript newline escape");
   });
 
   it("POSIX single-quote-escapes the script path safely when the path contains a quote (defensive)", async () => {
@@ -239,5 +248,88 @@ describe("CP-SG2 — deterministic long-command delivery round-trip", () => {
     assert.ok(!composed.osa.includes("--auth-file"));
     assert.ok(!composed.osa.includes("--project"));
     assert.ok(composed.osa.includes("bash '"));
+  });
+});
+
+describe("dead-surface hardening — display wake + bounded retry", () => {
+  // Ghostty cannot spawn a surface while the WindowServer reports zero
+  // displays; the window stays at the 👻 no-surface title and typed input
+  // is silently dropped. ghosttyNewWindow must wake the display, verify
+  // the surface came up, and retry the whole window on a corpse.
+  function fakeDeps(titles) {
+    const opened = [];
+    const closed = [];
+    let wakes = 0;
+    const deps = {
+      executeOsa: async () => {
+        const id = `window-t${opened.length + 1}`;
+        opened.push(id);
+        return `window id ${id}`;
+      },
+      wakeDisplay: () => { wakes += 1; },
+      windowTitle: async (id) => titles.get(id) ?? "",
+      closeWindow: async (id) => { closed.push(id); },
+      sleep: () => Promise.resolve(),
+      surfaceReadyTimeoutMs: 20,
+    };
+    return { deps, opened, closed, wakes: () => wakes };
+  }
+
+  it("retries window creation on a dead surface and closes the corpse", async () => {
+    const { deps, opened, closed, wakes } = fakeDeps(new Map([["window-t1", "👻"], ["window-t2", "~"]]));
+    const { windowId } = await ghosttyNewWindow({ initialInput: "true\n", deps });
+    assert.equal(windowId, "window-t2", "returns the live window");
+    assert.deepEqual(opened, ["window-t1", "window-t2"]);
+    assert.deepEqual(closed, ["window-t1"], "dead window closed before retry");
+    assert.ok(wakes() >= 2, "display wake asserted per attempt");
+  });
+
+  it("accepts the first window when its surface spawns immediately", async () => {
+    const { deps, opened, closed } = fakeDeps(new Map([["window-t1", "π - andrewjochl"]]));
+    const { windowId } = await ghosttyNewWindow({ initialInput: "true\n", deps });
+    assert.equal(windowId, "window-t1");
+    assert.equal(opened.length, 1, "no retry needed");
+    assert.deepEqual(closed, []);
+  });
+
+  it("is bounded: returns the last window id when every surface stays dead", async () => {
+    const { deps, opened, closed } = fakeDeps(new Map());
+    const { windowId } = await ghosttyNewWindow({ initialInput: "true\n", deps });
+    assert.equal(opened.length, 3, "exactly NEW_WINDOW_ATTEMPTS attempts");
+    assert.equal(windowId, "window-t3", "same failure shape as pre-hardening");
+    assert.deepEqual(closed, ["window-t1", "window-t2", "window-t3"], "no corpse windows leak");
+  });
+});
+describe("app-absence gate — a quit Ghostty is never resurrected by the poller", () => {
+  it("drains tracked sessions as terminated without touching AppleScript", async () => {
+    _pollerStateForTests.sessions.set("s-absent", {
+      windowId: "window-dead",
+      lastTitle: "~",
+      lastCwd: "~",
+      startedAt: new Date(0).toISOString(),
+    });
+    const writes = [];
+    const originalWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (chunk, ...rest) => {
+      writes.push(String(chunk));
+      return originalWrite(chunk, ...rest) && true;
+    };
+    try {
+      await pollOnce({ isAppRunning: async () => false });
+    } finally {
+      process.stdout.write = originalWrite;
+    }
+    assert.equal(_pollerStateForTests.sessions.size, 0, "dead-app sessions are drained");
+    assert.equal(_pollerStateForTests.lastWindowIds().size, 0, "window cache is reset for reseed-on-return");
+    const notifications = writes
+      .flatMap((w) => w.split("\n"))
+      .filter((line) => line.trim().startsWith("{"))
+      .map((line) => { try { return JSON.parse(line); } catch { return null; } })
+      .filter(Boolean);
+    const terminated = notifications.find(
+      (msg) => msg.method === "terminal.event" && msg.params?.event?.type === "terminal.session.terminated",
+    );
+    assert.ok(terminated, "a terminal.session.terminated notification fired");
+    assert.equal(terminated.params.sessionId, "s-absent");
   });
 });

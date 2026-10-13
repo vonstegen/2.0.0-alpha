@@ -30,6 +30,8 @@ export type AddOnSurfaceType =
   | "embedded-pane"
   | "modal"
   | "tool-action"
+  | "tool-panel"
+  | "workspace"
   | "background-task-monitor"
   | "channel";
 export type AddOnCategory =
@@ -695,6 +697,7 @@ export interface AddOnManifest {
   harnessProviderConnection?: AddOnHarnessProviderConnectionContract;
   memoryAccess?: AddOnMemoryAccessContract;
   harnessResources?: AddOnHarnessResourceRequestContract;
+  classification?: AddOnClassification;
   smokeTests?: AddOnDeterministicSmokeTest[];
   compatibility: {
     shellVersion: string;

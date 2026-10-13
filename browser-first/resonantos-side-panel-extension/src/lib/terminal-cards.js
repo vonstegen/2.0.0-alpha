@@ -29,6 +29,26 @@ export const TERMINAL_ADDON_IDS = Object.freeze([
 
 export const DEFAULT_AGENT_ID = "pi";
 
+// Mirror of the host's frozen PI_NATIVE_PROVIDER_MAP
+// (browser-first/host/pi-native-provider-map.mjs). The extension cannot
+// import host .mjs, so this allowlist is the renderer's read-only copy: it
+// names the ROS provider identities that map to a native Pi built-in provider
+// and a non-persistent credential env var. Kept in sync by
+// terminal-host-launch.test.mjs ("pi-native family allowlist matches the host map").
+export const PI_NATIVE_PROVIDER_FAMILIES = Object.freeze({
+  openai: "OPENAI_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+  xai: "XAI_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
+  minimax: "MINIMAX_API_KEY",
+  zai: "ZAI_API_KEY",
+});
+
+function providerFamily(profile) {
+  const identity = String(profile?.templateId ?? profile?.providerType ?? "").trim().toLowerCase();
+  return PI_NATIVE_PROVIDER_FAMILIES[identity] ? identity : null;
+}
+
 export const TERMINAL_CARD_FIELD = "terminals-card";
 
 const SECRET_FIELD_NAMES = new Set([
@@ -136,7 +156,7 @@ export function notInstalledBadge() {
  * public fields the renderer is allowed to display. Secret-shaped
  * fields are intentionally absent from the view model.
  */
-export function buildTerminalsViewModel({ status, projectionRuntime, registry, prompt }) {
+export function buildTerminalsViewModel({ status, projectionRuntime, registry, prompt, providerProfiles }) {
   const surfacesByAddon = new Map();
   if (status && Array.isArray(status.surfaces)) {
     for (const surface of status.surfaces) {
@@ -184,14 +204,31 @@ export function buildTerminalsViewModel({ status, projectionRuntime, registry, p
       compatible,
       projectionStatus,
       projectionGeneration: projection?.generation ?? 0,
+      enabled: installation?.enabled === true,
       capabilityGranted,
     };
   });
+  const providerOptions = (Array.isArray(providerProfiles) ? providerProfiles : [])
+    .map((profile) => {
+      if (!profile || typeof profile !== "object") return null;
+      const family = providerFamily(profile);
+      if (!family) return null;
+      return {
+        id: String(profile.id ?? ""),
+        label: String(profile.label ?? profile.name ?? profile.id ?? ""),
+        family,
+        envVar: PI_NATIVE_PROVIDER_FAMILIES[family],
+        configured: Boolean(profile.configured),
+      };
+    })
+    .filter((entry) => entry && entry.id);
+
   return {
     bridgeConnected: Boolean(status?.connected),
     driveId: status?.driveId ?? null,
     promptPath: prompt?.promptPath ?? null,
     promptValid: Boolean(prompt?.valid),
+    providerOptions,
     tabs,
   };
 }

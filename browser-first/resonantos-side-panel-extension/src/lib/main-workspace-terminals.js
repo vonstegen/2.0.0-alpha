@@ -317,6 +317,7 @@ export function renderTerminalsWorkspace(container, options = {}) {
   const state = {
     busyAddonId: null,
     lastError: null,
+    actionStatus: null,
     timer: null,
     selectedProviderProfileId: "",
     providerInitialized: false,
@@ -363,11 +364,20 @@ export function renderTerminalsWorkspace(container, options = {}) {
   }
   function setLastError(addonId, message, tone = "warn") {
     state.lastError = { addonId, message, tone };
+    state.actionStatus = null;
     state.busyAddonId = null;
     scheduleRefresh();
   }
   function clearError() {
     state.lastError = null;
+    state.actionStatus = null;
+  }
+  // Action feedback (launch / copy / prompt-save) must survive the
+  // refresh loop: the refresh's generic status summary would otherwise
+  // overwrite the confirmation within microseconds of the click.
+  function setActionStatus(text) {
+    state.actionStatus = text;
+    statusNode.textContent = text;
   }
 
   let currentView = {
@@ -420,7 +430,9 @@ export function renderTerminalsWorkspace(container, options = {}) {
         }),
       );
     }
-    if (!view.bridgeConnected) {
+    if (state.actionStatus) {
+      statusNode.textContent = state.actionStatus;
+    } else if (!view.bridgeConnected) {
       statusNode.textContent = "Bridge not connected — open Settings → Bridge Target to start it.";
     } else if (view.tabs.some((tab) => tab.connected)) {
       statusNode.textContent = `${view.tabs.find((tab) => tab.connected)?.label} is connected to the bridge.`;
@@ -561,9 +573,9 @@ export function renderTerminalsWorkspace(container, options = {}) {
       );
       return;
     }
-    if (result && result.ok) {
+    if (result && typeof result.launchId === "string") {
       clearError();
-      statusNode.textContent = `Launched ${tab.label}.`;
+      setActionStatus(`Launched ${tab.label}.`);
     } else if (result && result.reason) {
       setLastError(tab.addonId, `Launch failed: ${result.reason}.`, "warn");
     } else {
@@ -588,6 +600,7 @@ export function renderTerminalsWorkspace(container, options = {}) {
       result = await options.fetchConnectionScript({
         terminalAddonId: tab.addonId,
         promptPath: currentView.promptPath,
+        providerProfileId: state.selectedProviderProfileId,
       });
     } catch (error) {
       setLastError(tab.addonId, safeError(error), "warn");
@@ -607,7 +620,7 @@ export function renderTerminalsWorkspace(container, options = {}) {
       );
       return;
     }
-    if (!result || !result.ok || typeof result.command !== "string") {
+    if (!result || typeof result.command !== "string") {
       setLastError(
         tab.addonId,
         "Copy failed: the host did not return a connection script.",
@@ -617,9 +630,9 @@ export function renderTerminalsWorkspace(container, options = {}) {
     }
     const ok = await copyToClipboard(result.command);
     if (ok) {
-      statusNode.textContent = "Connection script copied to the clipboard.";
+      setActionStatus("Connection script copied to the clipboard.");
     } else {
-      statusNode.textContent = "Clipboard API unavailable — select the script and copy manually.";
+      setActionStatus("Clipboard API unavailable — select the script and copy manually.");
     }
     scheduleRefresh();
   }
@@ -644,24 +657,25 @@ export function renderTerminalsWorkspace(container, options = {}) {
 
   async function onSavePrompt() {
     if (typeof options.writePrompt !== "function") {
-      statusNode.textContent = "Prompt writing is not available in this environment.";
+      setActionStatus("Prompt writing is not available in this environment.");
       return;
     }
     const text = promptTextarea.value ?? "";
     if (text.trim().length === 0) {
-      statusNode.textContent = "Write a prompt first.";
+      setActionStatus("Write a prompt first.");
       return;
     }
     if (text.length > 65536) {
-      statusNode.textContent = "Prompt is too long (max 65536 characters).";
+      setActionStatus("Prompt is too long (max 65536 characters).");
       return;
     }
     try {
       await options.writePrompt({ text });
-      statusNode.textContent =
-        "Prompt saved. Open in Terminal is now enabled for connected terminals.";
+      setActionStatus(
+        "Prompt saved. Open in Terminal is now enabled for connected terminals.",
+      );
     } catch (error) {
-      statusNode.textContent = `Prompt save failed: ${safeError(error)}`;
+      setActionStatus(`Prompt save failed: ${safeError(error)}`);
       return;
     }
     scheduleRefresh();

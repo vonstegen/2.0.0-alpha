@@ -34,6 +34,19 @@ test("side panel dock order matches the main panel, with a new-chat button after
   ]);
 });
 
+test("side panel exposes a labeled Terminals shortcut that opens the Terminals workspace", async () => {
+  const html = await readFile(path.join(extensionRoot, "src", "side-panel.html"), "utf8");
+  const d = new JSDOM(html).window.document;
+  const btn = d.getElementById("open-terminals");
+  assert.ok(btn, "side-panel.html is missing #open-terminals");
+  assert.match(btn.textContent ?? "", /Terminals/i, "#open-terminals must carry a visible Terminals label");
+  assert.match(btn.title ?? btn.getAttribute("aria-label") ?? "", /Ghostty/i, "#open-terminals must reference the terminal add-ons");
+
+  const js = await readFile(path.join(extensionRoot, "src", "side-panel.js"), "utf8");
+  assert.match(js, /open-terminals/);
+  assert.match(js, /main-workspace\.html#terminals/);
+});
+
 test("side panel storage keys stay namespaced to Augmentor browser state", () => {
   const values = Object.values(SIDE_PANEL_STORAGE_KEYS);
   assert.equal(new Set(values).size, values.length);

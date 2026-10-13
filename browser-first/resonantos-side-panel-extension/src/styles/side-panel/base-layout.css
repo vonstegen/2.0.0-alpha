@@ -228,6 +228,23 @@ textarea:disabled {
 .workspace-toggle[aria-pressed="true"]:hover {
   background: rgba(36, 209, 143, 0.24);
 }
+.terminals-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(181, 194, 186, 0.24);
+  border-radius: 999px;
+  background: transparent;
+  color: #b5c2ba;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.terminals-open svg { width: 15px; height: 15px; }
+.terminals-open:hover { background: var(--panel-soft); color: var(--text); }
 
 .transcript {
   display: flex;

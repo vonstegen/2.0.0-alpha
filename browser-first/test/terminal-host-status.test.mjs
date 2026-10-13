@@ -216,8 +216,32 @@ test("GET /terminal-host/status projects installed terminal surfaces with the ex
     assert.equal(typeof surface.compatible, "boolean");
     assert.equal(typeof surface.connected, "boolean");
     // With no live terminalHost.service injected, both surfaces are
-    // Disconnected (compatible: true because terminal-host grant is
-    // granted, but the bridge has not started so connected is false).
+    // Disconnected: `compatible` reflects platform compatibility (macOS),
+    // independent of grant state, but `connected` is false because the
+    // bridge has not started a terminal adapter.
+    assert.equal(surface.compatible, true);
+    assert.equal(surface.connected, false);
+  }
+});
+
+test("GET /terminal-host/status reports compatible=true for installed surfaces before any grant", async (t) => {
+  const f = await fixture(t);
+  const ghostty = JSON.parse(
+    await readFile(new URL("../../public/addons/terminal-host-ghostty.json", import.meta.url)),
+  );
+  const iterm2 = JSON.parse(
+    await readFile(new URL("../../public/addons/terminal-host-iterm2.json", import.meta.url)),
+  );
+  for (const manifest of [ghostty, iterm2]) {
+    const r = await f.call("/addons/install", { manifest, enabled: true });
+    assert.equal(r.status, 200);
+  }
+
+  const result = await f.call("/terminal-host/status");
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.surfaces.length, 2);
+  for (const surface of result.payload.surfaces) {
+    // `compatible` is the platform verdict, independent of grant state.
     assert.equal(surface.compatible, true);
     assert.equal(surface.connected, false);
   }

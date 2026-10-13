@@ -181,6 +181,7 @@ export function renderSettingsWorkspace({
 }) {
   const bridge = () => (typeof getBridgeRequest === "function" ? getBridgeRequest() : bridgeRequest);
   let activeId = sections.some((section) => section.id === initialSection) ? initialSection : "overview";
+  let activeHandle = null;
   const shell = document.createElement("section");
   shell.className = "settings-workspace";
   const nav = document.createElement("nav");
@@ -294,10 +295,17 @@ export function renderSettingsWorkspace({
         renderActive();
       };
     }
-    activeSection.render(panel, sectionContext);
+    if (activeHandle && typeof activeHandle.stop === "function") activeHandle.stop();
+    activeHandle = activeSection.render(panel, sectionContext) ?? null;
   };
 
   shell.append(nav, panel);
   container.replaceChildren(shell);
   renderActive();
+  return {
+    stop() {
+      if (activeHandle && typeof activeHandle.stop === "function") activeHandle.stop();
+      activeHandle = null;
+    },
+  };
 }

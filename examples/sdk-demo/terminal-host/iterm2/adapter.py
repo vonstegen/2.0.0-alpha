@@ -43,6 +43,8 @@ from typing import Any
 import iterm2  # type: ignore[import-not-found]
 
 TERMINAL_HOST_CONTRACT_VERSION = 1
+
+ROS_CONNECTED_TITLE = "ROS: connected"
 JSON_RPC_VERSION = "2.0"
 
 # Methods the adapter implements in this commit.
@@ -140,6 +142,14 @@ class _Adapter:
             "event": event,
         }
 
+    async def _set_connected_title(self, session: Any) -> None:
+        # Cosmetic "connected to ROS" indicator in the iTerm2 tab title.
+        # Best-effort: a title-set failure must never break the connect flow.
+        try:
+            await session.async_set_name(ROS_CONNECTED_TITLE)
+        except Exception:
+            pass
+
     async def create_session(self, params: dict[str, Any]) -> dict[str, Any]:
         session_id = params.get("sessionId") or f"iterm2-{_now_iso()}"
         _validate_session_id(session_id)
@@ -154,6 +164,7 @@ class _Adapter:
         # exposed to the bridge so the bridge can correlate with the
         # RosTerminalSession.
         self.sessions[session_id] = tab.current_session
+        await self._set_connected_title(tab.current_session)
         await self._emit(
             self._envelope(
                 session_id,
@@ -192,6 +203,7 @@ class _Adapter:
         tab = await window.async_create_tab()
         session = tab.current_session
         self.sessions[session_id] = session
+        await self._set_connected_title(session)
 
         # The bootstrap command is the FIRST thing typed into the new tab.
         # We do not embed the grant token in the command line; the grant

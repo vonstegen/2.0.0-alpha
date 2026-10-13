@@ -91,6 +91,19 @@ describe("composeBootstrapCommand (pure)", () => {
     assert.equal(cmd.includes("GRANT-TOKEN-VALUE"), false);
   });
 
+  it("appends the OSC title indicator for the terminal chrome (non-secret)", () => {
+    const cmd = composeBootstrapCommand({
+      sessionId: "s1",
+      tokenFilePath: TOKEN,
+      providerProfileId: "openai",
+      rosSessionPath: ROS,
+    });
+    assert.match(cmd, /^eval "\$\(node /, "command must still start with the ros-session eval");
+    assert.ok(cmd.includes("ROS: connected"), "title text must be present");
+    assert.ok(cmd.includes("printf"), "title is set via a shell printf");
+    assert.ok(cmd.endsWith("\\007'"), "title ends with the OSC BEL terminator");
+  });
+
   it("includes --harness when supplied", () => {
     const cmd = composeBootstrapCommand({
       sessionId: "s1", tokenFilePath: TOKEN, providerProfileId: "openai", rosSessionPath: ROS,

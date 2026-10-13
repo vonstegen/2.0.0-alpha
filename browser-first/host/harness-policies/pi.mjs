@@ -110,10 +110,21 @@ export function composePiInvocationFromFile(input) {
   const provider = typeof input.provider === "string" && /^[a-z][a-z0-9-]{0,31}$/.test(input.provider)
     ? input.provider
     : null;
+  // Optional host-derived model id (from the authorized provider profile's
+  // `models` list). Required in practice: `--provider` alone does NOT win
+  // routing when the operator's pi settings pin a default model (e.g. a local
+  // Ollama model) — pi then ignores the provider flag and the injected
+  // credential is never consumed (observed as a provider "Connection error"
+  // in the launched session). Mirrors the credential-adapter argv convention:
+  // bare model id next to `--provider`, never `provider/id`.
+  const model = typeof input.model === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(input.model)
+    ? input.model
+    : null;
   const providerFlags = provider ? `--provider ${provider} ` : "";
+  const modelFlags = model ? `--model ${model} ` : "";
   return {
-    commandSuffix: `${shellQuote(executable)} ${providerFlags}${shellQuote(`@${input.promptPath}`)}`,
-    auditSummary: `pi${provider ? ` --provider ${provider}` : ""} @<file> (${input.promptBytes} bytes)`,
+    commandSuffix: `${shellQuote(executable)} ${providerFlags}${modelFlags}${shellQuote(`@${input.promptPath}`)}`,
+    auditSummary: `pi${provider ? ` --provider ${provider}` : ""}${model ? ` --model ${model}` : ""} @<file> (${input.promptBytes} bytes)`,
   };
 }
 

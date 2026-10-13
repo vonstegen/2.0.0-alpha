@@ -2972,12 +2972,13 @@ test("CP-BR9: Bridge & Runtimes enable button posts a registry-revision-aware tr
     return { ok: true };
   };
 
-  renderSettingsWorkspace({
+  const workspace = renderSettingsWorkspace({
     container,
     bridgeRequest,
     storage: memoryStorage(),
     initialSection: "bridge-runtimes",
   });
+  t.after(() => workspace.stop());
 
   // Wait for the section to render rows for both terminal add-ons.
   const ghosttyButton = await waitForCondition(

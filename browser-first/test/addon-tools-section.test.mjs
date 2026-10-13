@@ -515,12 +515,13 @@ test("CP-BR10: settings workspace renders the addon-tools section with host seam
     if (route.startsWith("/bridge/runtimes")) return makeProjectionRuntime([]);
     return { ok: true };
   };
-  renderSettingsWorkspace({
+  const workspace = renderSettingsWorkspace({
     container,
     bridgeRequest,
     storage: (() => { const state = {}; return { state, async get() { return { ...state }; }, async set(next) { Object.assign(state, next); } }; })(),
     initialSection: "addon-tools",
   });
+  t.after(() => workspace?.stop?.());
   await new Promise((resolve) => setTimeout(resolve, 30));
   // The section renders with a launch + copy button per reviewed id.
   for (const addonId of TERMINAL_ADDON_IDS) {

@@ -45,6 +45,43 @@ test("host imports the canonical manifest validator", async () => {
   assert.equal(host.validateHarnessManifest, canonical.validateAddOnManifest);
 });
 
+test("the canonical Pi harness manifest validates against the SDK (harness fields)", async () => {
+  const { validateAddOnManifest } = await import("../../packages/addon-sdk/src/validation.ts");
+  const piHarness = JSON.parse(await readFile(new URL("../../examples/addons/pi-harness.json", import.meta.url), "utf8"));
+  const result = validateAddOnManifest(piHarness, { source: "sideload" });
+  assert.equal(result.valid, true, JSON.stringify(result.issues));
+  // The harness fields are present and were accepted.
+  assert.equal(piHarness.classification.category, "harness");
+  assert.equal(piHarness.agentRuntime.credentialSource, "provider-profile");
+  assert.equal(typeof piHarness.harnessProviderConnection.consumesProviderProfiles, "boolean");
+  assert.equal(typeof piHarness.harnessResources.requests, "object");
+});
+
+test("harness fields fail closed on malformed values", async () => {
+  const { validateAddOnManifest } = await import("../../packages/addon-sdk/src/validation.ts");
+  const piHarness = JSON.parse(await readFile(new URL("../../examples/addons/pi-harness.json", import.meta.url), "utf8"));
+
+  const badCredentialSource = structuredClone(piHarness);
+  badCredentialSource.agentRuntime.credentialSource = "oops";
+  assert.equal(validateAddOnManifest(badCredentialSource).valid, false);
+
+  const badProtocol = structuredClone(piHarness);
+  badProtocol.harnessProviderConnection.providerProtocols = ["not-a-protocol"];
+  assert.equal(validateAddOnManifest(badProtocol).valid, false);
+
+  const badDelivery = structuredClone(piHarness);
+  badDelivery.harnessProviderConnection.credentialDelivery = ["argv"];
+  assert.equal(validateAddOnManifest(badDelivery).valid, false);
+
+  const badResourceOp = structuredClone(piHarness);
+  badResourceOp.harnessResources.requests.project = ["delete"];
+  assert.equal(validateAddOnManifest(badResourceOp).valid, false);
+
+  const badFamily = structuredClone(piHarness);
+  badFamily.harnessResources.requests.network = ["read"];
+  assert.equal(validateAddOnManifest(badFamily).valid, false);
+});
+
 test("operation validation rejects undeclared and unsupported operations", async () => {
   const { assertHarnessOperation } = await import("../host/harness-adapter-contract.mjs");
   const runtime = boundHarness().agentRuntime;

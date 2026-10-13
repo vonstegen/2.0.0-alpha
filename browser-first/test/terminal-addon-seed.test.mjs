@@ -156,9 +156,9 @@ test("CP-BR9 req #1: the seeded manifests reach the route-facing /terminal-host/
   const byAdapter = new Map(status.surfaces.map((surface) => [surface.adapterId, surface]));
   assert.equal(byAdapter.get(GHOSTTY)?.label, "Ghostty Terminal Host");
   assert.equal(byAdapter.get(ITERM2)?.label, "iTerm2 Terminal Host");
-  // compatible tracks the terminal-host grant; nothing is connected
-  // without a live adapter.
-  assert.equal(byAdapter.get(GHOSTTY)?.compatible, false);
+  // `compatible` reflects platform compatibility (macOS), independent of
+  // grant state; nothing is connected without a live adapter.
+  assert.equal(byAdapter.get(GHOSTTY)?.compatible, true);
   assert.equal(byAdapter.get(GHOSTTY)?.connected, false);
   await svc.registry.setGrants(
     GHOSTTY,
@@ -166,6 +166,7 @@ test("CP-BR9 req #1: the seeded manifests reach the route-facing /terminal-host/
     { consent: true, expectedRevision: svc.registry.snapshot().revision },
   );
   const after = await statusRoute.handler({});
+  // Granting does not change the platform-compatibility verdict.
   assert.equal(
     after.surfaces.find((surface) => surface.adapterId === GHOSTTY)?.compatible,
     true,

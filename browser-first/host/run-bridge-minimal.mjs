@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -233,7 +240,20 @@ const hostTerminal = createTerminalHostHostWiring({
 // on in dev + tests) so existing CI / production bridge runs are unchanged.
 // RESONANT_TERMINAL_DRIVER (in-memory | iterm2) selects the driver; the
 // in-memory driver composes the bus without spawning.
-const terminalHostBridge = await installTerminalHostBridge({ env: process.env });
+// CP-S5H3: attachAuth supplies the bridge base URL + bridge/capability tokens
+// so the composed ros-session attach command can authenticate with the
+// loopback bridge. The closure reads bridgePublicUrlHolder.value (set after
+// the bridge server binds) so the URL is always current even if the port
+// falls back.
+const attachAuth = async () => ({
+  baseUrl: bridgePublicUrlHolder.value,
+  bridgeToken,
+  controlCapabilityToken: bridgeCapabilityTokens["addon-runtime-control"],
+});
+const terminalHostBridge = await installTerminalHostBridge({
+  env: process.env,
+  serviceOptions: { attachAuth },
+});
 // installTerminalHostBridge already starts the service when enabled and
 // returns `{ service: null, started: null }` when the env flag is unset.
 // Use the returned handle; never re-start (double-start) or dereference a
@@ -275,6 +295,9 @@ const harnessService = await createHarnessHostService({
   bindings: JSON.parse(process.env.RESONANTOS_HARNESS_BINDINGS ?? "[]"),
   env: process.env,
   seedInstallations: terminalAddonSeeds,
+  // CP-S5H3: the connection-script route mints the same 0600 --auth-file
+  // the launch path composes, so a pasted script's attach authenticates.
+  attachAuth,
 });
 
 const addonDelegationService = createAddonDelegationService({
@@ -556,6 +579,12 @@ seedTerminalRuntimeFactories(terminalFactoryRegistry, {
   serviceFactory: undefined,
   baseEnv: process.env,
   terminalHostService,
+  // CP-S5H3: the factory-owned services are the ones the CP-BR9 owner
+  // facade actually serves launches with, so THEY must compose the
+  // ros-session attach command with --auth-file. attachAuth is the same
+  // host-owned closure the bridge-level service gets; it vends the
+  // tokens at launch time and the factory never sees the values.
+  attachAuth,
   // CP-BR9: factories attach their started service to the single live
   // owner so the launch route and the reconciler share one instance.
   serviceOwner: terminalServiceOwner,

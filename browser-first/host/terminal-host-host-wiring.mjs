@@ -186,13 +186,21 @@ export function createTerminalHostHostWiring(options = {}) {
   // composed `pi` invocation (otherwise `pi` falls back to its own
   // default — e.g. a local Ollama model — and the injected credential is
   // never consumed). Fails closed on shared-* / anthropic / unknown.
+  // Also returns the host-derived default model (first entry of the
+  // authorized profile's `models` list): `--provider` alone does not win
+  // routing when the operator's pi settings pin a default model, so the
+  // launch must pin `--model` explicitly.
   async function resolvePiProvider(profileId) {
     if (!isNonEmptyString(profileId)) return null;
     const profile = await validatedProfile(profileId);
     if (!profile) return null;
     const mapping = resolvePiNativeProvider(profile);
     if (!mapping || typeof mapping.piProvider !== "string" || !mapping.piProvider) return null;
-    return { piProvider: mapping.piProvider, envVar: mapping.envVar };
+    const modelEntry = Array.isArray(profile.models) ? profile.models[0] : null;
+    const model = typeof modelEntry === "string"
+      ? modelEntry
+      : (modelEntry && typeof modelEntry.model === "string" ? modelEntry.model : null);
+    return { piProvider: mapping.piProvider, envVar: mapping.envVar, ...(model ? { model } : {}) };
   }
 
   return Object.freeze({

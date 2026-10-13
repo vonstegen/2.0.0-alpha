@@ -1,5 +1,5 @@
 // Composition owns routes, never grants inferred from bridge authentication.
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, createPublicKey, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { tmpdir as osTmpdir } from 'node:os';
@@ -137,7 +137,13 @@ export async function createHarnessHostService({ userRoot, store = createHarness
   // returned script. The host never sources this from caller argv or
   // the ambient PATH; the operator may override at composition time
   // (tests do).
-  rosSessionPath } = {}) {
+  rosSessionPath,
+  // CP-S5H3: bridge base URL + bridge/capability tokens, vended at
+  // script-mint time, so the pasted connection script's ros-session
+  // attach can authenticate with the loopback bridge (the same
+  // discipline the launch path's `--auth-file` uses: 0600 JSON,
+  // path-only on the clipboard, read-then-unlinked by the CLI).
+  attachAuth = null } = {}) {
   if (!Number.isSafeInteger(cleanupTimeoutMs) || cleanupTimeoutMs < 1 || cleanupTimeoutMs > 30000) throw new TypeError('Bounded cleanup required.');
   // Step 5, 5B default for the pi-terminal-v1 adapter. Tests inject
   // their own factory to point at a temp dir. (The grant token file is
@@ -185,9 +191,13 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     const owned = [...connectionScriptAdoptions.values()].filter((entry) => entry.terminalAddonId === addonId);
     for (const entry of owned) {
       connectionScriptAdoptions.delete(entry.sessionId);
+      // Unconsumed adoption: remove the 0600 files the operator never
+      // pasted (the CLI unlinks them itself on a successful paste).
+      if (typeof entry.tokenFilePath === "string") await unlink(entry.tokenFilePath).catch(() => {});
+      if (typeof entry.authFilePath === "string") await unlink(entry.authFilePath).catch(() => {});
       if (!terminalHost?.service || typeof terminalHost.service.terminateSession !== 'function') continue;
       try {
-        await terminalHost.service.terminateSession({ sessionId: entry.sessionId });
+        await terminalHost.service.terminateSession({ sessionId: entry.sessionId, terminalAddonId: entry.terminalAddonId });
       } catch {
         /* best effort */
       }
@@ -549,10 +559,12 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     // test for the enforcement invariant.
     route('GET', '/terminal-host/status', control, [], [], async () => {
       const projection = snapshot();
+      // Top-level merged view (any live terminal); per-surface
+      // connectivity is resolved per add-on below so TWO concurrently
+      // live terminals both report connected on their own cards.
       const serviceStatus = typeof terminalHost?.service?.status === 'function'
         ? terminalHost.service.status()
         : { alive: false, driveId: 'in-memory', adapterId: null, sessions: [] };
-      const activeDriveId = serviceStatus.alive ? serviceStatus.driveId : null;
       const surfaces = [];
       for (const [addonId, entry] of Object.entries(projection.installations)) {
         const manifest = manifests.get(addonId);
@@ -571,9 +583,12 @@ export async function createHarnessHostService({ userRoot, store = createHarness
           !Array.isArray(platforms) ||
           platforms.length === 0 ||
           platforms.includes(HOST_PLATFORM_TOKEN);
-        const connected = Boolean(serviceStatus.alive && compatible
-          && activeDriveId !== null
-          && serviceStatus.adapterId === addonId);
+        const surfaceStatus = typeof terminalHost?.service?.status === 'function'
+          ? terminalHost.service.status(addonId)
+          : { alive: false, driveId: null, adapterId: null };
+        const connected = Boolean(compatible && surfaceStatus.alive === true
+          && surfaceStatus.driveId != null
+          && surfaceStatus.adapterId === addonId);
         surfaces.push({
           adapterId: addonId,
           label: terminalSurface.label || manifest.name,
@@ -720,9 +735,10 @@ export async function createHarnessHostService({ userRoot, store = createHarness
       const hasTerminalHostGrant = installation.grantedCapabilities.some((grant) => grant.capability === 'terminal-host' && grant.granted === true);
       if (!hasTerminalHostGrant) return { ok: false, reason: 'capability-not-granted' };
 
-      // The bridge must be currently bound to this terminal add-on.
+      // The bridge must hold a live service for THIS terminal add-on
+      // (multi-live: a sibling terminal being live is not sufficient).
       const serviceStatus = typeof terminalHost?.service?.status === 'function'
-        ? terminalHost.service.status()
+        ? terminalHost.service.status(requestedAddonId)
         : { alive: false, driveId: 'in-memory', adapterId: null, sessions: [] };
       if (!serviceStatus.alive || serviceStatus.adapterId !== requestedAddonId) {
         return { ok: false, reason: 'bridge-not-running', endpoint: probe.endpoint };
@@ -755,10 +771,18 @@ export async function createHarnessHostService({ userRoot, store = createHarness
       //    default (e.g. a local Ollama model) and never consuming the
       //    injected credential.
       let piProvider = null;
+      let piModel = null;
       if (providerProfileId && typeof hostTerminal?.resolvePiProvider === 'function') {
         const target = await hostTerminal.resolvePiProvider(providerProfileId);
         if (target && typeof target.piProvider === 'string' && target.piProvider) {
           piProvider = target.piProvider;
+          // Host-derived default model from the authorized profile. Required:
+          // `--provider` alone does not win routing when the operator's pi
+          // settings pin a default model (the injected credential is then
+          // never consumed; observed as a provider "Connection error").
+          if (typeof target.model === 'string' && target.model) {
+            piModel = target.model;
+          }
         }
       }
       let invocation;
@@ -769,6 +793,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
           promptBytes: promptStat.size,
           credentialEnvVarName: null,
           ...(piProvider ? { provider: piProvider } : {}),
+          ...(piModel ? { model: piModel } : {}),
         });
       } catch {
         return { ok: false, reason: 'policy-not-reviewed' };
@@ -802,6 +827,10 @@ export async function createHarnessHostService({ userRoot, store = createHarness
         launchResult = await terminalHost.service.launchBootstrap({
           sessionId: launchSessionId,
           commandSuffix: invocation.commandSuffix,
+          // Dispatch hint for the multi-live facade (stripped before the
+          // per-add-on service sees the payload): route this launch to the
+          // terminal add-on the operator selected.
+          terminalAddonId: requestedAddonId,
           // Forward the operator-selected provider profile so the composed
           // `ros-session attach --provider-profile-id <id>` resolves and
           // injects the credential under its host-owned env-var name. An
@@ -927,6 +956,29 @@ export async function createHarnessHostService({ userRoot, store = createHarness
       const tokenFilePath = `${osTmpdir()}/ros-session-${sessionId}-${randomUUID()}.token`;
       await writeFile(tokenFilePath, grant.token, { mode: 0o600 });
 
+      // CP-S5H3: without the auth file the pasted script's
+      // /terminal-host/session/attach call answers 401 (the route needs
+      // addon-runtime-control). Mint the same 0600 JSON the launch
+      // path's bootstrap composes; only its path rides the clipboard.
+      let authFilePath = null;
+      if (typeof attachAuth === "function") {
+        const auth = await attachAuth();
+        if (auth && typeof auth === "object") {
+          authFilePath = `${osTmpdir()}/ros-session-${sessionId}-${randomUUID()}.auth.json`;
+          await writeFile(
+            authFilePath,
+            JSON.stringify({
+              ...(typeof auth.baseUrl === "string" && auth.baseUrl ? { baseUrl: auth.baseUrl } : {}),
+              ...(typeof auth.bridgeToken === "string" && auth.bridgeToken ? { bridgeToken: auth.bridgeToken } : {}),
+              ...(typeof auth.controlCapabilityToken === "string" && auth.controlCapabilityToken
+                ? { controlCapabilityToken: auth.controlCapabilityToken }
+                : {}),
+            }),
+            { mode: 0o600 },
+          );
+        }
+      }
+
       // The ros-session CLI ships at the same fixed install root the
       // auto-connect path uses. The host never sources this from
       // caller argv or the ambient PATH. The CLI lives in the repo
@@ -941,6 +993,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
         tokenFilePath,
         providerProfileId,
         rosSessionPath: resolvedRosSessionPath,
+        ...(authFilePath ? { authFilePath } : {}),
       });
 
       // Register the adoption for the zero-leaked-windows invariant.
@@ -951,6 +1004,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
         sessionId,
         terminalAddonId: requestedAddonId,
         tokenFilePath,
+        ...(authFilePath ? { authFilePath } : {}),
         grant,
         startedAt: new Date().toISOString(),
       });

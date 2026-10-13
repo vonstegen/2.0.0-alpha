@@ -175,7 +175,7 @@ export function createTerminalFamilyLock() {
  *   serviceOwner?: {
  *     attach: (entry: { addonId: string, service: object, started: object }) => { ok: boolean, reason?: string },
  *     detach: (entry: { addonId: string, service: object }) => boolean,
- *     ownerAddonId: () => string | null,
+ *     ownerAddonIds: () => string[],
  *   },
  *   now?: () => number,
  *   closeTimeoutMs?: number,
@@ -193,6 +193,7 @@ export function createTerminalRuntimeFactory(options) {
   const baseEnv = options.baseEnv ?? {};
   const terminalHostService = options.terminalHostService ?? null;
   const serviceOwner = options.serviceOwner ?? null;
+  const attachAuth = typeof options.attachAuth === "function" ? options.attachAuth : undefined;
   const familyLock = options.familyLock ?? null;
   const now = options.now ?? (() => Date.now());
   const closeTimeoutMs = options.closeTimeoutMs ?? 2_000;
@@ -225,27 +226,45 @@ export function createTerminalRuntimeFactory(options) {
       // the two terminal factories: a sibling's stop always finishes
       // before this start runs.
       return enqueue(async () => {
-        // CP-BR9: the live terminal service is a singleton. Refuse to spawn
-        // when another add-on holds it; the reconciler surfaces the failure
-        // as a bounded start error (no adapter is spawned in that case).
-        const currentOwner = serviceOwner?.ownerAddonId?.() ?? null;
-        if (serviceOwner && currentOwner !== null && currentOwner !== addonId) {
-          throw new Error(`Terminal factory ${factoryId} cannot start addon ${JSON.stringify(addonId)} (terminal-service-owned)`);
+        // CP-BR9 multi-live: terminal add-ons coexist; the service owner
+        // tracks one live service PER add-on and the facade dispatches by
+        // add-on / session id. No cross-add-on refusal here.
+        // Idempotent per add-on: the factory owns ONE terminal service per
+        // addonId. A generation-bumped re-start (enable / grant registry
+        // fences, extension re-sync) must NOT spawn a second adapter while
+        // the current one is alive — overwriting the map entry without
+        // stopping leaks the old adapter process (observed: 3 concurrent
+        // ghostty adapters after enable + grant + extension re-sync, all
+        // polling the terminal app concurrently).
+        const existing = perAddon.get(addonId);
+        if (existing?.service) {
+          let alive = false;
+          try {
+            alive = existing.service.status?.()?.alive === true;
+          } catch {
+            alive = false;
+          }
+          if (alive) return existing;
+          // Dead instance: no live adapter to leak; drop the stale handle
+          // so a fresh service can be started below.
+          perAddon.delete(addonId);
         }
         const pinnedEnv = buildPinnedEnv({ driver, baseEnv });
         // createTerminalHostService takes `addonId` as a nullary function;
         // the factory pins it to the reconciler-supplied add-on id.
-        const service = serviceFactory({ env: pinnedEnv, addonId: () => addonId });
+        // attachAuth (CP-S5H3) is host-owned wiring forwarded verbatim:
+        // the factory never sees the bridge/capability token values, only
+        // the closure that vends them at launch time.
+        const service = serviceFactory({
+          env: pinnedEnv,
+          addonId: () => addonId,
+          ...(attachAuth ? { attachAuth } : {}),
+        });
         const started = await service.start();
-        if (serviceOwner) {
-          const attached = serviceOwner.attach({ addonId, service, started });
-          if (!attached.ok) {
-            // Lost the singleton race after spawning: stop the adapter we
-            // just started so no window or process is leaked, then fail.
-            await service.stop().catch(() => undefined);
-            throw new Error(`Terminal factory ${factoryId} cannot start addon ${JSON.stringify(addonId)} (${attached.reason ?? "terminal-service-owned"})`);
-          }
-        }
+        // Attach is per-addon idempotent / replace-on-restart and never
+        // refuses: a same-addon re-attach after a crash swaps the stale
+        // dead service for this fresh one.
+        serviceOwner?.attach?.({ addonId, service, started });
         const handle = {
           factoryId,
           addonId,
@@ -264,7 +283,7 @@ export function createTerminalRuntimeFactory(options) {
       const instance = perAddon.get(addonId) ?? handle;
       if (!instance || !instance.service) return;
       return enqueue(async () => {
-        // CP-BR9: release the live-service singleton BEFORE teardown so no
+        // CP-BR9: release the live-service ownership BEFORE teardown so no
         // launch can race a stopping adapter. Detach only evicts the exact
         // pair this factory attached.
         serviceOwner?.detach?.({ addonId, service: instance.service });
@@ -346,6 +365,12 @@ export function seedTerminalRuntimeFactories(registry, options = {}) {
   const baseEnv = options.baseEnv ?? {};
   const terminalHostService = options.terminalHostService ?? null;
   const serviceOwner = options.serviceOwner ?? null;
+  // CP-S5H3: forward the host-owned attach auth closure so factory-owned
+  // services compose bootstrap commands with --auth-file. Without it the
+  // in-window ros-session attach 401s and the terminal sits dead (the
+  // bridge-level installTerminalHostBridge service has attachAuth, but
+  // the CP-BR9 owner facade prefers the factory-active service).
+  const attachAuth = options.attachAuth ?? null;
   // CP-BR9: one shared lock per seed so a start never overlaps a sibling
   // factory's stop (stop-old-before-start-new under parallel reconciles).
   const familyLock = options.familyLock ?? createTerminalFamilyLock();
@@ -358,6 +383,7 @@ export function seedTerminalRuntimeFactories(registry, options = {}) {
       baseEnv,
       terminalHostService,
       serviceOwner: serviceOwner ?? undefined,
+      attachAuth: attachAuth ?? undefined,
       familyLock,
       now,
     }),
@@ -370,6 +396,7 @@ export function seedTerminalRuntimeFactories(registry, options = {}) {
       baseEnv,
       terminalHostService,
       serviceOwner: serviceOwner ?? undefined,
+      attachAuth: attachAuth ?? undefined,
       familyLock,
       now,
     }),

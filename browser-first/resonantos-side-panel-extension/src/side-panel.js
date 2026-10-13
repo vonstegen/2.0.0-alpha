@@ -257,6 +257,17 @@ const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 const { withBrowserActionLock } = createBrowserActionLock();
 const mainWorkspaceToggle = createMainWorkspaceToggle();
 
+// Direct shortcut to the Terminals workspace. The terminal add-ons (Ghostty
+// + iTerm2) live in the full main workspace, not the side panel; without this
+// the only path was the unlabeled workspace toggle, which made the terminal
+// launch surface undiscoverable.
+const openTerminalsButton = document.querySelector("#open-terminals");
+if (openTerminalsButton) {
+  openTerminalsButton.addEventListener("click", () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL("src/main-workspace.html#terminals"), active: true }).catch(() => undefined);
+  });
+}
+
 // Top-of-sidecar tabs: relocate the Site / Agent Control / Jobs / Permissions
 // panels into a full-size popout overlay, hidden until their link is clicked.
 // Approval and consent panels stay in the inline context-dock so they
