@@ -114,10 +114,11 @@ const MANIFEST_PATH = fileURLToPath(new URL("./addon.json", import.meta.url));
 
 // ADR-056 §7 failure-mode contract (step 13). The executable harness lives
 // in packages/addon-sdk-testing (mockHost + runAddOnFailureMode); its
-// TypeScript sources land via PR #440 and are not present in this checkout,
-// so this step teaches the contract table — the expected host deny codes —
-// rather than running the modes. Copied from the in-tree
-// packages/addon-sdk-testing/README.md mapping.
+// TypeScript sources land via PR #442 (the ADR-056 document itself is docs
+// PR #440) and are not present in this checkout, so this step teaches the
+// contract table — the expected host deny codes — rather than running the
+// modes. Copied from the in-tree packages/addon-sdk-testing/README.md
+// mapping.
 const FAILURE_MODES = Object.freeze([
   { id: "F1", mode: "Credential exfiltration attempt", expected: "credential-in-payload" },
   { id: "F2", mode: "Provider self-selection", expected: "provider-self-selection-rejected" },
@@ -442,7 +443,7 @@ export function createSdkGuideServer({
       sendJson(res, 200, {
         step: 13,
         title: STEP_INFO[13].title,
-        lesson: "ADR-056 §7 lists ten failure modes every external agent runtime integration must be hardened against; each maps to one expected host deny code. The executable form — mockHost(...), runAddOnFailureMode(modeId, manifest) and a vitest suite asserting every Expected clause — lives in packages/addon-sdk-testing. Its TypeScript sources land via PR #440 and are absent from this checkout (only README/package.json/test stubs are present), so this step teaches the contract table rather than running the modes. Steps 7-9 above are the same idea proven live: wrong audience → 401, revoked policy → 403.",
+        lesson: "ADR-056 §7 lists ten failure modes every external agent runtime integration must be hardened against; each maps to one expected host deny code. The executable form — mockHost(...), runAddOnFailureMode(modeId, manifest) and a vitest suite asserting every Expected clause — lives in packages/addon-sdk-testing. Its TypeScript sources land via PR #442 (the ADR-056 document itself is docs PR #440) and are absent from this checkout (only README/package.json/test stubs are present), so this step teaches the contract table rather than running the modes. Steps 7-9 above are the same idea proven live: wrong audience → 401, revoked policy → 403.",
         adr: "ADR-056 §7",
         harnessPackage: "packages/addon-sdk-testing",
         harnessPresentInCheckout: false,
