@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- SDK Guide extended from 9 to 13 steps: it now runs the real `@resonantos/addon-sdk` surface on its loopback origin — runtime lifecycle projection (`deriveDesiredRuntimeState`/`projectLifecycleSnapshot`, flipping to `stopped`/`addon-revoked` after step 9's revoke), the ADR-042 harness-resource contract failing closed against the guide's own grants, a live in-memory terminal-host session with an illegal-transition rejection, and the ADR-056 §7 F1–F10 expected-deny-code table. Step 2 now performs a live `validateAddOnManifest` against the guide's own manifest. SDK steps import the TypeScript sources via Node type-stripping and answer `501 sdk-runtime-unavailable` (never a fabricated result) when the runtime cannot strip types.
+- The bridge now embeds any missing first-party sdk-demo upstream (echo, counter, sdk-guide, pi) in-process when its bearer token is pinned and its declared loopback port is free, so the full demo runs with no extra terminals. An already-listening external upstream always wins; `--no-embed-demo-upstreams` disables embedding.
+
+### Fixed
+
+- Workspace add-on panels (echo/counter/sdk-guide/pi) no longer render in a ~150px strip: `.workspace-iframe-trail` had no styles, so the flex chain from the viewport to the iframe dead-ended and the iframe collapsed to its intrinsic height. The `workspace-iframe` workspace now completes the chain (`#transcript` → trail → header → wrapper → frame), the iframe fills the remaining panel height, and scrolling happens inside the add-on (no double scrollbars).
+- SDK Guide admin routes (`/admin/state`, `/admin/deny`) now honor `--sdk-guide-admin-token` / `RESONANTOS_SDK_GUIDE_ADMIN_TOKEN` for operator-started servers: the resolution chain short-circuited on the env helper's empty string and never reached argv, so step 9's revocation could never complete outside the test harness.
+
 ### Security
 
 - OpenCode's local server now binds to an ephemeral loopback port with a bridge-minted credential; unauthenticated access to the former fixed port 4231 is closed, the bridge and side panel authenticate their requests and event stream, and orphaned servers are reaped on the next bridge start (#320).
