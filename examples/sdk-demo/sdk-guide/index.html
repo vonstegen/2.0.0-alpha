@@ -30,7 +30,7 @@
   <main>
     <h1>Resonant Add-On SDK — Guide</h1>
     <p id="status">connecting…</p>
-    <p class="note">Each step below is a real call against the Phase-3 (P6) host-policy boundary. DENY and REVOKE outcomes are real 401/403 responses, not hard-coded.</p>
+    <p class="note">Each step below is a real call against the Resonant Extension Framework (REF, ADR-055) host-policy boundary — the lifecycle the SDK-DEMO-003 roadmap called Phase-3 (P6). DENY and REVOKE outcomes are real 401/403 responses, not hard-coded. Steps 10–13 import and run the actual <code>@resonantos/addon-sdk</code> TypeScript sources; if this server was started without Node type-stripping they answer 501 instead of fabricating a result.</p>
 
     <article class="step" data-step="1">
       <div class="row"><h2>1. Discovery</h2><span class="pill idle" data-pill>idle</span></div>
@@ -94,6 +94,34 @@
       <button data-run>RUN</button>
       <pre data-out></pre>
     </article>
+
+    <article class="step" data-step="10">
+      <div class="row"><h2>10. Runtime lifecycle projection</h2><span class="pill idle" data-pill>idle</span></div>
+      <p>GET /api/guide/lifecycle runs the real deriveDesiredRuntimeState + projectLifecycleSnapshot over this add-on's live authority projection (installed, enabled, grants, revocation). Re-run after step 9: the decision flips to stopped / addon-revoked.</p>
+      <button data-run>RUN</button>
+      <pre data-out></pre>
+    </article>
+
+    <article class="step" data-step="11">
+      <div class="row"><h2>11. Harness-resource contract</h2><span class="pill idle" data-pill>idle</span></div>
+      <p>GET /api/guide/resources runs the real normalizeHarnessResourceRequest + resolveHarnessResourceGrants. This add-on holds only the network capability, so every resource family (files, memory, skills) fails closed — request ≠ grant.</p>
+      <button data-run>RUN</button>
+      <pre data-out></pre>
+    </article>
+
+    <article class="step" data-step="12">
+      <div class="row"><h2>12. Terminal-host lane (in-memory)</h2><span class="pill idle" data-pill>idle</span></div>
+      <p>GET /api/guide/terminal drives a real session through the in-memory terminal driver (RESONANT_TERMINAL_DRIVER default): created → attached → running → detached → terminated, with telemetry, plus a real rejection of an illegal transition. iterm2/ghostty are the host-backed drivers.</p>
+      <button data-run>RUN</button>
+      <pre data-out></pre>
+    </article>
+
+    <article class="step" data-step="13">
+      <div class="row"><h2>13. Break it on purpose — F1–F10</h2><span class="pill idle" data-pill>idle</span></div>
+      <p>ADR-056 §7's ten failure modes and the host deny code each must produce. The executable harness (packages/addon-sdk-testing: mockHost + runAddOnFailureMode) lands via PR #440 and is not in this checkout, so this step serves the contract table.</p>
+      <button data-run>RUN</button>
+      <pre data-out></pre>
+    </article>
   </main>
 
   <script>
@@ -102,10 +130,13 @@
     // delivers capability tokens out-of-band via postMessage; nothing here
     // needs the bridge token and no token is embedded in this HTML.
     //
-    // Phase-3 (P6): the bootstrap envelope carries the host-minted bearer
-    // for every granted capability. Step 7 ("authorized call") attaches it
-    // on demand. Steps 8/9 deliberately present the wrong bearer (or a
-    // server-revoked bearer) so the UI shows real 401/403 outcomes.
+    // REF (ADR-055; SDK-DEMO-003 phase "P6"): the bootstrap envelope carries
+    // the host-minted bearer for every granted capability. Step 7
+    // ("authorized call") attaches it on demand. Steps 8/9 deliberately
+    // present the wrong bearer (or a server-revoked bearer) so the UI shows
+    // real 401/403 outcomes. Steps 10-13 run the real SDK TypeScript sources
+    // server-side; a 501 there means the server was started without Node
+    // type-stripping.
     let guideToken = null;
     let bootstrap = null;
 
@@ -198,6 +229,16 @@
           const r = await callRoute("/api/guide/ping", "POST", {}, wrongToken);
           out(n, `POST /api/guide/ping (Authorization: Bearer ${wrongToken}) → ${r.status}\n` + JSON.stringify(r.data, null, 2));
           if (r.status === 401) setPill(n, "deny", "401 wrong bearer");
+          else setPill(n, "idle", `${r.status}`);
+        } else if (n >= 10 && n <= 13) {
+          // Current-SDK steps. All four are same-origin GETs against routes
+          // that import and run the real @resonantos/addon-sdk TypeScript
+          // (type-stripping; 501 means the runtime can't strip types).
+          const paths = { 10: "lifecycle", 11: "resources", 12: "terminal", 13: "failure-modes" };
+          const r = await callRoute(`/api/guide/${paths[n]}`, "GET");
+          out(n, `GET /api/guide/${paths[n]} → ${r.status}\n` + JSON.stringify(r.data, null, 2));
+          if (r.status === 200) setPill(n, "ok", "200");
+          else if (r.status === 501) setPill(n, "deny", "501 sdk-unavailable");
           else setPill(n, "idle", `${r.status}`);
         } else if (n === 9) {
           // Revocation — present the *correct* bearer after the operator has

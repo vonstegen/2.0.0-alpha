@@ -18,7 +18,7 @@ launcher.
 | --- | --- | --- |
 | Resonant Echo | `addon.resonant-echo` | Deterministic echo; proves the host-mediated round-trip |
 | Resonant Counter | `addon.resonant-counter` | *(P4)* Second independent add-on; proves the mechanism is generic |
-| SDK Guide | `addon.sdk-guide` | Interactive 9-step tutorial that teaches the SDK while using it |
+| SDK Guide | `addon.sdk-guide` | Interactive 13-step tutorial that teaches the SDK while using it — steps 1-9 walk the REF host-policy lifecycle, steps 10-13 run the current SDK surface (lifecycle projection, harness resources, terminal lane, F1-F10 contract) |
 | Resonant Pi | `addon.resonant-pi` | Self-contained local-service demo; proves the SDK round-trip with a deterministic, local reply |
 
 ## Layout
@@ -85,6 +85,20 @@ no hand-edited generated config, no pre-seeded tokens.
 
 ### 1. Build + start the four upstream add-on services
 
+> **One-command path (recommended).** From the repo root:
+> `./start-demo-bridge.sh` (add `--fresh` to kill stale demo processes
+> first). It selects the repo-pinned Node via nvm (or adds
+> `--experimental-strip-types` on Node 22.6-22.17), starts the bridge (§2)
+> with the canonical token set, and the bridge embeds any missing upstream
+> **in-process** — this section and §2 collapse into that single command.
+> Embedding preserves the boundary: each upstream keeps its own loopback
+> origin, bearer, and admin channel; an upstream you start manually always
+> wins over the embedded copy; `--no-embed-demo-upstreams` disables
+> embedding entirely.
+>
+> The manual paths below remain the canonical way to run a local-service
+> add-on and are what the guide's steps describe.
+
 Open four terminals; each starts one operator-owned loopback HTTP service
 on its declared port. The bridge never spawns them.
 
@@ -100,7 +114,12 @@ node examples/sdk-demo/counter/server.mjs \
   --counter-admin-token=demo-counter-admin
 
 # Terminal 3 — SDK Guide on :47323
-node examples/sdk-demo/sdk-guide/server.mjs \
+# Steps 10-13 import the real @resonantos/addon-sdk TypeScript sources, so
+# the server needs Node type-stripping: default-on for Node >= 22.18 (the
+# repo .nvmrc pins 24.21.0, where this flag is a harmless no-op); required
+# on Node 22.6-22.17. Without it steps 1-9 still work and steps 10-13
+# answer 501 sdk-runtime-unavailable.
+node --experimental-strip-types examples/sdk-demo/sdk-guide/server.mjs \
   --sdk-guide-bearer-token=demo-guide-bearer \
   --sdk-guide-admin-token=demo-guide-admin
 

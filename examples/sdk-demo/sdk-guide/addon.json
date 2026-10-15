@@ -1,18 +1,18 @@
 {
   "id": "addon.sdk-guide",
   "name": "SDK Guide",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "ResonantOS",
   "category": "tool",
   "sdkVersion": "0.1.0",
-  "description": "An interactive 9-step tutorial that teaches the @resonantos/addon-sdk by using it on this same loopback origin. Walks through every Phase-3 (P6) host-policy boundary: discovery, manifest validation, capability request, host consent, grant, sandboxed UI render, an authorized call (real 200), a denied call (real 401 — wrong bearer), and a revoked call (real 403 — host withdrew the grant). No step is hard-coded: every denial is a real host-policy result.",
+  "description": "An interactive 13-step tutorial that teaches the @resonantos/addon-sdk by using it on this same loopback origin. Steps 1-9 walk every REF (ADR-055) host-policy boundary: discovery, manifest validation (a live validateAddOnManifest run against this very addon.json), capability request, host consent, grant, sandboxed UI render, an authorized call (real 200), a denied call (real 401 — wrong bearer), and a revoked call (real 403 — host withdrew the grant). Steps 10-13 run the current SDK surface for real: runtime lifecycle projection (deriveDesiredRuntimeState + projectLifecycleSnapshot), the harness-resource contract failing closed against this add-on's grants, a live in-memory terminal-host session, and the ADR-056 §7 F1-F10 failure-mode table. No step is hard-coded: every denial is a real host-policy result.",
   "runtimeType": "local-service",
   "surfaces": [
     {
       "id": "sdk-guide-workspace",
       "type": "panel",
       "label": "SDK Guide",
-      "description": "Walk the full P6 lifecycle on a single add-on. The UI calls its own loopback upstream at each step; the upstream enforces every host-policy boundary symmetrically with Echo and Counter. Host revocation flips a real flag; the same bearer that succeeded moments earlier then returns 403."
+      "description": "Walk the full REF lifecycle on a single add-on, then keep going into the current SDK: lifecycle projection, harness resources, terminal lane, and the F1-F10 hardening contract. The UI calls its own loopback upstream at each step; the upstream enforces every host-policy boundary symmetrically with Echo and Counter. Host revocation flips a real flag; the same bearer that succeeded moments earlier then returns 403 — and step 10's projection flips to stopped/addon-revoked."
     }
   ],
   "requestedCapabilities": [

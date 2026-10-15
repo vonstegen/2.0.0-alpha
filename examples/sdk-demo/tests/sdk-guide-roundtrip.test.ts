@@ -118,9 +118,9 @@ describe("SDK demo: SDK Guide upstream round-trip (P7 capability-gated, 9-step)"
     expect(html).toContain("resonantos-addon-bootstrap");
     expect(html).toContain("/api/guide/ping");
     expect(html.toLowerCase()).toMatch(/authoriz/);
-    // 9-step UI must be present.
-    const stepMatches = html.match(/data-step="(\d)"/g) ?? [];
-    expect(stepMatches).toHaveLength(9);
+    // 13-step UI must be present (9 lifecycle steps + 4 current-SDK steps).
+    const stepMatches = html.match(/data-step="(\d+)"/g) ?? [];
+    expect(stepMatches).toHaveLength(13);
   });
 
   // ---- Host-only admin / revoke lifecycle ----
@@ -138,6 +138,38 @@ describe("SDK demo: SDK Guide upstream round-trip (P7 capability-gated, 9-step)"
     const body = await res.json();
     expect(body.hostGranted).toBe(true);
     expect(body.bearerConfigured).toBe(true);
+  });
+
+  it("resolves the admin token from env/argv when no parameter is passed (operator direct-run path)", async () => {
+    // Regression: the env helper returns "" when unset, and a ?? chain
+    // short-circuits on "" — so an operator-started server with only
+    // env/argv tokens used to 401 every /admin/* call.
+    const argvFlag = "--sdk-guide-admin-token=argv-admin";
+    process.argv.push(argvFlag);
+    const viaArgv = createSdkGuideServer({ port: 0, bearerToken: SDK_GUIDE_BEARER });
+    const { port: argvPort } = await viaArgv.start();
+    try {
+      const res = await fetch(`http://127.0.0.1:${argvPort}/admin/state`, {
+        headers: { authorization: "Bearer argv-admin" },
+      });
+      expect(res.status).toBe(200);
+    } finally {
+      await viaArgv.close();
+      process.argv.splice(process.argv.indexOf(argvFlag), 1);
+    }
+
+    process.env.RESONANTOS_SDK_GUIDE_ADMIN_TOKEN = "env-admin";
+    const viaEnv = createSdkGuideServer({ port: 0, bearerToken: SDK_GUIDE_BEARER });
+    const { port: envPort } = await viaEnv.start();
+    try {
+      const res = await fetch(`http://127.0.0.1:${envPort}/admin/state`, {
+        headers: { authorization: "Bearer env-admin" },
+      });
+      expect(res.status).toBe(200);
+    } finally {
+      await viaEnv.close();
+      delete process.env.RESONANTOS_SDK_GUIDE_ADMIN_TOKEN;
+    }
   });
 
   it("step 9 — host revoke flips the deny flag and the mutating route returns 403 (real host-policy result)", async () => {
@@ -183,6 +215,111 @@ describe("SDK demo: SDK Guide upstream round-trip (P7 capability-gated, 9-step)"
       body: "{}",
     });
     expect(restored.status).toBe(200);
+  });
+
+  // ---- Current-SDK steps (10-13): real @resonantos/addon-sdk calls ----
+
+  it("step 2 runs a live validateAddOnManifest against the guide's own addon.json", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/guide/step/2`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.validation?.live).toBe(true);
+    expect(body.validation?.valid).toBe(true);
+    expect(Array.isArray(body.validation?.issues)).toBe(true);
+  });
+
+  it("step 10 projects a running lifecycle decision from the live authority projection", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/guide/lifecycle`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.decision.desiredState).toBe("running");
+    expect(body.snapshot.status).toBe("starting");
+    expect(body.snapshot.generation).toBe(0);
+    expect(body.authority.revocation).toBe("none");
+    expect(body.authority.grantedCapabilities).toEqual(["network"]);
+    expect(body.vocabulary.statuses).toContain("ready");
+    expect(body.vocabulary.publicFailureCodes).toContain("addon-revoked");
+  });
+
+  it("step 10 flips to stopped/addon-revoked after the host revokes (same input shape, real resolver)", async () => {
+    service.setHostGranted(false);
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/guide/lifecycle`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.decision.desiredState).toBe("stopped");
+      expect(body.decision.publicFailureCode).toBe("addon-revoked");
+      expect(body.snapshot.status).toBe("failed");
+      expect(body.snapshot.generation).toBe(1);
+      expect(typeof body.snapshot.lastTransitionAt).toBe("string");
+    } finally {
+      service.setHostGranted(true);
+    }
+  });
+
+  it("step 11 fails every resource family closed against the guide's network-only grant", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/guide/resources`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.normalized.ok).toBe(true);
+    expect(body.resolvedGrants).toHaveLength(4); // files.read + memory.{search,read} + skills.list
+    for (const grant of body.resolvedGrants) {
+      expect(grant.granted).toBe(false);
+    }
+    // skills has no backing capability at all; files/memory back onto
+    // filesystem/archive-read, which this add-on never requested.
+    expect(body.backingCapability.skills).toBeNull();
+    expect(body.backingCapability.files).toBe("filesystem");
+    expect(body.backingCapability.memory).toBe("archive-read");
+  });
+
+  it("step 12 drives a real in-memory terminal session and rejects an illegal transition", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/guide/terminal`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.sessionTrail).toEqual(["created", "attached", "running", "detached", "terminated"]);
+    expect(body.session.state).toBe("terminated");
+    expect(body.adapter.adapterId).toBe("in-memory");
+    expect(body.invalidTransitionRejected).toContain("Invalid terminal session transition");
+    const telemetryTypes = body.telemetry.map((event) => event.type);
+    expect(telemetryTypes).toContain("terminal.session.started");
+    expect(telemetryTypes).toContain("terminal.session.terminated");
+  });
+
+  it("step 13 serves the ADR-056 F1-F10 contract table and states the harness is absent", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/guide/failure-modes`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.failureModes).toHaveLength(10);
+    expect(body.failureModes[0]).toEqual({ id: "F1", mode: "Credential exfiltration attempt", expected: "credential-in-payload" });
+    expect(body.harnessPresentInCheckout).toBe(false);
+  });
+
+  it("SDK routes answer 501 (not a fabricated result) when the runtime cannot import the SDK", async () => {
+    const noSdk = createSdkGuideServer({
+      port: 0,
+      bearerToken: SDK_GUIDE_BEARER,
+      adminToken: SDK_GUIDE_ADMIN,
+      loadSdk: async () => { throw new Error("Cannot find module './contracts.ts'"); },
+    });
+    const { port: noSdkPort } = await noSdk.start();
+    try {
+      for (const route of ["lifecycle", "resources", "terminal"]) {
+        const res = await fetch(`http://127.0.0.1:${noSdkPort}/api/guide/${route}`);
+        expect(res.status).toBe(501);
+        const body = await res.json();
+        expect(body.error).toBe("sdk-runtime-unavailable");
+      }
+      const step2 = await fetch(`http://127.0.0.1:${noSdkPort}/api/guide/step/2`);
+      expect(step2.status).toBe(200);
+      const step2Body = await step2.json();
+      expect(step2Body.validation.live).toBe(false);
+      // failure-modes is a static contract table — no SDK import needed.
+      const fm = await fetch(`http://127.0.0.1:${noSdkPort}/api/guide/failure-modes`);
+      expect(fm.status).toBe(200);
+    } finally {
+      await noSdk.close();
+    }
   });
 
   it("host-only admin token cannot be used as the bearer (distinct channels)", async () => {
