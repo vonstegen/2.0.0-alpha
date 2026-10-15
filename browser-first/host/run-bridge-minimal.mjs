@@ -78,6 +78,11 @@ import { seedTerminalRuntimeFactories } from "./terminal-runtime-factories.mjs";
 import { loadTerminalAddonSeedInstallations } from "./terminal-addon-seed.mjs";
 import { createTerminalHostServiceOwner } from "./terminal-host-service-owner.mjs";
 import { createProviderHostService } from "./provider-host-service.mjs";
+import { maybeEmbedDemoUpstreams } from "./demo-upstream-embed.mjs";
+import { createEchoServer } from "../../examples/sdk-demo/echo/server.mjs";
+import { createCounterServer } from "../../examples/sdk-demo/counter/server.mjs";
+import { createSdkGuideServer } from "../../examples/sdk-demo/sdk-guide/server.mjs";
+import { createPiServer } from "../../examples/sdk-demo/pi/server.mjs";
 import {
   memorySourceMoveHistoryPath as sourceMoveHistoryPath,
   memorySourceRepairHistoryPath as sourceRepairHistoryPath,
@@ -300,6 +305,32 @@ const harnessService = await createHarnessHostService({
   attachAuth,
 });
 
+// Host-side bearer tokens (delivered to the iframe in the bootstrap
+// envelope for every granted capability) and host-side admin tokens
+// (NEVER delivered — host-only, used to drive /admin/deny on revocation).
+// Both are operator-pinned via launcher args or env so the demo is
+// reproducible from a clean checkout without a second trust path. Hoisted
+// so the demo-upstream embed step below can hand the same tokens to any
+// upstream it starts in-process.
+const workspaceAddonBearerTokens = {
+  "addon.resonant-echo":
+    args.get("echo-bearer-token") ?? process.env.RESONANTOS_DEMO_ECHO_BEARER ?? "",
+  "addon.resonant-counter":
+    args.get("counter-bearer-token") ?? process.env.RESONANTOS_DEMO_COUNTER_BEARER ?? "",
+  "addon.sdk-guide":
+    args.get("sdk-guide-bearer-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_BEARER ?? "",
+  "addon.resonant-pi": args.get("pi-bearer-token") ?? process.env.RESONANTOS_DEMO_PI_BEARER ?? "",
+};
+const workspaceAddonAdminTokens = {
+  "addon.resonant-echo":
+    args.get("echo-admin-token") ?? process.env.RESONANTOS_DEMO_ECHO_ADMIN ?? "",
+  "addon.resonant-counter":
+    args.get("counter-admin-token") ?? process.env.RESONANTOS_DEMO_COUNTER_ADMIN ?? "",
+  "addon.sdk-guide":
+    args.get("sdk-guide-admin-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_ADMIN ?? "",
+  "addon.resonant-pi": args.get("pi-admin-token") ?? process.env.RESONANTOS_DEMO_PI_ADMIN ?? "",
+};
+
 const addonDelegationService = createAddonDelegationService({
   browserFirstRoot,
   bridgePublicUrl: getBridgePublicUrlValue,
@@ -326,29 +357,8 @@ const addonDelegationService = createAddonDelegationService({
   // the harness adapter routes use; P6 extends its lifecycle to local-service
   // workspace add-ons without inventing a second registry.
   workspaceAddonRegistry: harnessService.registry,
-  // Host-side bearer tokens (delivered to the iframe in the bootstrap
-  // envelope for every granted capability) and host-side admin tokens
-  // (NEVER delivered — host-only, used to drive /admin/deny on revocation).
-  // Both are operator-pinned via launcher args or env so the demo is
-  // reproducible from a clean checkout without a second trust path.
-  workspaceAddonBearerTokens: {
-    "addon.resonant-echo":
-      args.get("echo-bearer-token") ?? process.env.RESONANTOS_DEMO_ECHO_BEARER ?? "",
-    "addon.resonant-counter":
-      args.get("counter-bearer-token") ?? process.env.RESONANTOS_DEMO_COUNTER_BEARER ?? "",
-    "addon.sdk-guide":
-      args.get("sdk-guide-bearer-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_BEARER ?? "",
-    "addon.resonant-pi": args.get("pi-bearer-token") ?? process.env.RESONANTOS_DEMO_PI_BEARER ?? "",
-  },
-  workspaceAddonAdminTokens: {
-    "addon.resonant-echo":
-      args.get("echo-admin-token") ?? process.env.RESONANTOS_DEMO_ECHO_ADMIN ?? "",
-    "addon.resonant-counter":
-      args.get("counter-admin-token") ?? process.env.RESONANTOS_DEMO_COUNTER_ADMIN ?? "",
-    "addon.sdk-guide":
-      args.get("sdk-guide-admin-token") ?? process.env.RESONANTOS_DEMO_SDK_GUIDE_ADMIN ?? "",
-    "addon.resonant-pi": args.get("pi-admin-token") ?? process.env.RESONANTOS_DEMO_PI_ADMIN ?? "",
-  },
+  workspaceAddonBearerTokens,
+  workspaceAddonAdminTokens,
 });
 
 const { executeAddonsStatus } = addonDelegationService;
@@ -785,6 +795,37 @@ const bridgeConfigPath = await writeBridgeConfig({
   publicUrl: bridgePublicUrl,
 });
 
+// First-party sdk-demo convenience: if a demo add-on has a pinned bearer
+// token but nothing listening on its declared loopback port, start its
+// upstream IN-PROCESS so the demo needs no extra terminals. An external
+// operator-started upstream always wins; --no-embed-demo-upstreams disables
+// this entirely. Ports come from each manifest's service.entrypoint (single
+// source of truth). See demo-upstream-embed.mjs for the boundary rules.
+const DEMO_UPSTREAM_SPECS = [
+  { addonId: "addon.resonant-echo", manifest: "examples/sdk-demo/echo/addon.json", create: createEchoServer },
+  { addonId: "addon.resonant-counter", manifest: "examples/sdk-demo/counter/addon.json", create: createCounterServer },
+  { addonId: "addon.sdk-guide", manifest: "examples/sdk-demo/sdk-guide/addon.json", create: createSdkGuideServer },
+  { addonId: "addon.resonant-pi", manifest: "examples/sdk-demo/pi/addon.json", create: createPiServer },
+];
+const embeddedDemoUpstreams = args.get("no-embed-demo-upstreams")
+  ? []
+  : (
+      await maybeEmbedDemoUpstreams({
+        upstreams: DEMO_UPSTREAM_SPECS.map((spec) => {
+          const manifest = JSON.parse(readFileSync(path.join(repoRoot, spec.manifest), "utf8"));
+          const port = Number(new URL(manifest.service.entrypoint).port);
+          return {
+            addonId: spec.addonId,
+            port,
+            bearerToken: workspaceAddonBearerTokens[spec.addonId] ?? "",
+            adminToken: workspaceAddonAdminTokens[spec.addonId] ?? "",
+            create: spec.create,
+          };
+        }),
+        log: (line) => console.log(`[demo-upstreams] ${line}`),
+      })
+    ).started;
+
 console.log(
   JSON.stringify(
     {
@@ -796,6 +837,7 @@ console.log(
       bridgeUrl: bridgePublicUrl,
       bridgeConfigPath,
       extensionRoot: resonantExtension,
+      embeddedDemoUpstreams: embeddedDemoUpstreams.map((embedded) => `${embedded.addonId} (:${embedded.port})`),
     },
     null,
     2,
@@ -804,6 +846,9 @@ console.log(
 console.log(`Load ${resonantExtension} in Chrome as an unpacked extension.`);
 
 const shutdown = async () => {
+  for (const embedded of embeddedDemoUpstreams) {
+    await embedded.close().catch(() => undefined);
+  }
   await flushPendingExtensionPrefs().catch(() => undefined);
   try {
     unsubscribeOpenCodeExecution();
