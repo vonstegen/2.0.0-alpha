@@ -27,6 +27,35 @@ body[data-workspace="hermes"] .hermes-dashboard-workspace {
   min-height: 0;
 }
 
+/* Workspace add-on view (echo/counter/sdk-guide/pi): complete the flex
+   chain viewport → #transcript → trail → wrapper → frame → iframe. Without
+   these rules the trail is a plain block with content-driven height and the
+   iframe collapses to its intrinsic ~150px. Mirrors the hermes pattern
+   above. The iframe scrolls internally, so the transcript stops scrolling
+   in this workspace (no double scrollbars). */
+body[data-workspace="workspace-iframe"] #transcript {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+
+.workspace-iframe-trail {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+
+.workspace-iframe-header {
+  flex: 0 0 auto;
+  padding: 18px 24px 12px;
+}
+
 .addon-iframe-wrapper--hermes,
 .addon-iframe-wrapper--opencode {
   height: 100%;
