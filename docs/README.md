@@ -106,6 +106,7 @@ Related contributor references:
   [icon asset index](../public/icons/README.md)
 - [GitHub Action SHA-pinning policy](security-pipeline/sha-pin-policy.md)
 - [Committed private key material check](security-pipeline/committed-private-key-material.md)
+- [Subprocess no shell-string check](security-pipeline/subprocess-no-shell-string.md)
 - [Machine-readable repo map for AI assistants](../llms.txt)
 - [Architecture templates, runbooks, and add-on skill contracts](architecture/README.md#contributor-contracts)
 
@@ -132,3 +133,17 @@ limits, and missing Markdown/LaTeX pairs. Read the
 before rewriting the existing architecture set. This inventory is documentation
 work; candidate architecture and planned integrations do not redefine the
 shipped Alpha runtime.
+
+## Planning And Future Architecture
+
+The post-consolidation architecture and SDK/DAO governance program is planned in
+[Planning & Architecture Governance](planning/README.md). It contains the
+[project state review](planning/00-project-state-review.md), the
+[post-consolidation architecture roadmap](planning/01-post-consolidation-architecture-roadmap.md),
+the [SDK + DAO governance roadmap](planning/02-sdk-dao-governance-roadmap.md), the
+[master implementation plan](planning/03-master-implementation-plan.md), the
+[roadmap review](planning/04-roadmap-review.md), the
+[Tom report](planning/05-tom-report-ros-sdk-demo-and-buildout.md), the
+[SDK demo test results](planning/06-sdk-demo-test-results.md), and the
+[daily summary protocol](planning/daily/README.md). These are proposals and
+schedules, not shipped runtime facts.

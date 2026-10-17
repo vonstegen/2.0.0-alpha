@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { FIXTURE_SIGNER, runFixtureCertification, verifyEvidence } from '../../scripts/harness-swap-demo.mjs';
+import { FIXTURE_SIGNER, createBridgeClient, observeEventStream, runFixtureCertification, verifyEvidence } from '../../scripts/harness-swap-demo.mjs';
 
 const canonical = value => JSON.stringify(value, (_, v) => v && typeof v === 'object' && !Array.isArray(v)
   ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v);
@@ -222,7 +222,7 @@ async function compatibleSwap(t, loopback) {
   const host = await createHarnessHostService({ bindings, env, ...(loopback ? {} : { openaiAdapterFactory: options => createOpenAICompatibleAdapter({ ...options, fetchImpl: async (url, init) => new Response(responders.get(url.origin)(url, init.headers.Authorization, JSON.parse(init.body)), { headers: { 'content-type': 'text/event-stream' } }) }) }), store: { read: async () => stored, write: async value => { stored = structuredClone(value); } } });
   t.after(() => host.close());
   for (const [i, manifest] of manifests.entries()) {
-    await host.registry.install(manifest, { enabled: true });
+    await host.registry.install(manifest, { enabled: true, expectedRevision: host.registry.snapshot().revision });
     await host.registry.setGrants(manifest.id, manifest.requestedCapabilities.map(g => ({ ...g, granted: true })), { consent: true, expectedRevision: host.registry.snapshot().revision });
     await host.registry.assignSlot('primary-agent', manifest.id, { expectedGeneration: i, replace: i > 0 });
     const session = await host.boundary.createSession({ addonId: manifest.id });
@@ -271,4 +271,67 @@ test('policy proof requires host-signed dispatch and abort receipts', async () =
     assert.equal(get(bundle, proof.dispatched).turnId, get(bundle, proof.invocation).result.turnId);
     assert.equal(get(bundle, proof.aborted).kind, 'adapter-abort');
   }
+});
+
+test('bridge client takes method and capability from the host route table, never from the HTTP verb', async t => {
+  const { createHarnessHostService } = await import('../host/harness-host-service.mjs');
+  let stored = null;
+  const host = await createHarnessHostService({ bindings: [], env: {}, store: { read: async () => stored, write: async value => { stored = structuredClone(value); } } });
+  t.after(() => host.close());
+  const calls = [];
+  const client = createBridgeClient({ bridgeUrl: 'http://127.0.0.1:1', routes: host.harnessRoutes, headers: capability => ({ capability }),
+    fetchImpl: async (url, init) => { calls.push({ url, init }); return { status: 200, json: async () => ({ ok: true }), body: (async function* () {})() }; } });
+  const session = { sessionId: 's', bootEpoch: 'b' };
+  await client.request('/agent/history', { session });
+  await client.request('/agent/status', { session });
+  await client.request('/agent/turn', { session, input: {} });
+  await client.request('/addons/registry');
+  // The two read routes are POSTs: the verb says control, the route table says read, and the bridge enforces the table.
+  assert.deepEqual(calls.map(c => [c.init.method, c.init.headers.capability]), [
+    ['POST', 'addon-runtime-read'], ['POST', 'addon-runtime-read'], ['POST', 'addon-runtime-control'], ['GET', 'addon-runtime-read']]);
+  for (const route of host.harnessRoutes) if (route.path !== '/agent/events') {
+    calls.length = 0; await client.request(route.path, {});
+    assert.equal(calls[0].init.method, route.method, route.path);
+    assert.equal(calls[0].init.headers.capability, route.requiredCapability, route.path);
+  }
+  await client.subscribe(session);
+  assert.equal(calls.at(-1).init.headers.capability, 'addon-runtime-read');
+  await assert.rejects(client.request('/agent/unknown', {}), /Unknown harness route/);
+});
+
+test('a host closure resolves only when expected, and no failure is ever an unhandled rejection', async () => {
+  const unhandled = []; const spy = reason => unhandled.push(reason); process.on('unhandledRejection', spy);
+  try {
+    const body = async function* (error) { yield 'data: x\n\n'; throw error; };
+    const closed = () => Object.assign(new TypeError('terminated'), { cause: { code: 'UND_ERR_SOCKET' } });
+    await observeEventStream(body(closed()), new AbortController().signal, () => true);
+    const unexpected = observeEventStream(body(closed()), new AbortController().signal);
+    const failing = observeEventStream(body(new Error('parse failure')), new AbortController().signal);
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.deepEqual(unhandled, [], 'a rejection with no listener yet must not reach process level');
+    await assert.rejects(unexpected, /terminated/, 'a disconnection the driver did not announce is a failure');
+    await assert.rejects(failing, /parse failure/);
+    const controller = new AbortController(); controller.abort();
+    await observeEventStream(body(new Error('anything after our own abort')), controller.signal);
+  } finally { process.off('unhandledRejection', spy); }
+});
+
+test('a version-2 bundle from before compare-and-swap still verifies; a version-3 bundle must carry the revisions', async () => {
+  // Simon's 27 September certification and any run on a pre-CAS build are version 2: their install
+  // and removal receipts carry no expectedRevision and must stay verifiable by current tooling.
+  const { bundle, keys } = await liveBundle();
+  assert.equal(bundle.version, 3, 'the driver now writes version 3');
+  const legacy = structuredClone(bundle);
+  legacy.version = 2;
+  for (const ref of [...legacy.governance.installations, legacy.governance.lockInstall, legacy.governance.removal]) delete get(legacy, ref).request.expectedRevision;
+  resign(legacy, keys);
+  assert.equal(verifyEvidence(legacy), true, 'version 2 is verified by the rules it was produced under');
+  const stripped = structuredClone(bundle);
+  delete get(stripped, stripped.governance.installations[0]).request.expectedRevision;
+  resign(stripped, keys);
+  assert.throws(() => verifyEvidence(stripped), /installation grants nothing/, 'version 3 proves every install acted on a current revision');
+  const stale = structuredClone(bundle);
+  get(stale, stale.governance.removal).request.expectedRevision += 1;
+  resign(stale, keys);
+  assert.throws(() => verifyEvidence(stale), /evidence/i, 'a refused removal must have acted on the projection it was refused against');
 });

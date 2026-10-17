@@ -28,7 +28,11 @@ const same = (a, b) => canonicalReceipt(a) === canonicalReceipt(b);
 
 /** Verify signatures first, then require signed host facts for every certification step. */
 export function verifyEvidence(bundle, { requireLive = true } = {}) {
-  check(bundle?.version === 2, 'unsigned legacy bundle: signatures and fresh execution receipts required');
+  // Version 2 predates compare-and-swap on install and remove; its receipts carry no
+  // expectedRevision and are verified by the rules they were produced under. Version 3
+  // additionally proves every install and the refused removal acted on a current revision.
+  check(bundle?.version === 2 || bundle?.version === 3, 'unsigned legacy bundle: signatures and fresh execution receipts required');
+  const cas = bundle.version >= 3;
   check(['live', 'fixture'].includes(bundle.mode) && (!requireLive || bundle.mode === 'live'), 'fixture is not live proof');
   check(timestamp(bundle.startedAt) && timestamp(bundle.finishedAt) && Date.parse(bundle.startedAt) <= Date.parse(bundle.finishedAt), 'bundle timestamps');
   check(Array.isArray(bundle.boots) && bundle.boots.length === 2, 'two boot epochs required');
@@ -71,7 +75,7 @@ export function verifyEvidence(bundle, { requireLive = true } = {}) {
   check(g && Array.isArray(g.installations) && g.installations.length === 3, 'three installations');
   const installs = g.installations.map((id, i) => {
     const r = route(id, '/addons/install', true, old.bootEpoch);
-    check(r.request.addonId === OWNERS[i] && r.result.installations[OWNERS[i]].grantedCapabilities.every(grant => !grant.granted), 'installation grants nothing');
+    check((!cas || r.request.expectedRevision === r.result.revision - 1) && r.request.addonId === OWNERS[i] && r.result.installations[OWNERS[i]].grantedCapabilities.every(grant => !grant.granted), 'installation grants nothing');
     return r;
   });
   check(installs[1].declaration.agentRuntime.adapterId === 'openai-compatible-v1' && installs[2].declaration.agentRuntime.adapterId === 'openai-compatible-v1' &&
@@ -109,7 +113,7 @@ export function verifyEvidence(bundle, { requireLive = true } = {}) {
   }
   check(sessionEqual(stale.request.session, route(bundle.turns[2].session, '/agent/session').result.session), 'rejected session must have executed before restart');
   const lock = route(g.lockInstall, '/addons/install', true, fresh.bootEpoch);
-  check(lock.request.addonId === B && lock.declaration.systemSlots.find(slot => slot.id === 'primary-agent')?.replaceable === false, 'nonreplaceable incumbent declaration');
+  check((!cas || lock.request.expectedRevision === lock.result.revision - 1) && lock.request.addonId === B && lock.declaration.systemSlots.find(slot => slot.id === 'primary-agent')?.replaceable === false, 'nonreplaceable incumbent declaration');
   const lockOwner = route(g.lockAssign, '/addons/slots/assign', true, fresh.bootEpoch).result.slots['primary-agent'];
   check(lockOwner.addonId === B, 'locked owner assignment');
   const replacement = route(g.replacement, '/addons/slots/assign', false, fresh.bootEpoch);
@@ -149,7 +153,7 @@ export function verifyEvidence(bundle, { requireLive = true } = {}) {
     }
   }
   const removal = route(g.removal, '/addons/remove', false, fresh.bootEpoch);
-  check(removal.request.addonId === B && removal.error.code === 'ownership-conflict' && removal.projection.installations[B].installed &&
+  check((!cas || removal.request.expectedRevision === removal.projection.revision) && removal.request.addonId === B && removal.error.code === 'ownership-conflict' && removal.projection.installations[B].installed &&
     removal.projection.slots['primary-agent'].addonId === B, 'active owner removal refusal');
   return true;
 }
@@ -192,7 +196,7 @@ async function demoManifests(bindings = []) {
 // Both deterministic tests and the actual browser driver execute this same
 // sequence of host transactions. The transport/UI hooks never supply signatures.
 async function certification({ fixture, manifests, createHost, connect = async () => ({}), disconnect = async () => {}, models }) {
-  const bundle = { version: 2, mode: fixture ? 'fixture' : 'live', startedAt: now(), boots: [], turns: [], governance: {} };
+  const bundle = { version: 3, mode: fixture ? 'fixture' : 'live', startedAt: now(), boots: [], turns: [], governance: {} };
   const g = bundle.governance;
   let host, io, receipts, hold = false, dispatched = 0;
   const callbacks = { hold: () => hold, dispatched: () => { dispatched++; } };
@@ -246,7 +250,7 @@ async function certification({ fixture, manifests, createHost, connect = async (
     await boot();
     g.installations = [];
     for (const manifest of manifests) {
-      g.installations.push(ref(await call('/addons/install', { manifest, enabled: true })));
+      g.installations.push(ref(await call('/addons/install', { manifest, enabled: true, expectedRevision: snapshot().revision })));
       if (manifest.id === DSH) g.denied = ref(await call('/addons/slots/assign', { slot: 'primary-agent', addonId: DSH, expectedGeneration: 0 }, false));
       await grants(manifest);
       if (manifest.id === DSH) await call('/addons/slots/assign', { slot: 'chat-interface', addonId: DSH, expectedGeneration: 0 });
@@ -261,7 +265,7 @@ async function certification({ fixture, manifests, createHost, connect = async (
     for (const [i, manifest] of [manifests[2], manifests[0], manifests[1]].entries()) await answer(manifest, i + 3);
     const locked = structuredClone(manifests[2]);
     locked.systemSlots.find(slot => slot.id === 'primary-agent').replaceable = false;
-    g.lockInstall = ref(await call('/addons/install', { manifest: locked, enabled: true }));
+    g.lockInstall = ref(await call('/addons/install', { manifest: locked, enabled: true, expectedRevision: snapshot().revision }));
     await grants(locked); g.lockAssign = ref(await select(locked));
     g.replacement = ref(await call('/addons/slots/assign', { slot: 'primary-agent', addonId: DSH,
       expectedGeneration: snapshot().slots['primary-agent'].generation, replace: true }, false));
@@ -274,6 +278,7 @@ async function certification({ fixture, manifests, createHost, connect = async (
       const invocation = await call('/agent/turn', { ...invokeBody(session), input: { ...invokeBody(session).input, model: models[B] } });
       await until(() => dispatched > count, 'accepted policy dispatch', 150000);
       assert(!receipts.some(r => r.kind === 'event' && r.event.turnId === invocation.result.turnId && r.event.type === 'final'), 'Turn finished before revocation; rerun for mid-response proof.');
+      if (name !== 'degrade') stream.expectClose?.(); // hard-stop: the host will close this stream; anything else stays a failure
       const revocation = await grants(locked, capability);
       const dispatch = receipts.slice(receiptStart).find(r => r.kind === 'adapter-dispatch');
       const aborted = receipts.slice(receiptStart).find(r => r.kind === 'adapter-abort' && r.dispatchId === dispatch?.dispatchId);
@@ -290,7 +295,7 @@ async function certification({ fixture, manifests, createHost, connect = async (
       }
       await stream.close(); await stream.done; hold = false;
     }
-    g.removal = ref(await call('/addons/remove', { addonId: B }, false));
+    g.removal = ref(await call('/addons/remove', { addonId: B, expectedRevision: snapshot().revision }, false));
     bundle.finishedAt = now();
     verifyEvidence(bundle, { requireLive: !fixture });
     return bundle;
@@ -344,6 +349,53 @@ export async function runFixtureCertification() {
   return certification({ fixture: true, manifests, createHost: await fixtureComposition(manifests), models: { [A]: 'fixture-a', [B]: 'fixture-b' } });
 }
 
+/**
+ * Bridge client for the live driver. The HTTP method and the capability token come from the
+ * host's own route table, so the driver cannot drift from what the bridge enforces: the read
+ * routes /agent/history and /agent/status are POSTs, and guessing the token from the verb
+ * sent the control token there, which the bridge correctly refused on every live run.
+ */
+export function createBridgeClient({ bridgeUrl, routes, headers, fetchImpl = fetch }) {
+  const route = operation => { const found = routes.find(r => r.path === operation); assert(found, `Unknown harness route ${operation}`); return found; };
+  return {
+    async request(operation, payload) {
+      const { method, requiredCapability } = route(operation);
+      const get = method === 'GET';
+      const url = `${bridgeUrl}${operation}${operation === '/agent/events' ? `?${new URLSearchParams(payload)}` : ''}`;
+      const response = await fetchImpl(url, { method, headers: headers(requiredCapability), ...(get ? {} : { body: JSON.stringify(payload) }) });
+      return response.json();
+    },
+    async subscribe(session) {
+      const controller = new AbortController();
+      const response = await fetchImpl(`${bridgeUrl}/agent/events?${new URLSearchParams(session)}`, { headers: headers(route('/agent/events').requiredCapability), signal: controller.signal });
+      assert.equal(response.status, 200);
+      let expected = false;
+      const done = observeEventStream(response.body, controller.signal, () => expected);
+      return { done, expectClose: () => { expected = true; }, close: async () => { controller.abort(); await done; } };
+    },
+  };
+}
+
+/** The host ends a hard-stopped stream by closing the socket; undici reports that as `terminated`. */
+const closedByPeer = error => (error?.name === 'TypeError' && error?.message === 'terminated')
+  || ['UND_ERR_SOCKET', 'ECONNRESET'].includes(error?.cause?.code ?? error?.code);
+
+/**
+ * Drain an event stream until it ends. Our own abort resolves, and so does a closure by the host
+ * once the driver has said it expects one (the hard-stop leg); any other failure, including an
+ * unexpected disconnection, is delivered to whoever awaits the result — and only there. The stream is
+ * consumed in the background between phases, so a rejection with no listener yet would be an
+ * unhandled rejection and Node would exit before the evidence bundle is written.
+ */
+export function observeEventStream(body, signal, expectingClose = () => false) {
+  const done = (async () => {
+    try { for await (const chunk of body) { void chunk; } }
+    catch (error) { if (!signal.aborted && !(expectingClose() && closedByPeer(error))) throw error; }
+  })();
+  done.catch(() => {});
+  return done;
+}
+
 /** Actual React shell, authenticated bridge, persisted external registry and reload. */
 export async function runDemo({ evidenceDir, fixture = false, headed = false } = {}) {
   const output = await externalEvidenceDirectory(evidenceDir);
@@ -360,7 +412,7 @@ export async function runDemo({ evidenceDir, fixture = false, headed = false } =
   const { createServer } = await import('vite');
   const { default: react } = await import('@vitejs/plugin-react');
   const { chromium } = await import('playwright');
-  const store = createHarnessRegistryStore({ userRoot: path.join(output, 'user') });
+  const store = createHarnessRegistryStore({ userRoot: path.join(output, 'user'), stateRoot: path.join(output, 'state') });
   const makeFixtureHost = fixture ? await fixtureComposition(manifests) : null;
   let server, vite, browser, page, bridgeConfig, bridgeToken, capabilities;
   const origin = 'http://127.0.0.1:1430';
@@ -410,19 +462,7 @@ export async function runDemo({ evidenceDir, fixture = false, headed = false } =
         } else await page.reload();
         const headers = capability => ({ 'content-type': 'application/json', 'X-ResonantOS-Bridge-Token': bridgeToken, 'X-ResonantOS-Bridge-Capability-Token': capabilities[capability] });
         return {
-          async request(operation, payload) {
-            const get = ['/addons/registry', '/agent/events'].includes(operation);
-            const url = `${bridgeConfig.bridgeUrl}${operation}${operation === '/agent/events' ? `?${new URLSearchParams(payload)}` : ''}`;
-            const response = await fetch(url, { method: get ? 'GET' : 'POST', headers: headers(get ? 'addon-runtime-read' : 'addon-runtime-control'), ...(get ? {} : { body: JSON.stringify(payload) }) });
-            return response.json();
-          },
-          async subscribe(session) {
-            const controller = new AbortController();
-            const response = await fetch(`${bridgeConfig.bridgeUrl}/agent/events?${new URLSearchParams(session)}`, { headers: headers('addon-runtime-read'), signal: controller.signal });
-            assert.equal(response.status, 200);
-            const done = (async () => { try { for await (const chunk of response.body) { void chunk; } } catch (error) { if (!controller.signal.aborted) throw error; } })();
-            return { done, close: async () => { controller.abort(); await done; } };
-          },
+          ...createBridgeClient({ bridgeUrl: bridgeConfig.bridgeUrl, routes: host.harnessRoutes, headers }),
           async answer(manifest, prompt, completed) {
             await page.getByRole('button', { name: /Add-ons/ }).first().click();
             await page.getByRole('button', { name: 'Refresh harnesses' }).click();
