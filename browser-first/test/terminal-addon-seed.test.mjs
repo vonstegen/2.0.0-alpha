@@ -131,7 +131,7 @@ test("CP-BR9 req #1: pinFactory repairs an unpinned legacy installation without 
   // installed + enabled + granted, but no factory pin.
   const legacy = await createHarnessHostService({ env: {}, store, providerHost });
   t.after(() => legacy.close());
-  await legacy.registry.install(ghosttyManifest, { enabled: true });
+  await legacy.registry.install(ghosttyManifest, { enabled: true, expectedRevision: legacy.registry.snapshot().revision });
   await legacy.registry.setGrants(GHOSTTY, ghosttyManifest.requestedCapabilities.map((grant) => ({ ...grant, granted: true })), {
     consent: true,
     expectedRevision: legacy.registry.snapshot().revision,
@@ -193,7 +193,7 @@ test("CP-BR9 req #1: slot-managed (unpinned) installations keep the legacy snaps
     installHooks: {},
     compatibility: { shellVersion: "^0.1.0", platforms: [] },
   };
-  await svc.registry.install(legacyManifest, { enabled: true });
+  await svc.registry.install(legacyManifest, { enabled: true, expectedRevision: svc.registry.snapshot().revision });
   const entry = svc.registry.snapshot().installations[legacyManifest.id];
   assert.ok(entry, "legacy add-on installed");
   // No reconciler/projection fields leak onto unpinned entries: the

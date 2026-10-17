@@ -46,6 +46,10 @@ const TERMINAL_HOST_ADDON_ID_BY_DRIVER = {
   iterm2: "addon.resonant-terminal-iterm2",
   "in-memory": "addon.resonant-terminal-iterm2",
 };
+// Driver-agnostic seams (session attach, env projection, memory staging)
+// default to the in-memory/iterm2 add-on id; launch/status paths resolve
+// the driver-specific id via TERMINAL_HOST_ADDON_ID_BY_DRIVER.
+const TERMINAL_HOST_ADDON_ID = TERMINAL_HOST_ADDON_ID_BY_DRIVER["in-memory"];
 const JSON_RPC_VERSION = "2.0";
 
 /**

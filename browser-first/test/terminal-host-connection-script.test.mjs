@@ -162,7 +162,7 @@ async function fixture(t, options = {}) {
     });
   };
   const install = async (manifest) => {
-    const installResult = await call("/addons/install", { manifest, enabled: true });
+    const installResult = await call("/addons/install", { manifest, enabled: true, expectedRevision: host.registry.snapshot().revision });
     assert.equal(installResult.status, 200);
     const grantsResult = await call("/addons/grants", {
       addonId: manifest.id,
@@ -206,7 +206,7 @@ test("CP-BR10: the route refuses when the add-on is installed but the terminal-h
   const seeds = await loadTerminalAddonSeedInstallations();
   const f = await fixture(t, { seedInstallations: seeds });
   const ghostty = seeds.find((entry) => entry.manifest.id === "addon.resonant-terminal-ghostty").manifest;
-  await f.call("/addons/install", { manifest: ghostty, enabled: true });
+  await f.call("/addons/install", { manifest: ghostty, enabled: true, expectedRevision: f.host.registry.snapshot().revision });
   const result = await f.call("/terminal-host/connection-script", { terminalAddonId: "addon.resonant-terminal-ghostty" });
   assert.equal(result.payload.ok, false);
   assert.equal(result.payload.reason, "capability-not-granted");
@@ -352,7 +352,7 @@ test("CP-BR10: adoption is dropped on remove; terminateSession is called best-ef
   await f.install(seeds.find((entry) => entry.manifest.id === "addon.resonant-terminal-ghostty").manifest);
   const r1 = await f.call("/terminal-host/connection-script", { terminalAddonId: "addon.resonant-terminal-ghostty" });
   assert.equal(r1.status, 200);
-  const r2 = await f.call("/addons/remove", { addonId: "addon.resonant-terminal-ghostty" });
+  const r2 = await f.call("/addons/remove", { addonId: "addon.resonant-terminal-ghostty", expectedRevision: f.host.registry.snapshot().revision });
   assert.equal(r2.status, 200);
   assert.equal(f.terminateSessionCalls.length, 1);
   assert.equal(f.terminateSessionCalls[0].sessionId, r1.payload.sessionId);

@@ -91,6 +91,7 @@ const BRIDGE_ROUTE_CAPABILITIES = Object.freeze({
   "POST /terminal-host/session/attach": "addon-runtime-control",
   "GET /terminal-host/status": "addon-runtime-control",
   "GET /terminal-host/prompt-path": "addon-runtime-control",
+  "POST /terminal-host/prompt": "addon-runtime-control",
   "POST /terminal-host/connection-script": "addon-runtime-read",
   "POST /terminal-host/launch": "addon-runtime-control",
   "POST /addons/install": "addon-runtime-control",

@@ -43,6 +43,26 @@ channel token is in `$DSH_HOME/augmentor-ws-token` (the usual DSH home is
 `~/.dsh`). The token file must be a regular, owner-only file owned by the current
 user; symlinks are refused. Never copy its contents into the repository.
 
+**Turn DSH telemetry off in the ResonantOS setup ([#519](https://github.com/ResonantOS/2.0.0-alpha/issues/519)).**
+ResonantOS policy is that telemetry stays off, but ResonantOS does not launch
+DSH yet, so this step is yours.
+DSH mounts `@deepseek-ai/dsh-session-telemetry-otel` in its `web` profile, in
+`FEEDBACK_ONLY` mode, in both the 0.1.x versions certified here and 0.2. When a
+user rates or comments on a reply, that session's records are sent to
+`https://dsh-otel-collector.deepseeksvc.com/v1/logs`. The exporter connects
+directly, so a proxy cannot intercept it. Start the DSH service with telemetry
+disabled; the profile reads this variable from DSH's own environment, and in
+this mode DSH constructs no exporter at all:
+
+```bash
+export DSH_TELEMETRY_MODE=DISABLED
+```
+
+DSH's product analytics (`@deepseek-ai/dsh-client-product-analytics`, on by
+default) is mounted only in DSH's desktop profile, not in the `web` profile
+used here. On the DSH desktop app, set the `product-analytics` setting
+`enabled` to `false`.
+
 Approve the example's binding in the private operator terminal:
 
 ```bash
@@ -65,6 +85,78 @@ OpenAI-compatible endpoints. It invokes real models and may incur provider
 charges. No tool callbacks are enabled by the harness adapter. Provider Chat
 Demo remains an optional catalog candidate; it is not one of the three owners
 in the final certification.
+
+## DSH supplied by the macOS Augmentor bundle
+
+An operator may already run DSH through Manolo Remiddi's macOS Augmentor
+preview instead of starting `dsh web` by hand. That service is equivalent for
+this demonstration, and three of the values above change.
+
+The app provisions its own DSH under a private directory and picks a free
+loopback port once, at first run. **It is not `127.0.0.1:3080`, and its
+`DSH_HOME` is not `~/.dsh`.** Read the endpoint the app saved rather than
+assuming either:
+
+```bash
+python3 -c 'import json,os;p=os.path.expanduser("~/Library/Application Support/Augmentor/config/augmentor/harnesses.json");print(json.load(open(p))["dsh"]["endpoint"])'
+```
+
+`DSH_HOME` is the `home` value beside it, by default
+`~/Library/Application Support/Augmentor/data/augmentor/managed-dsh/home`, and
+the action-channel token is `augmentor-ws-token` inside it, with the same
+owner-only requirement as any other token file. Approve the binding against
+that exact endpoint:
+
+```bash
+export DSH_HOME="$(python3 -c 'import json,os;p=os.path.expanduser("~/Library/Application Support/Augmentor/config/augmentor/harnesses.json");print(json.load(open(p))["dsh"]["home"])')"
+export DSH_ENDPOINT="$(python3 -c 'import json,os;p=os.path.expanduser("~/Library/Application Support/Augmentor/config/augmentor/harnesses.json");print(json.load(open(p))["dsh"]["endpoint"])')"
+export RESONANTOS_HARNESS_BINDINGS="$(node --input-type=module -e '
+import path from "node:path";
+console.log(JSON.stringify([{
+  name: "dsh.main",
+  addonId: "addon.deepseek-harness",
+  adapterId: "dsh-typert-v1",
+  authScheme: "dsh-action-token",
+  endpoint: process.env.DSH_ENDPOINT,
+  source: { file: path.join(process.env.DSH_HOME, "augmentor-ws-token") }
+}]));
+')"
+```
+
+The approved endpoint must equal the manifest's, so the catalog example cannot
+be used unchanged: copy
+[DeepSeek Harness](../../browser-first/host/harness-examples/deepseek-harness.json),
+set `agentRuntime.endpoint` to the saved endpoint, and import that copy through
+**Import JSON manifest** in the harness management surface. Everything after
+that is identical: installing grants nothing, each capability is granted
+explicitly, and the primary-agent slot is assigned separately.
+
+Two further notes for this configuration. The bundled DSH is `0.1.5-rc.1` with
+the Augmentor plugin the app ships; the adapter targets those Typert shapes, and
+a hand-installed `0.1.7-rc.2` with `dsh-augmentor@0.2.11` also works. And the
+host does not join the plugin's browser-action pipe: it exchanges the action
+token once at `/api/augmentor/auth` for a DSH session cookie and then speaks to
+DSH's own `/api/remote.mux`, so the Augmentor browser companion keeps its
+actions while this host is connected. Both can run at once.
+
+**DSH 0.2.** `@deepseek-ai/dsh@0.2.0-rc.2` is npm's `latest`, so an unpinned
+install gets it. The adapter is certified on `0.1.5-rc.1` and `0.1.7-rc.2`
+only. A file-by-file comparison of the 0.1.7 and 0.2.0 packages (6 October
+2026) found the surfaces the adapter uses unchanged or additive: the plugin
+auth route and `x-augmentor-token` header are identical in `dsh-augmentor`
+0.2.11 and 0.2.13; the cookie-exchange packages have no code changes; the
+`/api/remote.mux` wire protocol and client are byte-identical; the session
+contract only gained optional fields. A live pass on 7 October 2026 settled the
+practical question. DSH 0.2.0-rc.2's own plugin manager refuses
+`dsh-augmentor@0.2.11`, which declares DSH 0.1.5 only ("may cause crashes or
+data loss"), so a plain 0.2 install has no `/api/augmentor/auth` and the
+adapter cannot connect. With the plugin forced in a throwaway profile, the
+adapter's auth exchange, session creation, a full chat turn over
+`/api/remote.mux` and history all worked. Pin DSH 0.1.5-rc.1 or 0.1.7-rc.2
+until a plugin release declares 0.2 support. Also new in 0.2: `dsh-web-app` bundles product analytics and product
+telemetry but enables them only in DSH's desktop profile, so the `web` profile
+used here excludes them. DSH's session telemetry is a separate setting that a
+governed host must decide on before adopting 0.2.
 
 ## OpenAI-compatible endpoint and bearer binding
 
@@ -153,6 +245,10 @@ binding names from the host-approved bindings. It adds an invocation-only
 `providers` dependency with `degrade` behavior to the second manifest so that
 history and status remain independent of that permission. The driver neither
 edits the example nor adds public catalog entries or adapter code.
+
+An [optional loopback relay](../../examples/harness-openai-compatible-relay.md)
+normalizes observed OpenAI-compatible provider request and SSE quirks. It does
+not redact prompts before forwarding them to the configured provider.
 
 ## Run and inspect evidence
 
@@ -280,11 +376,42 @@ sockets and Playwright Chromium.
 | Network destination | DSH and OpenAI-compatible transports use an approved loopback origin and port, checked DNS answers, pinned connection destination, and refused redirects. |
 | Bridge routes | Bridge authentication, scoped read/control capabilities, loopback Host/origin checks and strict payload validation precede execution. |
 | Runtime identity | Host-issued boot epoch, owner generation, session and turn IDs attribute output; model self-identification confers no authority. |
-| Ownership and persistence | Durable compare-and-swap governs replacement. An active slot owner cannot be removed. Reload preserves consent/owner, not old session authority. |
+| Ownership and persistence | Durable compare-and-swap governs installation, removal and replacement. An active slot owner cannot be removed. Reload preserves consent/owner, not old session authority. A saved registry older than the host last committed is refused at startup. |
 | Revocation | Authority and output are fenced synchronously; cancellation and resource cleanup are attempted. Independently running DSH side effects may continue. |
 | Context and tools | Encoded untrusted context remains text-only in DSH; it does not establish system-role enforcement. Browser and other human-only actions gain no new authority. |
 | Evidence | Host Ed25519 signatures bind receipts to each boot key; fixed fixture keys cannot pass live verification. Witnesses must independently compare boot fingerprints. |
 | Liveness | Evidence is internally consistent; liveness is attested by the operator who ran the demo and by its witnesses, not proven by this verifier |
+
+## When the host refuses the saved registry
+
+The host remembers the newest registry revision it has committed, in a file
+outside the ResonantOS user folder. If the saved registry is older than that,
+for example after restoring a backup of the user folder or after a sync tool
+brings back an older copy, the host refuses it rather than restore consent you
+have since withdrawn. The Add-ons panel then lists no harnesses and shows
+`Current owner: None · Unavailable`, and the bridge terminal prints one line
+that names the file:
+
+```json
+{"event":"harness.registry_refused","reason":"rollback","documentRevision":2,"watermark":3,"watermarkPath":".../harness-governance/<key>.watermark.json"}
+```
+
+- `rollback`: the saved registry is older than this host last committed.
+  Deleting the file at `watermarkPath` does not reset anything: it tells the
+  host to accept the restored registry, including any permission you had
+  since withdrawn. Do it only if you restored the backup on purpose, then
+  restart the bridge and review every grant in the panel. Otherwise, put the
+  newer registry back.
+- `watermark-invalid` or `watermark-unreadable`: the watermark file is damaged
+  or cannot be read. Fix its permissions, or delete it and restart.
+
+Two folders share the name `harness-governance`. The registry is in the one
+inside your ResonantOS user folder. The watermark is in a separate one under
+`~/Library/Application Support/ResonantOS` on macOS,
+`%LOCALAPPDATA%\ResonantOS` on Windows, and `$XDG_STATE_HOME/resonantos` or
+`~/.local/state/resonantos` elsewhere. To start over, empty the one in your
+user folder and leave the watermark alone; that is never refused unless the
+watermark file itself is damaged.
 
 ## Current limitations
 

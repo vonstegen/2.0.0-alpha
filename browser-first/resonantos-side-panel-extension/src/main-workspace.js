@@ -610,7 +610,12 @@ async function refreshDockPermissions() {
   renderDockPermissions(dockPermissionList, dockPermissionTitle, permissions, {
     document,
     onReset: async (siteKey) => {
-      await sitePermissionStore.resetSitePermission(siteKey).catch(() => undefined);
+      try {
+        await sitePermissionStore.resetSitePermission(siteKey);
+      } catch {
+        dockPermissionTitle.textContent = "Site permissions could not be read; the change was not saved.";
+        return;
+      }
       await refreshDockPermissions();
     }
   });

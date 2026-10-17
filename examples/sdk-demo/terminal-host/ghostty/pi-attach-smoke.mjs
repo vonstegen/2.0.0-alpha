@@ -323,7 +323,7 @@ console.error(`[smoke] loopback bridge mounted at ${baseUrl}`);
 
 // 8. Install the pi-terminal harness manifest + grant + assign primary slot.
 const manifest = JSON.parse(await readFile(new URL("../../../../browser-first/host/harness-examples/pi-terminal.json", import.meta.url), "utf8"));
-const installRes = await harness.harnessRoutes.find((r) => r.path === "/addons/install").handler({ manifest, enabled: true });
+const installRes = await harness.harnessRoutes.find((r) => r.path === "/addons/install").handler({ manifest, enabled: true, expectedRevision: harness.registry.snapshot().revision });
 if (!installRes || installRes.error) {
   console.error("[smoke] FAIL: install returned", installRes);
   await (STUB_MODE ? terminalBridge.service.stop() : uninstallTerminalHostBridge({ service: terminalBridge.service }));

@@ -40,7 +40,7 @@ const networkGrant = (granted) => ({
 
 test("harness-registry installs a local-service workspace add-on (no systemSlots)", async () => {
   const registry = await openRegistry(memoryStore());
-  await registry.install(echoManifest, { enabled: false });
+  await registry.install(echoManifest, { enabled: false, expectedRevision: registry.snapshot().revision });
   const installation = registry.snapshot().installations["addon.resonant-echo"];
   assert.ok(installation, "Echo must be installed");
   assert.equal(installation.enabled, false);
@@ -54,7 +54,7 @@ test("harness-registry installs a local-service workspace add-on (no systemSlots
 
 test("consent: false is rejected by the registry (no self-grant)", async () => {
   const registry = await openRegistry(memoryStore());
-  await registry.install(echoManifest, { enabled: false });
+  await registry.install(echoManifest, { enabled: false, expectedRevision: registry.snapshot().revision });
   await assert.rejects(
     registry.setGrants("addon.resonant-echo", [networkGrant(true)], { consent: false, expectedRevision: registry.snapshot().revision }),
     (error) => error?.code === "permission-denied",
@@ -63,7 +63,7 @@ test("consent: false is rejected by the registry (no self-grant)", async () => {
 
 test("consent: true grants the capability; the snapshot reflects it", async () => {
   const registry = await openRegistry(memoryStore());
-  await registry.install(echoManifest, { enabled: false });
+  await registry.install(echoManifest, { enabled: false, expectedRevision: registry.snapshot().revision });
   await registry.setGrants(
     "addon.resonant-echo",
     [networkGrant(true)],
@@ -76,7 +76,7 @@ test("consent: true grants the capability; the snapshot reflects it", async () =
 
 test("revoke (granted: false) survives re-grant (granted: true) — round-trip is exact", async () => {
   const registry = await openRegistry(memoryStore());
-  await registry.install(echoManifest, { enabled: false });
+  await registry.install(echoManifest, { enabled: false, expectedRevision: registry.snapshot().revision });
   // grant
   await registry.setGrants(
     "addon.resonant-echo",
@@ -105,8 +105,8 @@ test("revoke (granted: false) survives re-grant (granted: true) — round-trip i
 
 test("Echo's grant and Counter's grant are independent (per-add-on audience)", async () => {
   const registry = await openRegistry(memoryStore());
-  await registry.install(echoManifest, { enabled: false });
-  await registry.install(counterManifest, { enabled: false });
+  await registry.install(echoManifest, { enabled: false, expectedRevision: registry.snapshot().revision });
+  await registry.install(counterManifest, { enabled: false, expectedRevision: registry.snapshot().revision });
   // Grant Echo but not Counter.
   await registry.setGrants(
     "addon.resonant-echo",
@@ -145,7 +145,7 @@ test("Echo's grant and Counter's grant are independent (per-add-on audience)", a
 
 test("grants outside the manifest's requestedCapabilities are rejected", async () => {
   const registry = await openRegistry(memoryStore());
-  await registry.install(echoManifest, { enabled: false });
+  await registry.install(echoManifest, { enabled: false, expectedRevision: registry.snapshot().revision });
   // Echo does not request `archive-read`; the registry must refuse a grant
   // for that capability.
   await assert.rejects(
@@ -162,7 +162,7 @@ test("grants outside the manifest's requestedCapabilities are rejected", async (
 test("grants survive registry restart (durable journal)", async () => {
   const store = memoryStore();
   let registry = await openRegistry(store);
-  await registry.install(echoManifest, { enabled: false });
+  await registry.install(echoManifest, { enabled: false, expectedRevision: registry.snapshot().revision });
   await registry.setGrants(
     "addon.resonant-echo",
     [networkGrant(true)],
@@ -176,7 +176,7 @@ test("grants survive registry restart (durable journal)", async () => {
 
 test("expectedRevision mismatch on setGrants is refused (optimistic concurrency)", async () => {
   const registry = await openRegistry(memoryStore());
-  await registry.install(echoManifest, { enabled: false });
+  await registry.install(echoManifest, { enabled: false, expectedRevision: registry.snapshot().revision });
   await assert.rejects(
     registry.setGrants(
       "addon.resonant-echo",

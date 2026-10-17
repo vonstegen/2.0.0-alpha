@@ -149,7 +149,7 @@ async function fixture(t, options = {}) {
     });
   };
   const install = async (manifest) => {
-    const installResult = await call("/addons/install", { manifest, enabled: true });
+    const installResult = await call("/addons/install", { manifest, enabled: true, expectedRevision: host.registry.snapshot().revision });
     assert.equal(installResult.status, 200);
     const grantsResult = await call("/addons/grants", {
       addonId: manifest.id,
@@ -233,7 +233,7 @@ test("GET /terminal-host/status reports compatible=true for installed surfaces b
     await readFile(new URL("../../public/addons/terminal-host-iterm2.json", import.meta.url)),
   );
   for (const manifest of [ghostty, iterm2]) {
-    const r = await f.call("/addons/install", { manifest, enabled: true });
+    const r = await f.call("/addons/install", { manifest, enabled: true, expectedRevision: f.host.registry.snapshot().revision });
     assert.equal(r.status, 200);
   }
 

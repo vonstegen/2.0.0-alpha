@@ -2766,7 +2766,7 @@ except BaseException as exc:
             workspaceAddonRegistry.snapshot().installations[fullManifest.id],
           );
           if (!alreadyInstalled) {
-            await workspaceAddonRegistry.install(fullManifest, { enabled: false });
+            await workspaceAddonRegistry.install(fullManifest, { enabled: false, expectedRevision: workspaceAddonRegistry.snapshot().revision });
           }
         }
       } catch (error) {
@@ -2876,7 +2876,7 @@ except BaseException as exc:
     if (!manifest || typeof manifest.id !== "string") {
       throw Object.assign(new Error("Workspace add-on install requires a manifest with an id."), { code: "invalid-event" });
     }
-    await workspaceAddonRegistry.install(manifest, { enabled: false });
+    await workspaceAddonRegistry.install(manifest, { enabled: false, expectedRevision: workspaceAddonRegistry.snapshot().revision });
     return { addonId: manifest.id, installation: workspaceAddonRegistry.snapshot().installations[manifest.id] ?? null };
   }
 
@@ -2991,7 +2991,7 @@ except BaseException as exc:
     // /addons/status has ever run.
     const cachedManifest = workspaceAddonManifestCache.get(addonId);
     if (cachedManifest && !workspaceAddonRegistry.snapshot().installations[addonId]) {
-      await workspaceAddonRegistry.install(cachedManifest, { enabled: false });
+      await workspaceAddonRegistry.install(cachedManifest, { enabled: false, expectedRevision: workspaceAddonRegistry.snapshot().revision });
     }
     const installation = workspaceAddonRegistry.snapshot().installations[addonId];
     if (!installation) {

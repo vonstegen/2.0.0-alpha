@@ -159,7 +159,7 @@ async function withBridgeRoutes(callback) {
     // composition guard below can prove each composed array is actually CONSTRUCTED here — not
     // merely named in a list.
     const { createHarnessHostService } = await import('../host/harness-host-service.mjs');
-    const harness = await createHarnessHostService({ userRoot: root, providerHost: provider, env: {} });
+    const harness = await createHarnessHostService({ userRoot: root, stateRoot: path.join(root, 'state'), providerHost: provider, env: {} });
     const { createBridgeRuntimesHostService } = await import('../host/bridge-runtimes-host-service.mjs');
     const bridgeRuntimesRoute = [];
     createBridgeRuntimesHostService({
@@ -261,6 +261,7 @@ test("harness routes retain the exact capability and transport boundary", async 
       ["POST /terminal-host/session/attach", "addon-runtime-control"],
       ["GET /terminal-host/status", "addon-runtime-control"],
       ["GET /terminal-host/prompt-path", "addon-runtime-control"],
+      ["POST /terminal-host/prompt", "addon-runtime-control"],
       ["POST /terminal-host/launch", "addon-runtime-control"],
       ["POST /terminal-host/connection-script", "addon-runtime-read"],
       ["POST /addons/enabled", "addon-runtime-control"],

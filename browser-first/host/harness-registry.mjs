@@ -1,4 +1,4 @@
-import { evaluateHarnessPolicy, replacementAllowed } from './harness-policy.mjs';
+import { adapterCapabilityFloor, evaluateHarnessPolicy, replacementAllowed, undeclaredAdapterCapabilities } from './harness-policy.mjs';
 import { randomUUID } from 'node:crypto';
 import { assertValidHarnessManifest, publicHarnessError } from './harness-adapter-contract.mjs';
 
@@ -49,6 +49,14 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
       !grant || Object.keys(grant).some(key => !['capability', 'scope', 'revocationBehavior', 'granted'].includes(key)) ||
       typeof grant.granted !== 'boolean' || !entry.manifest.requestedCapabilities.some(request => sameRequest(request, grant)))) throw fail('permission-denied');
   }
+  function refuse(reason, documentRevision, watermark) {
+    console.error(JSON.stringify({ event: 'harness.registry_refused', reason, documentRevision, watermark, watermarkPath: store.watermarkPath ?? null }));
+    throw fail('runtime-unavailable');
+  }
+  async function readWatermark(documentRevision) {
+    try { return typeof store.watermark === 'function' ? await store.watermark() : null; }
+    catch (error) { refuse(error.code ? 'watermark-unreadable' : 'watermark-invalid', documentRevision, null); }
+  }
   try {
     const document = await store.read();
     if (document !== null) {
@@ -57,6 +65,8 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
       if (!loaded || !counter(loaded.revision) || typeof loaded.governanceActivated !== 'boolean' ||
           !loaded.installations || Array.isArray(loaded.installations) || !loaded.slots || Array.isArray(loaded.slots) ||
           Object.keys(loaded.installations).length > 256) throw fail('runtime-unavailable');
+      const watermark = await readWatermark(loaded.revision);
+      if (watermark !== null && watermark > loaded.revision) refuse('rollback', loaded.revision, watermark);
       for (const [id, entry] of Object.entries(loaded.installations)) {
         // Validate saved consent against its original requests before adding a
         // runtime request. Legacy delegation authority must never be relabelled.
@@ -77,13 +87,32 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
         // anything else is unknown persisted authority and fails closed.
         if (entry.factoryId !== undefined && !factoryIdShape(entry.factoryId)) throw fail('runtime-unavailable');
         if (entry.runtimeGeneration !== undefined && !counter(entry.runtimeGeneration)) throw fail('runtime-unavailable');
+        // An installation persisted before the adapter floor existed may understate what its
+        // adapter reaches. Its operations are already denied by policy, and the operator cannot
+        // grant a capability the manifest never requested — so without this it could also never
+        // be removed while it owned a slot. Disable it and vacate its slots so the operator can
+        // remove it and install a corrected manifest. Never grant the missing capability.
+        if (undeclaredAdapterCapabilities(entry.manifest).length) {
+          entry.enabled = false;
+          for (const [slot, owner] of Object.entries(loaded.slots)) {
+            if (owner?.addonId === id) { owner.addonId = null; owner.generation += 1; }
+          }
+        }
       }
       for (const [slot, owner] of Object.entries(loaded.slots)) {
         if (!Object.hasOwn(slots, slot) || !counter(owner.generation) ||
             (owner.addonId !== null && !Object.hasOwn(loaded.installations, owner.addonId))) throw fail('runtime-unavailable');
       }
       state = structuredClone(loaded);
+      if (document.phase === 'committed' && (watermark === null || watermark < loaded.revision)) {
+        // Healing narrows the rollback window; an unwritable state root must not cost authority the document already proves.
+        try { await store.raise?.(loaded.revision); }
+        catch { console.error(JSON.stringify({ event: 'harness.registry_watermark_unwritable', revision: loaded.revision, watermarkPath: store.watermarkPath ?? null })); }
+      }
       disabled = document.phase !== 'committed';
+    } else {
+      const watermark = await readWatermark(null);
+      if (watermark !== null) state = { ...empty(), revision: watermark };
     }
   } catch {
     disabled = true;
@@ -100,7 +129,10 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
     // Only primary execution needs a reviewed runtime and approved binding.
     // Other slots authorize their own capability on an installed registry entry.
     if (slot === 'primary-agent' && !bindingAllowed(entry.manifest)) return false;
-    const required = [slots[slot], ...(slot === 'primary-agent' ? entry.manifest.agentRuntime.requiredCapabilities : [])];
+    // The floor joins the declared requirements, so a slot is never advertised as available
+    // while every operation it offers is disabled for want of a capability nobody granted.
+    const required = [slots[slot], ...(slot === 'primary-agent'
+      ? [...entry.manifest.agentRuntime.requiredCapabilities, ...adapterCapabilityFloor(entry.manifest)] : [])];
     return required.every(capability => entry.grants.some(grant => grant.capability === capability && grant.granted));
   }
   function authorize(slot, addonId) {
@@ -224,11 +256,12 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
   return {
     snapshot, authorize, isCurrent, assertOperation,
     onFence(listener) { listeners.add(listener); return () => listeners.delete(listener); },
-    install(manifest, { enabled, factoryId } = {}) {
+    install(manifest, { enabled, factoryId, expectedRevision } = {}) {
       // Capture input before entering the serialized queue to prevent TOCTOU edits.
       const captured = structuredClone(manifest);
       const capturedFactoryId = factoryId ?? null;
       return transact(next => {
+        if (expectedRevision !== state.revision) throw fail('ownership-conflict');
         assertValidHarnessManifest(captured);
         if (typeof enabled !== 'boolean' || (captured.agentRuntime?.adapterVersion !== undefined && !bindingAllowed(captured))) throw fail('permission-denied');
         // CP-BR9: an optional reviewed factory pin marks the installation as
@@ -236,6 +269,9 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
         // never read from the manifest itself.
         if (capturedFactoryId !== null && !factoryIdShape(capturedFactoryId)) throw fail('invalid-manifest');
         if (Buffer.byteLength(JSON.stringify(captured)) > 262144) throw fail('invalid-manifest');
+        // A manifest cannot understate the adapter it names: every capability that adapter
+        // reaches must be requested, so the operator sees it and can withdraw it.
+        if (undeclaredAdapterCapabilities(captured).length) throw fail('invalid-manifest');
         if (!Object.hasOwn(next.installations, captured.id) && Object.keys(next.installations).length >= 256) throw fail('runtime-unavailable');
         const changed = ownedSlots(next, captured.id);
         // Replacement of an installed manifest cannot silently mutate an owner.
@@ -279,6 +315,7 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
           const manifest = record?.manifest;
           assertValidHarnessManifest(manifest);
           if (Buffer.byteLength(JSON.stringify(manifest)) > 262144) throw fail('invalid-manifest');
+          if (undeclaredAdapterCapabilities(manifest).length) throw fail('invalid-manifest');
           // Imported booleans and local selections are proposals, never consent.
           // Existing host records always win over a migration candidate.
           if (Object.hasOwn(next.installations, manifest.id)) continue;
@@ -333,9 +370,10 @@ export async function createHarnessRegistry({ store, reviewedAdapterIds = [], bi
         return [slot];
       });
     },
-    remove(addonId) {
+    remove(addonId, { expectedRevision } = {}) {
       return transact(next => {
         entryFor(addonId);
+        if (expectedRevision !== state.revision) throw fail('ownership-conflict');
         if (ownedSlots(next, addonId).length) throw fail('ownership-conflict');
         delete next.installations[addonId];
         return { changedSlots: [], effects: [], addons: [addonId] };

@@ -205,7 +205,7 @@ async function fixture(t, options = {}) {
     );
   };
   const install = async (manifest) => {
-    const installResult = await call("/addons/install", { manifest, enabled: true });
+    const installResult = await call("/addons/install", { manifest, enabled: true, expectedRevision: host.registry.snapshot().revision });
     assert.equal(installResult.status, 200);
     const grantsResult = await call("/addons/grants", {
       addonId: manifest.id,
@@ -335,7 +335,7 @@ test("POST /terminal-host/launch returns capability-not-granted when grant missi
   );
   // Install without granting the terminal-host capability: install
   // enabled=true but grant an empty set.
-  const installResult = await f.call("/addons/install", { manifest: ghostty, enabled: true });
+  const installResult = await f.call("/addons/install", { manifest: ghostty, enabled: true, expectedRevision: f.host.registry.snapshot().revision });
   assert.equal(installResult.status, 200);
   const noGrant = await f.call("/addons/grants", {
     addonId: ghostty.id,

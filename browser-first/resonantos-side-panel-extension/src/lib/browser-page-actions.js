@@ -1,3 +1,5 @@
+import { safeContextText, safeContextUrl } from "./chat-turn-controller.js";
+import { buildResearchTrail } from "./research-trail.js";
 import { isReadableSubframeTab, rankedReadableBrowserTabs } from "./readable-tab-ranking.js";
 import { parseQuotedText } from "./browser-command-parser.js";
 import {
@@ -116,6 +118,7 @@ export function createBrowserPageActions(deps) {
     getThinkingDepth = () => "minimal",
     isReadableBrowserTab,
     normalizeBrowserUrl,
+    now = () => new Date(),
     permissionForUrl,
     renderSitePermissionPanel,
     setActivity,
@@ -289,7 +292,12 @@ export function createBrowserPageActions(deps) {
     if (!tab?.id || !isReadableBrowserTab(tab)) {
       return { ok: false, tab, error: "Tab is not a readable web page." };
     }
-    const siteMode = await permissionForUrl(tab.url);
+    let siteMode;
+    try {
+      siteMode = await permissionForUrl(tab.url);
+    } catch {
+      return { ok: false, tab, error: "Site permissions could not be read; capture refused." };
+    }
     if (siteMode === "blocked" && !includeBlocked) {
       return { ok: false, tab, error: `Assistant is blocked on ${siteKeyForUrl(tab.url)}.` };
     }
@@ -316,7 +324,12 @@ export function createBrowserPageActions(deps) {
     if (!tab?.id || !isReadableBrowserTab(tab)) {
       return { ok: false, error: "No normal web page is active for this browser action." };
     }
-    const siteMode = await permissionForUrl(tab.url);
+    let siteMode;
+    try {
+      siteMode = await permissionForUrl(tab.url);
+    } catch {
+      return { ok: false, error: "Site permissions could not be read; capture refused." };
+    }
     if (siteMode === "blocked") {
       return { ok: false, error: `Assistant is blocked on ${siteKeyForUrl(tab.url)}.` };
     }
@@ -558,7 +571,14 @@ export function createBrowserPageActions(deps) {
       if (announce) await addMessage("system", error);
       return { ok: false, error };
     }
-    const siteMode = await permissionForUrl(tab.url);
+    let siteMode;
+    try {
+      siteMode = await permissionForUrl(tab.url);
+    } catch {
+      const error = "Site permissions could not be read; capture refused.";
+      if (announce) await addMessage("system", error);
+      return { ok: false, error };
+    }
     if (siteMode === "blocked") {
       const error = `Assistant is blocked on ${siteKeyForUrl(tab.url)}.`;
       if (announce) await addMessage("system", error);
@@ -760,10 +780,10 @@ export function createBrowserPageActions(deps) {
   }
 
   function pageIntakeMarkdown(snapshot) {
-    const text = String(snapshot.text ?? "").trim();
+    const text = safeContextText(snapshot.text, Infinity);
     const links = (snapshot.links ?? [])
       .slice(0, 24)
-      .map((link) => `- [${link.text || link.href}](${link.href})`)
+      .map((link) => `- [${safeContextText(link.text, Infinity) || link.href}](${link.href})`)
       .join("\n");
     return [
       `Captured from: ${snapshot.url}`,
@@ -816,50 +836,6 @@ export function createBrowserPageActions(deps) {
     ].filter(Boolean).join("\n");
   }
 
-  function researchTrailIntakeMarkdown({ title, snapshots, skipped }) {
-    const collectedAt = new Date().toISOString();
-    const pages = snapshots.map((snapshot, index) => {
-      const text = String(snapshot.text ?? "").trim();
-      const links = (snapshot.links ?? [])
-        .slice(0, 8)
-        .map((link) => `  - [${link.text || link.href}](${link.href})`)
-        .join("\n");
-      return [
-        `## Page ${index + 1}: ${snapshot.title || "Untitled"}`,
-        "",
-        `- url: ${snapshot.url}`,
-        `- visible words: ${text.split(/\s+/).filter(Boolean).length}`,
-        `- controls captured: ${snapshot.controls?.length ?? 0}`,
-        `- fields captured: ${snapshot.fields?.length ?? 0}`,
-        "",
-        "### Visible Text",
-        text.slice(0, 6000) || "_No visible text captured._",
-        "",
-        links ? "### Source Links\n" + links : ""
-      ].filter(Boolean).join("\n");
-    });
-    const skippedLines = skipped.length
-      ? [
-        "## Skipped Tabs",
-        "",
-        ...skipped.map((item) => `- ${item.tab?.title || item.tab?.url || "unknown"}: ${item.error}`)
-      ]
-      : [];
-    return [
-      `# Research Trail: ${title}`,
-      "",
-      `- collectedAt: ${collectedAt}`,
-      `- pages captured: ${snapshots.length}`,
-      `- tabs skipped: ${skipped.length}`,
-      "",
-      "This is a browser research trail intake bundle. It remains source material until the Living Archive review, verification, and promotion pipeline accepts it as trusted AI Memory.",
-      "",
-      ...pages,
-      "",
-      ...skippedLines
-    ].join("\n").trim();
-  }
-
   async function summarizeCurrentPageToArchive(templateId = "summary") {
     const response = deps.getLastSnapshot() ? { ok: true, snapshot: deps.getLastSnapshot() } : await readActivePage({ announce: false });
     const snapshot = response?.snapshot;
@@ -874,6 +850,16 @@ export function createBrowserPageActions(deps) {
       setStatus("Summary unavailable");
       return { ok: false, error: `No readable page content for the ${template.label} template.` };
     }
+    // Every field that reaches the model goes through the chat sanitizer:
+    // the intake markdown and, for the opt-in templates, the page excerpt
+    // that buildSummaryPrompt appends to the user message.
+    const safeSnapshot = {
+      ...snapshot,
+      title: safeContextText(snapshot.title, Infinity),
+      url: safeContextUrl(snapshot.url),
+      text: safeContextText(snapshot.text, Infinity),
+      links: (snapshot.links ?? []).map((link) => ({ ...link, text: safeContextText(link.text, Infinity), href: safeContextUrl(link.href) }))
+    };
     setActivity("thinking", "Summarising page for Living Archive intake", snapshot.title || snapshot.url);
     setStatus("Summarising page");
     let summary = "";
@@ -886,11 +872,11 @@ export function createBrowserPageActions(deps) {
           model: getModel(),
           surface: "archive-intake",
           thinkingDepth: getThinkingDepth(),
-          pageContext: pageIntakeMarkdown(snapshot).slice(0, 12000),
+          pageContext: pageIntakeMarkdown(safeSnapshot).slice(0, 12000),
           runtimeContext: "Create a source-grounded Living Archive intake summary. Do not claim trusted wiki promotion. Preserve uncertainty and cite visible source facts only.",
           messages: [{
             role: "user",
-            content: buildSummaryPrompt(templateId, snapshot)
+            content: buildSummaryPrompt(templateId, safeSnapshot)
           }]
         }
       });
@@ -932,54 +918,98 @@ export function createBrowserPageActions(deps) {
     return { ok: true, ...result, reviewRequestPath: review.path, fallback };
   }
 
-  async function saveResearchTrailToArchive(rawTitle = "") {
-    const title = String(rawTitle ?? "").replace(/^(trail|research|research trail)\b/i, "").trim() || "Browser research trail";
-    setActivity("retrieving", "Collecting browser research trail", title);
+  async function saveResearchTrailToArchive(rawText = "") {
+    const question = String(rawText ?? "").trim();
+    const label = safeContextText(question, 80) || "Browser research trail";
+    setActivity("retrieving", "Collecting browser research trail", label);
     setStatus("Collecting trail");
-    const tabs = (await chrome.tabs.query({ currentWindow: true }).catch(() => []))
-      .filter(isReadableBrowserTab)
-      .slice(0, 8);
+    const allTabs = await chrome.tabs.query({ currentWindow: true }).catch(() => []);
+    const readable = allTabs.filter(isReadableBrowserTab);
+    const tabs = readable.slice(0, 8);
+    const notCaptured = { overLimit: [], nonWeb: allTabs.length - readable.length };
+    for (const tab of readable.slice(8)) {
+      let permission;
+      try {
+        permission = await permissionForUrl(tab.url);
+      } catch {
+        permission = "permission-unknown";
+      }
+      // Fail closed: only the known allowed modes may show title and address.
+      if (permission !== "blocked" && !["read-only", "ask-before-action", "trusted-for-safe-actions"].includes(permission)) {
+        permission = "permission-unknown";
+      }
+      notCaptured.overLimit.push({ ...tab, permission });
+    }
     if (!tabs.length) {
       await addMessage("system", "No readable browser tabs are available for a research trail. Open one or more normal web pages first.");
       setStatus("Trail unavailable");
       setActivity("failed", "No readable tabs", "Research trail");
       return { ok: false, error: "No readable browser tabs available." };
     }
-    const reads = [];
+    const captures = [];
+    const skipped = [];
     for (const tab of tabs) {
-      reads.push(await readSpecificTabPage(tab));
+      const capturedAt = now().toISOString();
+      const read = await readSpecificTabPage(tab);
+      if (read.ok && read.snapshot) {
+        captures.push({ snapshot: read.snapshot, capturedAt });
+      } else {
+        const error = read.error || "No readable page context returned.";
+        const kind = /^Assistant is blocked on /i.test(error) || /^Site permissions could not be read/i.test(error)
+          ? "blocked" : "failed";
+        skipped.push({ tab, kind, error });
+      }
     }
-    const snapshots = reads.filter((item) => item.ok && item.snapshot).map((item) => item.snapshot);
-    const skipped = reads.filter((item) => !item.ok);
-    if (!snapshots.length) {
-      await addMessage("system", "I could not read any open web tabs for the research trail. Check site permissions or open readable pages.");
+    if (!captures.length) {
+      const blocked = skipped.filter((item) => item.kind === "blocked").length;
+      const failed = skipped.length - blocked;
+      await addMessage("system", `No readable browser tabs are available for a research trail. Open one or more normal web pages first.\n\nBlocked: ${blocked}; failed: ${failed}; over the 8-tab limit: ${notCaptured.overLimit.length}; non-web: ${notCaptured.nonWeb}.`);
       setStatus("Trail unavailable");
       setActivity("failed", "No readable tab content", "Research trail");
-      return { ok: false, error: "No readable tab content available.", skipped };
+      return { ok: false, error: "No readable tab content available.", skipped: skipped.length, blocked, failed, notCaptured: notCaptured.overLimit.length + notCaptured.nonWeb };
     }
-    const result = await bridge()("/archive/intake", {
-      method: "POST",
-      body: {
-        title: `Research Trail: ${title}`,
-        url: snapshots[0]?.url ?? null,
-        origin: "browser-research-trail",
-        content: researchTrailIntakeMarkdown({ title, snapshots, skipped })
-      }
-    });
-    const review = await bridge()("/archive/review/request", {
-      method: "POST",
-      body: {
-        path: result.path,
-        reason: "Evaluate this multi-page browser research trail for Living Archive ingestion, source provenance, entity extraction, contradictions, and durable wiki synthesis."
-      }
-    });
-    await addMessage(
-      "system",
-      `Saved a ${snapshots.length}-page browser research trail to Living Archive intake and queued it for review.\n\nIt remains raw source material until review, verification, and promotion accept it.\n\n${reviewQueueGuidance}`
-    );
+    const trail = buildResearchTrail({ question, captures, skipped, notCaptured });
+    let result;
+    try {
+      result = await bridge()("/archive/intake", {
+        method: "POST",
+        body: {
+          title: trail.title,
+          url: safeContextText(safeContextUrl(captures[0].snapshot.url), Infinity) || null,
+          origin: "browser-research-trail",
+          content: trail.content
+        }
+      });
+    } catch (error) {
+      const reason = safeContextText(error instanceof Error ? error.message : String(error));
+      // Neither a lost response nor an error response proves nothing was written:
+      // the archive service saves the file before appending its log.
+      const saveUncertain = true;
+      const message = `Could not confirm the research trail was saved: ${reason}. Check the archive before trying again.`;
+      await addMessage("system", message);
+      setStatus("Trail save unconfirmed");
+      setActivity("failed", "Could not confirm the research trail was saved", reason);
+      return { ok: false, error: message, saveUncertain };
+    }
+    let review;
+    try {
+      review = await bridge()("/archive/review/request", {
+        method: "POST",
+        body: {
+          path: result.path,
+          reason: "Evaluate this multi-page browser research trail for Living Archive ingestion, source provenance, entity extraction, contradictions, and durable wiki synthesis."
+        }
+      });
+    } catch {
+      await addMessage("system", `Saved to ${result.path}, but it could not be queued for review; ask again with \`/trail\` or queue it from the archive.`);
+      setStatus("Research trail saved");
+      setActivity("completed", "Saved research trail intake", result.path);
+      return { ...result, ok: true, reviewQueued: false, pages: trail.counts.captured, skipped: trail.counts.skipped, notCaptured: trail.counts.notCaptured };
+    }
+    await addMessage("system", `Saved a ${trail.counts.captured}-page trail; ${trail.counts.skipped} tabs skipped\n\n${result.path}\n\nRaw source material, queued for review. Nothing was written to trusted memory.\n\n${reviewQueueGuidance}`);
     setStatus("Research trail saved");
     setActivity("completed", "Saved research trail intake", result.path);
-    return { ok: true, ...result, reviewRequestPath: review.path, pages: snapshots.length, skipped: skipped.length };
+    return { ...result, ok: true, reviewRequestPath: review.path, reviewQueued: true, pages: trail.counts.captured, skipped: trail.counts.skipped, notCaptured: trail.counts.notCaptured };
   }
 
   async function saveCurrentPageToArchive() {

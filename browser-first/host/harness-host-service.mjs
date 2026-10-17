@@ -128,7 +128,7 @@ export function createHarnessStreamSubscription(reader) {
   return subscription;
 }
 
-export async function createHarnessHostService({ userRoot, store = createHarnessRegistryStore({ userRoot }),
+export async function createHarnessHostService({ userRoot, stateRoot, store = createHarnessRegistryStore({ userRoot, stateRoot }),
   bindings = [], env = process.env, providerHost, hostTerminal, terminalHost, cleanupTimeoutMs = 1000, onReceipt = () => {}, fixtureSigningKey,
   transportFactory = createHarnessTransport, dshAdapterFactory = createDshTypertAdapter, openaiAdapterFactory = createOpenAICompatibleAdapter,
   promptFilePath, seedInstallations = [],
@@ -227,6 +227,9 @@ export async function createHarnessHostService({ userRoot, store = createHarness
       return document;
     },
     write: document => store.write(document),
+    watermark: () => store.watermark?.() ?? null,
+    raise: revision => store.raise?.(revision),
+    watermarkPath: store.watermarkPath ?? null,
   };
   const registry = await createHarnessRegistry({ store: trackedStore, reviewedAdapterIds: ['dsh-typert-v1', 'provider-fabric-v1', 'openai-compatible-v1', 'pi-terminal-v1', 'external-cli-terminal-v1'],
     bindings: approvedBindings.map(({ name, addonId, adapterId, authScheme, endpoint }) => ({ name, addonId, adapterId, authScheme, endpoint })) });
@@ -247,7 +250,7 @@ export async function createHarnessHostService({ userRoot, store = createHarness
     assertValidHarnessManifest(seed.manifest);
     const existing = registry.snapshot().installations[seed.manifest.id];
     if (!existing) {
-      await registry.install(seed.manifest, { enabled: false, factoryId: seed.factoryId });
+      await registry.install(seed.manifest, { enabled: false, factoryId: seed.factoryId, expectedRevision: registry.snapshot().revision });
       manifests.set(seed.manifest.id, structuredClone(seed.manifest));
     } else if (existing.factoryId !== seed.factoryId) {
       await registry.pinFactory(seed.manifest.id, seed.factoryId, { manifest: seed.manifest });
@@ -424,9 +427,9 @@ export async function createHarnessHostService({ userRoot, store = createHarness
   const read = 'addon-runtime-read', control = 'addon-runtime-control';
   const harnessRoutes = [
     route('GET', '/addons/registry', read, [], [], () => snapshot()),
-    route('POST', '/addons/install', control, ['manifest', 'enabled'], [], async p => {
-      if (typeof p.enabled !== 'boolean') throw fail('invalid-event');
-      await registry.install(p.manifest, { enabled: p.enabled });
+    route('POST', '/addons/install', control, ['manifest', 'enabled', 'expectedRevision'], [], async p => {
+      if (typeof p.enabled !== 'boolean' || !revision(p.expectedRevision)) throw fail('invalid-event');
+      await registry.install(p.manifest, p);
       manifests.set(p.manifest.id, structuredClone(p.manifest)); return snapshot();
     }),
     route('POST', '/addons/grants', control, ['addonId', 'grants', 'consent', 'expectedRevision'], [], async p => {
@@ -1034,9 +1037,9 @@ export async function createHarnessHostService({ userRoot, store = createHarness
       if (p.enabled === false) await closeConnectionScriptAdoptions(p.addonId);
       return snapshot();
     }),
-    route('POST', '/addons/remove', control, ['addonId'], [], async p => {
-      if (!id(p.addonId)) throw fail('invalid-event');
-      await registry.remove(p.addonId);
+    route('POST', '/addons/remove', control, ['addonId', 'expectedRevision'], [], async p => {
+      if (!id(p.addonId) || !revision(p.expectedRevision)) throw fail('invalid-event');
+      await registry.remove(p.addonId, p);
       manifests.delete(p.addonId);
       // CP-BR10: same cleanup as disable; remove is final.
       await closeConnectionScriptAdoptions(p.addonId);
